@@ -825,6 +825,27 @@ namespace WindowOverlay.Ui
             StatusText.Text = "已移动到 X=" + x + " Y=" + y;
         }
 
+        /// <summary>
+        /// 把叠层的实时坐标同步到「显示器 / X / Y」输入框。
+        /// 拖动叠层和保存设置之后都会调用，保证对话框里显示的永远是叠层的真实位置。
+        /// </summary>
+        public void SyncPosition(double x, double y, int monitor)
+        {
+            bool old = _suppress;
+            _suppress = true;
+            try
+            {
+                XBox.Text = x.ToString("0", CultureInfo.InvariantCulture);
+                YBox.Text = y.ToString("0", CultureInfo.InvariantCulture);
+                if (MonitorCombo.Items.Count > 0)
+                    MonitorCombo.SelectedIndex = Math.Max(0, Math.Min(monitor, MonitorCombo.Items.Count - 1));
+            }
+            finally
+            {
+                _suppress = old;
+            }
+        }
+
         void HotkeyBoxPreviewKeyDown(object sender, KeyEventArgs e)
         {
             var box = sender as TextBox;
@@ -906,6 +927,9 @@ namespace WindowOverlay.Ui
             }
 
             if (_onApply != null) _onApply(s);
+
+            // 控制器把位置 / 锁定换成了实时值，同步回界面，避免下次保存又写回旧坐标。
+            SyncPosition(s.Overlay.X, s.Overlay.Y, s.Overlay.Monitor);
 
             _working = Clone(s);
             StatusText.Text = "已保存并应用（" + DateTime.Now.ToString("HH:mm:ss") + "）";

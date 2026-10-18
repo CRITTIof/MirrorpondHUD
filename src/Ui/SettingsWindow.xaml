@@ -354,7 +354,7 @@
                         <TextBlock Text="窗口" Style="{StaticResource SectionTitle}" Margin="0,16,0,6" />
                         <CheckBox x:Name="TopmostCheck" Content="始终置顶" Margin="0,0,0,8" />
                         <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,0,0,8"
-                                   Text="打开本窗口时叠层自动解锁（可拖动），关闭后自动锁定（鼠标穿透）。" />
+                                   Text="叠层能否拖动只由 F8（或托盘菜单的「锁定 / 解锁」）切换，打开或关闭本窗口都不会自动解锁、锁定。" />
 
                         <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
                             <TextBlock Text="显示器" VerticalAlignment="Center" />
@@ -365,6 +365,8 @@
                             <TextBox x:Name="YBox" Width="70" Margin="8,0,16,0" />
                             <Button Content="应用位置" Click="ApplyPositionClick" />
                         </StackPanel>
+                        <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,6,0,0"
+                                   Text="解锁后也可以直接用鼠标拖动叠层，松手即保存位置；「保存并应用」不会移动叠层，只想改坐标请点「应用位置」。" />
 
                         <Grid Margin="0,12,0,0">
                             <Grid.ColumnDefinitions>

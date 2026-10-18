@@ -6,3 +6,10 @@ certs/
 .vs/
 settings.json.bak
 settings.json.broken-*
+
+# 源码说明文档放在独立仓库里，不随主仓库发布
+docs/source/
+
+# WPF 编译期临时工程与本地构建日志
+*_wpftmp.csproj
+publish-run.log
