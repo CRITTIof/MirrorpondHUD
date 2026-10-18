@@ -2,18 +2,13 @@
 setlocal
 cd /d "%~dp0"
 
-rem ------------------------------------------------------------------
-rem  Why deploy before running?
-rem  When the program is started from a restricted folder (AI workspace,
-rem  sandbox, some managed locations), Windows can drop the process to
-rem  Low integrity. Tray icon, global hotkeys and keyboard hooks are then
-rem  rejected by the OS. Running from %LOCALAPPDATA%\Programs avoids this.
-rem ------------------------------------------------------------------
+rem Build once (if needed) and run in place.
+rem Settings and log live next to the exe:
+rem   bin\Release\settings.json
+rem   bin\Release\overlay.log
+set "EXE=%~dp0bin\Release\WindowOverlay.exe"
 
-set "SRC=%~dp0bin\Release"
-set "DEST=%LOCALAPPDATA%\Programs\WindowOverlay"
-
-if not exist "%SRC%\WindowOverlay.exe" (
+if not exist "%EXE%" (
     where dotnet >nul 2>nul
     if errorlevel 1 (
         echo [ERROR] Not built yet, and dotnet was not found.
@@ -30,19 +25,10 @@ if not exist "%SRC%\WindowOverlay.exe" (
     )
 )
 
-if not exist "%DEST%" mkdir "%DEST%" >nul 2>&1
-
-rem Copy every file next to the exe: a framework-dependent build only has a few,
-rem a self-contained one (left behind by publish.bat) needs all of them.
-xcopy /y /d /q "%SRC%\*.*" "%DEST%\" >nul 2>&1
-
-if not exist "%DEST%\WindowOverlay.exe" (
-    echo [ERROR] Failed to copy to "%DEST%".
+if not exist "%EXE%" (
+    echo [ERROR] "%EXE%" not found.
     pause
     exit /b 1
 )
 
-rem Remove the "downloaded from the internet" mark so SmartScreen stays quiet.
-powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-ChildItem '%DEST%\*' -File | Unblock-File" >nul 2>&1
-
-start "" "%DEST%\WindowOverlay.exe" %*
+start "" "%EXE%" %*
