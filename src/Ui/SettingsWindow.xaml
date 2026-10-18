@@ -100,8 +100,7 @@
                             <TextBlock Text="字号" VerticalAlignment="Center" />
                             <StackPanel Grid.Column="1" Orientation="Horizontal">
                                 <Slider x:Name="FontSizeSlider" Width="260" Minimum="8" Maximum="48" TickFrequency="1" IsSnapToTickEnabled="False" />
-                                <TextBlock VerticalAlignment="Center" Margin="10,0,0,0" Width="40"
-                                           Text="{Binding Value, ElementName=FontSizeSlider, StringFormat={}{0:0}}" />
+                                <TextBox x:Name="FontSizeValue" Width="58" Margin="10,0,0,0" TextAlignment="Right" />
                             </StackPanel>
                         </Grid>
 
@@ -143,8 +142,7 @@
                             <TextBlock Text="背景不透明度" VerticalAlignment="Center" />
                             <StackPanel Grid.Column="1" Orientation="Horizontal">
                                 <Slider x:Name="BgOpacitySlider" Width="260" Minimum="0" Maximum="1" />
-                                <TextBlock VerticalAlignment="Center" Margin="10,0,0,0" Width="60"
-                                           Text="{Binding Value, ElementName=BgOpacitySlider, StringFormat={}{0:0.00}}" />
+                                <TextBox x:Name="BgOpacityValue" Width="58" Margin="10,0,0,0" TextAlignment="Right" />
                             </StackPanel>
                         </Grid>
 
@@ -169,8 +167,7 @@
                             <TextBlock Text="内边距" VerticalAlignment="Center" />
                             <StackPanel Grid.Column="1" Orientation="Horizontal">
                                 <Slider x:Name="PaddingSlider" Width="260" Minimum="2" Maximum="40" />
-                                <TextBlock VerticalAlignment="Center" Margin="10,0,0,0" Width="40"
-                                           Text="{Binding Value, ElementName=PaddingSlider, StringFormat={}{0:0}}" />
+                                <TextBox x:Name="PaddingValue" Width="58" Margin="10,0,0,0" TextAlignment="Right" />
                             </StackPanel>
                         </Grid>
 
@@ -182,8 +179,7 @@
                             <TextBlock Text="行高" VerticalAlignment="Center" />
                             <StackPanel Grid.Column="1" Orientation="Horizontal">
                                 <Slider x:Name="LineHeightSlider" Width="260" Minimum="0" Maximum="60" />
-                                <TextBlock VerticalAlignment="Center" Margin="10,0,0,0" Width="60"
-                                           Text="{Binding Value, ElementName=LineHeightSlider, StringFormat={}{0:0}}" />
+                                <TextBox x:Name="LineHeightValue" Width="58" Margin="10,0,0,0" TextAlignment="Right" />
                             </StackPanel>
                         </Grid>
 
@@ -195,8 +191,7 @@
                             <TextBlock Text="圆角" VerticalAlignment="Center" />
                             <StackPanel Grid.Column="1" Orientation="Horizontal">
                                 <Slider x:Name="CornerSlider" Width="260" Minimum="0" Maximum="30" />
-                                <TextBlock VerticalAlignment="Center" Margin="10,0,0,0" Width="40"
-                                           Text="{Binding Value, ElementName=CornerSlider, StringFormat={}{0:0}}" />
+                                <TextBox x:Name="CornerValue" Width="58" Margin="10,0,0,0" TextAlignment="Right" />
                             </StackPanel>
                         </Grid>
 
@@ -285,6 +280,17 @@
                         <CheckBox x:Name="AutoStartCheck" Content="开机自动启动" Margin="0,0,0,8" />
                         <CheckBox x:Name="StartMinCheck" Content="启动后最小化到托盘" Margin="0,0,0,8" />
                         <CheckBox x:Name="TrayCheck" Content="显示托盘图标" Margin="0,0,0,8" />
+
+                        <TextBlock Text="启动动画" Style="{StaticResource SectionTitle}" Margin="0,16,0,6" />
+                        <CheckBox x:Name="IntroCheck" Content="启动时播放打字 / 退格动画" Margin="0,0,0,8" />
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                            <TextBlock Text="欢迎语" VerticalAlignment="Center" />
+                            <TextBox x:Name="WelcomeBox" Width="220" Margin="8,0,16,0" />
+                            <TextBlock Text="速度(ms/字)" VerticalAlignment="Center" />
+                            <TextBox x:Name="TypeSpeedBox" Width="64" Margin="8,0,0,0" />
+                        </StackPanel>
+                        <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap"
+                                   Text="播放动画时会显示 “---” 占位，动画结束后才开始刷新真实数据。" />
 
                         <TextBlock Text="文件" Style="{StaticResource SectionTitle}" Margin="0,16,0,6" />
                         <StackPanel Orientation="Horizontal">

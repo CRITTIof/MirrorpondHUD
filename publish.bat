@@ -21,6 +21,13 @@ if errorlevel 1 (
     exit /b 1
 )
 
+rem Sign the single-file exe as well (same self-signed cert as build.bat).
+if exist "%~dp0sign.ps1" (
+    echo.
+    echo [INFO] Signing...
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0sign.ps1" -Exe "%~dp0publish\WindowOverlay.exe"
+)
+
 echo.
 echo [OK] Single-file exe: %~dp0publish\WindowOverlay.exe
 echo      Keep it outside restricted folders (see README).
