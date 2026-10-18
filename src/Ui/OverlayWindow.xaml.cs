@@ -80,7 +80,7 @@ namespace WindowOverlay.Ui
             UpdateMenuHeaders();
         }
 
-        /// <summary>只同步设置对象与鼠标穿透状态，不重画内容（切锁定、开设置时用）。</summary>
+        /// <summary>只同步设置对象与鼠标穿透状态，不重画内容（F8 / 托盘切换锁定时用）。</summary>
         public void RefreshSettings(Settings settings)
         {
             _settings = settings;

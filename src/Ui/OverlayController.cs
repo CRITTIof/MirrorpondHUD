@@ -124,7 +124,7 @@ namespace WindowOverlay.Ui
             window.HideRequested += ToggleVisibility;
             window.LockToggleRequested += ToggleLock;
             window.ExitRequested += Exit;
-            window.PositionChanged += SaveSettings;
+            window.PositionChanged += OnPositionChanged;
             window.CommandLineRequested += ToggleCommandLine;
             window.CommandSubmitted += SubmitCommand;
             window.CommandCancelled += ExitCommandLine;
@@ -663,18 +663,12 @@ namespace WindowOverlay.Ui
             if (_settingsWindow == null)
             {
                 _settingsWindow = new SettingsWindow(_settings, ApplySettings, ApplyPosition, ClearKeys);
-                _settingsWindow.IsVisibleChanged += (s, e) =>
-                {
-                    if (_settingsWindow != null && !_settingsWindow.IsVisible) SetLocked(true);
-                };
             }
             else
             {
                 _settingsWindow.Reload(_settings);
             }
 
-            // 打开设置期间叠层保持可拖动，方便直接调整位置；关闭后再锁回去。
-            SetLocked(false);
             _settingsWindow.Show();
             _settingsWindow.WindowState = WindowState.Normal;
             _settingsWindow.Activate();
@@ -692,6 +686,14 @@ namespace WindowOverlay.Ui
         public void ApplySettings(Settings settings)
         {
             if (_commandMode) ExitCommandLine();
+
+            // 位置与锁定是运行时状态：只由拖动、F8 和托盘菜单改变。
+            // 设置窗口里的坐标是打开窗口那一刻的快照，这里必须以实时值为准，
+            // 否则保存设置会把叠层拉回打开设置时的位置（也顺手把 F8 的解锁状态覆盖掉）。
+            settings.Overlay.X = _settings.Overlay.X;
+            settings.Overlay.Y = _settings.Overlay.Y;
+            settings.Overlay.Monitor = _settings.Overlay.Monitor;
+            settings.Overlay.Locked = _settings.Overlay.Locked;
 
             FinishIntro();
             _settings = settings;
@@ -732,6 +734,15 @@ namespace WindowOverlay.Ui
             }
 
             SaveSettings();
+        }
+
+        /// <summary>拖动结束后保存新坐标，并把实时坐标同步给打开着的设置窗口。</summary>
+        void OnPositionChanged()
+        {
+            SaveSettings();
+
+            if (_settingsWindow != null)
+                _settingsWindow.SyncPosition(_settings.Overlay.X, _settings.Overlay.Y, _settings.Overlay.Monitor);
         }
 
         void SaveSettings()

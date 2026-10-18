@@ -32,8 +32,17 @@
 
 ## 🚀 快速开始
 
-**下载即用**：到 [Releases](https://github.com/CRITTIof/overlay-information-with-cmd/releases) 下载
-`WindowOverlay-x64.exe`（普通电脑）或 `WindowOverlay-arm64.exe`（Windows on ARM），放到任意本地目录双击运行。
+**下载即用**：到 [Releases](https://github.com/CRITTIof/overlay-information-with-cmd/releases) 下载，四种任选：
+
+| 文件 | 适用 | 说明 |
+| --- | --- | --- |
+| `WindowOverlay-x64.exe` | 普通电脑（x64） | 自带 .NET 8 运行时，约 60 MB，双击即用 |
+| `WindowOverlay-arm64.exe` | Windows on ARM | 自带 .NET 8 运行时，约 60 MB |
+| `WindowOverlay-x64-requires-dotnet.exe` | 已装 .NET 8 桌面运行时 | 体积约 0.4 MB，依赖系统运行时 |
+| `WindowOverlay-arm64-requires-dotnet.exe` | 已装 .NET 8 桌面运行时的 ARM 机器 | 体积约 0.4 MB，依赖系统运行时 |
+
+不放心的机器选前两个（免安装运行时）；想省空间、且已经装了
+[.NET 8 桌面运行时](https://dotnet.microsoft.com/download/dotnet/8.0)的，选后两个。
 
 **从源码运行**：
 
@@ -52,7 +61,7 @@ run.bat
 | --- | --- | --- |
 | 打开 / 关闭快捷命令行 | `F9` | 见下一节 |
 | 打开设置窗口 | `F10` | 也可左键单击托盘图标 |
-| 锁定 / 解锁（鼠标穿透） | `F8` | 解锁后可拖动、右键菜单、双击设置；打开设置窗口时自动解锁，关闭后自动锁定 |
+| 锁定 / 解锁（鼠标穿透） | `F8` | 叠层能否拖动、能否点右键只由它切换；打开 / 关闭设置窗口不会自动改变锁定状态，保存设置也不会移动叠层 |
 | 显示 / 隐藏叠层 | *未设置* | 从托盘菜单操作，或自行绑定 |
 
 所有热键都能在「设置 → 热键」里改，**留空 = 不启用**；被其它程序占用时会自动退到 `Ctrl+Alt+原键`。
@@ -183,12 +192,21 @@ MEM {mem_pct:0}%    →  MEM 40%
 
 ```bat
 build.bat      :: 编译到 bin\Release，并用自签名证书签名
-publish.bat    :: 生成单文件 exe：publish\x64\WindowOverlay.exe 与 publish\arm64\WindowOverlay.exe
+publish.bat    :: 生成四个单文件 exe（自带运行时 + 依赖运行时，各 x64 / ARM64）
 run.bat        :: 编译（如未编译）并在 bin\Release 内启动
 ```
 
-单文件版自带运行时、压缩后约 60 MB，目标机器无需安装 .NET。签名使用自签名证书
-（主体为 GitHub 账号 `CRITTIof`，写入 `CurrentUser` 存储，不需要管理员），
+`publish.bat` 的输出：
+
+```
+publish\x64\WindowOverlay.exe                   自带 .NET 运行时
+publish\arm64\WindowOverlay.exe                 自带 .NET 运行时
+publish\x64-requires-dotnet\WindowOverlay.exe   需要 .NET 8 桌面运行时
+publish\arm64-requires-dotnet\WindowOverlay.exe 需要 .NET 8 桌面运行时
+```
+
+自带运行时的版本压缩后约 60 MB，目标机器无需安装 .NET；依赖运行时的版本只有约 0.4 MB。
+签名使用自签名证书（主体为 GitHub 账号 `CRITTIof`，写入 `CurrentUser` 存储，不需要管理员），
 所以 Windows 显示发布者名称而不是“未知发布者”。
 
 ## 🩺 故障排查
@@ -226,7 +244,7 @@ run.bat        :: 编译（如未编译）并在 bin\Release 内启动
 ```
 WindowOverlay.csproj   项目文件（net8.0-windows，WPF + WinForms 托盘）
 build.bat / run.bat    编译签名 / 编译并启动
-publish.bat            单文件 exe（x64 + ARM64）
+publish.bat            四个单文件 exe（x64 + ARM64，各含自带运行时 / 依赖运行时两种）
 sign.ps1               自签名证书与签名
 bin\Release\           编译输出，settings.json 与 overlay.log 也在这里
 src/
@@ -236,6 +254,7 @@ src/
   Text/                模板引擎、快捷命令行执行器
   Ui/                  叠层、设置窗口、托盘、热键、TextCanvas 自绘
 docs/                  界面截图
+tools/make_logo.py     从 SVG 几何生成 assets/logo*.ico
 ```
 
 <p align="center"><sub>基于 .NET 8 · WPF · PDH · 自绘文本渲染</sub></p>
