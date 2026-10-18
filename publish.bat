@@ -12,6 +12,15 @@ if errorlevel 1 (
 )
 
 rem ARM64 first, x64 last, so bin\Release ends up as an x64 build (run.bat uses it).
+
+rem bin\Release is wiped below; keep the user's settings and log across the build.
+set "DATA_BACKUP=%TEMP%\windowoverlay-publish-data"
+if exist "%DATA_BACKUP%" rd /s /q "%DATA_BACKUP%" >nul 2>&1
+mkdir "%DATA_BACKUP%" >nul 2>&1
+for %%F in (settings.json settings.json.bak overlay.log) do (
+    if exist "%~dp0bin\Release\%%F" copy /y "%~dp0bin\Release\%%F" "%DATA_BACKUP%\%%F" >nul 2>&1
+)
+
 call :build win-arm64 arm64
 if errorlevel 1 goto :fail
 
@@ -30,11 +39,16 @@ if exist "%~dp0sign.ps1" (
     powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0sign.ps1"
 )
 
+rem Put the user's settings and log back into the rebuilt bin\Release.
+for %%F in (settings.json settings.json.bak overlay.log) do (
+    if exist "%DATA_BACKUP%\%%F" copy /y "%DATA_BACKUP%\%%F" "%~dp0bin\Release\%%F" >nul 2>&1
+)
+
 echo.
 echo [OK] Single-file exes:
 echo      publish\arm64\WindowOverlay.exe
 echo      publish\x64\WindowOverlay.exe
-echo      Keep them outside restricted folders (see README).
+echo      Single-file exe, .NET runtime not required on the target machine.
 pause
 exit /b 0
 

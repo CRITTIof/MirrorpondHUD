@@ -37,9 +37,8 @@ namespace WindowOverlay
                 MessageBox.Show(
                     "程序当前运行在低完整性级别（Low Integrity）环境中。\n\n" +
                     "这种情况下 Windows 会禁止：托盘图标、全局热键、全局键盘钩子。\n\n" +
-                    "请改用项目里的 run.bat 启动——它会先把程序部署到\n" +
-                    "%LOCALAPPDATA%\\Programs\\WindowOverlay 再运行，\n" +
-                    "或者手动把整个 bin\\Release 目录复制到该位置后运行。\n\n" +
+                    "请把整个 bin\\Release 目录复制到一个你有完全控制权的普通文件夹\n" +
+                    "（例如「文档」）后再运行。\n\n" +
                     "日志：" + Log.FilePath,
                     "桌面叠层 · 权限受限", MessageBoxButton.OK, MessageBoxImage.Warning);
             }

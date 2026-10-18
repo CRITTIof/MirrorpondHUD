@@ -42,11 +42,8 @@ cd overlay-information-with-cmd
 run.bat
 ```
 
-`run.bat` 会自动编译，并把程序部署到 `%LOCALAPPDATA%\Programs\WindowOverlay` 后启动。
-
-> **不要从受限目录直接运行**（AI 工作区、沙箱、某些受管文件夹）。从那里启动的进程会被降权到
-> **Low 完整性级别**，Windows 随后会拒绝托盘图标、全局热键和键盘钩子。程序启动时会把完整性级别
-> 写进日志，发现受限会弹窗提示。
+`run.bat` 会自动编译，然后直接从 `bin\Release` 启动。
+配置文件和日志也生成在那里（`bin\Release\settings.json`、`bin\Release\overlay.log`）。
 
 ## ⌨️ 快捷键
 
@@ -101,8 +98,8 @@ MEM {mem_pct:0}%    →  MEM 40%
 
 ## ⚙️ 配置
 
-所有设置保存在 exe 同目录的 `settings.json`，保存时自动备份为 `.bak`，损坏时另存 `.broken-时间戳`
-并回退默认值；日志 `overlay.log` 与配置同目录。
+所有设置保存在 exe 同目录的 `settings.json`（源码运行时即 `bin\Release\settings.json`），
+保存时自动备份为 `.bak`，损坏时另存 `.broken-时间戳` 并回退默认值；日志 `overlay.log` 与配置同目录。
 
 ```json
 {
@@ -181,7 +178,7 @@ MEM {mem_pct:0}%    →  MEM 40%
 ```bat
 build.bat      :: 编译到 bin\Release，并用自签名证书签名
 publish.bat    :: 生成单文件 exe：publish\x64\WindowOverlay.exe 与 publish\arm64\WindowOverlay.exe
-run.bat        :: 编译 + 部署到 %LOCALAPPDATA%\Programs\WindowOverlay + 启动
+run.bat        :: 编译（如未编译）并在 bin\Release 内启动
 ```
 
 单文件版自带运行时、压缩后约 60 MB，目标机器无需安装 .NET。签名使用自签名证书
@@ -191,29 +188,20 @@ run.bat        :: 编译 + 部署到 %LOCALAPPDATA%\Programs\WindowOverlay + 启
 ## 🩺 故障排查
 
 <details>
-<summary><b>看不到托盘图标 / 热键无反应 / 按键不显示</b></summary>
+<summary><b>按键没有反应</b></summary>
 
-Windows 11 默认把新托盘图标放进 `^` 隐藏区，拖出来即可常显。若日志第一行是
-`进程完整性级别: Low（1000）`，说明程序从受限目录启动，托盘图标、热键、键盘钩子都会被系统拒绝——
-用 `run.bat` 启动（会部署到 `%LOCALAPPDATA%\Programs\WindowOverlay`）即可恢复 `Medium（2000）`。
-
-</details>
-
-<details>
-<summary><b>命令行打不出字 / 输出乱码</b></summary>
-
-`F9` 后先确认日志里有 `热键 F9 注册成功`；启动动画期间或叠层隐藏时命令行是刻意禁用的。
-命令行模式会临时把叠层切到前台并**关闭输入法**（保证命令原样输入），点了别的窗口需再按一次 `F9`。
-乱码时程序已按 UTF-8 → 系统 OEM 代码页（GBK）兜底，第三种编码请改用 PowerShell 执行。
+先看 `overlay.log` 里有没有 `热键 F9 注册成功`：显示被占用就换一组组合键（「设置 → 热键」）。
+启动动画期间、叠层隐藏时快捷命令行是刻意禁用的。命令行模式会临时把叠层切到前台并**关闭输入法**
+（保证命令原样输入），点了别的窗口需要再按一次 `F9`；`F9` 后仍打不出字时用鼠标点一下叠层再试。
+如果键盘那一行一直是 `—`，多半是全局键盘钩子被其它软件抢占（输入法、录屏、宏工具），关掉再试。
 
 </details>
 
 <details>
-<summary><b>提示“无法验证发布者”</b></summary>
+<summary><b>命令行输出是乱码</b></summary>
 
-先确认 exe 已签名（右键 → 属性 → 数字签名，应显示 `CRITTIof`）。若签名正常仍被拦，
-多半是 Windows 11 的**智能应用控制**，需要在「Windows 安全中心 → 应用和浏览器控制」里关闭
-（关闭后无法直接恢复，请自行权衡）。文件带“来自 Internet”标记时执行 `Unblock-File`。
+程序会先按 UTF-8 严格解码，失败再按系统 OEM 代码页（中文系统是 GBK）解码。
+如果某个工具用的是第三种编码，可以改用走 PowerShell 的方式执行，或把「设置 → 命令行」的工具换成 `pwsh`。
 
 </details>
 
@@ -228,9 +216,10 @@ Windows 11 默认把新托盘图标放进 `^` 隐藏区，拖出来即可常显�
 
 ```
 WindowOverlay.csproj   项目文件（net8.0-windows，WPF + WinForms 托盘）
-build.bat / run.bat    编译签名 / 部署启动
+build.bat / run.bat    编译签名 / 编译并启动
 publish.bat            单文件 exe（x64 + ARM64）
 sign.ps1               自签名证书与签名
+bin\Release\           编译输出，settings.json 与 overlay.log 也在这里
 src/
   Core/                配置模型、JSON、日志
   Metrics/             PDH 封装、采样引擎、nvidia-smi
