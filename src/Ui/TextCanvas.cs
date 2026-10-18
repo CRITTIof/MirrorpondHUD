@@ -43,6 +43,7 @@ namespace WindowOverlay.Ui
         bool _cursorVisible;
         string _cursorStyle = "Block";
         bool _cursorBlink = true;
+        int _cursorIndex = -1;
 
         public TextCanvas()
         {
@@ -260,6 +261,18 @@ namespace WindowOverlay.Ui
             }
         }
 
+        /// <summary>光标在文本里的字符位置；-1 = 文本末尾。</summary>
+        public int CursorIndex
+        {
+            get { return _cursorIndex; }
+            set
+            {
+                if (_cursorIndex == value) return;
+                _cursorIndex = value;
+                InvalidateVisual();
+            }
+        }
+
         public bool CursorBlink
         {
             get { return _cursorBlink; }
@@ -427,10 +440,42 @@ namespace WindowOverlay.Ui
             if (string.Equals(style, "None", StringComparison.OrdinalIgnoreCase)) return;
             if (_cursorBlink && !_blinkOn) return;
 
-            int index = lines.Count - 1;
-            FormattedText ft = Create(lines[index]);
-            double x = AlignX(ft.WidthIncludingTrailingWhitespace, ActualWidth) + ft.WidthIncludingTrailingWhitespace;
-            double y = index * lineHeight;
+            int offset = _cursorIndex;
+            if (offset < 0 || offset > _text.Length) offset = _text.Length;
+
+            int lineIndex = 0;
+            int lineStart = 0;
+            for (int i = 0; i < offset; i++)
+            {
+                char c = _text[i];
+                if (c == '\n')
+                {
+                    lineIndex++;
+                    lineStart = i + 1;
+                }
+                else if (c == '\r' && (i + 1 >= _text.Length || _text[i + 1] != '\n'))
+                {
+                    lineIndex++;
+                    lineStart = i + 1;
+                }
+            }
+
+            if (lineIndex >= lines.Count) lineIndex = Math.Max(0, lines.Count - 1);
+            if (lines.Count == 0) return;
+
+            string line = lines[lineIndex];
+            int column = 0;
+            for (int i = lineStart; i < offset && i < _text.Length; i++)
+            {
+                if (_text[i] != '\r') column++;
+            }
+            if (column > line.Length) column = line.Length;
+
+            string prefix = line.Substring(0, Math.Max(0, column));
+            double lineWidth = Create(line).WidthIncludingTrailingWhitespace;
+            double prefixWidth = Create(prefix).WidthIncludingTrailingWhitespace;
+            double x = AlignX(lineWidth, ActualWidth) + prefixWidth;
+            double y = lineIndex * lineHeight;
 
             double blockWidth = Math.Max(2, _fontSize * 0.55);
             double blockHeight = Math.Max(3, lineHeight * 0.8);

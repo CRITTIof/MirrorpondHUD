@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
 using WindowOverlay.Core;
@@ -22,6 +23,16 @@ namespace WindowOverlay.Ui
         readonly List<string> _args;
         readonly KeyHistory _keys = new KeyHistory();
 
+        readonly List<CommandEntry> _commandEntries = new List<CommandEntry>();
+
+        sealed class CommandEntry
+        {
+            public string Prompt;
+            public string Command;
+            public string Output;
+            public bool Done;
+        }
+
         Settings _settings;
         MetricEngine _engine;
         KeyboardHook _hook;
@@ -36,6 +47,12 @@ namespace WindowOverlay.Ui
         MetricsSnapshot _last = new MetricsSnapshot();
         volatile bool _disposed;
         bool _overlayVisible;
+
+        bool _commandMode;
+        bool _commandRunning;
+        string _commandInput = "";
+        int _commandCaret;
+        CancellationTokenSource _commandCancel;
 
         IntroPhase _phase = IntroPhase.Live;
         DateTime _phaseStart;
@@ -64,6 +81,10 @@ namespace WindowOverlay.Ui
             _overlay.LockToggleRequested += ToggleLock;
             _overlay.ExitRequested += Exit;
             _overlay.PositionChanged += SaveSettings;
+            _overlay.CommandLineRequested += ToggleCommandLine;
+            _overlay.CommandSubmitted += SubmitCommand;
+            _overlay.CommandCancelled += ExitCommandLine;
+            _overlay.CommandTextChanged += OnCommandInputChanged;
 
             bool intro = _settings.Behavior.IntroEnabled;
             if (intro) _overlay.SetLayoutText(TemplateEngine.RenderPlaceholder(_settings.Content, "---"));
@@ -146,6 +167,7 @@ namespace WindowOverlay.Ui
             _tray.OpenSettings += ShowSettings;
             _tray.ToggleLock += ToggleLock;
             _tray.ToggleAutoStart += ToggleAutoStart;
+            _tray.CommandLine += ToggleCommandLine;
             _tray.Exit += Exit;
 
             _tray.Visible = _settings.Behavior.TrayEnabled;
@@ -236,7 +258,214 @@ namespace WindowOverlay.Ui
         {
             if (!_overlayVisible || _overlay == null) return;
             if (_phase != IntroPhase.Live) return;   // 动画期间不刷新真实数据
+            if (_commandMode)
+            {
+                RenderCommandLine();
+                return;
+            }
             _overlay.SetText(RenderText(), false);
+        }
+
+        // ==================== 快捷命令行 ====================
+
+        public void ToggleCommandLine()
+        {
+            if (_overlay == null) return;
+
+            if (!_overlayVisible)
+            {
+                Log.Info("叠层处于隐藏状态，快捷命令行不可用");
+                return;
+            }
+            if (_phase != IntroPhase.Live)
+            {
+                Log.Info("启动动画期间快捷命令行不可用");
+                return;
+            }
+
+            if (_commandMode) ExitCommandLine();
+            else EnterCommandLine();
+        }
+
+        void EnterCommandLine()
+        {
+            _commandMode = true;
+            _commandEntries.Clear();
+            _commandInput = "";
+            _commandCaret = 0;
+
+            if (_hook != null) _hook.Suppress = true;
+
+            _overlay.ResetStableSize();
+            _overlay.BeginCommandInput();
+            RenderCommandLine();
+
+            Log.Info("快捷命令行已打开（工具=" + CommandRunner.ToolLabel(_settings.Command) +
+                     "，目录=" + CommandRunner.ResolveWorkingDirectory(_settings.Command) + "）");
+        }
+
+        public void ExitCommandLine()
+        {
+            if (!_commandMode) return;
+
+            _commandMode = false;
+            _commandRunning = false;
+
+            try { _commandCancel?.Cancel(); } catch { }
+            try { _commandCancel?.Dispose(); } catch { }
+            _commandCancel = null;
+
+            _commandEntries.Clear();
+            _commandInput = "";
+            _commandCaret = 0;
+
+            if (_hook != null) _hook.Suppress = false;
+
+            _overlay.EndCommandInput();
+            _overlay.ResetStableSize();
+            RenderNow();
+
+            Log.Info("快捷命令行已关闭，命令与返回已清空");
+        }
+
+        void OnCommandInputChanged(string text, int caret)
+        {
+            if (!_commandMode) return;
+            _commandInput = text ?? "";
+            _commandCaret = caret;
+            RenderCommandLine();
+        }
+
+        string CommandPrompt
+        {
+            get { return CommandRunner.BuildPrompt(_settings.Command); }
+        }
+
+        string BuildCommandDisplay()
+        {
+            string baseText = RenderText();
+            string prompt = CommandPrompt;
+
+            var sb = new System.Text.StringBuilder(baseText.Length + 256);
+            if (baseText.Length > 0)
+            {
+                sb.Append(baseText);
+                if (!baseText.EndsWith("\n", StringComparison.Ordinal)) sb.Append('\n');
+            }
+            sb.Append('\n');
+
+            foreach (CommandEntry entry in _commandEntries)
+            {
+                sb.Append(entry.Prompt).Append('\n');
+                sb.Append(entry.Command).Append('\n');
+
+                if (!entry.Done) sb.Append("(运行中…)").Append('\n');
+                else if (!string.IsNullOrEmpty(entry.Output)) sb.Append(entry.Output).Append('\n');
+
+                sb.Append('\n');
+            }
+
+            sb.Append(prompt).Append('\n');
+            sb.Append(_commandInput ?? "");
+            return sb.ToString();
+        }
+
+        void RenderCommandLine()
+        {
+            if (!_commandMode || _overlay == null) return;
+
+            string text = BuildCommandDisplay();
+            int caret = Math.Max(0, Math.Min(_commandCaret, (_commandInput ?? "").Length));
+            int cursorIndex = text.Length - ((_commandInput ?? "").Length - caret);
+            _overlay.SetText(text, true, cursorIndex);
+        }
+
+        void SubmitCommand()
+        {
+            if (!_commandMode) return;
+
+            string command = (_commandInput ?? "").Trim();
+            if (command.Length == 0) return;
+
+            var entry = new CommandEntry
+            {
+                Prompt = CommandPrompt,
+                Command = command,
+                Done = false
+            };
+            _commandEntries.Add(entry);
+
+            _commandInput = "";
+            _commandCaret = 0;
+            _overlay.SetCommandText("");
+            TrimCommandEntries();
+            RenderCommandLine();
+
+            if (_commandRunning)
+            {
+                entry.Done = true;
+                entry.Output = "(上一条命令仍在执行，请稍候)";
+                RenderCommandLine();
+                return;
+            }
+
+            _commandRunning = true;
+            _commandCancel = new CancellationTokenSource();
+            CancellationToken token = _commandCancel.Token;
+            Settings snapshot = _settings;
+
+            Task.Run(() =>
+            {
+                CommandResult result = CommandRunner.Run(snapshot, command, token);
+
+                try
+                {
+                    Application.Current.Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        entry.Output = CommandRunner.FormatOutput(result, snapshot.Command);
+                        entry.Done = true;
+                        _commandRunning = false;
+
+                        try { _commandCancel?.Dispose(); } catch { }
+                        _commandCancel = null;
+
+                        if (!_commandMode) return;
+                        TrimCommandEntries();
+                        RenderCommandLine();
+                    }), DispatcherPriority.Background);
+                }
+                catch (Exception ex)
+                {
+                    Log.Warn("命令行结果刷新失败: " + ex.Message);
+                }
+            });
+        }
+
+        void TrimCommandEntries()
+        {
+            int max = Math.Max(1, _settings.Command.MaxLines);
+            int total = 0;
+            foreach (CommandEntry entry in _commandEntries) total += CountEntryLines(entry);
+
+            while (_commandEntries.Count > 1 && total > max)
+            {
+                CommandEntry first = _commandEntries[0];
+                if (!first.Done) break;
+                total -= CountEntryLines(first);
+                _commandEntries.RemoveAt(0);
+            }
+        }
+
+        static int CountEntryLines(CommandEntry entry)
+        {
+            int lines = 3; // 提示符 + 命令 + 空行
+            if (!entry.Done) return lines + 1;
+            if (string.IsNullOrEmpty(entry.Output)) return lines;
+
+            int count = 1;
+            for (int i = 0; i < entry.Output.Length; i++)
+                if (entry.Output[i] == '\n') count++;
+            return lines + count;
         }
 
         // ==================== 启动动画 ====================
@@ -378,6 +607,7 @@ namespace WindowOverlay.Ui
 
             if (_overlayVisible)
             {
+                if (_commandMode) ExitCommandLine();
                 if (_phase != IntroPhase.Live) FinishIntro();
                 _overlay.Hide();
                 _overlayVisible = false;
@@ -399,6 +629,8 @@ namespace WindowOverlay.Ui
 
         public void ToggleLock()
         {
+            if (_commandMode) ExitCommandLine();
+
             _settings.Overlay.Locked = !_settings.Overlay.Locked;
             if (_overlay != null)
             {
@@ -412,6 +644,8 @@ namespace WindowOverlay.Ui
 
         public void ShowSettings()
         {
+            if (_commandMode) ExitCommandLine();
+
             if (_settingsWindow == null)
             {
                 _settingsWindow = new SettingsWindow(_settings, ApplySettings, ApplyPosition, ClearKeys);
@@ -437,6 +671,8 @@ namespace WindowOverlay.Ui
 
         public void ApplySettings(Settings settings)
         {
+            if (_commandMode) ExitCommandLine();
+
             FinishIntro();
             _settings = settings;
             _settings.Normalize();
@@ -504,11 +740,12 @@ namespace WindowOverlay.Ui
         {
             if (_hotkeys == null) return;
 
-            var changed = new List<string>(3);
+            var changed = new List<string>(4);
 
             string toggle = RegisterOne(HotkeyManager.ActionToggleOverlay, _settings.Hotkeys.ToggleOverlay);
             string open = RegisterOne(HotkeyManager.ActionOpenSettings, _settings.Hotkeys.OpenSettings);
             string lockKey = RegisterOne(HotkeyManager.ActionToggleLock, _settings.Hotkeys.ToggleLock);
+            string command = RegisterOne(HotkeyManager.ActionCommandLine, _settings.Hotkeys.CommandLine);
 
             if (toggle != _settings.Hotkeys.ToggleOverlay)
             {
@@ -525,6 +762,11 @@ namespace WindowOverlay.Ui
                 changed.Add(_settings.Hotkeys.ToggleLock + " → " + lockKey);
                 _settings.Hotkeys.ToggleLock = lockKey;
             }
+            if (command != _settings.Hotkeys.CommandLine)
+            {
+                changed.Add(_settings.Hotkeys.CommandLine + " → " + command);
+                _settings.Hotkeys.CommandLine = command;
+            }
 
             if (changed.Count > 0)
             {
@@ -536,9 +778,16 @@ namespace WindowOverlay.Ui
             }
         }
 
-        /// <summary>优先注册配置的组合键；被占用时退一步用 Ctrl+Alt+原键。</summary>
+        /// <summary>优先注册配置的组合键；被占用时退一步用 Ctrl+Alt+原键。空白 = 不启用。</summary>
         string RegisterOne(string action, string combination)
         {
+            if (string.IsNullOrWhiteSpace(combination))
+            {
+                _hotkeys.Register(action, "");
+                Log.Info("热键未设置（已禁用）: " + action);
+                return "";
+            }
+
             if (_hotkeys.Register(action, combination))
             {
                 Log.Info("热键 " + combination + " 注册成功");
@@ -572,6 +821,9 @@ namespace WindowOverlay.Ui
                 case HotkeyManager.ActionToggleLock:
                     ToggleLock();
                     break;
+                case HotkeyManager.ActionCommandLine:
+                    ToggleCommandLine();
+                    break;
             }
         }
 
@@ -579,6 +831,7 @@ namespace WindowOverlay.Ui
         {
             if (_tray == null) return;
             _tray.Visible = _settings.Behavior.TrayEnabled;
+            _tray.SetCommandHotkey(_settings.Hotkeys.CommandLine);
             _tray.Update(_overlayVisible, _settings.Overlay.Locked, _settings.Behavior.AutoStart);
         }
 
@@ -594,6 +847,8 @@ namespace WindowOverlay.Ui
 
             try { _renderTimer?.Stop(); } catch { }
             try { _introTimer?.Stop(); } catch { }
+            try { _commandCancel?.Cancel(); } catch { }
+            try { _commandCancel?.Dispose(); } catch { }
 
             try { _activation?.Set(); } catch { }
             try { _activation?.Dispose(); } catch { }

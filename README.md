@@ -1,320 +1,245 @@
-# 桌面叠层（WindowOverlay）
+<h1 align="center">Overlay Information with CMD</h1>
 
-一个始终置顶的悬浮叠层：显示自定义文本 + CPU / GPU / 磁盘 / 网络 / 内存 / 分区 / 实时键盘输入，
-附带一个可视化设置程序。鼠标默认**完全穿透**，不挡任何点击。
+<p align="center">
+  <b>始终置顶的桌面信息叠层：实时硬件数据、按键显示，按 <code>F9</code> 还能直接在叠层里敲命令。</b><br>
+  <sub>An always-on-top desktop overlay with live hardware stats, keystroke display and a built-in command line.</sub>
+</p>
 
-![叠层效果](docs/overlay.png)
+<p align="center">
+  <img alt="platform" src="https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-0078D6?logo=windows&logoColor=white">
+  <img alt="dotnet" src="https://img.shields.io/badge/.NET-8.0-512BD4?logo=dotnet&logoColor=white">
+  <img alt="arch" src="https://img.shields.io/badge/arch-x64%20%7C%20ARM64-555">
+  <img alt="ui" src="https://img.shields.io/badge/UI-WPF-2C8EBB">
+</p>
 
-## 快速开始
+<p align="center">
+  <img src="docs/overlay.png" width="560" alt="叠层效果">
+</p>
+
+鼠标默认**完全穿透**，不挡任何点击；所有内容、样式和行为都在设置窗口里可视化调整。
+
+## ✨ 功能
+
+- **实时数据** — CPU / GPU / 磁盘 / 网络 / 内存 / 分区空间 / 时间，PDH 性能计数器采样，独立线程不卡 UI
+- **自定义文本** — 模板化占位符 `{cpu:0.0}%`，支持 .NET 格式串与对齐，内置 6 套预设模板
+- **按键显示** — 全局键盘钩子，最近按键、重复折叠（`A×6`）、最大字符数限制
+- **快捷命令行** — `F9` 在信息栏下方执行 CMD / PowerShell / 自定义命令，返回原样打印
+- **启动动画** — 打字 / 退格动画 + 模拟光标（方块 / 竖线 / 下划线 / 空心框 / 关闭）
+- **外观可调** — 文字描边、背景图片、固定宽度、圆角、透明度、字体字号，尺寸只增不减不跳动
+- **托盘常驻** — 单实例唤醒、开机自启、可自定义的全局热键、鼠标穿透锁定
+- **无依赖** — 单文件 exe，目标机器不需要安装 .NET
+
+## 🚀 快速开始
+
+**下载即用**：到 [Releases](https://github.com/CRITTIof/overlay-information-with-cmd/releases) 下载
+`WindowOverlay-x64.exe`（普通电脑）或 `WindowOverlay-arm64.exe`（Windows on ARM），放到任意本地目录双击运行。
+
+**从源码运行**：
 
 ```bat
+git clone https://github.com/CRITTIof/overlay-information-with-cmd.git
+cd overlay-information-with-cmd
 run.bat
 ```
 
-首次运行会自动编译（需要 .NET 8 SDK），然后把运行时文件复制到
-**`%LOCALAPPDATA%\Programs\WindowOverlay\`** 并从那里启动。
+`run.bat` 会自动编译，并把程序部署到 `%LOCALAPPDATA%\Programs\WindowOverlay` 后启动。
 
-> **为什么要复制到外面再启动？**
-> 如果项目放在受限目录（AI 工作区、沙箱、某些受管文件夹）里，从那里启动的进程会被系统
-> 降权到 **Low 完整性级别**，Windows 随后会拒绝托盘图标、全局热键和键盘钩子——程序看起来
-> “只存在于任务管理器里”。安装到 `%LOCALAPPDATA%\Programs` 下运行就完全正常。
-> 程序启动时会自己检查完整性级别，一旦发现受限会弹窗说明。
+> **不要从受限目录直接运行**（AI 工作区、沙箱、某些受管文件夹）。从那里启动的进程会被降权到
+> **Low 完整性级别**，Windows 随后会拒绝托盘图标、全局热键和键盘钩子。程序启动时会把完整性级别
+> 写进日志，发现受限会弹窗提示。
 
-不建议直接双击 `bin\Release\WindowOverlay.exe`（除非该目录不在受限位置）。
-目标机器只需要 **.NET 8 桌面运行时**；如果希望对方什么都不装，用 `publish.bat` 打成独立 exe
-后同样建议放到 `%LOCALAPPDATA%\Programs\` 下使用。
+## ⌨️ 快捷键
 
-### 关于“无法验证发布者”弹窗
+| 操作 | 默认 | 说明 |
+| --- | --- | --- |
+| 打开 / 关闭快捷命令行 | `F9` | 见下一节 |
+| 打开设置窗口 | `F10` | 也可左键单击托盘图标 |
+| 锁定 / 解锁（鼠标穿透） | `F8` | 解锁后可拖动、右键菜单、双击设置 |
+| 显示 / 隐藏叠层 | *未设置* | 从托盘菜单操作，或自行绑定 |
 
-`build.bat` 在编译后会自动用**自签名证书**给 exe 签名（首次会创建证书并加入
-`CurrentUser\Root` 与 `CurrentUser\TrustedPublisher`，不需要管理员），
-证书主体是本机的 GitHub 账号 **`CRITTIof`**（来自 `gh auth status` 的当前账号），
-所以 Windows 弹窗里会显示发布者 `CRITTIof`，而不是“未知发布者”。
-`run.bat` 部署后还会对文件执行 `Unblock-File`，去掉“来自 Internet”的标记。
+所有热键都能在「设置 → 热键」里改，**留空 = 不启用**；被其它程序占用时会自动退到 `Ctrl+Alt+原键`。
+再次双击 exe 不会起第二个进程，而是唤醒已在运行的实例的设置窗口。
 
-想换成别的名字（比如另一个 GitHub 账号或真实姓名）：
+## 🖥️ 快捷命令行（`F9`）
 
-```powershell
-powershell -ExecutionPolicy Bypass -File sign.ps1 -Subject "CN=你的名字" -TrustOnly
-```
+![快捷命令行](docs/command-line.png)
 
-`sign.ps1` 发现 `certs\windowoverlay.pfx` 的主体名不一致时会重新签发证书，
-并把旧主体从 `CurrentUser` 的 `My` / `Root` / `TrustedPublisher` 里清掉，然后重新签名。
+按 `F9` 后会在信息栏下方另起三行：一个空行、提示符 `[CMD] [C:\Users\CRITT] >`、以及输入行。
 
-如果仍然被拦，多半是 Windows 11 的 **智能应用控制（Smart App Control）**——它只信任有
-可靠信誉的签名，自签名不满足。关闭路径：
-`设置 → 隐私和安全性 → Windows 安全中心 → 应用和浏览器控制 → 智能应用控制 → 关闭`。
-（该开关只能关闭一次，重新开启需要重装系统，请自行权衡。）
+- 提示符格式为 `[工具] [工作目录] >`，工具名统一大写，PowerShell 显示为 **PWSH**
+- 工具可选 **CMD**（默认）/ **Windows PowerShell** / **PowerShell 7** / **自定义模板**（`{cmd}` 占位）
+- 命令在后台线程执行，返回内容**原样打印**，然后给出新提示符，可连续执行多条
+- 单行过长时只保留**后面** N 个字符并加 `…`（可关闭），也可限制最多保留多少行
+- 默认 20 秒超时，超时强制结束；输出先按 UTF-8 解码，失败退回系统 OEM 代码页（中文不乱码）
+- **再按 `F9`（或 `Esc`）退出**，清空命令与返回，恢复正常信息显示
+- 启动动画期间、叠层隐藏时该热键不生效
 
-## 启动动画
+输入框里的输入法被刻意关闭，保证命令按原样输入；支持方向键、`Home` / `End`、`Ctrl+V`、`Ctrl+Z`。
 
-每次启动先播放一段“命令行打字”动画，然后才开始刷新真实数据：
+## 🧩 显示内容与占位符
 
-1. 逐字打出欢迎语（默认 `Welcome Back`），行尾带一个模拟光标
-2. 停留约 0.65 秒后逐字退格删除
-3. 逐字打出全部内容，此时所有数据占位显示为 `---`
-4. 全部显示完毕后光标消失，再切换为实时数据
-
-光标样式（方块 / 竖线 / 下划线 / 空心框 / 不显示）、是否闪烁、欢迎语、开关和打字速度
-都在「设置 → 行为 → 启动动画」里改。
-
-![光标样式](docs/intro-cursor.png)
-
-整块尺寸按**完整内容**预先量好（动画期间还会按真实数据把宽度撑到位），
-所以逐字打字时框体不会一格格变大，欢迎语和正文始终从同一个位置开始。
-动画期间不刷新数据，避免数字跳动。
-
-## 文字描边与背景图片
-
-「设置 → 外观」里可以给文字加描边（颜色 + 粗细），深色、浅色、花哨背景都能看清；
-也可以选一张图片作为背景（支持裁剪填满 / 完整显示 / 拉伸填满 / 原始大小，并可调不透明度）。
-背景图会跟着圆角一起裁切。
-
-## 固定位置
-
-「设置 → 行为 → 窗口 → 固定宽度」控制信息块宽度：
-
-- `0`（默认）= 自适应，但**只增不减**：数据第一次变长时长大一次，之后即使数值变短也不会缩回去，
-  整个信息块的位置和行首都不会来回跳。
-- 填具体数值 = 完全固定宽度，文字左对齐，彻底不受数据影响。
-
-需要让同一行里的数值也不推挤后面的文字时，用模板对齐语法把数值补到固定宽度，
-例如 `CPU {cpu,5:0.0}%`、`↓ {net_down,9}`。
-
-## 快捷键与托盘
-
-| 操作 | 作用 |
-| --- | --- |
-| **左键单击托盘图标** | 打开设置窗口 |
-| **右键单击托盘图标** | 菜单：显示/隐藏叠层、设置、锁定、开机自启、退出 |
-| `F9` | 显示 / 隐藏叠层 |
-| `F10` | 打开设置窗口 |
-| `F8` | 锁定 / 解锁叠层 |
-
-锁定＝鼠标穿透（叠层像水印一样，点击直接落到下面的窗口）；解锁后可以拖动叠层、右键菜单、双击打开设置。
-三个热键都可以在「设置 → 热键」里改成任意组合键；若组合键被其它程序占用，程序会自动退到
-`Ctrl+Alt+原键` 并记入日志。
-
-> 再次双击 exe 不会起第二个进程，而是把已经在运行的那个实例的设置窗口唤出来（单实例唤醒）。
-
-## 显示内容（模板占位符）
-
-内容是一段模板文本，支持多行。用 `{变量}` 插入实时数据，支持 .NET 格式串与对齐：
+内容是一段支持多行的模板文本，用 `{变量}` 插入实时数据：
 
 ```
-CPU {cpu:0.0}%          →  CPU 23.4%
-MEM {mem_pct:0}%        →  MEM 40%
-{net_down,>10}          →  右对齐到 10 字符
+CPU {cpu:0.0}%      →  CPU 23.4%
+MEM {mem_pct:0}%    →  MEM 40%
+{net_down,>10}      →  右对齐到 10 个字符
 ```
 
 | 变量 | 含义 | 变量 | 含义 |
 | --- | --- | --- | --- |
-| `{cpu}` / `{cpu_bar}` | CPU 占用率 / 进度条 | `{gpu}` / `{gpu_bar}` | GPU 占用率 / 进度条 |
+| `{cpu}` / `{cpu_bar}` | CPU 占用 / 进度条 | `{gpu}` / `{gpu_bar}` | GPU 占用 / 进度条 |
 | `{mem_pct}` `{mem_used}` `{mem_total}` `{mem_free}` | 内存 | `{gpu_name}` `{gpu_temp}` `{gpu_power}` | 显卡名 / 温度 / 功耗 |
 | `{disk}` / `{disk_bar}` | 磁盘活动率 | `{vram_used}` `{vram_total}` `{vram_pct}` | 显存 |
-| `{disk_read}` `{disk_write}` | 磁盘读写速度 | `{free_C}` `{total_C}` `{used_pct_C}` | C 盘空间（换成 D 即 D 盘） |
-| `{net_down}` `{net_up}` `{net_total}` | 网络上下行速度 | `{net_adapter}` | 当前网卡名 |
-| `{keys}` | 最近按键 | `{key_count}` | 累计按键次数 |
-| `{time}` `{date}` `{weekday}` | 时间日期 | `{uptime}` `{host}` `{user}` | 运行时长 / 计算机名 / 用户名 |
+| `{disk_read}` `{disk_write}` | 磁盘读写速度 | `{free_C}` `{total_C}` `{used_pct_C}` | 分区空间（`D` 即 D 盘） |
+| `{net_down}` `{net_up}` `{net_total}` | 网络速度 | `{net_adapter}` | 当前网卡名 |
+| `{keys}` / `{key_count}` | 最近按键 / 累计次数 | `{time}` `{date}` `{weekday}` | 时间日期 |
+| `{uptime}` `{host}` `{user}` | 运行时长 / 计算机名 / 用户名 |  |  |
 
-设置窗口右侧列出全部占位符，双击即可插入；也内置了 6 套预设模板（标准面板、极简一行、游戏性能、
-键盘直播、磁盘与网络、迷你状态条）。
+设置窗口右侧列出全部占位符，双击插入；键盘显示可调数量、折叠阈值与最大字符数（默认 18），
+超过上限从最旧的按键开始丢弃（`Back` / `Cap` / `ins` 等特殊键用短名字）。
 
-### 键盘显示规则
+## ⚙️ 配置
 
-只显示**最近 N 个按键**，连续重复超过阈值时折叠成一个 token：
-
-```
-按 A A A          →  A A A
-按 A A A A A A    →  A×6
-按 Ctrl C Ctrl V  →  Ctrl C Ctrl V
-```
-
-几个特殊键用短名字，方便控制长度：`Back`（退格）、`Cap`（CapsLock）、`ins`（Insert）、
-`Space`、`Enter`、`Tab`、`Esc`、`←` `↑` `→` `↓` 等。
-
-显示结果还有**最大字符数**限制（默认 18），空格和分隔符都计入：
-`Space` 算 5 个字符，`Space Space Space` 是 17 个字符。超过上限时从**最旧**的按键开始丢弃，
-最新的按键永远保留，所以一行长度不会再越写越长。
-显示数量、折叠阈值、最大字符数都在「设置 → 数据源 → 键盘输入」里调整，也可以随时清空记录。
-按键只记录物理键，**输入法上屏的中文拿不到**（会显示 `v`、`Enter` 等）。
-
-## 设置窗口
-
-| 内容 | 外观 |
-| --- | --- |
-| ![](docs/settings-content.png) | ![](docs/settings-appearance.png) |
-| 模板编辑 + 占位符 + 实时预览 | 字体、颜色、背景图、描边、圆角、投影、固定宽度 |
-| **数据源** | **行为 / 热键** |
-| ![](docs/settings-data.png) | ![](docs/settings-behavior.png) |
-
-所有修改都会实时反映在预览里，点「保存并应用」后写入配置文件并立即生效。
-
-## 配置文件
-
-默认在 **exe 同目录** `settings.json`。用 `run.bat` 启动时，这个目录是
-`%LOCALAPPDATA%\Programs\WindowOverlay\`（不可写时退回 `%LOCALAPPDATA%\WindowOverlay\`）。
-保存时会自动备份为 `settings.json.bak`；配置损坏时会另存为 `.broken-时间戳` 并回退默认值。
-日志 `overlay.log` 与配置文件同目录。
+所有设置保存在 exe 同目录的 `settings.json`，保存时自动备份为 `.bak`，损坏时另存 `.broken-时间戳`
+并回退默认值；日志 `overlay.log` 与配置同目录。
 
 ```json
 {
   "Content": "CPU {cpu:0.0}%   MEM {mem_pct:0}%",
   "Overlay": { "X": 48, "Y": 48, "Monitor": 0, "Locked": true, "Topmost": true },
   "Style": {
-    "FontFamily": "Microsoft YaHei UI", "FontSize": 15, "BackgroundOpacity": 0.86,
-    "TextOutline": true, "OutlineColor": "#000000", "OutlineThickness": 1.2,
-    "BackgroundImage": "", "ImageOpacity": 1.0, "ImageStretch": "UniformToFill",
-    "FixedWidth": 0
+    "FontSize": 15, "BackgroundOpacity": 0.86, "TextOutline": true,
+    "BackgroundImage": "", "ImageStretch": "UniformToFill", "FixedWidth": 0
   },
-  "Data": { "ShowCpu": true, "ShowGpu": true, "ShowKeyboard": true, "MaxKeyChars": 18, "RepeatThreshold": 3 },
-  "Behavior": { "RefreshMs": 500, "AutoStart": false, "IntroEnabled": true, "WelcomeText": "Welcome Back", "TypeSpeedMs": 28, "CursorStyle": "Block", "CursorBlink": true },
-  "Hotkeys": { "ToggleOverlay": "F9", "OpenSettings": "F10", "ToggleLock": "F8" }
+  "Data": { "MaxKeyChars": 18, "RepeatThreshold": 3, "KeyHistoryCount": 14 },
+  "Behavior": { "RefreshMs": 500, "IntroEnabled": true, "WelcomeText": "Welcome Back", "CursorStyle": "Block" },
+  "Hotkeys": { "ToggleOverlay": "", "CommandLine": "F9", "OpenSettings": "F10", "ToggleLock": "F8" },
+  "Command": {
+    "Shell": "cmd", "WorkingDirectory": "", "Truncate": true,
+    "MaxLineChars": 120, "MaxLines": 30, "TimeoutSeconds": 20
+  }
 }
 ```
 
-### 字段一览
+> 上面只列了常用字段，省略的都使用默认值，完整清单见下方字段表。
+
+<details>
+<summary><b>完整字段一览</b>（点击展开）</summary>
 
 | 分组 | 字段 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| 顶层 | `Content` | 内置模板 | 显示内容，`\n` 表示换行，支持 `{变量}` |
-| `Overlay` | `X` / `Y` | `48` / `48` | 相对当前显示器工作区的偏移（DIP） |
+| 顶层 | `Content` | 内置模板 | 显示内容，`\n` 换行，支持 `{变量}` |
+| `Overlay` | `X` / `Y` | `48` / `48` | 相对显示器工作区的偏移（DIP） |
 | | `Monitor` | `0` | 显示器序号，从 0 开始 |
 | | `Locked` | `true` | `true` 鼠标穿透；`false` 可拖动 |
 | | `Topmost` | `true` | 始终置顶 |
-| | `CornerRadius` | `10` | 圆角半径 |
-| | `Shadow` | `true` | 是否画投影 |
+| | `CornerRadius` / `Shadow` | `10` / `true` | 圆角半径 / 是否画投影 |
 | `Style` | `FontFamily` | `Microsoft YaHei UI` | 字体 |
-| | `FontSize` | `15` | 字号 |
-| | `Bold` | `false` | 加粗 |
-| | `Foreground` | `#E6EDF3` | 文字颜色 |
-| | `Background` | `#0D1117` | 背景颜色 |
+| | `FontSize` / `Bold` | `15` / `false` | 字号 / 加粗 |
+| | `Foreground` / `Background` | `#E6EDF3` / `#0D1117` | 文字 / 背景颜色 |
 | | `BackgroundOpacity` | `0.86` | 背景不透明度 0~1 |
-| | `Padding` | `14` | 内边距 |
-| | `LineHeight` | `0` | 行高，`0` = 自动 |
+| | `Padding` / `LineHeight` | `14` / `0` | 内边距 / 行高（`0` = 自动） |
 | | `TextAlignment` | `Left` | `Left` / `Center` / `Right` |
-| | `TextOutline` | `false` | 是否给文字加描边 |
-| | `OutlineColor` | `#000000` | 描边颜色 |
-| | `OutlineThickness` | `1.2` | 描边粗细（像素） |
-| | `BackgroundImage` | `""` | 背景图片路径，空 = 只用背景色 |
-| | `ImageOpacity` | `1.0` | 背景图片不透明度 0~1 |
-| | `ImageStretch` | `UniformToFill` | `UniformToFill` / `Uniform` / `Fill` / `None` |
-| | `FixedWidth` | `0` | 固定内容宽度；`0` = 自适应但只增不减 |
-| `Data` | `ShowCpu` `ShowGpu` `ShowMemory` `ShowDisk` `ShowNetwork` `ShowKeyboard` `ShowNvidia` | `true` | 是否采集该数据源（关掉可省 CPU） |
+| | `TextOutline` / `OutlineColor` / `OutlineThickness` | `false` / `#000000` / `1.2` | 文字描边 |
+| | `BackgroundImage` / `ImageOpacity` / `ImageStretch` | `""` / `1.0` / `UniformToFill` | 背景图片（`UniformToFill` `Uniform` `Fill` `None`） |
+| | `FixedWidth` | `0` | 固定宽度；`0` = 自适应但只增不减 |
+| `Data` | `ShowCpu` `ShowGpu` `ShowMemory` `ShowDisk` `ShowNetwork` `ShowKeyboard` `ShowNvidia` | `true` | 是否采集该数据源 |
 | | `GpuIndex` | `-1` | `-1` 汇总全部 GPU；`0`、`1`… 指定某块 |
-| | `DiskDrives` | `[]` | 参与统计的分区，如 `["C:\\","D:\\"]`；空 = 全部固定磁盘 |
-| | `NetworkAdapter` | `""` | 网卡 PDH 实例名；空 = 自动选流量最大的 |
-| | `KeyHistoryCount` | `14` | 键盘行最多显示多少个按键 |
-| | `MaxKeyChars` | `18` | 键盘行最大字符数（含空格与分隔符） |
-| | `RepeatThreshold` | `3` | 连续重复超过该次数就折叠成 `A×N` |
+| | `DiskDrives` / `NetworkAdapter` | `[]` / `""` | 统计分区 / 网卡实例名，空 = 自动 |
+| | `KeyHistoryCount` / `MaxKeyChars` / `RepeatThreshold` | `14` / `18` / `3` | 键盘显示规则 |
 | | `NvidiaIntervalMs` | `2000` | `nvidia-smi` 采样间隔 |
 | `Behavior` | `RefreshMs` | `500` | 采样间隔（毫秒） |
-| | `AutoStart` | `false` | 写入 `HKCU\...\Run` 开机自启 |
-| | `StartMinimized` | `false` | 启动时不显示叠层，只在托盘 |
-| | `TrayEnabled` | `true` | 是否显示托盘图标 |
-| | `IntroEnabled` | `true` | 启动时播放打字 / 退格动画 |
-| | `WelcomeText` | `Welcome Back` | 动画开头的欢迎语 |
-| | `TypeSpeedMs` | `28` | 动画速度（毫秒/字符），越小越快 |
-| | `CursorStyle` | `Block` | 模拟光标：`None` / `Block` / `Bar` / `Underline` / `Outline` |
-| | `CursorBlink` | `true` | 光标是否闪烁 |
-| `Hotkeys` | `ToggleOverlay` | `F9` | 显示 / 隐藏 |
-| | `OpenSettings` | `F10` | 打开设置 |
-| | `ToggleLock` | `F8` | 锁定 / 解锁 |
+| | `AutoStart` / `StartMinimized` / `TrayEnabled` | `false` / `false` / `true` | 开机自启 / 静默启动 / 托盘图标 |
+| | `IntroEnabled` / `WelcomeText` | `true` / `Welcome Back` | 启动动画开关与欢迎语 |
+| | `TypeSpeedMs` | `28` | 动画速度（毫秒/字符） |
+| | `CursorStyle` / `CursorBlink` | `Block` / `true` | 光标样式（`None` `Block` `Bar` `Underline` `Outline`）与闪烁 |
+| `Hotkeys` | `ToggleOverlay` / `CommandLine` / `OpenSettings` / `ToggleLock` | `""` / `F9` / `F10` / `F8` | 留空 = 不启用 |
+| `Command` | `Shell` | `cmd` | `cmd` / `powershell` / `pwsh` / `custom` |
+| | `CustomShell` | `cmd.exe /c {cmd}` | 自定义模板，`{cmd}` 替换为输入的命令 |
+| | `WorkingDirectory` | `""` | 工作目录，空 = 用户主目录 |
+| | `Truncate` / `MaxLineChars` / `MaxLines` | `true` / `120` / `30` | 行截断与返回行数上限 |
+| | `TimeoutSeconds` | `20` | 命令超时秒数 |
 
-> 手改 JSON 后程序会在下次启动时读取；若只想改少量样式，直接改这个文件比点界面更快。
+</details>
 
-## 命令行参数
+<details>
+<summary><b>设置窗口截图</b>（点击展开）</summary>
 
-| 参数 | 说明 |
-| --- | --- |
-| `--minimized` | 启动时不显示叠层，只在托盘里 |
-| `--screenshot <路径>` | 用演示数据把叠层渲染成 PNG 后退出（无需显示窗口） |
-| `--screenshot-settings <路径>` | 把设置窗口的每个页签渲染成 PNG 后退出 |
-| `--selftest` | 跑一遍真实采样 / 键盘钩子 / 热键注册，结果写入日志 |
-| `--smoke <秒>` | 正常启动后 N 秒自动退出（用于验证启动链路） |
-| `--smoke-visible` | 与 `--smoke` 搭配：强制显示叠层 |
+| 内容 | 外观 | 数据源 |
+| --- | --- | --- |
+| ![](docs/settings-content.png) | ![](docs/settings-appearance.png) | ![](docs/settings-data.png) |
+| **行为** | **热键** | **命令行** |
+| ![](docs/settings-behavior.png) | ![](docs/settings-hotkeys.png) | ![](docs/settings-command.png) |
 
-## 打包
+修改会实时反映在预览里，点「保存并应用」写入配置并立即生效。
+
+</details>
+
+## 🔨 编译
+
+需要 [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)。
 
 ```bat
-publish.bat
+build.bat      :: 编译到 bin\Release，并用自签名证书签名
+publish.bat    :: 生成单文件 exe：publish\x64\WindowOverlay.exe 与 publish\arm64\WindowOverlay.exe
+run.bat        :: 编译 + 部署到 %LOCALAPPDATA%\Programs\WindowOverlay + 启动
 ```
 
-生成 `publish\WindowOverlay.exe`（单文件、自带运行时，约 100 MB）。目标机器无需安装 .NET。
+单文件版自带运行时、压缩后约 60 MB，目标机器无需安装 .NET。签名使用自签名证书
+（主体为 GitHub 账号 `CRITTIof`，写入 `CurrentUser` 存储，不需要管理员），
+所以 Windows 显示发布者名称而不是“未知发布者”。
 
-## 实现要点
+## 🩺 故障排查
 
-- **数据采集**：PDH 性能计数器（`\GPU Engine(*engtype_3D)\Utilization Percentage`、
-  `\PhysicalDisk(_Total)\% Disk Time`、`\Network Interface(*)\Bytes Received/sec` 等）+
-  `GlobalMemoryStatusEx`，独立后台线程，UI 永不被采样阻塞。所有计数器名走英文接口，中文系统同样可用。
-- **GPU**：按 LUID 汇总所有 3D 引擎实例；温度 / 显存 / 功耗来自 `nvidia-smi`（2 秒一次，避免开销）。
-- **键盘**：`WH_KEYBOARD_LL` 全局钩子，装在独立线程 + 消息循环上，过滤软件注入的按键；首个按键会写日志。
-- **托盘**：原生 `Shell_NotifyIcon`（左键单击呼出设置、右键菜单、监听 `TaskbarCreated` 自动恢复），
-  启动时用 `Shell_NotifyIconGetRect` 自检图标是否真的进了托盘。
-- **热键**：隐藏消息窗口 + `RegisterHotKey`，注册失败时自动退到 `Ctrl+Alt+原键` 并记入日志。
-- **叠层**：WPF 无边框透明窗口，`WS_EX_TRANSPARENT` 实现穿透，`SetWindowPos(HWND_TOPMOST)` 定时重申置顶。
-- **渲染**：`TextCanvas` 用 `FormattedText` 自绘（而不是 `TextBlock`），所以能同时得到文字轮廓
-  （描边）、行尾精确坐标（光标）和与显示内容解耦的布局尺寸；采样线程只负责取数，UI 每 120 ms 刷新一次。
-- **启动动画**：`DispatcherTimer` 驱动的状态机（打字 → 停留 → 退格 → 内容逐字 → 实时），
-  动画期间把 `{变量}` 渲染成 `---`、显示模拟光标并暂停数据刷新；尺寸按完整内容预量，
-  并在动画期间跟随真实数据宽度，避免结束时突然变宽。
-- **发布者签名**：`build.bat` 调 `sign.ps1`，用自签名证书（`CurrentUser` 存储）签名，
-  让 Windows 显示发布者名称而不是“未知发布者”。
+<details>
+<summary><b>看不到托盘图标 / 热键无反应 / 按键不显示</b></summary>
 
-## 故障排查
+Windows 11 默认把新托盘图标放进 `^` 隐藏区，拖出来即可常显。若日志第一行是
+`进程完整性级别: Low（1000）`，说明程序从受限目录启动，托盘图标、热键、键盘钩子都会被系统拒绝——
+用 `run.bat` 启动（会部署到 `%LOCALAPPDATA%\Programs\WindowOverlay`）即可恢复 `Medium（2000）`。
 
-**看不到托盘图标**
-Windows 11 会把新加入的图标默认放进任务栏的 `^` 隐藏区。点一下 `^`，把「桌面叠层」拖到外面即可常显；
-或：设置 → 个性化 → 任务栏 → 其他系统托盘图标 → 打开「桌面叠层」。
-程序启动后也会弹一个气泡提示，说明它已经在托盘里运行。
+</details>
 
-**热键不生效**
-先看 `overlay.log` 里有没有 `热键 F9 注册成功`。若显示"被占用"，在设置里换一组即可；
-若注册成功但按下没反应，多半是进程被安全策略限制（见下一条）。
+<details>
+<summary><b>命令行打不出字 / 输出乱码</b></summary>
 
-**日志出现 `Shell_NotifyIcon ... err=5`，或者按键、热键完全没反应**
-这是 **完整性级别（Integrity Level）** 问题：进程被降权到 Low 后，Windows 会拒绝托盘图标、
-全局热键和键盘钩子。日志第一行会写明 `进程完整性级别: Low（1000）`。
-解决办法就是双击项目里的 `run.bat`——它会自动把程序部署到
-`%LOCALAPPDATA%\Programs\WindowOverlay` 再从那里启动；也可以手动把 `bin\Release` 整个目录
-复制到该位置运行。正常情况下日志应显示 `进程完整性级别: Medium（2000）` 且
-`托盘图标已进入托盘区`。
+`F9` 后先确认日志里有 `热键 F9 注册成功`；启动动画期间或叠层隐藏时命令行是刻意禁用的。
+命令行模式会临时把叠层切到前台并**关闭输入法**（保证命令原样输入），点了别的窗口需再按一次 `F9`。
+乱码时程序已按 UTF-8 → 系统 OEM 代码页（GBK）兜底，第三种编码请改用 PowerShell 执行。
 
-**键盘那一行一直是 `—`**
-日志里应当出现 `键盘钩子：已捕获首个按键 X`。若整场没有这行，说明全局钩子没收到任何输入，
-通常仍是受限环境，或与其它同样安装全局键盘钩子的软件冲突。
+</details>
 
-**每次打开都提示“无法验证发布者”**
-1. 先确认 exe 是签名过的：右键 → 属性 → 数字签名，应看到 `CRITTIof`。
-   没有就运行一次 `sign.ps1`（`build.bat` 也会自动调用）。
-2. 若签名正常仍被拦，说明是 Windows 11 的 **智能应用控制**：
-   设置 → 隐私和安全性 → Windows 安全中心 → 应用和浏览器控制 → 智能应用控制 → 关闭。
-3. 检查文件是否带“来自 Internet”标记：`Get-Item 文件 | Unblock-File`；`run.bat` 已自动处理。
+<details>
+<summary><b>提示“无法验证发布者”</b></summary>
 
-## 已知限制
+先确认 exe 已签名（右键 → 属性 → 数字签名，应显示 `CRITTIof`）。若签名正常仍被拦，
+多半是 Windows 11 的**智能应用控制**，需要在「Windows 安全中心 → 应用和浏览器控制」里关闭
+（关闭后无法直接恢复，请自行权衡）。文件带“来自 Internet”标记时执行 `Unblock-File`。
 
-- 独占全屏（DirectX exclusive）游戏可能盖住叠层，改成无边框全屏即可。
-- 混合 DPI 的多显示器上，位置按主屏缩放比例换算，极端情况下需要手动微调。
-- 圆角边缘在高分屏上是抗锯齿的，不会像原生控件那样完全平滑。
-- 键盘钩子看不到输入法上屏的中文，只能看到物理按键。
+</details>
 
-## 目录结构
+## ⚠️ 已知限制
+
+- 独占全屏（DirectX exclusive）游戏可能盖住叠层，改成无边框全屏即可
+- 混合 DPI 多显示器下位置按主屏缩放换算，极端情况需手动微调
+- 键盘钩子只能看到物理按键，拿不到输入法上屏的中文
+- 命令行返回过多时叠层会向下变高，屏幕放不下就调小「最多保留行数」
+
+## 🗂️ 目录结构
 
 ```
-WindowOverlay.csproj     项目文件（net8.0-windows，WPF + WinForms 托盘）
-build.bat                编译 + 签名
-run.bat                  部署到 %LOCALAPPDATA%\Programs\WindowOverlay 并启动
-publish.bat              打包独立 exe
-sign.ps1                 创建自签名证书、信任并签名 exe
-app.manifest             Per-Monitor V2 DPI 感知
+WindowOverlay.csproj   项目文件（net8.0-windows，WPF + WinForms 托盘）
+build.bat / run.bat    编译签名 / 部署启动
+publish.bat            单文件 exe（x64 + ARM64）
+sign.ps1               自签名证书与签名
 src/
-  App.xaml(.cs)          入口、单实例、命令行分发
-  SelfTest.cs            --selftest 自检
-  Core/                  配置模型、JSON、日志、设置读写
-  Metrics/               PDH 封装、采样引擎、nvidia-smi
-  Input/                 键盘钩子、键名映射
-  Text/                  模板引擎、变量表
-  Ui/                    叠层窗口、设置窗口、托盘、热键、主题、TextCanvas 自绘文本
-certs/                   自签名证书（已 gitignore，首次构建自动生成）
-docs/                    界面截图
+  Core/                配置模型、JSON、日志
+  Metrics/             PDH 封装、采样引擎、nvidia-smi
+  Input/               键盘钩子、键名映射
+  Text/                模板引擎、快捷命令行执行器
+  Ui/                  叠层、设置窗口、托盘、热键、TextCanvas 自绘
+docs/                  界面截图
 ```
+
+<p align="center"><sub>基于 .NET 8 · WPF · PDH · 自绘文本渲染</sub></p>

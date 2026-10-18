@@ -390,7 +390,7 @@
             <TabItem Header="热键">
                 <StackPanel Margin="18,16,18,24">
                     <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap"
-                               Text="点击输入框后直接按下组合键即可修改。默认：F9 显示/隐藏叠层，F10 打开设置，F8 锁定/解锁。" />
+                               Text="点击输入框后直接按下组合键即可修改；留空表示不启用该热键。默认：F9 快捷命令行，F10 打开设置，F8 锁定/解锁，显示/隐藏叠层默认不设热键。" />
 
                     <Grid Margin="0,16,0,0">
                         <Grid.ColumnDefinitions>
@@ -401,24 +401,90 @@
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
 
                         <TextBlock Text="显示 / 隐藏叠层" VerticalAlignment="Center" Margin="0,0,0,10" />
                         <TextBox x:Name="HotkeyToggleBox" Grid.Column="1" IsReadOnly="True"
                                  PreviewKeyDown="HotkeyBoxPreviewKeyDown" Margin="0,0,0,10" />
 
-                        <TextBlock Text="打开设置" Grid.Row="1" VerticalAlignment="Center" Margin="0,0,0,10" />
-                        <TextBox x:Name="HotkeySettingsBox" Grid.Row="1" Grid.Column="1" IsReadOnly="True"
+                        <TextBlock Text="快捷命令行" Grid.Row="1" VerticalAlignment="Center" Margin="0,0,0,10" />
+                        <TextBox x:Name="HotkeyCommandBox" Grid.Row="1" Grid.Column="1" IsReadOnly="True"
                                  PreviewKeyDown="HotkeyBoxPreviewKeyDown" Margin="0,0,0,10" />
 
-                        <TextBlock Text="锁定 / 解锁" Grid.Row="2" VerticalAlignment="Center" />
-                        <TextBox x:Name="HotkeyLockBox" Grid.Row="2" Grid.Column="1" IsReadOnly="True"
+                        <TextBlock Text="打开设置" Grid.Row="2" VerticalAlignment="Center" Margin="0,0,0,10" />
+                        <TextBox x:Name="HotkeySettingsBox" Grid.Row="2" Grid.Column="1" IsReadOnly="True"
+                                 PreviewKeyDown="HotkeyBoxPreviewKeyDown" Margin="0,0,0,10" />
+
+                        <TextBlock Text="锁定 / 解锁" Grid.Row="3" VerticalAlignment="Center" />
+                        <TextBox x:Name="HotkeyLockBox" Grid.Row="3" Grid.Column="1" IsReadOnly="True"
                                  PreviewKeyDown="HotkeyBoxPreviewKeyDown" />
                     </Grid>
 
-                    <TextBlock x:Name="HotkeyHint" Style="{StaticResource Hint}" Margin="0,16,0,0" />
+                    <TextBlock x:Name="HotkeyHint" Style="{StaticResource Hint}" Margin="0,16,0,0"
+                               Text="留空 = 不启用该热键。热键被其它程序占用时，程序会自动退到 Ctrl+Alt+原键 并记入日志。" />
                 </StackPanel>
             </TabItem>
+
+            <!-- ==================== 命令行 ==================== -->
+            <TabItem Header="命令行">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="18,16,18,24">
+                        <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap"
+                                   Text="按快捷键（默认 F9，可在「热键」页修改）在叠层里呼出快捷命令行，再按一次关闭并清空全部命令与返回。启动动画期间、叠层隐藏时该热键无效。" />
+
+                        <TextBlock Text="命令行工具" Style="{StaticResource SectionTitle}" Margin="0,14,0,6" />
+                        <ComboBox x:Name="ShellCombo" Width="280" HorizontalAlignment="Left">
+                            <ComboBoxItem Content="命令提示符（CMD）" Tag="cmd" />
+                            <ComboBoxItem Content="Windows PowerShell（PWSH）" Tag="powershell" />
+                            <ComboBoxItem Content="PowerShell 7（PWSH）" Tag="pwsh" />
+                            <ComboBoxItem Content="自定义" Tag="custom" />
+                        </ComboBox>
+                        <Grid Margin="0,10,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="110" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="自定义命令" VerticalAlignment="Center" />
+                            <TextBox x:Name="CustomShellBox" Grid.Column="1" Width="520" HorizontalAlignment="Left" />
+                        </Grid>
+                        <TextBlock Style="{StaticResource Hint}" Margin="110,4,0,0" TextWrapping="Wrap"
+                                   Text="用 {cmd} 代表输入的命令，例如 cmd.exe /c {cmd} 或 pwsh.exe -NoProfile -Command {cmd}；只在选择“自定义”时生效。" />
+
+                        <TextBlock Text="工作目录" Style="{StaticResource SectionTitle}" Margin="0,14,0,6" />
+                        <StackPanel Orientation="Horizontal">
+                            <TextBox x:Name="WorkDirBox" Width="420" />
+                            <Button Content="选择…" Margin="8,0,0,0" Click="PickWorkDirClick" />
+                            <Button Content="用户主目录" Margin="8,0,0,0" Click="ResetWorkDirClick" />
+                        </StackPanel>
+                        <TextBlock Style="{StaticResource Hint}" Margin="0,4,0,0"
+                                   Text="留空 = 当前用户主目录（%USERPROFILE%），会显示在提示符里。" />
+
+                        <TextBlock Text="返回内容" Style="{StaticResource SectionTitle}" Margin="0,14,0,6" />
+                        <CheckBox x:Name="TruncateCheck" Content="单行过长时截断前面的内容，只保留后面" Margin="0,0,0,10" />
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                            <TextBlock Text="单行最多显示" VerticalAlignment="Center" />
+                            <TextBox x:Name="MaxLineCharsBox" Width="70" Margin="8,0,8,0" />
+                            <TextBlock Text="个字符（超出的部分从前面截掉）" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                            <TextBlock Text="最多保留" VerticalAlignment="Center" />
+                            <TextBox x:Name="MaxLinesBox" Width="70" Margin="8,0,8,0" />
+                            <TextBlock Text="行返回内容" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="超时" VerticalAlignment="Center" />
+                            <TextBox x:Name="TimeoutBox" Width="70" Margin="8,0,8,0" />
+                            <TextBlock Text="秒后强制结束命令" VerticalAlignment="Center" />
+                        </StackPanel>
+
+                        <TextBlock Text="提示符预览" Style="{StaticResource SectionTitle}" Margin="0,14,0,6" />
+                        <TextBlock x:Name="PromptPreview" FontFamily="Consolas, Microsoft YaHei UI"
+                                   FontSize="14" Foreground="{StaticResource TextPrimary}" />
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
 
         </TabControl>
 

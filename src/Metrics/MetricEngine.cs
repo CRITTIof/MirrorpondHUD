@@ -117,7 +117,8 @@ namespace WindowOverlay.Core
                 }
                 catch (Exception ex)
                 {
-                    Log.Error("采样循环异常", ex);
+                    // 正常退出时 PDH 句柄可能已释放，不必当成错误刷日志。
+                    if (_running) Log.Error("采样循环异常", ex);
                 }
 
                 int interval = 500;
@@ -379,8 +380,19 @@ namespace WindowOverlay.Core
 
         public void Dispose()
         {
-            Stop();
-            _pdh.Dispose();
+            // 不要用 Stop()：它会把 _thread 清空，这里需要知道线程是否真的退出了。
+            _running = false;
+            Thread t = _thread;
+            _thread = null;
+            bool stopped = true;
+            if (t != null && t.IsAlive)
+            {
+                try { stopped = t.Join(2000); } catch { stopped = false; }
+            }
+
+            // 采样线程还在 nvidia-smi 里时关闭 PDH 句柄会抛 NullReferenceException，
+            // 交给进程退出回收即可。
+            if (stopped) _pdh.Dispose();
         }
     }
 }

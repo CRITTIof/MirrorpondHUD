@@ -84,6 +84,9 @@ namespace WindowOverlay.Core
         /// <summary>仅自检使用：允许接收注入按键，便于自动化验证钩子链路。</summary>
         public bool AllowInjected { get; set; }
 
+        /// <summary>快捷命令行输入时暂停记录，避免命令内容把键盘行刷掉。</summary>
+        public volatile bool Suppress;
+
         public bool IsRunning { get { return _running; } }
 
         public bool Start()
@@ -137,7 +140,7 @@ namespace WindowOverlay.Core
                 {
                     var info = (KbdLlHookStruct)Marshal.PtrToStructure(lParam, typeof(KbdLlHookStruct));
                     bool injected = (info.Flags & LlkhfInjected) != 0;
-                    if (!injected || AllowInjected)
+                    if ((!injected || AllowInjected) && !Suppress)
                     {
                         try
                         {

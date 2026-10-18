@@ -18,6 +18,7 @@ namespace WindowOverlay.Core
         public DataSettings Data = new DataSettings();
         public BehaviorSettings Behavior = new BehaviorSettings();
         public HotkeySettings Hotkeys = new HotkeySettings();
+        public CommandSettings Command = new CommandSettings();
 
         /// <summary>显示内容模板，支持 {cpu} 等占位符，换行即多行。</summary>
         public string Content = DefaultContent;
@@ -56,9 +57,26 @@ namespace WindowOverlay.Core
             if (Behavior.WelcomeText == null) Behavior.WelcomeText = "Welcome Back";
             if (Behavior.WelcomeText.Length > 120) Behavior.WelcomeText = Behavior.WelcomeText.Substring(0, 120);
 
-            Hotkeys.ToggleOverlay = NormalizeHotkey(Hotkeys.ToggleOverlay, "F9");
+            Hotkeys.ToggleOverlay = (Hotkeys.ToggleOverlay ?? "").Trim();
             Hotkeys.OpenSettings = NormalizeHotkey(Hotkeys.OpenSettings, "F10");
             Hotkeys.ToggleLock = NormalizeHotkey(Hotkeys.ToggleLock, "F8");
+            Hotkeys.CommandLine = NormalizeHotkey(Hotkeys.CommandLine, "F9");
+
+            // 命令行与显示/隐藏不能共用同一个组合键：命令行优先，另一个置空。
+            if (Hotkeys.ToggleOverlay.Length > 0 &&
+                string.Equals(Hotkeys.ToggleOverlay, Hotkeys.CommandLine, StringComparison.OrdinalIgnoreCase))
+            {
+                Hotkeys.ToggleOverlay = "";
+            }
+
+            Command.Shell = NormalizeShell(Command.Shell);
+            Command.CustomShell = string.IsNullOrWhiteSpace(Command.CustomShell)
+                ? "cmd.exe /c {cmd}"
+                : Command.CustomShell.Trim();
+            Command.WorkingDirectory = (Command.WorkingDirectory ?? "").Trim();
+            Command.MaxLineChars = (int)Clamp(Command.MaxLineChars, 20, 4000);
+            Command.MaxLines = (int)Clamp(Command.MaxLines, 1, 500);
+            Command.TimeoutSeconds = (int)Clamp(Command.TimeoutSeconds, 1, 300);
 
             if (!IsHexColor(Style.Foreground)) Style.Foreground = "#E6EDF3";
             if (!IsHexColor(Style.Background)) Style.Background = "#0D1117";
@@ -93,6 +111,26 @@ namespace WindowOverlay.Core
                 case "underline": return "Underline";
                 case "outline": return "Outline";
                 default: return "Block";
+            }
+        }
+
+        /// <summary>命令行工具预设：cmd / powershell / pwsh / custom。</summary>
+        public static string NormalizeShell(string value)
+        {
+            switch ((value ?? "").Trim().ToLowerInvariant())
+            {
+                case "powershell":
+                case "ps":
+                case "windows powershell":
+                    return "powershell";
+                case "pwsh":
+                case "powershell7":
+                case "powershell 7":
+                    return "pwsh";
+                case "custom":
+                    return "custom";
+                default:
+                    return "cmd";
             }
         }
 
@@ -222,8 +260,28 @@ namespace WindowOverlay.Core
 
     public sealed class HotkeySettings
     {
-        public string ToggleOverlay = "F9";
+        /// <summary>留空 = 不启用该热键。</summary>
+        public string ToggleOverlay = "";
         public string OpenSettings = "F10";
         public string ToggleLock = "F8";
+        /// <summary>呼出 / 关闭快捷命令行。</summary>
+        public string CommandLine = "F9";
+    }
+
+    public sealed class CommandSettings
+    {
+        /// <summary>cmd / powershell / pwsh / custom。</summary>
+        public string Shell = "cmd";
+        /// <summary>自定义命令行模板，{cmd} 会被替换成用户输入；不含 {cmd} 时追加到末尾。</summary>
+        public string CustomShell = "cmd.exe /c {cmd}";
+        /// <summary>工作目录；空 = 用户主目录。</summary>
+        public string WorkingDirectory = "";
+        /// <summary>单行过长时截断前面、保留后面。</summary>
+        public bool Truncate = true;
+        /// <summary>截断后单行保留的字符数。</summary>
+        public int MaxLineChars = 120;
+        /// <summary>命令行区域最多保留多少行返回内容。</summary>
+        public int MaxLines = 30;
+        public int TimeoutSeconds = 20;
     }
 }

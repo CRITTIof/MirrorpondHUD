@@ -1,5 +1,6 @@
 @echo off
-rem Publish a self-contained single-file exe (target machine needs no .NET).
+rem Build self-contained single-file exes for ARM64 and x64.
+rem Target machines need no .NET runtime.
 setlocal
 cd /d "%~dp0"
 
@@ -10,25 +11,45 @@ if errorlevel 1 (
     exit /b 1
 )
 
-dotnet publish WindowOverlay.csproj -c Release -r win-x64 --self-contained true ^
-    -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true ^
-    -p:EnableCompressionInSingleFile=true ^
-    -o publish
+rem ARM64 first, x64 last, so bin\Release ends up as an x64 build (run.bat uses it).
+call :build win-arm64 arm64
+if errorlevel 1 goto :fail
 
-if errorlevel 1 (
-    echo [ERROR] Publish failed.
-    pause
-    exit /b 1
-)
+call :build win-x64 x64
+if errorlevel 1 goto :fail
+
+echo.
+echo [OK] Single-file exes:
+echo      publish\arm64\WindowOverlay.exe
+echo      publish\x64\WindowOverlay.exe
+echo      Keep them outside restricted folders (see README).
+pause
+exit /b 0
+
+:build
+echo.
+echo [INFO] Publishing %~1 ...
+
+rem All RIDs share bin\Release / obj (AppendRuntimeIdentifierToOutputPath=false),
+rem so a previous architecture's apphost could be reused. Wipe both first.
+if exist "%~dp0bin" rd /s /q "%~dp0bin" >nul 2>&1
+if exist "%~dp0obj" rd /s /q "%~dp0obj" >nul 2>&1
+
+dotnet publish WindowOverlay.csproj -c Release -r %~1 --self-contained true ^
+    -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true ^
+    -p:EnableCompressionInSingleFile=true -p:DebugType=None -p:DebugSymbols=false ^
+    -o "publish\%~2"
+if errorlevel 1 exit /b 1
 
 rem Sign the single-file exe as well (same self-signed cert as build.bat).
 if exist "%~dp0sign.ps1" (
-    echo.
-    echo [INFO] Signing...
-    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0sign.ps1" -Exe "%~dp0publish\WindowOverlay.exe"
+    echo [INFO] Signing publish\%~2\WindowOverlay.exe ...
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0sign.ps1" -Exe "%~dp0publish\%~2\WindowOverlay.exe"
 )
+exit /b 0
 
+:fail
 echo.
-echo [OK] Single-file exe: %~dp0publish\WindowOverlay.exe
-echo      Keep it outside restricted folders (see README).
+echo [ERROR] Publish failed.
 pause
+exit /b 1

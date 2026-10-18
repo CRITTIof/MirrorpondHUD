@@ -138,6 +138,12 @@ namespace WindowOverlay.Ui
             CursorBlinkCheck.Checked += (s, e) => UiChanged();
             CursorBlinkCheck.Unchecked += (s, e) => UiChanged();
 
+            ShellCombo.SelectionChanged += (s, e) => { UpdateCommandUi(); UiChanged(); };
+            CustomShellBox.TextChanged += (s, e) => { UpdateCommandUi(); UiChanged(); };
+            WorkDirBox.TextChanged += (s, e) => { UpdateCommandUi(); UiChanged(); };
+            TruncateCheck.Checked += (s, e) => { UpdateCommandUi(); UiChanged(); };
+            TruncateCheck.Unchecked += (s, e) => { UpdateCommandUi(); UiChanged(); };
+
             TokenList.MouseDoubleClick += (s, e) =>
             {
                 var token = TokenList.SelectedItem as TokenInfo;
@@ -219,8 +225,17 @@ namespace WindowOverlay.Ui
                 YBox.Text = s.Overlay.Y.ToString("0", CultureInfo.InvariantCulture);
 
                 HotkeyToggleBox.Text = s.Hotkeys.ToggleOverlay;
+                HotkeyCommandBox.Text = s.Hotkeys.CommandLine;
                 HotkeySettingsBox.Text = s.Hotkeys.OpenSettings;
                 HotkeyLockBox.Text = s.Hotkeys.ToggleLock;
+
+                ShellCombo.SelectedIndex = ShellIndex(s.Command.Shell);
+                CustomShellBox.Text = s.Command.CustomShell;
+                WorkDirBox.Text = s.Command.WorkingDirectory;
+                TruncateCheck.IsChecked = s.Command.Truncate;
+                MaxLineCharsBox.Text = s.Command.MaxLineChars.ToString(CultureInfo.InvariantCulture);
+                MaxLinesBox.Text = s.Command.MaxLines.ToString(CultureInfo.InvariantCulture);
+                TimeoutBox.Text = s.Command.TimeoutSeconds.ToString(CultureInfo.InvariantCulture);
 
                 TokenList.ItemsSource = Catalog.Tokens;
                 PresetCombo.ItemsSource = Catalog.Presets;
@@ -235,6 +250,7 @@ namespace WindowOverlay.Ui
             }
 
             UpdateSwatches();
+            UpdateCommandUi();
             UpdatePreview();
         }
 
@@ -278,6 +294,50 @@ namespace WindowOverlay.Ui
         {
             var item = CursorStyleCombo.SelectedItem as ComboBoxItem;
             return item == null ? "Block" : Settings.NormalizeCursor(item.Tag as string);
+        }
+
+        static int ShellIndex(string shell)
+        {
+            switch (Settings.NormalizeShell(shell))
+            {
+                case "powershell": return 1;
+                case "pwsh": return 2;
+                case "custom": return 3;
+                default: return 0;
+            }
+        }
+
+        string ShellTag()
+        {
+            var item = ShellCombo.SelectedItem as ComboBoxItem;
+            return item == null ? "cmd" : Settings.NormalizeShell(item.Tag as string);
+        }
+
+        CommandSettings BuildCommandSettings()
+        {
+            CommandSettings command = _working == null ? new CommandSettings() : _working.Command;
+            command.Shell = ShellTag();
+            command.CustomShell = (CustomShellBox.Text ?? "").Trim();
+            command.WorkingDirectory = (WorkDirBox.Text ?? "").Trim();
+            command.Truncate = TruncateCheck.IsChecked == true;
+            return command;
+        }
+
+        void UpdateCommandUi()
+        {
+            if (ShellCombo == null || CustomShellBox == null || PromptPreview == null) return;
+
+            CustomShellBox.IsEnabled = string.Equals(ShellTag(), "custom", StringComparison.OrdinalIgnoreCase);
+            MaxLineCharsBox.IsEnabled = TruncateCheck.IsChecked == true;
+
+            try
+            {
+                PromptPreview.Text = CommandRunner.BuildPrompt(BuildCommandSettings());
+            }
+            catch (Exception ex)
+            {
+                PromptPreview.Text = "(预览失败: " + ex.Message + ")";
+            }
         }
 
         void FillGpuCombo(int selected)
@@ -446,8 +506,17 @@ namespace WindowOverlay.Ui
             s.Overlay.Y = ParseDouble(YBox.Text, s.Overlay.Y);
 
             s.Hotkeys.ToggleOverlay = (HotkeyToggleBox.Text ?? "").Trim();
+            s.Hotkeys.CommandLine = (HotkeyCommandBox.Text ?? "").Trim();
             s.Hotkeys.OpenSettings = (HotkeySettingsBox.Text ?? "").Trim();
             s.Hotkeys.ToggleLock = (HotkeyLockBox.Text ?? "").Trim();
+
+            s.Command.Shell = ShellTag();
+            s.Command.CustomShell = (CustomShellBox.Text ?? "").Trim();
+            s.Command.WorkingDirectory = (WorkDirBox.Text ?? "").Trim();
+            s.Command.Truncate = TruncateCheck.IsChecked == true;
+            s.Command.MaxLineChars = Math.Max(20, ParseInt(MaxLineCharsBox.Text, s.Command.MaxLineChars));
+            s.Command.MaxLines = Math.Max(1, ParseInt(MaxLinesBox.Text, s.Command.MaxLines));
+            s.Command.TimeoutSeconds = Math.Max(1, ParseInt(TimeoutBox.Text, s.Command.TimeoutSeconds));
 
             s.Normalize();
             return s;
@@ -594,6 +663,34 @@ namespace WindowOverlay.Ui
             StatusText.Text = "已清除背景图片";
         }
 
+        void PickWorkDirClick(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                using (var dialog = new System.Windows.Forms.FolderBrowserDialog())
+                {
+                    dialog.Description = "选择快捷命令行的工作目录";
+                    dialog.ShowNewFolderButton = true;
+
+                    string current = (WorkDirBox.Text ?? "").Trim();
+                    if (current.Length > 0 && System.IO.Directory.Exists(current))
+                        dialog.SelectedPath = current;
+
+                    if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+                        WorkDirBox.Text = dialog.SelectedPath;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("选择工作目录失败: " + ex.Message);
+            }
+        }
+
+        void ResetWorkDirClick(object sender, RoutedEventArgs e)
+        {
+            WorkDirBox.Text = "";
+        }
+
         static string PickColor(string current)
         {
             try
@@ -664,6 +761,36 @@ namespace WindowOverlay.Ui
                 || key == Key.LWin || key == Key.RWin;
         }
 
+        /// <summary>留空表示禁用；返回 null 表示全部合法。</summary>
+        static string ValidateHotkeys(Settings s, out uint mods, out uint vk)
+        {
+            mods = 0;
+            vk = 0;
+
+            if (!string.IsNullOrWhiteSpace(s.Hotkeys.ToggleOverlay) &&
+                !HotkeyManager.TryParse(s.Hotkeys.ToggleOverlay, out mods, out vk))
+                return "显示/隐藏热键无效：" + s.Hotkeys.ToggleOverlay;
+
+            if (!string.IsNullOrWhiteSpace(s.Hotkeys.CommandLine) &&
+                !HotkeyManager.TryParse(s.Hotkeys.CommandLine, out mods, out vk))
+                return "快捷命令行热键无效：" + s.Hotkeys.CommandLine;
+
+            if (!string.IsNullOrWhiteSpace(s.Hotkeys.OpenSettings) &&
+                !HotkeyManager.TryParse(s.Hotkeys.OpenSettings, out mods, out vk))
+                return "设置热键无效：" + s.Hotkeys.OpenSettings;
+
+            if (!string.IsNullOrWhiteSpace(s.Hotkeys.ToggleLock) &&
+                !HotkeyManager.TryParse(s.Hotkeys.ToggleLock, out mods, out vk))
+                return "锁定热键无效：" + s.Hotkeys.ToggleLock;
+
+            if (!string.IsNullOrWhiteSpace(s.Hotkeys.ToggleOverlay) &&
+                !string.IsNullOrWhiteSpace(s.Hotkeys.CommandLine) &&
+                string.Equals(s.Hotkeys.ToggleOverlay, s.Hotkeys.CommandLine, StringComparison.OrdinalIgnoreCase))
+                return "「显示/隐藏」和「快捷命令行」不能共用同一个热键";
+
+            return null;
+        }
+
         void SaveClick(object sender, RoutedEventArgs e)
         {
             Settings s;
@@ -678,19 +805,10 @@ namespace WindowOverlay.Ui
             }
 
             uint mods, vk;
-            if (!HotkeyManager.TryParse(s.Hotkeys.ToggleOverlay, out mods, out vk))
+            string hotkeyError = ValidateHotkeys(s, out mods, out vk);
+            if (hotkeyError != null)
             {
-                StatusText.Text = "显示/隐藏热键无效：" + s.Hotkeys.ToggleOverlay;
-                return;
-            }
-            if (!HotkeyManager.TryParse(s.Hotkeys.OpenSettings, out mods, out vk))
-            {
-                StatusText.Text = "设置热键无效：" + s.Hotkeys.OpenSettings;
-                return;
-            }
-            if (!HotkeyManager.TryParse(s.Hotkeys.ToggleLock, out mods, out vk))
-            {
-                StatusText.Text = "锁定热键无效：" + s.Hotkeys.ToggleLock;
+                StatusText.Text = hotkeyError;
                 return;
             }
 

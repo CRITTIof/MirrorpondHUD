@@ -139,6 +139,7 @@ namespace WindowOverlay.Ui
         readonly TrayHostWindow _window;
         readonly ContextMenuStrip _menu;
         readonly ToolStripMenuItem _visibilityItem;
+        readonly ToolStripMenuItem _commandItem;
         readonly ToolStripMenuItem _lockItem;
         readonly ToolStripMenuItem _autoStartItem;
         readonly Icon _icon;
@@ -151,6 +152,7 @@ namespace WindowOverlay.Ui
         public event Action OpenSettings;
         public event Action ToggleLock;
         public event Action ToggleAutoStart;
+        public event Action CommandLine;
         public event Action Exit;
 
         public TrayIcon()
@@ -162,6 +164,10 @@ namespace WindowOverlay.Ui
             _visibilityItem = new ToolStripMenuItem("隐藏叠层");
             _visibilityItem.Click += (s, e) => { ToggleVisibility?.Invoke(); };
             _menu.Items.Add(_visibilityItem);
+
+            _commandItem = new ToolStripMenuItem("快捷命令行");
+            _commandItem.Click += (s, e) => { CommandLine?.Invoke(); };
+            _menu.Items.Add(_commandItem);
 
             var settings = new ToolStripMenuItem("打开设置…");
             settings.Font = new Font(settings.Font, System.Drawing.FontStyle.Bold);
@@ -317,6 +323,13 @@ namespace WindowOverlay.Ui
             _visibilityItem.Text = overlayVisible ? "隐藏叠层" : "显示叠层";
             _lockItem.Text = locked ? "解锁（可拖动）" : "锁定（鼠标穿透）";
             _autoStartItem.Checked = autoStart;
+        }
+
+        public void SetCommandHotkey(string hotkey)
+        {
+            _commandItem.Text = string.IsNullOrWhiteSpace(hotkey)
+                ? "快捷命令行"
+                : "快捷命令行 (" + hotkey + ")";
         }
 
         public void ShowBalloon(string title, string text)
