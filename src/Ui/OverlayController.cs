@@ -55,7 +55,8 @@ namespace WindowOverlay.Ui
         {
             Log.Info("=== 开始启动 ===");
             _last = new MetricsSnapshot();
-            _keys.Configure(_settings.Data.KeyHistoryCount, _settings.Data.RepeatThreshold);
+            _keys.Configure(_settings.Data.KeyHistoryCount, _settings.Data.RepeatThreshold,
+                            _settings.Data.MaxKeyChars);
 
             _overlay = new OverlayWindow(_settings);
             _overlay.SettingsRequested += ShowSettings;
@@ -65,6 +66,7 @@ namespace WindowOverlay.Ui
             _overlay.PositionChanged += SaveSettings;
 
             bool intro = _settings.Behavior.IntroEnabled;
+            if (intro) _overlay.SetLayoutText(TemplateEngine.RenderPlaceholder(_settings.Content, "---"));
             _overlay.Apply(_settings, intro ? "" : RenderText());
             _overlay.Topmost = _settings.Overlay.Topmost;
 
@@ -234,7 +236,7 @@ namespace WindowOverlay.Ui
         {
             if (!_overlayVisible || _overlay == null) return;
             if (_phase != IntroPhase.Live) return;   // 动画期间不刷新真实数据
-            _overlay.SetText(RenderText());
+            _overlay.SetText(RenderText(), false);
         }
 
         // ==================== 启动动画 ====================
@@ -254,7 +256,9 @@ namespace WindowOverlay.Ui
             _introContent = TemplateEngine.RenderPlaceholder(_settings.Content, "---");
             _shownText = "";
 
-            _overlay.SetText("");
+            // 先用完整内容把整块尺寸定下来，逐字打字时窗口和文本位置都不会抖动
+            _overlay.SetLayoutText(_introContent);
+            _overlay.SetText("", true);
             _phase = IntroPhase.WelcomeTyping;
             _phaseStart = DateTime.UtcNow;
 
@@ -275,7 +279,7 @@ namespace WindowOverlay.Ui
         {
             if (text == _shownText) return;
             _shownText = text;
-            _overlay.SetText(text);
+            _overlay.SetText(text, true);
         }
 
         void IntroTick()
@@ -340,14 +344,30 @@ namespace WindowOverlay.Ui
             if (_phase == IntroPhase.Live) return;
             _phase = IntroPhase.Live;
             if (_introTimer != null) _introTimer.Stop();
-            Log.Info("启动动画结束，开始刷新数据");
+            _overlay.SetLayoutText(null);
+            Log.Info("启动动画结束，光标消失，开始刷新数据");
             RenderNow();
         }
 
         void OnSnapshot(MetricsSnapshot snapshot)
         {
             _last = snapshot;
+
+            if (_phase != IntroPhase.Live)
+            {
+                // 动画期间不刷新内容，但可以按真实数据把整块尺寸先撑好，
+                // 这样动画结束时不会突然变宽、文字位置也不会跳。
+                Application.Current.Dispatcher.BeginInvoke(new Action(UpdateIntroLayout), DispatcherPriority.Background);
+                return;
+            }
+
             Application.Current.Dispatcher.BeginInvoke(new Action(RenderNow), DispatcherPriority.Background);
+        }
+
+        void UpdateIntroLayout()
+        {
+            if (_phase == IntroPhase.Live || _overlay == null) return;
+            _overlay.SetLayoutText(RenderText());
         }
 
         // ==================== 操作 ====================
@@ -364,6 +384,7 @@ namespace WindowOverlay.Ui
             }
             else
             {
+                _overlay.SetLayoutText(null);
                 _overlay.Apply(_settings, RenderText());
                 _overlay.Show();
                 _overlay.UpdateClickThrough();
@@ -421,7 +442,8 @@ namespace WindowOverlay.Ui
             _settings.Normalize();
             ConfigStore.Save(_settings);
 
-            _keys.Configure(_settings.Data.KeyHistoryCount, _settings.Data.RepeatThreshold);
+            _keys.Configure(_settings.Data.KeyHistoryCount, _settings.Data.RepeatThreshold,
+                            _settings.Data.MaxKeyChars);
 
             if (_overlay != null)
             {

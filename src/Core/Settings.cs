@@ -31,6 +31,11 @@ namespace WindowOverlay.Core
             Style.Padding = Clamp(Style.Padding, 0, 80);
             Style.LineHeight = Clamp(Style.LineHeight, 0, 120);
             Style.FontFamily = string.IsNullOrWhiteSpace(Style.FontFamily) ? "Microsoft YaHei UI" : Style.FontFamily.Trim();
+            Style.OutlineThickness = Clamp(Style.OutlineThickness, 0.2, 10);
+            Style.FixedWidth = Clamp(Style.FixedWidth, 0, 4000);
+            Style.ImageOpacity = Clamp(Style.ImageOpacity, 0, 1);
+            if (string.IsNullOrWhiteSpace(Style.BackgroundImage)) Style.BackgroundImage = "";
+            Style.ImageStretch = NormalizeStretch(Style.ImageStretch);
 
             Overlay.Monitor = Math.Max(0, Overlay.Monitor);
             Overlay.CornerRadius = Clamp(Overlay.CornerRadius, 0, 60);
@@ -38,6 +43,7 @@ namespace WindowOverlay.Core
             Overlay.Y = Clamp(Overlay.Y, -20000, 20000);
 
             Data.KeyHistoryCount = (int)Clamp(Data.KeyHistoryCount, 1, 64);
+            Data.MaxKeyChars = (int)Clamp(Data.MaxKeyChars, 4, 200);
             Data.RepeatThreshold = (int)Clamp(Data.RepeatThreshold, 1, 20);
             Data.NvidiaIntervalMs = (int)Clamp(Data.NvidiaIntervalMs, 500, 10000);
             if (Data.DiskDrives == null) Data.DiskDrives = new List<string>();
@@ -46,6 +52,7 @@ namespace WindowOverlay.Core
 
             Behavior.RefreshMs = (int)Clamp(Behavior.RefreshMs, 100, 5000);
             Behavior.TypeSpeedMs = (int)Clamp(Behavior.TypeSpeedMs, 8, 300);
+            Behavior.CursorStyle = NormalizeCursor(Behavior.CursorStyle);
             if (Behavior.WelcomeText == null) Behavior.WelcomeText = "Welcome Back";
             if (Behavior.WelcomeText.Length > 120) Behavior.WelcomeText = Behavior.WelcomeText.Substring(0, 120);
 
@@ -60,6 +67,33 @@ namespace WindowOverlay.Core
         static string NormalizeHotkey(string value, string fallback)
         {
             return string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+        }
+
+        /// <summary>背景图片拉伸方式：UniformToFill / Uniform / Fill / None。</summary>
+        public static string NormalizeStretch(string value)
+        {
+            switch ((value ?? "").Trim().ToLowerInvariant())
+            {
+                case "uniformtofill": return "UniformToFill";
+                case "uniform": return "Uniform";
+                case "fill": return "Fill";
+                case "none": return "None";
+                default: return "UniformToFill";
+            }
+        }
+
+        /// <summary>启动动画里的光标样式：None / Block / Bar / Underline / Outline。</summary>
+        public static string NormalizeCursor(string value)
+        {
+            switch ((value ?? "").Trim().ToLowerInvariant())
+            {
+                case "none": return "None";
+                case "block": return "Block";
+                case "bar": return "Bar";
+                case "underline": return "Underline";
+                case "outline": return "Outline";
+                default: return "Block";
+            }
         }
 
         static List<string> NormalizeDrives(List<string> drives)
@@ -128,6 +162,20 @@ namespace WindowOverlay.Core
         public double Padding = 14;
         public double LineHeight = 0;
         public string TextAlignment = "Left";
+
+        /// <summary>文字描边，深色/浅色背景都能看清。</summary>
+        public bool TextOutline = false;
+        public string OutlineColor = "#000000";
+        public double OutlineThickness = 1.2;
+
+        /// <summary>自定义背景图片路径；空 = 只用背景色。</summary>
+        public string BackgroundImage = "";
+        public double ImageOpacity = 1.0;
+        /// <summary>UniformToFill / Uniform / Fill / None。</summary>
+        public string ImageStretch = "UniformToFill";
+
+        /// <summary>固定内容宽度（DIP），0 = 自适应但只增不减（避免数值变化时整块跳动）。</summary>
+        public double FixedWidth = 0;
     }
 
     public sealed class DataSettings
@@ -145,6 +193,8 @@ namespace WindowOverlay.Core
         public string NetworkAdapter = "";
         public bool ShowKeyboard = true;
         public int KeyHistoryCount = 14;
+        /// <summary>按键串的最大显示字符数（空格与分隔符都算），默认 18。</summary>
+        public int MaxKeyChars = 18;
         /// <summary>连续相同按键超过该次数时折叠为 字符×N。</summary>
         public int RepeatThreshold = 3;
         public bool ShowNvidia = true;
@@ -164,6 +214,10 @@ namespace WindowOverlay.Core
         public string WelcomeText = "Welcome Back";
         /// <summary>每字符的动画间隔（毫秒），越小越快。</summary>
         public int TypeSpeedMs = 28;
+
+        /// <summary>模拟输入时显示的光标：None / Block / Bar / Underline / Outline。</summary>
+        public string CursorStyle = "Block";
+        public bool CursorBlink = true;
     }
 
     public sealed class HotkeySettings

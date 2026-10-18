@@ -48,10 +48,10 @@ namespace WindowOverlay.Ui
             return snap;
         }
 
-        public static KeyHistory DemoKeys(int visible, int threshold)
+        public static KeyHistory DemoKeys(int visible, int threshold, int maxChars)
         {
             var keys = new KeyHistory();
-            keys.Configure(visible, threshold);
+            keys.Configure(visible, threshold, maxChars);
             string[] seq = { "Ctrl", "C", "Ctrl", "V", "A", "A", "A", "A", "A", "A", "Enter" };
             foreach (string k in seq) keys.Push(k);
             return keys;
@@ -63,7 +63,8 @@ namespace WindowOverlay.Ui
             {
                 Settings settings = ConfigStore.Load();
                 MetricsSnapshot snap = DemoSnapshot();
-                KeyHistory keys = DemoKeys(settings.Data.KeyHistoryCount, settings.Data.RepeatThreshold);
+                KeyHistory keys = DemoKeys(settings.Data.KeyHistoryCount, settings.Data.RepeatThreshold,
+                                           settings.Data.MaxKeyChars);
 
                 var vars = Variables.Build(snap, settings, keys);
                 string text = TemplateEngine.Render(settings.Content, vars);
