@@ -24,6 +24,7 @@ namespace WindowOverlay.Ui
         public const string ActionToggleOverlay = "toggle-overlay";
         public const string ActionOpenSettings = "open-settings";
         public const string ActionToggleLock = "toggle-lock";
+        public const string ActionCommandLine = "command-line";
 
         [DllImport("user32.dll", SetLastError = true)]
         static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
@@ -35,7 +36,8 @@ namespace WindowOverlay.Ui
         {
             { ActionToggleOverlay, 1 },
             { ActionOpenSettings, 2 },
-            { ActionToggleLock, 3 }
+            { ActionToggleLock, 3 },
+            { ActionCommandLine, 4 }
         };
 
         sealed class HotkeyWindow : NativeWindow
@@ -101,6 +103,12 @@ namespace WindowOverlay.Ui
             if (!ActionIds.TryGetValue(action, out int id)) return false;
 
             UnregisterHotKey(_window.Handle, id);
+
+            if (string.IsNullOrWhiteSpace(combination))
+            {
+                _idToAction.Remove(id);
+                return false;
+            }
 
             uint mods;
             uint vk;

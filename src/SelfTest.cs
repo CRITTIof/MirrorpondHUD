@@ -77,7 +77,11 @@ namespace WindowOverlay
                 var engine = new MetricEngine(settings);
                 engine.Updated += snapshot => last = snapshot;
                 bool started = engine.Start();
-                Thread.Sleep(4000);
+
+                // nvidia-smi 冷启动偶尔要好几秒，这里最多等 15 秒
+                DateTime deadline = DateTime.UtcNow.AddSeconds(15);
+                while (last == null && DateTime.UtcNow < deadline) Thread.Sleep(100);
+
                 engine.Dispose();
 
                 if (!started || last == null)
@@ -149,12 +153,16 @@ namespace WindowOverlay
             {
                 using (var hotkeys = new HotkeyManager())
                 {
-                    bool a = hotkeys.Register(HotkeyManager.ActionToggleOverlay, settings.Hotkeys.ToggleOverlay);
-                    bool b = hotkeys.Register(HotkeyManager.ActionOpenSettings, settings.Hotkeys.OpenSettings);
-                    bool c = hotkeys.Register(HotkeyManager.ActionToggleLock, settings.Hotkeys.ToggleLock);
-                    Fix(sb, "热键", settings.Hotkeys.ToggleOverlay + "=" + (a ? "OK" : "占用") + "  " +
-                                    settings.Hotkeys.OpenSettings + "=" + (b ? "OK" : "占用") + "  " +
-                                    settings.Hotkeys.ToggleLock + "=" + (c ? "OK" : "占用"));
+                    bool a = RegisterIfSet(hotkeys, HotkeyManager.ActionToggleOverlay, settings.Hotkeys.ToggleOverlay);
+                    bool b = RegisterIfSet(hotkeys, HotkeyManager.ActionOpenSettings, settings.Hotkeys.OpenSettings);
+                    bool c = RegisterIfSet(hotkeys, HotkeyManager.ActionToggleLock, settings.Hotkeys.ToggleLock);
+                    bool d = RegisterIfSet(hotkeys, HotkeyManager.ActionCommandLine, settings.Hotkeys.CommandLine);
+
+                    Fix(sb, "热键",
+                        Show(settings.Hotkeys.ToggleOverlay, a) + "  " +
+                        Show(settings.Hotkeys.CommandLine, d) + "  " +
+                        Show(settings.Hotkeys.OpenSettings, b) + "  " +
+                        Show(settings.Hotkeys.ToggleLock, c));
                 }
             }
             catch (Exception ex)
@@ -194,6 +202,9 @@ namespace WindowOverlay
             bool keyNameOk = false;
             bool keyLimitOk = false;
             bool keyOverflowOk = false;
+            bool commandOk = false;
+            bool truncateOk = false;
+            bool toolLabelOk = false;
 
             try
             {
@@ -253,12 +264,61 @@ namespace WindowOverlay
 
             try
             {
+                var settings = new Settings();
+                settings.Command.Shell = "cmd";
+                CommandResult result = CommandRunner.Run(settings, "echo overlay-selftest", CancellationToken.None);
+                commandOk = !result.Failed && !result.TimedOut &&
+                            result.Output != null &&
+                            result.Output.IndexOf("overlay-selftest", StringComparison.Ordinal) >= 0;
+                if (!commandOk)
+                    Log.Warn("命令行自检输出异常: failed=" + result.Failed + " timedout=" + result.TimedOut +
+                             " out=[" + result.Output + "] err=[" + result.Error + "]");
+            }
+            catch (Exception ex)
+            {
+                Log.Error("命令行自检异常", ex);
+            }
+
+            try
+            {
+                var limit = new CommandSettings { Truncate = true, MaxLineChars = 10 };
+                var noLimit = new CommandSettings { Truncate = false, MaxLineChars = 10 };
+                truncateOk = CommandRunner.TruncateLine("0123456789ABCDEF", limit) == "…6789ABCDEF"
+                          && CommandRunner.TruncateLine("short", limit) == "short"
+                          && CommandRunner.TruncateLine("0123456789ABCDEF", noLimit) == "0123456789ABCDEF";
+            }
+            catch (Exception ex)
+            {
+                Log.Error("命令行截断自检异常", ex);
+            }
+
+            try
+            {
+                var custom = new CommandSettings
+                {
+                    Shell = "custom",
+                    CustomShell = "\"C:\\Program Files\\PowerShell\\7\\pwsh.exe\" -NoProfile -Command {cmd}"
+                };
+
+                toolLabelOk = CommandRunner.ToolLabel(new CommandSettings { Shell = "cmd" }) == "CMD"
+                           && CommandRunner.ToolLabel(new CommandSettings { Shell = "powershell" }) == "PWSH"
+                           && CommandRunner.ToolLabel(custom) == "PWSH"
+                           && CommandRunner.BuildPrompt(new CommandSettings { Shell = "cmd" }).StartsWith("[CMD] [", StringComparison.Ordinal);
+            }
+            catch (Exception ex)
+            {
+                Log.Error("命令行提示符自检异常", ex);
+            }
+
+            try
+            {
                 var settings = new Settings
                 {
                     Content = "x{cpu}",
                     Style = { FontSize = 21 },
                     Overlay = { X = 123.5, Locked = false },
-                    Data = { DiskDrives = new List<string> { "C:\\" } }
+                    Data = { DiskDrives = new List<string> { "C:\\" } },
+                    Command = { Shell = "pwsh", MaxLineChars = 77, Truncate = false }
                 };
 
                 Settings back = Json.Deserialize<Settings>(Json.Serialize(settings));
@@ -267,7 +327,10 @@ namespace WindowOverlay
                            && Math.Abs(back.Style.FontSize - 21) < 0.001
                            && Math.Abs(back.Overlay.X - 123.5) < 0.001
                            && back.Overlay.Locked == false
-                           && back.Data.DiskDrives.Count == 1;
+                           && back.Data.DiskDrives.Count == 1
+                           && back.Command.Shell == "pwsh"
+                           && back.Command.MaxLineChars == 77
+                           && back.Command.Truncate == false;
             }
             catch (Exception ex)
             {
@@ -275,10 +338,11 @@ namespace WindowOverlay
             }
 
             if (!(templateOk && unknownOk && collapseOk && thresholdOk && configOk &&
-                  keyNameOk && keyLimitOk && keyOverflowOk)) failures++;
+                  keyNameOk && keyLimitOk && keyOverflowOk &&
+                  commandOk && truncateOk && toolLabelOk)) failures++;
 
             Fix(sb, "逻辑自检", string.Format(
-                "模板={0} 未知占位符={1} 折叠={2} 阈值内展开={3} 配置读写={4} 键名={5} 按键长度={6} 超长截断={7}",
+                "模板={0} 未知占位符={1} 折叠={2} 阈值内展开={3} 配置读写={4} 键名={5} 按键长度={6} 超长截断={7} 命令行={8} 行截断={9} 工具名={10}",
                 templateOk ? "OK" : "FAIL",
                 unknownOk ? "OK" : "FAIL",
                 collapseOk ? "OK" : "FAIL",
@@ -286,7 +350,22 @@ namespace WindowOverlay
                 configOk ? "OK" : "FAIL",
                 keyNameOk ? "OK" : "FAIL",
                 keyLimitOk ? "OK" : "FAIL",
-                keyOverflowOk ? "OK" : "FAIL"));
+                keyOverflowOk ? "OK" : "FAIL",
+                commandOk ? "OK" : "FAIL",
+                truncateOk ? "OK" : "FAIL",
+                toolLabelOk ? "OK" : "FAIL"));
+        }
+
+        static bool RegisterIfSet(HotkeyManager hotkeys, string action, string combination)
+        {
+            if (string.IsNullOrWhiteSpace(combination)) return true;   // 未设置也算正常
+            return hotkeys.Register(action, combination);
+        }
+
+        static string Show(string combination, bool ok)
+        {
+            if (string.IsNullOrWhiteSpace(combination)) return "(未设置)=OFF";
+            return combination + "=" + (ok ? "OK" : "占用");
         }
 
         static void Fix(StringBuilder sb, string key, string value)

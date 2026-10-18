@@ -47,8 +47,20 @@ namespace WindowOverlay.Ui
 
         public void SetText(string text, bool cursor)
         {
+            SetText(text, cursor, -1);
+        }
+
+        public void SetText(string text, bool cursor, int cursorIndex)
+        {
             _canvas.Text = text ?? "";
+            _canvas.CursorIndex = cursorIndex;
             _canvas.CursorVisible = cursor;
+        }
+
+        /// <summary>重新按当前内容量尺寸（切换命令行时用）。</summary>
+        public void ResetStableSize()
+        {
+            _canvas.ResetStableSize();
         }
 
         /// <summary>用于计算尺寸的文本；null = 跟随显示内容。启动动画期间传完整内容。</summary>

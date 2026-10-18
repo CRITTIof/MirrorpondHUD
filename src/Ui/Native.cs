@@ -34,6 +34,64 @@ namespace WindowOverlay.Ui
         [DllImport("user32.dll", SetLastError = true)]
         public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint flags);
 
+        [DllImport("user32.dll")]
+        public static extern IntPtr GetForegroundWindow();
+
+        [DllImport("user32.dll")]
+        public static extern bool SetForegroundWindow(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+
+        [DllImport("user32.dll")]
+        static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool attach);
+
+        [DllImport("user32.dll")]
+        static extern IntPtr SetFocus(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        static extern IntPtr GetFocus();
+
+        [DllImport("kernel32.dll")]
+        static extern uint GetCurrentThreadId();
+
+        /// <summary>
+        /// 把窗口强行切到前台并拿到键盘焦点。热键触发的程序通常可以直接 SetForegroundWindow，
+        /// 失败时用 AttachThreadInput 挂到前台线程上再试一次。
+        /// </summary>
+        public static bool ForceForeground(IntPtr hwnd)
+        {
+            if (hwnd == IntPtr.Zero) return false;
+
+            try
+            {
+                if (GetForegroundWindow() == hwnd) return true;
+
+                uint foregroundThread = GetWindowThreadProcessId(GetForegroundWindow(), out uint _);
+                uint ourThread = GetCurrentThreadId();
+                bool attached = false;
+
+                if (foregroundThread != 0 && foregroundThread != ourThread)
+                    attached = AttachThreadInput(ourThread, foregroundThread, true);
+
+                try
+                {
+                    SetForegroundWindow(hwnd);
+                    SetFocus(hwnd);
+                }
+                finally
+                {
+                    if (attached) AttachThreadInput(ourThread, foregroundThread, false);
+                }
+
+                return GetForegroundWindow() == hwnd;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         public static int GetExStyle(IntPtr hwnd)
         {
             if (IntPtr.Size == 8)

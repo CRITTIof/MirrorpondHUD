@@ -15,5 +15,27 @@
         Focusable="False"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True">
-    <ui:OverlaySurface x:Name="Surface" />
+    <Grid>
+        <ui:OverlaySurface x:Name="Surface" />
+
+        <!-- 命令行输入：完全透明，只用来接收键盘（含输入法、粘贴、撤销） -->
+        <TextBox x:Name="CommandInput"
+                 Width="2" Height="2"
+                 HorizontalAlignment="Left" VerticalAlignment="Top"
+                 Opacity="0"
+                 IsEnabled="False"
+                 IsHitTestVisible="False"
+                 FocusVisualStyle="{x:Null}"
+                 Background="Transparent"
+                 BorderThickness="0"
+                 Foreground="Transparent"
+                 CaretBrush="Transparent"
+                 AcceptsReturn="False"
+                 AcceptsTab="False"
+                 MaxLines="1"
+                 InputMethod.IsInputMethodEnabled="False"
+                 TextChanged="CommandInputTextChanged"
+                 SelectionChanged="CommandInputSelectionChanged"
+                 PreviewKeyDown="CommandInputPreviewKeyDown" />
+    </Grid>
 </Window>
