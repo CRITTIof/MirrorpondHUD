@@ -56,9 +56,14 @@ namespace WindowOverlay.Ui
             UpdateClickThrough();
         }
 
-        public void SetText(string text)
+        public void SetText(string text, bool cursor)
         {
-            Surface.Label.Text = text ?? "";
+            Surface.SetText(text, cursor);
+        }
+
+        public void SetLayoutText(string text)
+        {
+            Surface.SetLayoutText(text);
         }
 
         public void ApplyPosition()

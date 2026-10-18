@@ -191,6 +191,9 @@ namespace WindowOverlay
             bool collapseOk = false;
             bool thresholdOk = false;
             bool configOk = false;
+            bool keyNameOk = false;
+            bool keyLimitOk = false;
+            bool keyOverflowOk = false;
 
             try
             {
@@ -227,6 +230,29 @@ namespace WindowOverlay
 
             try
             {
+                keyNameOk = KeyNames.Of(0x08) == "Back"
+                         && KeyNames.Of(0x14) == "Cap"
+                         && KeyNames.Of(0x2D) == "ins";
+
+                // 默认 18 字符：3 个 Space 共 17 字符（含分隔符），放得下
+                var capped = new KeyHistory();
+                capped.Configure(14, 3, 18);
+                for (int i = 0; i < 3; i++) capped.Push("Space");
+                keyLimitOk = capped.Render() == "Space Space Space";
+
+                // 上限 15 字符时第 3 个 Space 就会超长（17 > 15），丢弃最旧的一个
+                var tight = new KeyHistory();
+                tight.Configure(14, 3, 15);
+                for (int i = 0; i < 3; i++) tight.Push("Space");
+                keyOverflowOk = tight.Render() == "Space Space";
+            }
+            catch (Exception ex)
+            {
+                Log.Error("按键长度自检异常", ex);
+            }
+
+            try
+            {
                 var settings = new Settings
                 {
                     Content = "x{cpu}",
@@ -248,15 +274,19 @@ namespace WindowOverlay
                 Log.Error("配置往返自检异常", ex);
             }
 
-            if (!(templateOk && unknownOk && collapseOk && thresholdOk && configOk)) failures++;
+            if (!(templateOk && unknownOk && collapseOk && thresholdOk && configOk &&
+                  keyNameOk && keyLimitOk && keyOverflowOk)) failures++;
 
             Fix(sb, "逻辑自检", string.Format(
-                "模板={0} 未知占位符={1} 折叠={2} 阈值内展开={3} 配置读写={4}",
+                "模板={0} 未知占位符={1} 折叠={2} 阈值内展开={3} 配置读写={4} 键名={5} 按键长度={6} 超长截断={7}",
                 templateOk ? "OK" : "FAIL",
                 unknownOk ? "OK" : "FAIL",
                 collapseOk ? "OK" : "FAIL",
                 thresholdOk ? "OK" : "FAIL",
-                configOk ? "OK" : "FAIL"));
+                configOk ? "OK" : "FAIL",
+                keyNameOk ? "OK" : "FAIL",
+                keyLimitOk ? "OK" : "FAIL",
+                keyOverflowOk ? "OK" : "FAIL"));
         }
 
         static void Fix(StringBuilder sb, string key, string value)

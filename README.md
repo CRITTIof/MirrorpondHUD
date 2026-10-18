@@ -28,8 +28,18 @@ run.bat
 
 `build.bat` 在编译后会自动用**自签名证书**给 exe 签名（首次会创建证书并加入
 `CurrentUser\Root` 与 `CurrentUser\TrustedPublisher`，不需要管理员），
-这样 Windows 弹窗里会显示发布者 `WindowOverlay Dev`，而不是“未知发布者”。
+证书主体是本机的 GitHub 账号 **`CRITTIof`**（来自 `gh auth status` 的当前账号），
+所以 Windows 弹窗里会显示发布者 `CRITTIof`，而不是“未知发布者”。
 `run.bat` 部署后还会对文件执行 `Unblock-File`，去掉“来自 Internet”的标记。
+
+想换成别的名字（比如另一个 GitHub 账号或真实姓名）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File sign.ps1 -Subject "CN=你的名字" -TrustOnly
+```
+
+`sign.ps1` 发现 `certs\windowoverlay.pfx` 的主体名不一致时会重新签发证书，
+并把旧主体从 `CurrentUser` 的 `My` / `Root` / `TrustedPublisher` 里清掉，然后重新签名。
 
 如果仍然被拦，多半是 Windows 11 的 **智能应用控制（Smart App Control）**——它只信任有
 可靠信誉的签名，自签名不满足。关闭路径：
@@ -40,13 +50,36 @@ run.bat
 
 每次启动先播放一段“命令行打字”动画，然后才开始刷新真实数据：
 
-1. 逐字打出欢迎语（默认 `Welcome Back`）
+1. 逐字打出欢迎语（默认 `Welcome Back`），行尾带一个模拟光标
 2. 停留约 0.65 秒后逐字退格删除
 3. 逐字打出全部内容，此时所有数据占位显示为 `---`
-4. 全部显示完毕后，再切换为实时数据
+4. 全部显示完毕后光标消失，再切换为实时数据
 
-欢迎语、开关、打字速度（毫秒/字）都在「设置 → 行为 → 启动动画」里改。
+光标样式（方块 / 竖线 / 下划线 / 空心框 / 不显示）、是否闪烁、欢迎语、开关和打字速度
+都在「设置 → 行为 → 启动动画」里改。
+
+![光标样式](docs/intro-cursor.png)
+
+整块尺寸按**完整内容**预先量好（动画期间还会按真实数据把宽度撑到位），
+所以逐字打字时框体不会一格格变大，欢迎语和正文始终从同一个位置开始。
 动画期间不刷新数据，避免数字跳动。
+
+## 文字描边与背景图片
+
+「设置 → 外观」里可以给文字加描边（颜色 + 粗细），深色、浅色、花哨背景都能看清；
+也可以选一张图片作为背景（支持裁剪填满 / 完整显示 / 拉伸填满 / 原始大小，并可调不透明度）。
+背景图会跟着圆角一起裁切。
+
+## 固定位置
+
+「设置 → 行为 → 窗口 → 固定宽度」控制信息块宽度：
+
+- `0`（默认）= 自适应，但**只增不减**：数据第一次变长时长大一次，之后即使数值变短也不会缩回去，
+  整个信息块的位置和行首都不会来回跳。
+- 填具体数值 = 完全固定宽度，文字左对齐，彻底不受数据影响。
+
+需要让同一行里的数值也不推挤后面的文字时，用模板对齐语法把数值补到固定宽度，
+例如 `CPU {cpu,5:0.0}%`、`↓ {net_down,9}`。
 
 ## 快捷键与托盘
 
@@ -97,14 +130,20 @@ MEM {mem_pct:0}%        →  MEM 40%
 按 Ctrl C Ctrl V  →  Ctrl C Ctrl V
 ```
 
-显示数量与折叠阈值在「设置 → 数据源 → 键盘输入」里调整，也可以随时清空记录。
+几个特殊键用短名字，方便控制长度：`Back`（退格）、`Cap`（CapsLock）、`ins`（Insert）、
+`Space`、`Enter`、`Tab`、`Esc`、`←` `↑` `→` `↓` 等。
+
+显示结果还有**最大字符数**限制（默认 18），空格和分隔符都计入：
+`Space` 算 5 个字符，`Space Space Space` 是 17 个字符。超过上限时从**最旧**的按键开始丢弃，
+最新的按键永远保留，所以一行长度不会再越写越长。
+显示数量、折叠阈值、最大字符数都在「设置 → 数据源 → 键盘输入」里调整，也可以随时清空记录。
 按键只记录物理键，**输入法上屏的中文拿不到**（会显示 `v`、`Enter` 等）。
 
 ## 设置窗口
 
 | 内容 | 外观 |
 | --- | --- |
-| 模板编辑 + 占位符 + 实时预览 | 字体、颜色、透明度、圆角、投影 |
+| 模板编辑 + 占位符 + 实时预览 | 字体、颜色、背景图、描边、圆角、投影、固定宽度 |
 | **数据源** | **行为 / 热键** |
 
 所有修改都会实时反映在预览里，点「保存并应用」后写入配置文件并立即生效。
@@ -120,9 +159,14 @@ MEM {mem_pct:0}%        →  MEM 40%
 {
   "Content": "CPU {cpu:0.0}%   MEM {mem_pct:0}%",
   "Overlay": { "X": 48, "Y": 48, "Monitor": 0, "Locked": true, "Topmost": true },
-  "Style": { "FontFamily": "Microsoft YaHei UI", "FontSize": 15, "BackgroundOpacity": 0.86 },
-  "Data": { "ShowCpu": true, "ShowGpu": true, "ShowKeyboard": true, "RepeatThreshold": 3 },
-  "Behavior": { "RefreshMs": 500, "AutoStart": false, "IntroEnabled": true, "WelcomeText": "Welcome Back", "TypeSpeedMs": 28 },
+  "Style": {
+    "FontFamily": "Microsoft YaHei UI", "FontSize": 15, "BackgroundOpacity": 0.86,
+    "TextOutline": true, "OutlineColor": "#000000", "OutlineThickness": 1.2,
+    "BackgroundImage": "", "ImageOpacity": 1.0, "ImageStretch": "UniformToFill",
+    "FixedWidth": 0
+  },
+  "Data": { "ShowCpu": true, "ShowGpu": true, "ShowKeyboard": true, "MaxKeyChars": 18, "RepeatThreshold": 3 },
+  "Behavior": { "RefreshMs": 500, "AutoStart": false, "IntroEnabled": true, "WelcomeText": "Welcome Back", "TypeSpeedMs": 28, "CursorStyle": "Block", "CursorBlink": true },
   "Hotkeys": { "ToggleOverlay": "F9", "OpenSettings": "F10", "ToggleLock": "F8" }
 }
 ```
@@ -147,11 +191,19 @@ MEM {mem_pct:0}%        →  MEM 40%
 | | `Padding` | `14` | 内边距 |
 | | `LineHeight` | `0` | 行高，`0` = 自动 |
 | | `TextAlignment` | `Left` | `Left` / `Center` / `Right` |
+| | `TextOutline` | `false` | 是否给文字加描边 |
+| | `OutlineColor` | `#000000` | 描边颜色 |
+| | `OutlineThickness` | `1.2` | 描边粗细（像素） |
+| | `BackgroundImage` | `""` | 背景图片路径，空 = 只用背景色 |
+| | `ImageOpacity` | `1.0` | 背景图片不透明度 0~1 |
+| | `ImageStretch` | `UniformToFill` | `UniformToFill` / `Uniform` / `Fill` / `None` |
+| | `FixedWidth` | `0` | 固定内容宽度；`0` = 自适应但只增不减 |
 | `Data` | `ShowCpu` `ShowGpu` `ShowMemory` `ShowDisk` `ShowNetwork` `ShowKeyboard` `ShowNvidia` | `true` | 是否采集该数据源（关掉可省 CPU） |
 | | `GpuIndex` | `-1` | `-1` 汇总全部 GPU；`0`、`1`… 指定某块 |
 | | `DiskDrives` | `[]` | 参与统计的分区，如 `["C:\\","D:\\"]`；空 = 全部固定磁盘 |
 | | `NetworkAdapter` | `""` | 网卡 PDH 实例名；空 = 自动选流量最大的 |
 | | `KeyHistoryCount` | `14` | 键盘行最多显示多少个按键 |
+| | `MaxKeyChars` | `18` | 键盘行最大字符数（含空格与分隔符） |
 | | `RepeatThreshold` | `3` | 连续重复超过该次数就折叠成 `A×N` |
 | | `NvidiaIntervalMs` | `2000` | `nvidia-smi` 采样间隔 |
 | `Behavior` | `RefreshMs` | `500` | 采样间隔（毫秒） |
@@ -161,6 +213,8 @@ MEM {mem_pct:0}%        →  MEM 40%
 | | `IntroEnabled` | `true` | 启动时播放打字 / 退格动画 |
 | | `WelcomeText` | `Welcome Back` | 动画开头的欢迎语 |
 | | `TypeSpeedMs` | `28` | 动画速度（毫秒/字符），越小越快 |
+| | `CursorStyle` | `Block` | 模拟光标：`None` / `Block` / `Bar` / `Underline` / `Outline` |
+| | `CursorBlink` | `true` | 光标是否闪烁 |
 | `Hotkeys` | `ToggleOverlay` | `F9` | 显示 / 隐藏 |
 | | `OpenSettings` | `F10` | 打开设置 |
 | | `ToggleLock` | `F8` | 锁定 / 解锁 |
@@ -197,9 +251,11 @@ publish.bat
   启动时用 `Shell_NotifyIconGetRect` 自检图标是否真的进了托盘。
 - **热键**：隐藏消息窗口 + `RegisterHotKey`，注册失败时自动退到 `Ctrl+Alt+原键` 并记入日志。
 - **叠层**：WPF 无边框透明窗口，`WS_EX_TRANSPARENT` 实现穿透，`SetWindowPos(HWND_TOPMOST)` 定时重申置顶。
-- **渲染**：采样线程只负责取数，UI 每 120 ms 重新渲染一次文本，打字时反馈不卡顿。
+- **渲染**：`TextCanvas` 用 `FormattedText` 自绘（而不是 `TextBlock`），所以能同时得到文字轮廓
+  （描边）、行尾精确坐标（光标）和与显示内容解耦的布局尺寸；采样线程只负责取数，UI 每 120 ms 刷新一次。
 - **启动动画**：`DispatcherTimer` 驱动的状态机（打字 → 停留 → 退格 → 内容逐字 → 实时），
-  动画期间把 `{变量}` 渲染成 `---` 并暂停数据刷新。
+  动画期间把 `{变量}` 渲染成 `---`、显示模拟光标并暂停数据刷新；尺寸按完整内容预量，
+  并在动画期间跟随真实数据宽度，避免结束时突然变宽。
 - **发布者签名**：`build.bat` 调 `sign.ps1`，用自签名证书（`CurrentUser` 存储）签名，
   让 Windows 显示发布者名称而不是“未知发布者”。
 
@@ -227,7 +283,7 @@ Windows 11 会把新加入的图标默认放进任务栏的 `^` 隐藏区。点�
 通常仍是受限环境，或与其它同样安装全局键盘钩子的软件冲突。
 
 **每次打开都提示“无法验证发布者”**
-1. 先确认 exe 是签名过的：右键 → 属性 → 数字签名，应看到 `WindowOverlay Dev`。
+1. 先确认 exe 是签名过的：右键 → 属性 → 数字签名，应看到 `CRITTIof`。
    没有就运行一次 `sign.ps1`（`build.bat` 也会自动调用）。
 2. 若签名正常仍被拦，说明是 Windows 11 的 **智能应用控制**：
    设置 → 隐私和安全性 → Windows 安全中心 → 应用和浏览器控制 → 智能应用控制 → 关闭。
@@ -256,6 +312,7 @@ src/
   Metrics/               PDH 封装、采样引擎、nvidia-smi
   Input/                 键盘钩子、键名映射
   Text/                  模板引擎、变量表
-  Ui/                    叠层窗口、设置窗口、托盘、热键、主题
+  Ui/                    叠层窗口、设置窗口、托盘、热键、主题、TextCanvas 自绘文本
+certs/                   自签名证书（已 gitignore，首次构建自动生成）
 docs/                    界面截图
 ```

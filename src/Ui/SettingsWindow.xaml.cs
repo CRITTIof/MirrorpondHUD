@@ -57,6 +57,9 @@ namespace WindowOverlay.Ui
             BindNumberBox(PaddingValue, PaddingSlider, "0");
             BindNumberBox(LineHeightValue, LineHeightSlider, "0");
             BindNumberBox(CornerValue, CornerSlider, "0");
+            BindNumberBox(OutlineValue, OutlineSlider, "0.0");
+            BindNumberBox(ImageOpacityValue, ImageOpacitySlider, "0.00");
+            BindNumberBox(FixedWidthValue, FixedWidthSlider, "0");
         }
 
         void BindNumberBox(TextBox box, Slider slider, string format)
@@ -123,6 +126,18 @@ namespace WindowOverlay.Ui
             ShadowCheck.Checked += (s, e) => UiChanged();
             ShadowCheck.Unchecked += (s, e) => UiChanged();
 
+            OutlineCheck.Checked += (s, e) => UiChanged();
+            OutlineCheck.Unchecked += (s, e) => UiChanged();
+            OutlineColorBox.TextChanged += (s, e) => UiChanged();
+            OutlineSlider.ValueChanged += (s, e) => UiChanged();
+            ImagePathBox.TextChanged += (s, e) => UiChanged();
+            ImageOpacitySlider.ValueChanged += (s, e) => UiChanged();
+            StretchCombo.SelectionChanged += (s, e) => UiChanged();
+            FixedWidthSlider.ValueChanged += (s, e) => UiChanged();
+            CursorStyleCombo.SelectionChanged += (s, e) => UiChanged();
+            CursorBlinkCheck.Checked += (s, e) => UiChanged();
+            CursorBlinkCheck.Unchecked += (s, e) => UiChanged();
+
             TokenList.MouseDoubleClick += (s, e) =>
             {
                 var token = TokenList.SelectedItem as TokenInfo;
@@ -163,6 +178,14 @@ namespace WindowOverlay.Ui
                 CornerSlider.Value = s.Overlay.CornerRadius;
                 ShadowCheck.IsChecked = s.Overlay.Shadow;
 
+                OutlineCheck.IsChecked = s.Style.TextOutline;
+                OutlineColorBox.Text = s.Style.OutlineColor;
+                OutlineSlider.Value = s.Style.OutlineThickness;
+                ImagePathBox.Text = s.Style.BackgroundImage ?? "";
+                ImageOpacitySlider.Value = s.Style.ImageOpacity;
+                StretchCombo.SelectedIndex = StretchIndex(s.Style.ImageStretch);
+                FixedWidthSlider.Value = s.Style.FixedWidth;
+
                 CpuCheck.IsChecked = s.Data.ShowCpu;
                 GpuCheck.IsChecked = s.Data.ShowGpu;
                 MemCheck.IsChecked = s.Data.ShowMemory;
@@ -188,6 +211,9 @@ namespace WindowOverlay.Ui
                 IntroCheck.IsChecked = s.Behavior.IntroEnabled;
                 WelcomeBox.Text = string.IsNullOrEmpty(s.Behavior.WelcomeText) ? "Welcome Back" : s.Behavior.WelcomeText;
                 TypeSpeedBox.Text = s.Behavior.TypeSpeedMs.ToString(CultureInfo.InvariantCulture);
+                CursorStyleCombo.SelectedIndex = CursorIndex(s.Behavior.CursorStyle);
+                CursorBlinkCheck.IsChecked = s.Behavior.CursorBlink;
+                MaxKeyCharsBox.Text = s.Data.MaxKeyChars.ToString(CultureInfo.InvariantCulture);
 
                 XBox.Text = s.Overlay.X.ToString("0", CultureInfo.InvariantCulture);
                 YBox.Text = s.Overlay.Y.ToString("0", CultureInfo.InvariantCulture);
@@ -217,6 +243,41 @@ namespace WindowOverlay.Ui
             if (string.Equals(value, "Center", StringComparison.OrdinalIgnoreCase)) return 1;
             if (string.Equals(value, "Right", StringComparison.OrdinalIgnoreCase)) return 2;
             return 0;
+        }
+
+        static int StretchIndex(string value)
+        {
+            switch (Settings.NormalizeStretch(value))
+            {
+                case "Uniform": return 1;
+                case "Fill": return 2;
+                case "None": return 3;
+                default: return 0;
+            }
+        }
+
+        string StretchTag()
+        {
+            var item = StretchCombo.SelectedItem as ComboBoxItem;
+            return item == null ? "UniformToFill" : Settings.NormalizeStretch(item.Tag as string);
+        }
+
+        static int CursorIndex(string value)
+        {
+            switch (Settings.NormalizeCursor(value))
+            {
+                case "None": return 0;
+                case "Bar": return 2;
+                case "Underline": return 3;
+                case "Outline": return 4;
+                default: return 1;
+            }
+        }
+
+        string CursorTag()
+        {
+            var item = CursorStyleCombo.SelectedItem as ComboBoxItem;
+            return item == null ? "Block" : Settings.NormalizeCursor(item.Tag as string);
         }
 
         void FillGpuCombo(int selected)
@@ -326,6 +387,14 @@ namespace WindowOverlay.Ui
             s.Overlay.CornerRadius = Math.Round(CornerSlider.Value);
             s.Overlay.Shadow = ShadowCheck.IsChecked == true;
 
+            s.Style.TextOutline = OutlineCheck.IsChecked == true;
+            s.Style.OutlineColor = (OutlineColorBox.Text ?? "").Trim();
+            s.Style.OutlineThickness = Math.Round(OutlineSlider.Value, 2);
+            s.Style.BackgroundImage = (ImagePathBox.Text ?? "").Trim();
+            s.Style.ImageOpacity = ImageOpacitySlider.Value;
+            s.Style.ImageStretch = StretchTag();
+            s.Style.FixedWidth = Math.Round(FixedWidthSlider.Value);
+
             s.Data.ShowCpu = CpuCheck.IsChecked == true;
             s.Data.ShowGpu = GpuCheck.IsChecked == true;
             s.Data.ShowMemory = MemCheck.IsChecked == true;
@@ -333,6 +402,7 @@ namespace WindowOverlay.Ui
             s.Data.ShowNetwork = NetCheck.IsChecked == true;
             s.Data.ShowKeyboard = KeysCheck.IsChecked == true;
             s.Data.KeyHistoryCount = Math.Max(1, ParseInt(KeyCountBox.Text, s.Data.KeyHistoryCount));
+            s.Data.MaxKeyChars = Math.Max(4, ParseInt(MaxKeyCharsBox.Text, s.Data.MaxKeyChars));
             s.Data.RepeatThreshold = Math.Max(1, ParseInt(RepeatBox.Text, s.Data.RepeatThreshold));
             s.Data.ShowNvidia = NvidiaCheck.IsChecked == true;
             s.Data.GpuIndex = Math.Max(0, GpuCombo.SelectedIndex) - 1;
@@ -368,6 +438,8 @@ namespace WindowOverlay.Ui
             s.Behavior.WelcomeText = (WelcomeBox.Text ?? "").Trim();
             if (s.Behavior.WelcomeText.Length == 0) s.Behavior.WelcomeText = "Welcome Back";
             s.Behavior.TypeSpeedMs = Math.Max(8, ParseInt(TypeSpeedBox.Text, s.Behavior.TypeSpeedMs));
+            s.Behavior.CursorStyle = CursorTag();
+            s.Behavior.CursorBlink = CursorBlinkCheck.IsChecked == true;
 
             s.Overlay.Monitor = Math.Max(0, MonitorCombo.SelectedIndex);
             s.Overlay.X = ParseDouble(XBox.Text, s.Overlay.X);
@@ -413,6 +485,7 @@ namespace WindowOverlay.Ui
         {
             FgSwatch.Background = new SolidColorBrush(OverlaySurface.ParseColor(FgBox.Text));
             BgSwatch.Background = new SolidColorBrush(OverlaySurface.ParseColor(BgBox.Text));
+            OutlineSwatch.Background = new SolidColorBrush(OverlaySurface.ParseColor(OutlineColorBox.Text));
         }
 
         void UpdatePreview()
@@ -421,7 +494,7 @@ namespace WindowOverlay.Ui
             {
                 Settings s = ReadUi();
                 var keys = new KeyHistory();
-                keys.Configure(s.Data.KeyHistoryCount, s.Data.RepeatThreshold);
+                keys.Configure(s.Data.KeyHistoryCount, s.Data.RepeatThreshold, s.Data.MaxKeyChars);
                 foreach (string k in new[] { "Ctrl", "C", "Ctrl", "V", "A", "A", "A", "A", "A", "A", "Enter" })
                     keys.Push(k);
 
@@ -429,7 +502,7 @@ namespace WindowOverlay.Ui
                 List<string> unknown;
                 string text = TemplateEngine.Render(s.Content, vars, out unknown);
 
-                PreviewSurface.Apply(s, text);
+                PreviewSurface.Apply(s, text, s.Behavior.IntroEnabled);
 
                 UnknownHint.Text = unknown.Count == 0
                     ? ""
@@ -477,6 +550,48 @@ namespace WindowOverlay.Ui
         {
             string picked = PickColor(BgBox.Text);
             if (picked != null) BgBox.Text = picked;
+        }
+
+        void PickOutlineColorClick(object sender, RoutedEventArgs e)
+        {
+            string picked = PickColor(OutlineColorBox.Text);
+            if (picked != null) OutlineColorBox.Text = picked;
+        }
+
+        void PickBackgroundImageClick(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var dialog = new Microsoft.Win32.OpenFileDialog
+                {
+                    Title = "选择背景图片",
+                    Filter = "图片|*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.webp;*.tif;*.tiff|所有文件|*.*",
+                    CheckFileExists = true
+                };
+
+                string current = (ImagePathBox.Text ?? "").Trim();
+                if (current.Length > 0)
+                {
+                    try { dialog.InitialDirectory = System.IO.Path.GetDirectoryName(current); }
+                    catch { }
+                }
+
+                if (dialog.ShowDialog(this) == true)
+                {
+                    ImagePathBox.Text = dialog.FileName;
+                    StatusText.Text = "已选择背景图片，点击“保存并应用”生效";
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("选择背景图片失败: " + ex.Message);
+            }
+        }
+
+        void ClearBackgroundImageClick(object sender, RoutedEventArgs e)
+        {
+            ImagePathBox.Text = "";
+            StatusText.Text = "已清除背景图片";
         }
 
         static string PickColor(string current)

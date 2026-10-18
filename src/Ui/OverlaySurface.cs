@@ -1,61 +1,102 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Effects;
+using System.Windows.Media.Imaging;
 using WindowOverlay.Core;
 
 namespace WindowOverlay.Ui
 {
-    /// <summary>叠层内容与设置面板预览共用的绘制表面。</summary>
+    /// <summary>叠层内容与设置面板预览共用的绘制表面：底色 / 背景图 / 圆角 / 投影 / 文字。</summary>
     public sealed class OverlaySurface : Border
     {
         static readonly Dictionary<string, SolidColorBrush> BrushCache =
             new Dictionary<string, SolidColorBrush>(StringComparer.OrdinalIgnoreCase);
 
-        readonly TextBlock _text;
+        readonly Grid _root;
+        readonly Border _imageLayer;
+        readonly TextCanvas _canvas;
+
+        BitmapImage _image;
+        string _imagePath;
 
         public OverlaySurface()
         {
-            _text = new TextBlock
+            _canvas = new TextCanvas();
+            _imageLayer = new Border
             {
-                TextWrapping = TextWrapping.NoWrap,
-                SnapsToDevicePixels = true
+                Visibility = Visibility.Collapsed,
+                IsHitTestVisible = false
             };
 
-            Child = _text;
+            _root = new Grid();
+            _root.Children.Add(_imageLayer);
+            _root.Children.Add(_canvas);
+
+            Child = _root;
             SnapsToDevicePixels = true;
             UseLayoutRounding = true;
             TextOptions.SetTextFormattingMode(this, TextFormattingMode.Display);
             TextOptions.SetTextRenderingMode(this, TextRenderingMode.ClearType);
         }
 
-        public TextBlock Label { get { return _text; } }
+        public TextCanvas Canvas { get { return _canvas; } }
+
+        public void SetText(string text, bool cursor)
+        {
+            _canvas.Text = text ?? "";
+            _canvas.CursorVisible = cursor;
+        }
+
+        /// <summary>用于计算尺寸的文本；null = 跟随显示内容。启动动画期间传完整内容。</summary>
+        public void SetLayoutText(string text)
+        {
+            _canvas.LayoutText = text;
+        }
 
         public void Apply(Settings settings, string text)
+        {
+            Apply(settings, text, false);
+        }
+
+        public void Apply(Settings settings, string text, bool cursor)
         {
             StyleSettings style = settings.Style;
             OverlaySettings overlay = settings.Overlay;
 
-            _text.FontFamily = new FontFamily(string.IsNullOrWhiteSpace(style.FontFamily)
+            _canvas.FontFamily = new FontFamily(string.IsNullOrWhiteSpace(style.FontFamily)
                 ? "Microsoft YaHei UI"
                 : style.FontFamily);
-            _text.FontSize = Math.Max(4, style.FontSize);
-            _text.FontWeight = style.Bold ? FontWeights.SemiBold : FontWeights.Normal;
-            _text.Foreground = GetBrush(style.Foreground, 1.0);
-            _text.TextAlignment = ParseAlignment(style.TextAlignment);
-            _text.LineHeight = style.LineHeight > 0 ? style.LineHeight : double.NaN;
-            _text.LineStackingStrategy = style.LineHeight > 0
-                ? LineStackingStrategy.BlockLineHeight
-                : LineStackingStrategy.MaxHeight;
-            _text.Text = text ?? "";
+            _canvas.FontSize = Math.Max(4, style.FontSize);
+            _canvas.FontWeight = style.Bold ? FontWeights.SemiBold : FontWeights.Normal;
+            _canvas.Foreground = GetBrush(style.Foreground, 1.0);
+            _canvas.Alignment = ParseAlignment(style.TextAlignment);
+            _canvas.LineHeight = style.LineHeight > 0 ? style.LineHeight : 0;
+
+            _canvas.Outline = style.TextOutline && style.OutlineThickness > 0.05;
+            _canvas.OutlineBrush = GetBrush(style.OutlineColor, 1.0);
+            _canvas.OutlineThickness = Math.Max(0.2, style.OutlineThickness);
+
+            _canvas.FixedWidth = Math.Max(0, style.FixedWidth);
+            _canvas.CursorStyle = Settings.NormalizeCursor(settings.Behavior.CursorStyle);
+            _canvas.CursorBlink = settings.Behavior.CursorBlink;
+
+            _canvas.ResetStableSize();
+            _canvas.Text = text ?? "";
+            _canvas.CursorVisible = cursor;
 
             Background = GetBrush(style.Background, style.BackgroundOpacity);
             CornerRadius = new CornerRadius(Math.Max(0, overlay.CornerRadius));
+            Padding = new Thickness(0);
 
             double pad = Math.Max(0, style.Padding);
-            Padding = new Thickness(pad * 1.15, pad * 0.7, pad * 1.15, pad * 0.7);
+            _canvas.Margin = new Thickness(pad * 1.15, pad * 0.7, pad * 1.15, pad * 0.7);
+
+            _imageLayer.CornerRadius = CornerRadius;
+            ApplyImage(style);
 
             if (overlay.Shadow)
             {
@@ -75,6 +116,82 @@ namespace WindowOverlay.Ui
                 Margin = new Thickness(0);
             }
         }
+
+        // ==================== 背景图片 ====================
+
+        void ApplyImage(StyleSettings style)
+        {
+            string path = (style.BackgroundImage ?? "").Trim();
+            if (path.Length == 0)
+            {
+                _imageLayer.Visibility = Visibility.Collapsed;
+                _imageLayer.Background = null;
+                _image = null;
+                _imagePath = null;
+                return;
+            }
+
+            if (!string.Equals(path, _imagePath, StringComparison.OrdinalIgnoreCase))
+            {
+                _image = LoadImage(path);
+                _imagePath = path;
+                if (_image == null) Log.Warn("背景图片无法加载: " + path);
+            }
+
+            if (_image == null)
+            {
+                _imageLayer.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            var brush = new ImageBrush(_image)
+            {
+                Stretch = ParseStretch(style.ImageStretch),
+                AlignmentX = AlignmentX.Center,
+                AlignmentY = AlignmentY.Center,
+                TileMode = TileMode.None
+            };
+            brush.Freeze();
+
+            _imageLayer.Background = brush;
+            _imageLayer.Opacity = Math.Max(0, Math.Min(1, style.ImageOpacity));
+            _imageLayer.Visibility = Visibility.Visible;
+        }
+
+        static BitmapImage LoadImage(string path)
+        {
+            try
+            {
+                if (!File.Exists(path)) return null;
+
+                var bitmap = new BitmapImage();
+                bitmap.BeginInit();
+                bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                bitmap.CreateOptions = BitmapCreateOptions.IgnoreImageCache;
+                bitmap.UriSource = new Uri(path, UriKind.Absolute);
+                bitmap.EndInit();
+                bitmap.Freeze();
+                return bitmap;
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("加载背景图片失败: " + ex.Message);
+                return null;
+            }
+        }
+
+        public static Stretch ParseStretch(string value)
+        {
+            switch (Settings.NormalizeStretch(value))
+            {
+                case "Uniform": return Stretch.Uniform;
+                case "Fill": return Stretch.Fill;
+                case "None": return Stretch.None;
+                default: return Stretch.UniformToFill;
+            }
+        }
+
+        // ==================== 颜色 ====================
 
         public static TextAlignment ParseAlignment(string value)
         {

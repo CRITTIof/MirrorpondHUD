@@ -25,11 +25,11 @@ namespace WindowOverlay.Core
         {
             var map = new Dictionary<int, string>
             {
-                { 0x08, "⌫" },      // Backspace
+                { 0x08, "Back" },    // Backspace
                 { 0x09, "Tab" },
                 { 0x0D, "Enter" },
                 { 0x13, "Pause" },
-                { 0x14, "CapsLock" },
+                { 0x14, "Cap" },     // CapsLock
                 { 0x1B, "Esc" },
                 { 0x20, "Space" },
                 { 0x21, "PgUp" },
@@ -41,7 +41,7 @@ namespace WindowOverlay.Core
                 { 0x27, "→" },
                 { 0x28, "↓" },
                 { 0x2C, "PrtSc" },
-                { 0x2D, "Insert" },
+                { 0x2D, "ins" },     // Insert
                 { 0x2E, "Del" },
                 { 0x5B, "Win" },
                 { 0x5C, "Win" },
@@ -100,16 +100,23 @@ namespace WindowOverlay.Core
         readonly List<Entry> _entries = new List<Entry>(32);
         int _threshold = 3;
         int _visibleCount = 14;
+        int _maxChars = 18;
         int _total;
 
         public int Total { get { lock (_gate) { return _total; } } }
 
         public void Configure(int visibleCount, int repeatThreshold)
         {
+            Configure(visibleCount, repeatThreshold, _maxChars);
+        }
+
+        public void Configure(int visibleCount, int repeatThreshold, int maxChars)
+        {
             lock (_gate)
             {
                 _visibleCount = Math.Max(1, visibleCount);
                 _threshold = Math.Max(1, repeatThreshold);
+                _maxChars = Math.Max(1, maxChars);
             }
         }
 
@@ -165,7 +172,16 @@ namespace WindowOverlay.Core
                     tokens = tokens.GetRange(tokens.Count - _visibleCount, _visibleCount);
 
                 if (tokens.Count == 0) return "";
-                return string.Join(" ", tokens);
+
+                // 按显示字符数截断（空格、分隔符都计数）：从最旧的按键开始丢弃，
+                // 保证最新的按键永远可见。单个按键本身就超长时保留它，避免显示空白。
+                string joined = string.Join(" ", tokens);
+                while (joined.Length > _maxChars && tokens.Count > 1)
+                {
+                    tokens.RemoveAt(0);
+                    joined = string.Join(" ", tokens);
+                }
+                return joined;
             }
         }
     }
