@@ -18,6 +18,18 @@ if errorlevel 1 goto :fail
 call :build win-x64 x64
 if errorlevel 1 goto :fail
 
+rem publish leaves a self-contained build in bin\Release; restore the normal
+rem x64 build there so run.bat keeps deploying a small framework-dependent copy.
+echo.
+echo [INFO] Restoring x64 build in bin\Release for run.bat ...
+if exist "%~dp0bin" rd /s /q "%~dp0bin" >nul 2>&1
+if exist "%~dp0obj" rd /s /q "%~dp0obj" >nul 2>&1
+dotnet build WindowOverlay.csproj -c Release -nologo
+if errorlevel 1 goto :fail
+if exist "%~dp0sign.ps1" (
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0sign.ps1"
+)
+
 echo.
 echo [OK] Single-file exes:
 echo      publish\arm64\WindowOverlay.exe

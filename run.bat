@@ -32,10 +32,9 @@ if not exist "%SRC%\WindowOverlay.exe" (
 
 if not exist "%DEST%" mkdir "%DEST%" >nul 2>&1
 
-copy /y "%SRC%\WindowOverlay.exe"                "%DEST%\" >nul 2>&1
-copy /y "%SRC%\WindowOverlay.dll"                "%DEST%\" >nul 2>&1
-copy /y "%SRC%\WindowOverlay.deps.json"          "%DEST%\" >nul 2>&1
-copy /y "%SRC%\WindowOverlay.runtimeconfig.json" "%DEST%\" >nul 2>&1
+rem Copy every file next to the exe: a framework-dependent build only has a few,
+rem a self-contained one (left behind by publish.bat) needs all of them.
+xcopy /y /d /q "%SRC%\*.*" "%DEST%\" >nul 2>&1
 
 if not exist "%DEST%\WindowOverlay.exe" (
     echo [ERROR] Failed to copy to "%DEST%".
