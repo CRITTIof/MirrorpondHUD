@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -75,16 +75,7 @@ namespace WindowOverlay.Ui
             _keys.Configure(_settings.Data.KeyHistoryCount, _settings.Data.RepeatThreshold,
                             _settings.Data.MaxKeyChars);
 
-            _overlay = new OverlayWindow(_settings);
-            _overlay.SettingsRequested += ShowSettings;
-            _overlay.HideRequested += ToggleVisibility;
-            _overlay.LockToggleRequested += ToggleLock;
-            _overlay.ExitRequested += Exit;
-            _overlay.PositionChanged += SaveSettings;
-            _overlay.CommandLineRequested += ToggleCommandLine;
-            _overlay.CommandSubmitted += SubmitCommand;
-            _overlay.CommandCancelled += ExitCommandLine;
-            _overlay.CommandTextChanged += OnCommandInputChanged;
+            _overlay = CreateOverlay();
 
             bool intro = _settings.Behavior.IntroEnabled;
             if (intro) _overlay.SetLayoutText(TemplateEngine.RenderPlaceholder(_settings.Content, "---"));
@@ -123,6 +114,22 @@ namespace WindowOverlay.Ui
                      "/" + _settings.Hotkeys.OpenSettings + "/" + _settings.Hotkeys.ToggleLock + "）");
 
             ShowStartupBalloon();
+        }
+
+        /// <summary>创建叠层窗口并接好事件（毛玻璃开关切换时需要重建窗口，所以单独抽出来）。</summary>
+        OverlayWindow CreateOverlay()
+        {
+            var window = new OverlayWindow(_settings);
+            window.SettingsRequested += ShowSettings;
+            window.HideRequested += ToggleVisibility;
+            window.LockToggleRequested += ToggleLock;
+            window.ExitRequested += Exit;
+            window.PositionChanged += SaveSettings;
+            window.CommandLineRequested += ToggleCommandLine;
+            window.CommandSubmitted += SubmitCommand;
+            window.CommandCancelled += ExitCommandLine;
+            window.CommandTextChanged += OnCommandInputChanged;
+            return window;
         }
 
         void Safe(string name, Action action)
@@ -630,16 +637,23 @@ namespace WindowOverlay.Ui
         public void ToggleLock()
         {
             if (_commandMode) ExitCommandLine();
+            SetLocked(!_settings.Overlay.Locked);
+        }
 
-            _settings.Overlay.Locked = !_settings.Overlay.Locked;
-            if (_overlay != null)
+        /// <summary>设置叠层是否锁定（锁定 = 鼠标穿透）。</summary>
+        void SetLocked(bool locked)
+        {
+            bool changed = _settings.Overlay.Locked != locked;
+            _settings.Overlay.Locked = locked;
+
+            if (_overlay != null) _overlay.RefreshSettings(_settings);
+
+            if (changed)
             {
-                _overlay.Apply(_settings, RenderText());
-                _overlay.UpdateClickThrough();
+                SaveSettings();
+                UpdateTray();
+                Log.Info("叠层锁定=" + locked);
             }
-            SaveSettings();
-            UpdateTray();
-            Log.Info("叠层锁定=" + _settings.Overlay.Locked);
         }
 
         public void ShowSettings()
@@ -649,12 +663,18 @@ namespace WindowOverlay.Ui
             if (_settingsWindow == null)
             {
                 _settingsWindow = new SettingsWindow(_settings, ApplySettings, ApplyPosition, ClearKeys);
+                _settingsWindow.IsVisibleChanged += (s, e) =>
+                {
+                    if (_settingsWindow != null && !_settingsWindow.IsVisible) SetLocked(true);
+                };
             }
             else
             {
                 _settingsWindow.Reload(_settings);
             }
 
+            // 打开设置期间叠层保持可拖动，方便直接调整位置；关闭后再锁回去。
+            SetLocked(false);
             _settingsWindow.Show();
             _settingsWindow.WindowState = WindowState.Normal;
             _settingsWindow.Activate();

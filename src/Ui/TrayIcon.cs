@@ -1,7 +1,10 @@
-using System;
+﻿using System;
 using System.Drawing;
 using System.Runtime.InteropServices;
-using System.Windows.Forms;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using WinForms = System.Windows.Forms;
 using WindowOverlay.Core;
 
 namespace WindowOverlay.Ui
@@ -86,7 +89,7 @@ namespace WindowOverlay.Ui
         [DllImport("user32.dll", SetLastError = true)]
         static extern bool DestroyIcon(IntPtr hIcon);
 
-        sealed class TrayHostWindow : NativeWindow
+        sealed class TrayHostWindow : WinForms.NativeWindow
         {
             readonly uint _taskbarCreated;
             readonly Action<int, int> _callback;
@@ -98,7 +101,7 @@ namespace WindowOverlay.Ui
                 _taskbarRebuilt = taskbarRebuilt;
                 _taskbarCreated = RegisterWindowMessage("TaskbarCreated");
 
-                CreateHandle(new CreateParams
+                CreateHandle(new WinForms.CreateParams
                 {
                     Caption = "WindowOverlay.TrayHost",
                     Style = 0,
@@ -110,7 +113,7 @@ namespace WindowOverlay.Ui
                 });
             }
 
-            protected override void WndProc(ref Message m)
+            protected override void WndProc(ref WinForms.Message m)
             {
                 if (_taskbarCreated != 0 && m.Msg == (int)_taskbarCreated)
                 {
@@ -137,13 +140,12 @@ namespace WindowOverlay.Ui
         }
 
         readonly TrayHostWindow _window;
-        readonly ContextMenuStrip _menu;
-        readonly ToolStripMenuItem _visibilityItem;
-        readonly ToolStripMenuItem _commandItem;
-        readonly ToolStripMenuItem _lockItem;
-        readonly ToolStripMenuItem _autoStartItem;
+        readonly ContextMenu _menu;
+        readonly MenuItem _visibilityItem;
+        readonly MenuItem _commandItem;
+        readonly MenuItem _lockItem;
+        readonly MenuItem _autoStartItem;
         readonly Icon _icon;
-        readonly IntPtr _iconHandle;
 
         bool _added;
         bool _disposed;
@@ -157,36 +159,40 @@ namespace WindowOverlay.Ui
 
         public TrayIcon()
         {
-            _icon = CreateIcon(out _iconHandle);
+            _icon = LoadIcon();
 
-            _menu = new ContextMenuStrip();
+            // 用 WPF 的 ContextMenu：它本身是工具窗口，不会在任务栏里留下一个窗口。
+            _menu = new ContextMenu
+            {
+                Placement = PlacementMode.MousePoint,
+                StaysOpen = false
+            };
 
-            _visibilityItem = new ToolStripMenuItem("隐藏叠层");
+            _visibilityItem = new MenuItem { Header = "隐藏叠层" };
             _visibilityItem.Click += (s, e) => { ToggleVisibility?.Invoke(); };
             _menu.Items.Add(_visibilityItem);
 
-            _commandItem = new ToolStripMenuItem("快捷命令行");
+            _commandItem = new MenuItem { Header = "快捷命令行" };
             _commandItem.Click += (s, e) => { CommandLine?.Invoke(); };
             _menu.Items.Add(_commandItem);
 
-            var settings = new ToolStripMenuItem("打开设置…");
-            settings.Font = new Font(settings.Font, System.Drawing.FontStyle.Bold);
+            var settings = new MenuItem { Header = "打开设置…", FontWeight = FontWeights.Bold };
             settings.Click += (s, e) => { OpenSettings?.Invoke(); };
             _menu.Items.Add(settings);
 
-            _lockItem = new ToolStripMenuItem("锁定叠层");
+            _lockItem = new MenuItem { Header = "锁定叠层" };
             _lockItem.Click += (s, e) => { ToggleLock?.Invoke(); };
             _menu.Items.Add(_lockItem);
 
-            _menu.Items.Add(new ToolStripSeparator());
+            _menu.Items.Add(new Separator());
 
-            _autoStartItem = new ToolStripMenuItem("开机自动启动");
+            _autoStartItem = new MenuItem { Header = "开机自动启动", IsCheckable = true, StaysOpenOnClick = true };
             _autoStartItem.Click += (s, e) => { ToggleAutoStart?.Invoke(); };
             _menu.Items.Add(_autoStartItem);
 
-            _menu.Items.Add(new ToolStripSeparator());
+            _menu.Items.Add(new Separator());
 
-            var exit = new ToolStripMenuItem("退出");
+            var exit = new MenuItem { Header = "退出" };
             exit.Click += (s, e) => { Exit?.Invoke(); };
             _menu.Items.Add(exit);
 
@@ -282,7 +288,7 @@ namespace WindowOverlay.Ui
                 hWnd = _window.Handle,
                 uID = TRAY_ICON_ID,
                 uCallbackMessage = WM_CALLBACK,
-                hIcon = _iconHandle,
+                hIcon = _icon.Handle,
                 szTip = "桌面叠层"
             };
         }
@@ -301,7 +307,9 @@ namespace WindowOverlay.Ui
                 case WM_CONTEXTMENU:
                     try
                     {
-                        _menu.Show(Cursor.Position);
+                        _menu.Placement = PlacementMode.MousePoint;
+                        _menu.PlacementTarget = null;
+                        _menu.IsOpen = true;
                     }
                     catch (Exception ex)
                     {
@@ -320,14 +328,14 @@ namespace WindowOverlay.Ui
 
         public void Update(bool overlayVisible, bool locked, bool autoStart)
         {
-            _visibilityItem.Text = overlayVisible ? "隐藏叠层" : "显示叠层";
-            _lockItem.Text = locked ? "解锁（可拖动）" : "锁定（鼠标穿透）";
-            _autoStartItem.Checked = autoStart;
+            _visibilityItem.Header = overlayVisible ? "隐藏叠层" : "显示叠层";
+            _lockItem.Header = locked ? "解锁（可拖动）" : "锁定（鼠标穿透）";
+            _autoStartItem.IsChecked = autoStart;
         }
 
         public void SetCommandHotkey(string hotkey)
         {
-            _commandItem.Text = string.IsNullOrWhiteSpace(hotkey)
+            _commandItem.Header = string.IsNullOrWhiteSpace(hotkey)
                 ? "快捷命令行"
                 : "快捷命令行 (" + hotkey + ")";
         }
@@ -349,48 +357,42 @@ namespace WindowOverlay.Ui
             catch { }
         }
 
-        static Icon CreateIcon(out IntPtr hicon)
+        static Icon LoadIcon()
         {
-            hicon = IntPtr.Zero;
-            const int size = 32;
-
+            // 深色任务栏用浅色版本，浅色任务栏用深色版本
+            string name = IsLightTaskbar() ? "assets/logo.ico" : "assets/logo-light.ico";
             try
             {
-                using (var bitmap = new Bitmap(size, size))
+                System.Windows.Resources.StreamResourceInfo info =
+                    System.Windows.Application.GetResourceStream(new Uri(name, UriKind.Relative));
+                if (info != null)
                 {
-                    using (Graphics g = Graphics.FromImage(bitmap))
-                    {
-                        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-                        g.Clear(Color.Transparent);
-
-                        using (var back = new SolidBrush(Color.FromArgb(255, 24, 32, 44)))
-                            g.FillRectangle(back, 2, 4, 28, 20);
-                        using (var screen = new SolidBrush(Color.FromArgb(255, 47, 111, 235)))
-                            g.FillRectangle(screen, 4, 6, 24, 16);
-
-                        using (var bar = new SolidBrush(Color.White))
-                        {
-                            g.FillRectangle(bar, 7, 9, 10, 2);
-                            g.FillRectangle(bar, 7, 13, 16, 2);
-                            g.FillRectangle(bar, 7, 17, 7, 2);
-                        }
-
-                        using (var stand = new SolidBrush(Color.FromArgb(255, 24, 32, 44)))
-                        {
-                            g.FillRectangle(stand, 14, 24, 4, 3);
-                            g.FillRectangle(stand, 10, 27, 12, 2);
-                        }
-                    }
-
-                    hicon = bitmap.GetHicon();
-                    return Icon.FromHandle(hicon);
+                    var icon = new Icon(info.Stream, new System.Drawing.Size(32, 32));
+                    info.Stream.Dispose();
+                    return icon;
                 }
             }
             catch (Exception ex)
             {
-                Log.Warn("生成托盘图标失败，改用系统图标: " + ex.Message);
-                return SystemIcons.Application;
+                Log.Warn("加载托盘图标失败，改用系统图标: " + ex.Message);
             }
+
+            return SystemIcons.Application;
+        }
+
+        static bool IsLightTaskbar()
+        {
+            try
+            {
+                using (Microsoft.Win32.RegistryKey key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(
+                           @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"))
+                {
+                    object value = key == null ? null : key.GetValue("SystemUsesLightTheme");
+                    if (value is int) return (int)value != 0;
+                }
+            }
+            catch { }
+            return true;
         }
 
         public void Dispose()
@@ -399,13 +401,7 @@ namespace WindowOverlay.Ui
             _disposed = true;
 
             try { RemoveIcon(); } catch { }
-            try { _menu.Dispose(); } catch { }
             try { _window.Destroy(); } catch { }
-
-            if (_iconHandle != IntPtr.Zero)
-            {
-                try { DestroyIcon(_iconHandle); } catch { }
-            }
 
             try { _icon.Dispose(); } catch { }
         }

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -6,6 +6,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Markup;
 using System.Windows.Media;
 using System.Windows.Threading;
 using WindowOverlay.Core;
@@ -38,6 +39,7 @@ namespace WindowOverlay.Ui
             _onPosition = onPosition;
             _onClearKeys = onClearKeys;
             _demo = Screenshots.DemoSnapshot();
+            try { VersionText.Text = "v" + typeof(SettingsWindow).Assembly.GetName().Version; } catch { }
 
             _previewTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(120) };
             _previewTimer.Tick += (s, e) => { _previewTimer.Stop(); UpdatePreview(); };
@@ -60,6 +62,7 @@ namespace WindowOverlay.Ui
             BindNumberBox(OutlineValue, OutlineSlider, "0.0");
             BindNumberBox(ImageOpacityValue, ImageOpacitySlider, "0.00");
             BindNumberBox(FixedWidthValue, FixedWidthSlider, "0");
+            BindNumberBox(AcrylicBlurValue, AcrylicBlurSlider, "0");
         }
 
         void BindNumberBox(TextBox box, Slider slider, string format)
@@ -109,16 +112,95 @@ namespace WindowOverlay.Ui
             box.Text = slider.Value.ToString(format, CultureInfo.InvariantCulture);
         }
 
+        /// <summary>字体下拉项：显示中文名（有的话）并用自己的字体渲染。</summary>
+        public sealed class FontItem
+        {
+            public string Family { get; set; }
+            public string Display { get; set; }
+            public bool Chinese { get; set; }
+
+            public override string ToString() { return Display; }
+        }
+
+        List<FontItem> _allFonts;
+        FontItem _selectedFont;
+
+        void BuildFontList()
+        {
+            if (_allFonts != null) return;
+
+            XmlLanguage zh = XmlLanguage.GetLanguage("zh-CN");
+            var items = new List<FontItem>();
+
+            foreach (FontFamily family in Fonts.SystemFontFamilies)
+            {
+                string name = family.Source;
+                if (string.IsNullOrWhiteSpace(name)) continue;
+
+                string local = null;
+                try
+                {
+                    if (family.FamilyNames.ContainsKey(zh)) local = family.FamilyNames[zh];
+                }
+                catch { }
+
+                bool chinese = !string.IsNullOrWhiteSpace(local)
+                               && !string.Equals(local, name, StringComparison.OrdinalIgnoreCase)
+                               && HasCjk(local);
+
+                string display = chinese ? local + " (" + name + ")" : name;
+                items.Add(new FontItem { Family = name, Display = display, Chinese = chinese });
+            }
+
+            _allFonts = items
+                .OrderBy(f => f.Chinese ? 0 : 1)
+                .ThenBy(f => f.Display, StringComparer.CurrentCultureIgnoreCase)
+                .ToList();
+        }
+
+        static bool HasCjk(string text)
+        {
+            foreach (char c in text)
+                if (c >= 0x3400 && c <= 0x9FFF) return true;
+            return false;
+        }
+
+        void FilterFonts(string keyword)
+        {
+            BuildFontList();
+
+            keyword = (keyword ?? "").Trim();
+            IEnumerable<FontItem> filtered = _allFonts;
+            if (keyword.Length > 0)
+            {
+                filtered = _allFonts.Where(f =>
+                    f.Family.IndexOf(keyword, StringComparison.CurrentCultureIgnoreCase) >= 0 ||
+                    f.Display.IndexOf(keyword, StringComparison.CurrentCultureIgnoreCase) >= 0);
+            }
+
+            FontCombo.ItemsSource = filtered.ToList();
+            FontCombo.SelectedItem = _selectedFont;
+        }
+
         void HookEvents()
         {
             ContentBox.TextChanged += (s, e) => UiChanged();
-            FontCombo.SelectionChanged += (s, e) => UiChanged();
+            FontCombo.SelectionChanged += (s, e) =>
+            {
+                FontItem item = FontCombo.SelectedItem as FontItem;
+                if (item != null) _selectedFont = item;
+                UiChanged();
+            };
             FontSizeSlider.ValueChanged += (s, e) => UiChanged();
             BoldCheck.Checked += (s, e) => UiChanged();
             BoldCheck.Unchecked += (s, e) => UiChanged();
             FgBox.TextChanged += (s, e) => UiChanged();
             BgBox.TextChanged += (s, e) => UiChanged();
             BgOpacitySlider.ValueChanged += (s, e) => UiChanged();
+            AcrylicCheck.Checked += (s, e) => UiChanged();
+            AcrylicCheck.Unchecked += (s, e) => UiChanged();
+            AcrylicBlurSlider.ValueChanged += (s, e) => UiChanged();
+            FontFilterBox.TextChanged += (s, e) => FilterFonts(FontFilterBox.Text);
             AlignCombo.SelectionChanged += (s, e) => UiChanged();
             PaddingSlider.ValueChanged += (s, e) => UiChanged();
             LineHeightSlider.ValueChanged += (s, e) => UiChanged();
@@ -165,13 +247,24 @@ namespace WindowOverlay.Ui
 
                 ContentBox.Text = s.Content ?? "";
 
-                List<string> fonts = Fonts.SystemFontFamilies
-                    .Select(f => f.Source)
-                    .OrderBy(f => f, StringComparer.CurrentCultureIgnoreCase)
-                    .ToList();
-                FontCombo.ItemsSource = fonts;
-                FontCombo.SelectedItem = fonts.FirstOrDefault(
-                    f => string.Equals(f, s.Style.FontFamily, StringComparison.OrdinalIgnoreCase)) ?? "Microsoft YaHei UI";
+                BuildFontList();
+                _selectedFont = _allFonts.FirstOrDefault(
+                                    f => string.Equals(f.Family, s.Style.FontFamily, StringComparison.OrdinalIgnoreCase))
+                                ?? _allFonts.FirstOrDefault(
+                                    f => string.Equals(f.Family, "Microsoft YaHei UI", StringComparison.OrdinalIgnoreCase))
+                                ?? _allFonts.FirstOrDefault();
+                FontFilterBox.Text = "";
+                FilterFonts("");
+                FontCombo.SelectedItem = _selectedFont;
+
+                bool acrylicSupported = Native.IsAcrylicSupported;
+                AcrylicCheck.IsEnabled = acrylicSupported;
+                AcrylicCheck.IsChecked = s.Style.Acrylic && acrylicSupported;
+                AcrylicBlurSlider.Value = s.Style.AcrylicBlur;
+                AcrylicBlurSlider.IsEnabled = acrylicSupported;
+                AcrylicHint.Text = acrylicSupported
+                    ? "实验功能：抓取叠层后面的桌面并模糊。把「背景不透明度」调到 0.5 左右更容易看出效果；模糊强度控制模糊半径。"
+                    : "当前系统不支持抓屏排除（需要 Windows 10 2004 / build 19041 及以上）。";
 
                 FontSizeSlider.Value = s.Style.FontSize;
                 BoldCheck.IsChecked = s.Style.Bold;
@@ -210,7 +303,6 @@ namespace WindowOverlay.Ui
                 FillMonitors(s.Overlay.Monitor);
 
                 TopmostCheck.IsChecked = s.Overlay.Topmost;
-                LockedCheck.IsChecked = s.Overlay.Locked;
                 AutoStartCheck.IsChecked = s.Behavior.AutoStart;
                 StartMinCheck.IsChecked = s.Behavior.StartMinimized;
                 TrayCheck.IsChecked = s.Behavior.TrayEnabled;
@@ -434,13 +526,15 @@ namespace WindowOverlay.Ui
 
             s.Content = ContentBox.Text ?? "";
 
-            string font = FontCombo.SelectedItem as string;
-            if (!string.IsNullOrWhiteSpace(font)) s.Style.FontFamily = font;
+            FontItem font = FontCombo.SelectedItem as FontItem ?? _selectedFont;
+            if (font != null && !string.IsNullOrWhiteSpace(font.Family)) s.Style.FontFamily = font.Family;
             s.Style.FontSize = Math.Round(FontSizeSlider.Value);
             s.Style.Bold = BoldCheck.IsChecked == true;
             s.Style.Foreground = (FgBox.Text ?? "").Trim();
             s.Style.Background = (BgBox.Text ?? "").Trim();
             s.Style.BackgroundOpacity = BgOpacitySlider.Value;
+            s.Style.Acrylic = AcrylicCheck.IsChecked == true;
+            s.Style.AcrylicBlur = Math.Round(AcrylicBlurSlider.Value);
             s.Style.TextAlignment = AlignmentTag();
             s.Style.Padding = Math.Round(PaddingSlider.Value);
             s.Style.LineHeight = Math.Round(LineHeightSlider.Value);
@@ -490,7 +584,6 @@ namespace WindowOverlay.Ui
                 s.Behavior.RefreshMs = RefreshOptions[RefreshCombo.SelectedIndex];
 
             s.Overlay.Topmost = TopmostCheck.IsChecked == true;
-            s.Overlay.Locked = LockedCheck.IsChecked == true;
             s.Behavior.AutoStart = AutoStartCheck.IsChecked == true;
             s.Behavior.StartMinimized = StartMinCheck.IsChecked == true;
             s.Behavior.TrayEnabled = TrayCheck.IsChecked == true;

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Windows;
@@ -17,6 +17,8 @@ namespace WindowOverlay.Ui
             new Dictionary<string, SolidColorBrush>(StringComparer.OrdinalIgnoreCase);
 
         readonly Grid _root;
+        readonly Border _tintLayer;
+        readonly Border _glassLayer;
         readonly Border _imageLayer;
         readonly TextCanvas _canvas;
 
@@ -26,6 +28,12 @@ namespace WindowOverlay.Ui
         public OverlaySurface()
         {
             _canvas = new TextCanvas();
+            _tintLayer = new Border { IsHitTestVisible = false };
+            _glassLayer = new Border
+            {
+                Visibility = Visibility.Collapsed,
+                IsHitTestVisible = false
+            };
             _imageLayer = new Border
             {
                 Visibility = Visibility.Collapsed,
@@ -33,6 +41,8 @@ namespace WindowOverlay.Ui
             };
 
             _root = new Grid();
+            _root.Children.Add(_glassLayer);
+            _root.Children.Add(_tintLayer);
             _root.Children.Add(_imageLayer);
             _root.Children.Add(_canvas);
 
@@ -100,8 +110,12 @@ namespace WindowOverlay.Ui
             _canvas.Text = text ?? "";
             _canvas.CursorVisible = cursor;
 
-            Background = GetBrush(style.Background, style.BackgroundOpacity);
+            Background = Brushes.Transparent;
             CornerRadius = new CornerRadius(Math.Max(0, overlay.CornerRadius));
+            _tintLayer.Background = GetBrush(style.Background, style.BackgroundOpacity);
+            _tintLayer.CornerRadius = CornerRadius;
+            _glassLayer.CornerRadius = CornerRadius;
+            if (!style.Acrylic) ClearGlass();
             Padding = new Thickness(0);
 
             double pad = Math.Max(0, style.Padding);
@@ -190,6 +204,34 @@ namespace WindowOverlay.Ui
                 Log.Warn("加载背景图片失败: " + ex.Message);
                 return null;
             }
+        }
+
+        // ==================== 毛玻璃 ====================
+
+        public void SetGlass(ImageSource image)
+        {
+            if (image == null)
+            {
+                ClearGlass();
+                return;
+            }
+
+            var brush = new ImageBrush(image)
+            {
+                Stretch = Stretch.Fill,
+                AlignmentX = AlignmentX.Center,
+                AlignmentY = AlignmentY.Center
+            };
+            brush.Freeze();
+
+            _glassLayer.Background = brush;
+            _glassLayer.Visibility = Visibility.Visible;
+        }
+
+        public void ClearGlass()
+        {
+            _glassLayer.Background = null;
+            _glassLayer.Visibility = Visibility.Collapsed;
         }
 
         public static Stretch ParseStretch(string value)
