@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -11,6 +11,7 @@
     <AssemblyName>WindowOverlay</AssemblyName>
     <RootNamespace>WindowOverlay</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>assets\logo.ico</ApplicationIcon>
     <!-- x64 by default; publish -r win-arm64 switches PlatformTarget automatically. -->
     <Platforms>x64;ARM64</Platforms>
     <PlatformTarget Condition="'$(RuntimeIdentifier)' == ''">x64</PlatformTarget>
@@ -34,6 +35,11 @@
   <ItemGroup>
     <ApplicationDefinition Include="src\App.xaml" />
     <Page Remove="src\App.xaml" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="assets\logo.ico" />
+    <Resource Include="assets\logo-light.ico" />
   </ItemGroup>
 
 </Project>

@@ -1,8 +1,12 @@
-using System;
+﻿using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using WindowOverlay.Core;
 
@@ -10,11 +14,16 @@ namespace WindowOverlay.Ui
 {
     public partial class OverlayWindow : Window
     {
-        readonly Settings _settings;
+        Settings _settings;
         DispatcherTimer _topmostTimer;
         bool _handleReady;
         bool _commandMode;
         IntPtr _previousForeground;
+        DispatcherTimer _glassTimer;
+
+        bool _dragging;
+        Point _dragStartScreen;
+        Point _dragStartWindow;
 
         MenuItem _menuSettings;
         MenuItem _menuToggle;
@@ -46,6 +55,7 @@ namespace WindowOverlay.Ui
         {
             _handleReady = true;
             ApplyPosition();
+            UpdateGlassCapture();
             UpdateClickThrough();
             EnsureTopmost();
 
@@ -62,8 +72,18 @@ namespace WindowOverlay.Ui
 
         public void Apply(Settings settings, string text)
         {
+            _settings = settings;
             Surface.Apply(settings, text);
+            if (_handleReady) UpdateGlassCapture();
             Topmost = settings.Overlay.Topmost;
+            UpdateClickThrough();
+            UpdateMenuHeaders();
+        }
+
+        /// <summary>只同步设置对象与鼠标穿透状态，不重画内容（切锁定、开设置时用）。</summary>
+        public void RefreshSettings(Settings settings)
+        {
+            _settings = settings;
             UpdateClickThrough();
             UpdateMenuHeaders();
         }
@@ -212,6 +232,8 @@ namespace WindowOverlay.Ui
 
             Left = left;
             Top = top;
+
+            if (_settings.Style.Acrylic) CaptureGlass();
         }
 
         public void UpdateClickThrough()
@@ -229,6 +251,8 @@ namespace WindowOverlay.Ui
                 ex &= ~(Native.WsExTransparent | Native.WsExNoActivate);
 
             Native.SetExStyle(hwnd, ex);
+
+            Cursor = _commandMode ? Cursors.IBeam : (clickThrough ? Cursors.Arrow : Cursors.SizeAll);
         }
 
         public void EnsureTopmost()
@@ -241,15 +265,144 @@ namespace WindowOverlay.Ui
                 Native.SwpNoMove | Native.SwpNoSize | Native.SwpNoActivate | Native.SwpNoOwnerZorder);
         }
 
+        // ==================== 毛玻璃 ====================
+        // 抓取窗口后面那块桌面、缩小模糊后当作叠层背景。
+        // 抓屏时给窗口设置 WDA_EXCLUDEFROMCAPTURE，这样截到的画面里不会包含叠层自己。
+
+        void UpdateGlassCapture()
+        {
+            if (!_handleReady) return;
+
+            IntPtr hwnd = new WindowInteropHelper(this).Handle;
+            if (hwnd == IntPtr.Zero) return;
+
+            bool enabled = _settings.Style.Acrylic && Native.IsAcrylicSupported;
+
+            if (!enabled)
+            {
+                if (_glassTimer != null) _glassTimer.Stop();
+                Surface.ClearGlass();
+                return;
+            }
+
+            if (_glassTimer == null)
+            {
+                _glassTimer = new DispatcherTimer(DispatcherPriority.Background)
+                {
+                    Interval = TimeSpan.FromMilliseconds(1200)
+                };
+                _glassTimer.Tick += (s, e) => CaptureGlass();
+            }
+
+            _glassTimer.Start();
+            CaptureGlass();
+            Log.Info("毛玻璃背景已启用（每 1.2 秒刷新一次）");
+        }
+
+        bool _glassBusy;
+
+        void CaptureGlass()
+        {
+            if (!_settings.Style.Acrylic || !_handleReady || !IsVisible || _glassBusy) return;
+
+            IntPtr hwnd = new WindowInteropHelper(this).Handle;
+            if (hwnd == IntPtr.Zero) return;
+
+            Native.Rect rect;
+            if (!Native.GetWindowRect(hwnd, out rect)) return;
+
+            int width = rect.Right - rect.Left;
+            int height = rect.Bottom - rect.Top;
+            if (width < 4 || height < 4) return;
+
+            _glassBusy = true;
+            int left = rect.Left;
+            int top = rect.Top;
+
+            Task.Run(() =>
+            {
+                BitmapSource image = null;
+                try
+                {
+                    // 抓屏瞬间把叠层从画面里排除掉，抓完立刻恢复（否则用户截图也会看不到叠层）
+                    Native.SetCaptureExclusion(hwnd, true);
+                    Thread.Sleep(20);
+                    image = GlassCapture.Grab(left, top, width, height, _settings.Style.AcrylicBlur);
+                }
+                catch (Exception ex)
+                {
+                    Log.Warn("毛玻璃抓屏失败: " + ex.Message);
+                }
+                finally
+                {
+                    Native.SetCaptureExclusion(hwnd, false);
+                }
+
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    _glassBusy = false;
+                    if (image != null) Surface.SetGlass(image);
+                }));
+            });
+        }
+
+        // ==================== 拖动 ====================
+        // 不用 DragMove()：它在鼠标抬起过快、窗口未激活等情况下会直接抛异常，表现为"拖动失灵"。
+        // 这里自己抓鼠标，用屏幕坐标（设备像素）算位移，再按 DPI 换算成 WPF 的 DIP。
+
         protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
         {
             base.OnMouseLeftButtonDown(e);
-            if (_settings.Overlay.Locked) return;
+            if (_settings.Overlay.Locked || _commandMode) return;
+            if (e.ClickCount > 1) return;
 
-            try { DragMove(); }
-            catch { }
+            _dragging = true;
+            _dragStartScreen = PointToScreen(e.GetPosition(this));
+            _dragStartWindow = new Point(Left, Top);
+            CaptureMouse();
+            e.Handled = true;
+        }
+
+        protected override void OnMouseMove(MouseEventArgs e)
+        {
+            base.OnMouseMove(e);
+            if (!_dragging) return;
+
+            if (e.LeftButton != MouseButtonState.Pressed)
+            {
+                FinishDrag();
+                return;
+            }
+
+            Point now = PointToScreen(e.GetPosition(this));
+            DpiScale dpi = VisualTreeHelper.GetDpi(this);
+            double sx = dpi.DpiScaleX > 0 ? dpi.DpiScaleX : 1;
+            double sy = dpi.DpiScaleY > 0 ? dpi.DpiScaleY : 1;
+
+            Left = _dragStartWindow.X + (now.X - _dragStartScreen.X) / sx;
+            Top = _dragStartWindow.Y + (now.Y - _dragStartScreen.Y) / sy;
+        }
+
+        protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
+        {
+            base.OnMouseLeftButtonUp(e);
+            if (_dragging) FinishDrag();
+        }
+
+        protected override void OnLostMouseCapture(MouseEventArgs e)
+        {
+            base.OnLostMouseCapture(e);
+            if (_dragging) FinishDrag();
+        }
+
+        void FinishDrag()
+        {
+            _dragging = false;
+            if (IsMouseCaptured) ReleaseMouseCapture();
 
             CapturePosition();
+            CaptureGlass();
+
             Action handler = PositionChanged;
             if (handler != null) handler();
         }

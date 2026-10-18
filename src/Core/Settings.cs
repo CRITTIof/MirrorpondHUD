@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 
@@ -35,6 +35,7 @@ namespace WindowOverlay.Core
             Style.OutlineThickness = Clamp(Style.OutlineThickness, 0.2, 10);
             Style.FixedWidth = Clamp(Style.FixedWidth, 0, 4000);
             Style.ImageOpacity = Clamp(Style.ImageOpacity, 0, 1);
+            Style.AcrylicBlur = Clamp(Style.AcrylicBlur, 0, 60);
             if (string.IsNullOrWhiteSpace(Style.BackgroundImage)) Style.BackgroundImage = "";
             Style.ImageStretch = NormalizeStretch(Style.ImageStretch);
 
@@ -214,6 +215,12 @@ namespace WindowOverlay.Core
 
         /// <summary>固定内容宽度（DIP），0 = 自适应但只增不减（避免数值变化时整块跳动）。</summary>
         public double FixedWidth = 0;
+
+        /// <summary>毛玻璃背景：抓取窗口后面的桌面并模糊。背景不透明度决定玻璃厚度。</summary>
+        public bool Acrylic = false;
+
+        /// <summary>毛玻璃模糊强度（像素）。</summary>
+        public double AcrylicBlur = 12;
     }
 
     public sealed class DataSettings

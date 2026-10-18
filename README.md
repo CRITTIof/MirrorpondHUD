@@ -25,7 +25,8 @@
 - **按键显示** — 全局键盘钩子，最近按键、重复折叠（`A×6`）、最大字符数限制
 - **快捷命令行** — `F9` 在信息栏下方执行 CMD / PowerShell / 自定义命令，返回原样打印
 - **启动动画** — 打字 / 退格动画 + 模拟光标（方块 / 竖线 / 下划线 / 空心框 / 关闭）
-- **外观可调** — 文字描边、背景图片、固定宽度、圆角、透明度、字体字号，尺寸只增不减不跳动
+- **外观可调** — 文字描边、背景图片、毛玻璃背景（实验性）、固定宽度、圆角、透明度、字体字号，尺寸只增不减不跳动
+- **字体齐全** — 列出全部系统字体，中文字体显示中文名（如「宋体 (SimSun)」），带关键字筛选
 - **托盘常驻** — 单实例唤醒、开机自启、可自定义的全局热键、鼠标穿透锁定
 - **无依赖** — 单文件 exe，目标机器不需要安装 .NET
 
@@ -51,7 +52,7 @@ run.bat
 | --- | --- | --- |
 | 打开 / 关闭快捷命令行 | `F9` | 见下一节 |
 | 打开设置窗口 | `F10` | 也可左键单击托盘图标 |
-| 锁定 / 解锁（鼠标穿透） | `F8` | 解锁后可拖动、右键菜单、双击设置 |
+| 锁定 / 解锁（鼠标穿透） | `F8` | 解锁后可拖动、右键菜单、双击设置；打开设置窗口时自动解锁，关闭后自动锁定 |
 | 显示 / 隐藏叠层 | *未设置* | 从托盘菜单操作，或自行绑定 |
 
 所有热键都能在「设置 → 热键」里改，**留空 = 不启用**；被其它程序占用时会自动退到 `Ctrl+Alt+原键`。
@@ -107,7 +108,8 @@ MEM {mem_pct:0}%    →  MEM 40%
   "Overlay": { "X": 48, "Y": 48, "Monitor": 0, "Locked": true, "Topmost": true },
   "Style": {
     "FontSize": 15, "BackgroundOpacity": 0.86, "TextOutline": true,
-    "BackgroundImage": "", "ImageStretch": "UniformToFill", "FixedWidth": 0
+    "BackgroundImage": "", "ImageStretch": "UniformToFill", "FixedWidth": 0,
+    "Acrylic": false, "AcrylicBlur": 12
   },
   "Data": { "MaxKeyChars": 18, "RepeatThreshold": 3, "KeyHistoryCount": 14 },
   "Behavior": { "RefreshMs": 500, "IntroEnabled": true, "WelcomeText": "Welcome Back", "CursorStyle": "Block" },
@@ -141,6 +143,8 @@ MEM {mem_pct:0}%    →  MEM 40%
 | | `TextOutline` / `OutlineColor` / `OutlineThickness` | `false` / `#000000` / `1.2` | 文字描边 |
 | | `BackgroundImage` / `ImageOpacity` / `ImageStretch` | `""` / `1.0` / `UniformToFill` | 背景图片（`UniformToFill` `Uniform` `Fill` `None`） |
 | | `FixedWidth` | `0` | 固定宽度；`0` = 自适应但只增不减 |
+| | `Acrylic` | `false` | 毛玻璃背景（实验性）：抓取叠层后面的桌面并模糊，约 1.2 秒刷新一次 |
+| | `AcrylicBlur` | `12` | 毛玻璃模糊强度（像素），`0` = 不模糊 |
 | `Data` | `ShowCpu` `ShowGpu` `ShowMemory` `ShowDisk` `ShowNetwork` `ShowKeyboard` `ShowNvidia` | `true` | 是否采集该数据源 |
 | | `GpuIndex` | `-1` | `-1` 汇总全部 GPU；`0`、`1`… 指定某块 |
 | | `DiskDrives` / `NetworkAdapter` | `[]` / `""` | 统计分区 / 网卡实例名，空 = 自动 |
@@ -213,6 +217,9 @@ run.bat        :: 编译（如未编译）并在 bin\Release 内启动
 - 混合 DPI 多显示器下位置按主屏缩放换算，极端情况需手动微调
 - 键盘钩子只能看到物理按键，拿不到输入法上屏的中文
 - 命令行返回过多时叠层会向下变高，屏幕放不下就调小「最多保留行数」
+- **毛玻璃是实验性功能**：程序定时截取叠层背后的桌面再模糊（约 1.2 秒刷新一次），不是系统的 DWM 材质。
+  因此背后是视频或快速滚动的画面时会有轻微滞后，纯色背景下也几乎看不出模糊；
+  建议把「背景不透明度」调到 0.5 左右，并用「模糊强度」调整模糊半径
 
 ## 🗂️ 目录结构
 
