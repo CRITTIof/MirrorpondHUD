@@ -43,10 +43,68 @@ namespace WindowOverlay.Ui
             _previewTimer.Tick += (s, e) => { _previewTimer.Stop(); UpdatePreview(); };
 
             HookEvents();
+            BindNumberBoxes();
             LoadUi(live);
         }
 
         // ==================== 初始化 ====================
+
+        /// <summary>滑块旁的数字框：可点击直接输入，回车/失焦生效。</summary>
+        void BindNumberBoxes()
+        {
+            BindNumberBox(FontSizeValue, FontSizeSlider, "0");
+            BindNumberBox(BgOpacityValue, BgOpacitySlider, "0.00");
+            BindNumberBox(PaddingValue, PaddingSlider, "0");
+            BindNumberBox(LineHeightValue, LineHeightSlider, "0");
+            BindNumberBox(CornerValue, CornerSlider, "0");
+        }
+
+        void BindNumberBox(TextBox box, Slider slider, string format)
+        {
+            bool updating = false;
+
+            slider.ValueChanged += (s, e) =>
+            {
+                if (updating) return;
+                if (box.IsKeyboardFocusWithin) return;
+                updating = true;
+                box.Text = slider.Value.ToString(format, CultureInfo.InvariantCulture);
+                updating = false;
+            };
+
+            Action commit = () =>
+            {
+                if (updating) return;
+                double value;
+                if (!double.TryParse((box.Text ?? "").Trim(), NumberStyles.Float,
+                        CultureInfo.CurrentCulture, out value))
+                {
+                    box.Text = slider.Value.ToString(format, CultureInfo.InvariantCulture);
+                    return;
+                }
+
+                value = Math.Max(slider.Minimum, Math.Min(slider.Maximum, value));
+                updating = true;
+                slider.Value = value;
+                box.Text = slider.Value.ToString(format, CultureInfo.InvariantCulture);
+                updating = false;
+                UiChanged();
+            };
+
+            box.LostFocus += (s, e) => commit();
+            box.KeyDown += (s, e) =>
+            {
+                if (e.Key == Key.Enter)
+                {
+                    commit();
+                    e.Handled = true;
+                    Keyboard.ClearFocus();
+                }
+            };
+            box.GotFocus += (s, e) => box.SelectAll();
+
+            box.Text = slider.Value.ToString(format, CultureInfo.InvariantCulture);
+        }
 
         void HookEvents()
         {
@@ -127,6 +185,9 @@ namespace WindowOverlay.Ui
                 AutoStartCheck.IsChecked = s.Behavior.AutoStart;
                 StartMinCheck.IsChecked = s.Behavior.StartMinimized;
                 TrayCheck.IsChecked = s.Behavior.TrayEnabled;
+                IntroCheck.IsChecked = s.Behavior.IntroEnabled;
+                WelcomeBox.Text = string.IsNullOrEmpty(s.Behavior.WelcomeText) ? "Welcome Back" : s.Behavior.WelcomeText;
+                TypeSpeedBox.Text = s.Behavior.TypeSpeedMs.ToString(CultureInfo.InvariantCulture);
 
                 XBox.Text = s.Overlay.X.ToString("0", CultureInfo.InvariantCulture);
                 YBox.Text = s.Overlay.Y.ToString("0", CultureInfo.InvariantCulture);
@@ -303,6 +364,10 @@ namespace WindowOverlay.Ui
             s.Behavior.AutoStart = AutoStartCheck.IsChecked == true;
             s.Behavior.StartMinimized = StartMinCheck.IsChecked == true;
             s.Behavior.TrayEnabled = TrayCheck.IsChecked == true;
+            s.Behavior.IntroEnabled = IntroCheck.IsChecked == true;
+            s.Behavior.WelcomeText = (WelcomeBox.Text ?? "").Trim();
+            if (s.Behavior.WelcomeText.Length == 0) s.Behavior.WelcomeText = "Welcome Back";
+            s.Behavior.TypeSpeedMs = Math.Max(8, ParseInt(TypeSpeedBox.Text, s.Behavior.TypeSpeedMs));
 
             s.Overlay.Monitor = Math.Max(0, MonitorCombo.SelectedIndex);
             s.Overlay.X = ParseDouble(XBox.Text, s.Overlay.X);

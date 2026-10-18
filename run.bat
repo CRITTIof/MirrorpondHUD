@@ -22,7 +22,7 @@ if not exist "%SRC%\WindowOverlay.exe" (
         exit /b 1
     )
     echo [INFO] First run, building...
-    dotnet build "WindowOverlay.csproj" -c Release -nologo
+    call "%~dp0build.bat" -auto
     if errorlevel 1 (
         echo [ERROR] Build failed.
         pause
@@ -42,5 +42,8 @@ if not exist "%DEST%\WindowOverlay.exe" (
     pause
     exit /b 1
 )
+
+rem Remove the "downloaded from the internet" mark so SmartScreen stays quiet.
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-ChildItem '%DEST%\*' -File | Unblock-File" >nul 2>&1
 
 start "" "%DEST%\WindowOverlay.exe" %*

@@ -19,6 +19,20 @@ namespace WindowOverlay.Core
 
         public static string Render(string template, IDictionary<string, object> variables, out List<string> unknown)
         {
+            return Render(template, variables, out unknown, null);
+        }
+
+        /// <summary>
+        /// 把所有占位符替换成固定值，用于启动动画阶段展示 "---"。
+        /// </summary>
+        public static string RenderPlaceholder(string template, string placeholder)
+        {
+            List<string> ignored;
+            return Render(template, null, out ignored, placeholder ?? "---");
+        }
+
+        public static string Render(string template, IDictionary<string, object> variables, out List<string> unknown, string forceValue)
+        {
             unknown = new List<string>();
             if (string.IsNullOrEmpty(template)) return "";
 
@@ -40,15 +54,22 @@ namespace WindowOverlay.Core
                 int alignment;
                 if (TryParseToken(token, out name, out alignment, out format))
                 {
-                    object value;
-                    if (variables != null && variables.TryGetValue(name, out value))
+                    if (forceValue != null)
                     {
-                        sb.Append(FormatValue(value, alignment, format));
+                        sb.Append(forceValue);
                     }
                     else
                     {
-                        if (!unknown.Contains(name)) unknown.Add(name);
-                        sb.Append('{').Append(token).Append('}');
+                        object value;
+                        if (variables != null && variables.TryGetValue(name, out value))
+                        {
+                            sb.Append(FormatValue(value, alignment, format));
+                        }
+                        else
+                        {
+                            if (!unknown.Contains(name)) unknown.Add(name);
+                            sb.Append('{').Append(token).Append('}');
+                        }
                     }
                     i = close + 1;
                     continue;

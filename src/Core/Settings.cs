@@ -45,6 +45,9 @@ namespace WindowOverlay.Core
             if (Data.NetworkAdapter == null) Data.NetworkAdapter = "";
 
             Behavior.RefreshMs = (int)Clamp(Behavior.RefreshMs, 100, 5000);
+            Behavior.TypeSpeedMs = (int)Clamp(Behavior.TypeSpeedMs, 8, 300);
+            if (Behavior.WelcomeText == null) Behavior.WelcomeText = "Welcome Back";
+            if (Behavior.WelcomeText.Length > 120) Behavior.WelcomeText = Behavior.WelcomeText.Substring(0, 120);
 
             Hotkeys.ToggleOverlay = NormalizeHotkey(Hotkeys.ToggleOverlay, "F9");
             Hotkeys.OpenSettings = NormalizeHotkey(Hotkeys.OpenSettings, "F10");
@@ -154,6 +157,13 @@ namespace WindowOverlay.Core
         public bool AutoStart = false;
         public bool StartMinimized = false;
         public bool TrayEnabled = true;
+
+        /// <summary>启动时播放"打字 / 退格"欢迎动画。</summary>
+        public bool IntroEnabled = true;
+        /// <summary>欢迎语，默认 Welcome Back。</summary>
+        public string WelcomeText = "Welcome Back";
+        /// <summary>每字符的动画间隔（毫秒），越小越快。</summary>
+        public int TypeSpeedMs = 28;
     }
 
     public sealed class HotkeySettings

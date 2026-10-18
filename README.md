@@ -24,6 +24,30 @@ run.bat
 目标机器只需要 **.NET 8 桌面运行时**；如果希望对方什么都不装，用 `publish.bat` 打成独立 exe
 后同样建议放到 `%LOCALAPPDATA%\Programs\` 下使用。
 
+### 关于“无法验证发布者”弹窗
+
+`build.bat` 在编译后会自动用**自签名证书**给 exe 签名（首次会创建证书并加入
+`CurrentUser\Root` 与 `CurrentUser\TrustedPublisher`，不需要管理员），
+这样 Windows 弹窗里会显示发布者 `WindowOverlay Dev`，而不是“未知发布者”。
+`run.bat` 部署后还会对文件执行 `Unblock-File`，去掉“来自 Internet”的标记。
+
+如果仍然被拦，多半是 Windows 11 的 **智能应用控制（Smart App Control）**——它只信任有
+可靠信誉的签名，自签名不满足。关闭路径：
+`设置 → 隐私和安全性 → Windows 安全中心 → 应用和浏览器控制 → 智能应用控制 → 关闭`。
+（该开关只能关闭一次，重新开启需要重装系统，请自行权衡。）
+
+## 启动动画
+
+每次启动先播放一段“命令行打字”动画，然后才开始刷新真实数据：
+
+1. 逐字打出欢迎语（默认 `Welcome Back`）
+2. 停留约 0.65 秒后逐字退格删除
+3. 逐字打出全部内容，此时所有数据占位显示为 `---`
+4. 全部显示完毕后，再切换为实时数据
+
+欢迎语、开关、打字速度（毫秒/字）都在「设置 → 行为 → 启动动画」里改。
+动画期间不刷新数据，避免数字跳动。
+
 ## 快捷键与托盘
 
 | 操作 | 作用 |
@@ -98,7 +122,7 @@ MEM {mem_pct:0}%        →  MEM 40%
   "Overlay": { "X": 48, "Y": 48, "Monitor": 0, "Locked": true, "Topmost": true },
   "Style": { "FontFamily": "Microsoft YaHei UI", "FontSize": 15, "BackgroundOpacity": 0.86 },
   "Data": { "ShowCpu": true, "ShowGpu": true, "ShowKeyboard": true, "RepeatThreshold": 3 },
-  "Behavior": { "RefreshMs": 500, "AutoStart": false },
+  "Behavior": { "RefreshMs": 500, "AutoStart": false, "IntroEnabled": true, "WelcomeText": "Welcome Back", "TypeSpeedMs": 28 },
   "Hotkeys": { "ToggleOverlay": "F9", "OpenSettings": "F10", "ToggleLock": "F8" }
 }
 ```
@@ -134,6 +158,9 @@ MEM {mem_pct:0}%        →  MEM 40%
 | | `AutoStart` | `false` | 写入 `HKCU\...\Run` 开机自启 |
 | | `StartMinimized` | `false` | 启动时不显示叠层，只在托盘 |
 | | `TrayEnabled` | `true` | 是否显示托盘图标 |
+| | `IntroEnabled` | `true` | 启动时播放打字 / 退格动画 |
+| | `WelcomeText` | `Welcome Back` | 动画开头的欢迎语 |
+| | `TypeSpeedMs` | `28` | 动画速度（毫秒/字符），越小越快 |
 | `Hotkeys` | `ToggleOverlay` | `F9` | 显示 / 隐藏 |
 | | `OpenSettings` | `F10` | 打开设置 |
 | | `ToggleLock` | `F8` | 锁定 / 解锁 |
@@ -149,6 +176,7 @@ MEM {mem_pct:0}%        →  MEM 40%
 | `--screenshot-settings <路径>` | 把设置窗口的每个页签渲染成 PNG 后退出 |
 | `--selftest` | 跑一遍真实采样 / 键盘钩子 / 热键注册，结果写入日志 |
 | `--smoke <秒>` | 正常启动后 N 秒自动退出（用于验证启动链路） |
+| `--smoke-visible` | 与 `--smoke` 搭配：强制显示叠层 |
 
 ## 打包
 
@@ -170,6 +198,10 @@ publish.bat
 - **热键**：隐藏消息窗口 + `RegisterHotKey`，注册失败时自动退到 `Ctrl+Alt+原键` 并记入日志。
 - **叠层**：WPF 无边框透明窗口，`WS_EX_TRANSPARENT` 实现穿透，`SetWindowPos(HWND_TOPMOST)` 定时重申置顶。
 - **渲染**：采样线程只负责取数，UI 每 120 ms 重新渲染一次文本，打字时反馈不卡顿。
+- **启动动画**：`DispatcherTimer` 驱动的状态机（打字 → 停留 → 退格 → 内容逐字 → 实时），
+  动画期间把 `{变量}` 渲染成 `---` 并暂停数据刷新。
+- **发布者签名**：`build.bat` 调 `sign.ps1`，用自签名证书（`CurrentUser` 存储）签名，
+  让 Windows 显示发布者名称而不是“未知发布者”。
 
 ## 故障排查
 
@@ -194,6 +226,13 @@ Windows 11 会把新加入的图标默认放进任务栏的 `^` 隐藏区。点�
 日志里应当出现 `键盘钩子：已捕获首个按键 X`。若整场没有这行，说明全局钩子没收到任何输入，
 通常仍是受限环境，或与其它同样安装全局键盘钩子的软件冲突。
 
+**每次打开都提示“无法验证发布者”**
+1. 先确认 exe 是签名过的：右键 → 属性 → 数字签名，应看到 `WindowOverlay Dev`。
+   没有就运行一次 `sign.ps1`（`build.bat` 也会自动调用）。
+2. 若签名正常仍被拦，说明是 Windows 11 的 **智能应用控制**：
+   设置 → 隐私和安全性 → Windows 安全中心 → 应用和浏览器控制 → 智能应用控制 → 关闭。
+3. 检查文件是否带“来自 Internet”标记：`Get-Item 文件 | Unblock-File`；`run.bat` 已自动处理。
+
 ## 已知限制
 
 - 独占全屏（DirectX exclusive）游戏可能盖住叠层，改成无边框全屏即可。
@@ -205,9 +244,10 @@ Windows 11 会把新加入的图标默认放进任务栏的 `^` 隐藏区。点�
 
 ```
 WindowOverlay.csproj     项目文件（net8.0-windows，WPF + WinForms 托盘）
-build.bat                编译
+build.bat                编译 + 签名
 run.bat                  部署到 %LOCALAPPDATA%\Programs\WindowOverlay 并启动
 publish.bat              打包独立 exe
+sign.ps1                 创建自签名证书、信任并签名 exe
 app.manifest             Per-Monitor V2 DPI 感知
 src/
   App.xaml(.cs)          入口、单实例、命令行分发

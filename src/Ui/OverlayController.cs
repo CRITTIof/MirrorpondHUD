@@ -10,6 +10,15 @@ namespace WindowOverlay.Ui
     /// <summary>把配置、采样、叠层窗口、托盘、热键串起来。每个子系统独立兜底，单点失败不影响其它功能。</summary>
     public sealed class OverlayController : IDisposable
     {
+        enum IntroPhase
+        {
+            WelcomeTyping,
+            WelcomeHold,
+            WelcomeErase,
+            ContentTyping,
+            Live
+        }
+
         readonly List<string> _args;
         readonly KeyHistory _keys = new KeyHistory();
 
@@ -21,11 +30,18 @@ namespace WindowOverlay.Ui
         TrayIcon _tray;
         HotkeyManager _hotkeys;
         DispatcherTimer _renderTimer;
+        DispatcherTimer _introTimer;
         EventWaitHandle _activation;
         Thread _activationThread;
         MetricsSnapshot _last = new MetricsSnapshot();
         volatile bool _disposed;
         bool _overlayVisible;
+
+        IntroPhase _phase = IntroPhase.Live;
+        DateTime _phaseStart;
+        string _introWelcome = "";
+        string _introContent = "";
+        string _shownText = "";
 
         public OverlayController(Settings settings, List<string> args)
         {
@@ -48,7 +64,8 @@ namespace WindowOverlay.Ui
             _overlay.ExitRequested += Exit;
             _overlay.PositionChanged += SaveSettings;
 
-            _overlay.Apply(_settings, RenderText());
+            bool intro = _settings.Behavior.IntroEnabled;
+            _overlay.Apply(_settings, intro ? "" : RenderText());
             _overlay.Topmost = _settings.Overlay.Topmost;
 
             bool minimized = _settings.Behavior.StartMinimized || _args.Contains("--minimized");
@@ -56,6 +73,11 @@ namespace WindowOverlay.Ui
             {
                 _overlay.Show();
                 _overlayVisible = true;
+                if (intro) BeginIntro();
+            }
+            else
+            {
+                _phase = IntroPhase.Live;
             }
             Log.Info("叠层窗口已创建，可见=" + _overlayVisible + "，置顶=" + _settings.Overlay.Topmost +
                      "，锁定=" + _settings.Overlay.Locked);
@@ -211,7 +233,115 @@ namespace WindowOverlay.Ui
         void RenderNow()
         {
             if (!_overlayVisible || _overlay == null) return;
+            if (_phase != IntroPhase.Live) return;   // 动画期间不刷新真实数据
             _overlay.SetText(RenderText());
+        }
+
+        // ==================== 启动动画 ====================
+
+        void BeginIntro()
+        {
+            if (_overlay == null || !_overlayVisible || !_settings.Behavior.IntroEnabled)
+            {
+                _phase = IntroPhase.Live;
+                RenderNow();
+                return;
+            }
+
+            _introWelcome = string.IsNullOrEmpty(_settings.Behavior.WelcomeText)
+                ? "Welcome Back"
+                : _settings.Behavior.WelcomeText;
+            _introContent = TemplateEngine.RenderPlaceholder(_settings.Content, "---");
+            _shownText = "";
+
+            _overlay.SetText("");
+            _phase = IntroPhase.WelcomeTyping;
+            _phaseStart = DateTime.UtcNow;
+
+            if (_introTimer == null)
+            {
+                _introTimer = new DispatcherTimer(DispatcherPriority.Render)
+                {
+                    Interval = TimeSpan.FromMilliseconds(20)
+                };
+                _introTimer.Tick += (s, e) => IntroTick();
+            }
+
+            _introTimer.Start();
+            Log.Info("启动动画开始（欢迎语=" + _introWelcome + "，速度=" + _settings.Behavior.TypeSpeedMs + "ms/字）");
+        }
+
+        void ShowIntroText(string text)
+        {
+            if (text == _shownText) return;
+            _shownText = text;
+            _overlay.SetText(text);
+        }
+
+        void IntroTick()
+        {
+            if (_phase == IntroPhase.Live)
+            {
+                _introTimer.Stop();
+                return;
+            }
+
+            double speed = Math.Max(8, _settings.Behavior.TypeSpeedMs);
+            double elapsed = (DateTime.UtcNow - _phaseStart).TotalMilliseconds;
+            int chars = (int)(elapsed / speed);
+
+            switch (_phase)
+            {
+                case IntroPhase.WelcomeTyping:
+                {
+                    int n = Math.Min(chars, _introWelcome.Length);
+                    ShowIntroText(_introWelcome.Substring(0, n));
+                    if (n >= _introWelcome.Length)
+                    {
+                        _phase = IntroPhase.WelcomeHold;
+                        _phaseStart = DateTime.UtcNow;
+                    }
+                    break;
+                }
+
+                case IntroPhase.WelcomeHold:
+                    if ((DateTime.UtcNow - _phaseStart).TotalMilliseconds >= 650)
+                    {
+                        _phase = IntroPhase.WelcomeErase;
+                        _phaseStart = DateTime.UtcNow;
+                    }
+                    break;
+
+                case IntroPhase.WelcomeErase:
+                {
+                    int removed = Math.Min(chars, _introWelcome.Length);
+                    int remain = _introWelcome.Length - removed;
+                    ShowIntroText(remain <= 0 ? "" : _introWelcome.Substring(0, remain));
+                    if (remain <= 0)
+                    {
+                        _phase = IntroPhase.ContentTyping;
+                        _phaseStart = DateTime.UtcNow;
+                    }
+                    break;
+                }
+
+                case IntroPhase.ContentTyping:
+                {
+                    int n = Math.Min(chars, _introContent.Length);
+                    ShowIntroText(_introContent.Substring(0, n));
+                    if (n >= _introContent.Length) FinishIntro();
+                    break;
+                }
+            }
+        }
+
+        void FinishIntro()
+        {
+            if (_phase == IntroPhase.Live) return;
+            _phase = IntroPhase.Live;
+            if (_introTimer != null) _introTimer.Stop();
+            Log.Info("启动动画结束，开始刷新数据");
+            RenderNow();
         }
 
         void OnSnapshot(MetricsSnapshot snapshot)
@@ -228,6 +358,7 @@ namespace WindowOverlay.Ui
 
             if (_overlayVisible)
             {
+                if (_phase != IntroPhase.Live) FinishIntro();
                 _overlay.Hide();
                 _overlayVisible = false;
             }
@@ -285,6 +416,7 @@ namespace WindowOverlay.Ui
 
         public void ApplySettings(Settings settings)
         {
+            FinishIntro();
             _settings = settings;
             _settings.Normalize();
             ConfigStore.Save(_settings);
@@ -439,6 +571,7 @@ namespace WindowOverlay.Ui
             _disposed = true;
 
             try { _renderTimer?.Stop(); } catch { }
+            try { _introTimer?.Stop(); } catch { }
 
             try { _activation?.Set(); } catch { }
             try { _activation?.Dispose(); } catch { }

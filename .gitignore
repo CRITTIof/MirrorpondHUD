@@ -1,6 +1,7 @@
 bin/
 obj/
 publish/
+certs/
 *.user
 .vs/
 settings.json.bak

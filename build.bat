@@ -18,7 +18,18 @@ if errorlevel 1 (
     exit /b 1
 )
 
+rem Sign the exe so Windows shows a publisher name instead of "unknown publisher".
+rem First run creates a self-signed code-signing cert in the current user's store.
+if exist "%~dp0sign.ps1" (
+    echo.
+    echo [INFO] Signing...
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0sign.ps1"
+    if errorlevel 1 (
+        echo [WARN] Signing failed. The app still runs, but Windows may show "unknown publisher".
+    )
+)
+
 echo.
 echo [OK] Output: %~dp0bin\Release\
 echo      Double-click run.bat to start.
-pause
+if not "%~1"=="-auto" pause
