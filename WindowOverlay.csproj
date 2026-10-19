@@ -40,6 +40,7 @@
   <ItemGroup>
     <Resource Include="assets\logo.ico" />
     <Resource Include="assets\logo-light.ico" />
+    <Resource Include="assets\keycaps\ReiKeycap-Regular.ttf" />
   </ItemGroup>
 
 </Project>
