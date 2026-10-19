@@ -82,8 +82,10 @@ namespace WindowOverlay.Core
             map["net_adapter"] = string.IsNullOrEmpty(snap.NetAdapter) ? "—" : snap.NetAdapter;
 
             // ---------- 键盘 ----------
+            // Render() 已经按按键名的字符数截断；这里只把名字换成键帽字形（PUA），
+            // 因此「最多显示多少个字符」的规则保持不变。
             string rendered = keys == null ? "" : keys.Render();
-            map["keys"] = rendered.Length == 0 ? "—" : rendered;
+            map["keys"] = rendered.Length == 0 ? "—" : Keycaps.FromRendered(rendered);
             map["key_count"] = keys == null ? 0 : keys.Total;
 
             return map;

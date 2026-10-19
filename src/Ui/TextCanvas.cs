@@ -45,6 +45,38 @@ namespace WindowOverlay.Ui
         bool _cursorBlink = true;
         int _cursorIndex = -1;
 
+        static FontFamily _keycapFamily;
+
+        /// <summary>
+        /// 内嵌的键帽字体 ReiKeycap（只用 U+E000–U+E052 这 83 个键帽字形，图标码位不映射）。
+        /// 源码里的 `{keys}` 会先被 <see cref="WindowOverlay.Core.Keycaps"/> 换成这些 PUA 字符，
+        /// 再在这里按 run 单独用这个字体绘制，所以可以和普通文字混排。
+        /// </summary>
+        static FontFamily KeycapFamily
+        {
+            get
+            {
+                if (_keycapFamily == null)
+                {
+                    try
+                    {
+                        _keycapFamily = new FontFamily(new Uri("pack://application:,,,/"),
+                                                       "./assets/keycaps/#ReiKeycap");
+                    }
+                    catch
+                    {
+                        _keycapFamily = new FontFamily("Microsoft YaHei UI");
+                    }
+                }
+                return _keycapFamily;
+            }
+        }
+
+        static bool IsKeycapChar(char c)
+        {
+            return c >= '\uE000' && c <= '\uE052';
+        }
+
         public TextCanvas()
         {
             SnapsToDevicePixels = true;
@@ -305,9 +337,8 @@ namespace WindowOverlay.Ui
             double width = 0;
             foreach (string line in lines)
             {
-                FormattedText ft = Create(line);
-                if (ft.WidthIncludingTrailingWhitespace > width)
-                    width = ft.WidthIncludingTrailingWhitespace;
+                double lineWidth = BuildLine(line).Width;
+                if (lineWidth > width) width = lineWidth;
             }
 
             // 光标画在行尾，给右侧留一点余量，避免被裁掉
@@ -336,8 +367,8 @@ namespace WindowOverlay.Ui
         double LineHeightOf()
         {
             if (_lineHeight > 0) return _lineHeight;
-            FormattedText ft = Create("Ag");
-            return ft.Height > 0 ? ft.Height : _fontSize * 1.35;
+            TextRun run = CreateRun("Ag", false);
+            return run.Text.Height > 0 ? run.Text.Height : _fontSize * 1.35;
         }
 
         static List<string> Split(string text)
@@ -349,13 +380,37 @@ namespace WindowOverlay.Ui
             return new List<string>(parts);
         }
 
-        FormattedText Create(string line)
+        sealed class TextRun
         {
+            public FormattedText Text;
+            public double Width;
+            public double Baseline;
+        }
+
+        sealed class TextLine
+        {
+            public readonly List<TextRun> Runs = new List<TextRun>();
+            public double Width;
+            public double Baseline;
+
+            public void Add(TextRun run)
+            {
+                Runs.Add(run);
+                Width += run.Width;
+                if (run.Baseline > Baseline) Baseline = run.Baseline;
+            }
+        }
+
+        TextRun CreateRun(string text, bool keycap)
+        {
+            FontFamily family = keycap ? KeycapFamily : _fontFamily;
+            FontWeight weight = keycap ? FontWeights.Normal : _fontWeight;
+
             var ft = new FormattedText(
-                line ?? "",
+                text ?? "",
                 CultureInfo.CurrentUICulture,
                 FlowDirection.LeftToRight,
-                new Typeface(_fontFamily, FontStyles.Normal, _fontWeight, FontStretches.Normal),
+                new Typeface(family, FontStyles.Normal, weight, FontStretches.Normal),
                 _fontSize,
                 _foreground ?? Brushes.White,
                 null,
@@ -364,7 +419,38 @@ namespace WindowOverlay.Ui
 
             ft.TextAlignment = TextAlignment.Left;
             ft.Trimming = TextTrimming.None;
-            return ft;
+
+            return new TextRun
+            {
+                Text = ft,
+                Width = ft.WidthIncludingTrailingWhitespace,
+                Baseline = ft.Baseline
+            };
+        }
+
+        /// <summary>把一行拆成「普通文字 / 键帽」两种 run；键帽字符用内嵌字体的 PUA 字形绘制。</summary>
+        TextLine BuildLine(string line)
+        {
+            var result = new TextLine();
+            if (string.IsNullOrEmpty(line))
+            {
+                result.Add(CreateRun("", false));
+                return result;
+            }
+
+            int start = 0;
+            bool keycap = IsKeycapChar(line[0]);
+            for (int i = 1; i <= line.Length; i++)
+            {
+                bool next = i < line.Length && IsKeycapChar(line[i]);
+                if (i == line.Length || next != keycap)
+                {
+                    result.Add(CreateRun(line.Substring(start, i - start), keycap));
+                    start = i;
+                    keycap = next;
+                }
+            }
+            return result;
         }
 
         double PixelsPerDip()
@@ -389,10 +475,17 @@ namespace WindowOverlay.Ui
 
             for (int i = 0; i < lines.Count; i++)
             {
-                FormattedText ft = Create(lines[i]);
-                double x = AlignX(ft.WidthIncludingTrailingWhitespace, ActualWidth);
+                TextLine line = BuildLine(lines[i]);
+                double x = AlignX(line.Width, ActualWidth);
                 double y = i * lineHeight;
-                DrawLine(dc, ft, x, y);
+
+                for (int r = 0; r < line.Runs.Count; r++)
+                {
+                    TextRun run = line.Runs[r];
+                    // 用基线对齐：键帽字体和正文字体的 ascent 不同，按顶部对齐会上下错位。
+                    DrawLine(dc, run.Text, x, y + (line.Baseline - run.Baseline));
+                    x += run.Width;
+                }
             }
 
             if (_cursorVisible) DrawCursor(dc, lines, lineHeight);
@@ -472,8 +565,8 @@ namespace WindowOverlay.Ui
             if (column > line.Length) column = line.Length;
 
             string prefix = line.Substring(0, Math.Max(0, column));
-            double lineWidth = Create(line).WidthIncludingTrailingWhitespace;
-            double prefixWidth = Create(prefix).WidthIncludingTrailingWhitespace;
+            double lineWidth = BuildLine(line).Width;
+            double prefixWidth = BuildLine(prefix).Width;
             double x = AlignX(lineWidth, ActualWidth) + prefixWidth;
             double y = lineIndex * lineHeight;
 
