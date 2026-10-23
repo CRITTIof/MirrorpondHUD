@@ -2,7 +2,7 @@ using System;
 using System.Runtime.InteropServices;
 using System.Threading;
 
-namespace WindowOverlay.Core
+namespace MirrorpondHUD.Core
 {
     /// <summary>WH_KEYBOARD_LL 全局键盘钩子，独立线程带消息循环。</summary>
     public sealed class KeyboardHook : IDisposable
@@ -95,7 +95,7 @@ namespace WindowOverlay.Core
 
             _running = true;
             _ready.Reset();
-            _thread = new Thread(Pump) { IsBackground = true, Name = "WindowOverlay.KeyboardHook" };
+            _thread = new Thread(Pump) { IsBackground = true, Name = "MirrorpondHUD.KeyboardHook" };
             _thread.Start();
             _ready.Wait(2000);
 

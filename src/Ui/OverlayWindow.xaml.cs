@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -8,9 +8,9 @@ using System.Threading.Tasks;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
-using WindowOverlay.Core;
+using MirrorpondHUD.Core;
 
-namespace WindowOverlay.Ui
+namespace MirrorpondHUD.Ui
 {
     public partial class OverlayWindow : Window
     {
@@ -29,12 +29,15 @@ namespace WindowOverlay.Ui
         MenuItem _menuToggle;
         MenuItem _menuCommand;
         MenuItem _menuLock;
+        bool _commandAvailable;
+        string _commandHotkey = "";
 
         public event Action SettingsRequested;
         public event Action HideRequested;
         public event Action ExitRequested;
         public event Action LockToggleRequested;
-        public event Action PositionChanged;
+        /// <summary>拖动结束：参数是窗口相对拖动起点的位移（DIP）与所在的显示器序号。</summary>
+        public event Action<double, double, int> Moved;
         public event Action CommandLineRequested;
         public event Action<string, int> CommandTextChanged;
         public event Action CommandSubmitted;
@@ -400,20 +403,34 @@ namespace WindowOverlay.Ui
             _dragging = false;
             if (IsMouseCaptured) ReleaseMouseCapture();
 
-            CapturePosition();
+            double dx = Left - _dragStartWindow.X;
+            double dy = Top - _dragStartWindow.Y;
+            int monitor = DetectMonitor();
+
             CaptureGlass();
 
-            Action handler = PositionChanged;
-            if (handler != null) handler();
+            Action<double, double, int> handler = Moved;
+            if (handler != null) handler(dx, dy, monitor);
         }
 
-        /// <summary>把窗口位置换算成「所在显示器的相对偏移」，避免多屏时反复叠加屏幕原点。</summary>
-        void CapturePosition()
+        /// <summary>卡片本身的可见高度（不含投影预留的 10 DIP 透明边），堆叠时用它算间距。</summary>
+        public double CardHeight
+        {
+            get
+            {
+                double height = ActualHeight;
+                if (_settings.Overlay.Shadow) height -= 20;
+                return Math.Max(0, height);
+            }
+        }
+
+        /// <summary>找出窗口中心所在的显示器（拖动跨屏时用）。</summary>
+        int DetectMonitor()
         {
             try
             {
                 System.Windows.Forms.Screen[] screens = System.Windows.Forms.Screen.AllScreens;
-                if (screens.Length == 0) return;
+                if (screens.Length == 0) return _settings.Overlay.Monitor;
 
                 double scale = PrimaryScale();
                 double cx = Left + ActualWidth / 2;
@@ -437,14 +454,12 @@ namespace WindowOverlay.Ui
                     }
                 }
 
-                System.Drawing.Rectangle area = screens[index].WorkingArea;
-                _settings.Overlay.Monitor = index;
-                _settings.Overlay.X = Left - area.Left * scale;
-                _settings.Overlay.Y = Top - area.Top * scale;
+                return index;
             }
             catch (Exception ex)
             {
-                Log.Warn("记录位置失败: " + ex.Message);
+                Log.Warn("识别显示器失败: " + ex.Message);
+                return _settings.Overlay.Monitor;
             }
         }
 
@@ -506,11 +521,21 @@ namespace WindowOverlay.Ui
             return string.IsNullOrWhiteSpace(hotkey) ? text : text + " (" + hotkey + ")";
         }
 
+        /// <summary>由控制器告诉每张卡片：当前有没有命令行卡片、它的热键是什么。</summary>
+        public void SetCommandInfo(bool available, string hotkey)
+        {
+            _commandAvailable = available;
+            _commandHotkey = hotkey ?? "";
+            if (_menuCommand != null)
+                _menuCommand.Visibility = available ? Visibility.Visible : Visibility.Collapsed;
+            UpdateMenuHeaders();
+        }
+
         void UpdateMenuHeaders()
         {
             if (_menuSettings == null) return;
             _menuSettings.Header = WithHotkey("打开设置", _settings.Hotkeys.OpenSettings);
-            _menuCommand.Header = WithHotkey("快捷命令行", _settings.Hotkeys.CommandLine);
+            _menuCommand.Header = WithHotkey("快捷命令行", _commandHotkey);
             _menuToggle.Header = WithHotkey("显示 / 隐藏叠层", _settings.Hotkeys.ToggleOverlay);
             _menuLock.Header = WithHotkey("锁定叠层", _settings.Hotkeys.ToggleLock);
         }

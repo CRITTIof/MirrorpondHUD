@@ -1,8 +1,7 @@
-﻿<Window x:Class="WindowOverlay.Ui.SettingsWindow"
+<Window x:Class="MirrorpondHUD.Ui.SettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:ui="clr-namespace:WindowOverlay.Ui"
-        Title="叠层设置" Width="1020" Height="790" MinWidth="900" MinHeight="660"
+        Title="镜谭一览 · 设置" Width="1120" Height="820" MinWidth="1000" MinHeight="700"
         WindowStartupLocation="CenterScreen"
         Background="{StaticResource WindowBg}"
         FontFamily="Microsoft YaHei UI" FontSize="13"
@@ -20,7 +19,7 @@
                 BorderBrush="{StaticResource BorderSoft}" BorderThickness="0,0,0,1" Padding="18,12,18,12">
             <StackPanel Orientation="Horizontal">
                 <Image Source="/assets/logo.ico" Width="26" Height="26" RenderOptions.BitmapScalingMode="HighQuality" />
-                <TextBlock Text="叠层设置" FontSize="16" FontWeight="SemiBold" Margin="10,0,0,0"
+                <TextBlock Text="镜谭一览 · 设置" FontSize="16" FontWeight="SemiBold" Margin="10,0,0,0"
                            VerticalAlignment="Center" Foreground="{StaticResource TextPrimary}" />
                 <TextBlock x:Name="VersionText" FontSize="12" Foreground="#6B7280" Margin="12,0,0,0"
                            VerticalAlignment="Center" />
@@ -29,62 +28,171 @@
 
         <TabControl x:Name="Tabs" Grid.Row="1">
 
-            <!-- ==================== 内容 ==================== -->
-            <TabItem Header="内容">
-                <Grid Margin="18">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="18" />
-                        <ColumnDefinition Width="330" />
-                    </Grid.ColumnDefinitions>
+            <!-- ==================== 内容（卡片管理） ==================== -->
+            <TabItem Header="内容" Tag="&#xE300;">
+                <Grid Margin="18,14,18,14">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="180" />
                     </Grid.RowDefinitions>
 
-                    <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Margin="0,0,0,10">
-                        <ComboBox x:Name="PresetCombo" Width="220" Margin="0,0,8,0" />
-                        <Button Content="套用预设" Click="ApplyPresetClick" />
-                        <TextBlock x:Name="UnknownHint" Margin="12,0,0,0" VerticalAlignment="Center"
-                                   Style="{StaticResource Hint}" />
-                    </StackPanel>
+                    <Grid Grid.Row="0" Margin="0,0,0,12">
+                        <StackPanel Orientation="Horizontal">
+                            <Button x:Name="AddCardButton" Click="AddCardClick" Padding="12,6"
+                                    ToolTip="选择一种卡片添加到列表末尾">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE308;" FontFamily="{StaticResource ReiconFont}" FontSize="15"
+                                               Foreground="{StaticResource Accent}" VerticalAlignment="Center" />
+                                    <TextBlock Text="添加卡片" Margin="7,0,0,0" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+                            <TextBlock x:Name="CardCountText" Style="{StaticResource Hint}"
+                                       VerticalAlignment="Center" Margin="12,0,0,0" />
+                        </StackPanel>
 
-                    <TextBox x:Name="ContentBox" Grid.Row="1" Grid.Column="0" Style="{StaticResource CodeBox}" />
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                            <TextBlock Text="&#xE305;" FontFamily="{StaticResource ReiconFont}" FontSize="14"
+                                       Foreground="#9CA3AF" VerticalAlignment="Center" Margin="0,0,7,0" />
+                            <TextBox x:Name="SearchBox" Width="200" TextChanged="SearchBoxTextChanged"
+                                     ToolTip="按卡片名称 / 类型筛选" />
+                        </StackPanel>
+                    </Grid>
 
-                    <DockPanel Grid.Row="0" Grid.RowSpan="2" Grid.Column="2">
-                        <TextBlock DockPanel.Dock="Top" Style="{StaticResource Hint}"
-                                   Text="可用占位符（双击插入）" Margin="0,6,0,6" />
-                        <Button DockPanel.Dock="Bottom" Content="插入所选占位符" Margin="0,8,0,0"
-                                Click="InsertTokenClick" />
-                        <ListBox x:Name="TokenList">
-                            <ListBox.ItemTemplate>
-                                <DataTemplate>
-                                    <StackPanel Margin="0,1">
-                                        <TextBlock Text="{Binding Display}" FontFamily="Consolas" FontWeight="SemiBold" />
-                                        <TextBlock Text="{Binding Description}" FontSize="11"
-                                                   Foreground="{StaticResource TextSecondary}" TextWrapping="Wrap" />
-                                    </StackPanel>
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
-                        </ListBox>
-                    </DockPanel>
+                    <Grid Grid.Row="1">
+                        <ScrollViewer x:Name="CardScroll" VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled" Padding="0,0,6,0">
+                            <ItemsControl x:Name="CardList">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="{StaticResource CardBg}"
+                                                BorderBrush="{StaticResource BorderSoft}"
+                                                BorderThickness="1" CornerRadius="10" Margin="0,0,0,10">
+                                            <StackPanel>
+                                                <!-- 标题栏：图标 + 名称 + 常驻/热键摘要；右侧移动 / 删除 / 展开 -->
+                                                <Border Background="#F8FAFC" BorderBrush="#EDF0F4" BorderThickness="0,0,0,1"
+                                                        CornerRadius="10,10,0,0" Padding="12,7"
+                                                        MouseLeftButtonDown="CardHeaderClick">
+                                                    <Grid>
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <TextBlock Text="{Binding Icon}"
+                                                                       FontFamily="{StaticResource ReiconFont}"
+                                                                       FontSize="16" Foreground="{StaticResource Accent}"
+                                                                       VerticalAlignment="Center" />
+                                                            <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold"
+                                                                       Margin="8,0,0,0" VerticalAlignment="Center" />
+                                                            <Border Background="#EEF2F7" CornerRadius="9" Padding="8,1"
+                                                                    Margin="10,0,0,0" VerticalAlignment="Center">
+                                                                <TextBlock Text="{Binding Summary}" FontSize="11"
+                                                                           Foreground="{StaticResource TextSecondary}" />
+                                                            </Border>
+                                                        </StackPanel>
 
-                    <TextBlock Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3"
-                               Text="实时预览" Style="{StaticResource SectionTitle}" />
-                    <Border Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="3"
-                            Background="#22262E" CornerRadius="8" Padding="10" ClipToBounds="True">
-                        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-                            <ui:OverlaySurface x:Name="PreviewSurface"
-                                               HorizontalAlignment="Left" VerticalAlignment="Top" />
+                                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                                            <Button Style="{StaticResource IconButton}" Tag="{Binding}"
+                                                                    Click="MoveCardClick" ToolTip="调整显示顺序">
+                                                                <TextBlock Text="&#xE307;"
+                                                                           FontFamily="{StaticResource ReiconFont}"
+                                                                           FontSize="14" />
+                                                            </Button>
+                                                            <Button Style="{StaticResource IconButton}" Tag="{Binding}"
+                                                                    Click="DeleteCardClick" ToolTip="删除这张卡片">
+                                                                <TextBlock Text="&#xE306;"
+                                                                           FontFamily="{StaticResource ReiconFont}"
+                                                                           FontSize="14" />
+                                                            </Button>
+                                                            <Button Style="{StaticResource IconButton}" Tag="{Binding}"
+                                                                    Click="ToggleCardClick" ToolTip="展开 / 折叠">
+                                                                <Path Data="M0,0 L5,5 L10,0" Stroke="{StaticResource TextSecondary}"
+                                                                      StrokeThickness="1.6" VerticalAlignment="Center">
+                                                                    <Path.RenderTransform>
+                                                                        <RotateTransform Angle="{Binding ChevronAngle}"
+                                                                                         CenterX="5" CenterY="3" />
+                                                                    </Path.RenderTransform>
+                                                                </Path>
+                                                            </Button>
+                                                        </StackPanel>
+                                                    </Grid>
+                                                </Border>
+
+                                                <!-- 设置项 -->
+                                                <StackPanel Visibility="{Binding BodyVisibility}" Margin="14,10,14,14">
+                                                    <Grid Margin="0,0,0,10">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="88" />
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Text="名称" VerticalAlignment="Center" />
+                                                        <TextBox Grid.Column="1" Margin="0,0,20,0"
+                                                                 Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" />
+                                                        <CheckBox Grid.Column="2" Content="常驻"
+                                                                  IsChecked="{Binding Resident}"
+                                                                  IsEnabled="{Binding ResidentEnabled}"
+                                                                  VerticalAlignment="Center"
+                                                                  ToolTip="常驻：叠层显示时一直在屏幕上；关闭后需要用呼出热键打开" />
+                                                    </Grid>
+
+                                                    <Grid Margin="0,0,0,10">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="88" />
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Text="呼出热键" VerticalAlignment="Center" />
+                                                        <TextBox Grid.Column="1" Width="150" HorizontalAlignment="Left"
+                                                                 Text="{Binding Hotkey, Mode=OneWay}"
+                                                                 IsReadOnly="True"
+                                                                 IsEnabled="{Binding HotkeyEnabled}"
+                                                                 ToolTip="点这里后直接按组合键；Esc 清除"
+                                                                 PreviewKeyDown="CardHotkeyPreviewKeyDown" />
+                                                        <StackPanel Grid.Column="2" Orientation="Horizontal">
+                                                            <TextBlock Text="与上方卡片间距" VerticalAlignment="Center"
+                                                                       Margin="0,0,8,0" />
+                                                            <Slider Width="140" Minimum="0" Maximum="120"
+                                                                    Value="{Binding Spacing}"
+                                                                    IsEnabled="{Binding SpacingEnabled}" />
+                                                            <TextBlock Text="{Binding SpacingText}" Width="28"
+                                                                       TextAlignment="Right" VerticalAlignment="Center"
+                                                                       Margin="6,0,0,0" />
+                                                        </StackPanel>
+                                                    </Grid>
+
+                                                    <StackPanel Visibility="{Binding ContentVisibility}">
+                                                        <TextBlock Text="内容" Style="{StaticResource Hint}" Margin="0,2,0,6" />
+                                                        <TextBox x:Name="ContentBox" Style="{StaticResource CodeBox}" Height="90"
+                                                                 Text="{Binding Content, UpdateSourceTrigger=PropertyChanged}"
+                                                                 AcceptsReturn="True" AcceptsTab="False" />
+                                                        <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                                            <ComboBox x:Name="TokenCombo" Width="270"
+                                                                      ItemsSource="{Binding Tokens}"
+                                                                      DisplayMemberPath="Display"
+                                                                      Tag="{Binding ElementName=ContentBox}"
+                                                                      SelectionChanged="InsertTokenClick" />
+                                                            <TextBlock Text="选择占位符插入到光标处" Style="{StaticResource Hint}"
+                                                                       Margin="10,0,0,0" VerticalAlignment="Center" />
+                                                        </StackPanel>
+                                                    </StackPanel>
+
+                                                    <TextBlock Visibility="{Binding CommandHintVisibility}"
+                                                               Style="{StaticResource Hint}" TextWrapping="Wrap"
+                                                               Text="命令行卡片没有内容模板：提示符、历史与输入由程序绘制，工具与超时在「命令行」页设置。" />
+                                                </StackPanel>
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
                         </ScrollViewer>
-                    </Border>
+
+                        <TextBlock x:Name="EmptyHint" Text="没有匹配的卡片" Style="{StaticResource Hint}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   Visibility="Collapsed" />
+                    </Grid>
                 </Grid>
             </TabItem>
 
             <!-- ==================== 外观 ==================== -->
-            <TabItem Header="外观">
+            <TabItem Header="外观" Tag="&#xE301;">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="18,16,18,24">
 
@@ -286,7 +394,7 @@
             </TabItem>
 
             <!-- ==================== 数据源 ==================== -->
-            <TabItem Header="数据源">
+            <TabItem Header="数据源" Tag="&#xE302;">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="18,16,18,24">
 
@@ -339,7 +447,7 @@
             </TabItem>
 
             <!-- ==================== 行为 ==================== -->
-            <TabItem Header="行为">
+            <TabItem Header="行为" Tag="&#xE303;">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="18,16,18,24">
 
@@ -357,7 +465,7 @@
                                    Text="叠层能否拖动只由 F8（或托盘菜单的「锁定 / 解锁」）切换，打开或关闭本窗口都不会自动解锁、锁定。" />
 
                         <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
-                            <TextBlock Text="显示器" VerticalAlignment="Center" />
+                            <TextBlock Text="锚点" VerticalAlignment="Center" />
                             <ComboBox x:Name="MonitorCombo" Width="180" Margin="8,0,16,0" />
                             <TextBlock Text="X" VerticalAlignment="Center" />
                             <TextBox x:Name="XBox" Width="70" Margin="8,0,16,0" />
@@ -366,7 +474,7 @@
                             <Button Content="应用位置" Click="ApplyPositionClick" />
                         </StackPanel>
                         <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,6,0,0"
-                                   Text="解锁后也可以直接用鼠标拖动叠层，松手即保存位置；「保存并应用」不会移动叠层，只想改坐标请点「应用位置」。" />
+                                   Text="第一张卡片对齐到锚点，其余卡片按每张的「与上方卡片间距」向下排列；解锁后拖动任意卡片会移动整叠，松手即保存。" />
 
                         <Grid Margin="0,12,0,0">
                             <Grid.ColumnDefinitions>
@@ -380,7 +488,7 @@
                             </StackPanel>
                         </Grid>
                         <TextBlock Style="{StaticResource Hint}" Margin="110,2,0,0" TextWrapping="Wrap"
-                                   Text="0 = 自适应：宽度只增不减，数据变长只长大一次，之后不再缩回，信息位置不会来回跳动。填入具体数值可完全固定。" />
+                                   Text="0 = 自适应：宽度只增不减，数据变长只长大一次，之后不再缩回，信息位置不会来回跳动。填入具体数值可完全固定（所有卡片统一）。" />
 
                         <TextBlock Text="启动" Style="{StaticResource SectionTitle}" Margin="0,16,0,6" />
                         <CheckBox x:Name="AutoStartCheck" Content="开机自动启动" Margin="0,0,0,8" />
@@ -407,9 +515,7 @@
                             <CheckBox x:Name="CursorBlinkCheck" Content="光标闪烁" />
                         </StackPanel>
                         <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,2,0,0"
-                                   Text="打字 / 退格时会显示模拟光标，全部信息显示完成后光标自动消失。" />
-                        <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap"
-                                   Text="播放动画时会显示 “---” 占位，动画结束后才开始刷新真实数据。" />
+                                   Text="打字 / 退格时会显示模拟光标，全部信息显示完成后光标自动消失。启动动画只播放第一张可见卡片。" />
 
                         <TextBlock Text="文件" Style="{StaticResource SectionTitle}" Margin="0,16,0,6" />
                         <StackPanel Orientation="Horizontal">
@@ -427,10 +533,10 @@
             </TabItem>
 
             <!-- ==================== 热键 ==================== -->
-            <TabItem Header="热键">
+            <TabItem Header="热键" Tag="&#xE304;">
                 <StackPanel Margin="18,16,18,24">
                     <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap"
-                               Text="点击输入框后直接按下组合键即可修改；留空表示不启用该热键。默认：F9 快捷命令行，F10 打开设置，F8 锁定/解锁，显示/隐藏叠层默认不设热键。" />
+                               Text="点击输入框后直接按下组合键即可修改；Esc 清除，留空表示不启用。每张卡片自己的「呼出热键」在「内容」页设置；两张卡片可以设成同一个组合键，按下时会同时呼出。" />
 
                     <Grid Margin="0,16,0,0">
                         <Grid.ColumnDefinitions>
@@ -441,23 +547,18 @@
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
 
-                        <TextBlock Text="显示 / 隐藏叠层" VerticalAlignment="Center" Margin="0,0,0,10" />
+                        <TextBlock Text="显示 / 隐藏全部" VerticalAlignment="Center" Margin="0,0,0,10" />
                         <TextBox x:Name="HotkeyToggleBox" Grid.Column="1" IsReadOnly="True"
                                  PreviewKeyDown="HotkeyBoxPreviewKeyDown" Margin="0,0,0,10" />
 
-                        <TextBlock Text="快捷命令行" Grid.Row="1" VerticalAlignment="Center" Margin="0,0,0,10" />
-                        <TextBox x:Name="HotkeyCommandBox" Grid.Row="1" Grid.Column="1" IsReadOnly="True"
+                        <TextBlock Text="打开设置" Grid.Row="1" VerticalAlignment="Center" Margin="0,0,0,10" />
+                        <TextBox x:Name="HotkeySettingsBox" Grid.Row="1" Grid.Column="1" IsReadOnly="True"
                                  PreviewKeyDown="HotkeyBoxPreviewKeyDown" Margin="0,0,0,10" />
 
-                        <TextBlock Text="打开设置" Grid.Row="2" VerticalAlignment="Center" Margin="0,0,0,10" />
-                        <TextBox x:Name="HotkeySettingsBox" Grid.Row="2" Grid.Column="1" IsReadOnly="True"
-                                 PreviewKeyDown="HotkeyBoxPreviewKeyDown" Margin="0,0,0,10" />
-
-                        <TextBlock Text="锁定 / 解锁" Grid.Row="3" VerticalAlignment="Center" />
-                        <TextBox x:Name="HotkeyLockBox" Grid.Row="3" Grid.Column="1" IsReadOnly="True"
+                        <TextBlock Text="锁定 / 解锁" Grid.Row="2" VerticalAlignment="Center" />
+                        <TextBox x:Name="HotkeyLockBox" Grid.Row="2" Grid.Column="1" IsReadOnly="True"
                                  PreviewKeyDown="HotkeyBoxPreviewKeyDown" />
                     </Grid>
 
@@ -467,11 +568,11 @@
             </TabItem>
 
             <!-- ==================== 命令行 ==================== -->
-            <TabItem Header="命令行">
+            <TabItem Header="命令行" Tag="&#xE100;">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="18,16,18,24">
                         <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap"
-                                   Text="按快捷键（默认 F9，可在「热键」页修改）在叠层里呼出快捷命令行，再按一次关闭并清空全部命令与返回。启动动画期间、叠层隐藏时该热键无效。" />
+                                   Text="按命令行卡片的呼出热键（默认 F9，可在「内容」页修改）展开命令行卡片，再按一次关闭并清空全部命令与返回。启动动画期间会先结束动画再打开。" />
 
                         <TextBlock Text="命令行工具" Style="{StaticResource SectionTitle}" Margin="0,14,0,6" />
                         <ComboBox x:Name="ShellCombo" Width="280" HorizontalAlignment="Left">
@@ -524,7 +625,6 @@
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
-
 
         </TabControl>
 

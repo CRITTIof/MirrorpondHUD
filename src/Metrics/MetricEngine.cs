@@ -4,7 +4,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
 
-namespace WindowOverlay.Core
+namespace MirrorpondHUD.Core
 {
     /// <summary>后台采样线程：CPU / GPU / 内存 / 磁盘 / 网络 / 分区 / NVIDIA。</summary>
     public sealed class MetricEngine : IDisposable
@@ -81,7 +81,7 @@ namespace WindowOverlay.Core
             EnsureAdapter(true);
 
             _running = true;
-            _thread = new Thread(Loop) { IsBackground = true, Name = "WindowOverlay.Metrics" };
+            _thread = new Thread(Loop) { IsBackground = true, Name = "MirrorpondHUD.Metrics" };
             _thread.Start();
             Log.Info("采样线程已启动，计数器 " + (any ? "正常" : "全部失败"));
             return any;

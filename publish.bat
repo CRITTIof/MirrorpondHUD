@@ -15,10 +15,10 @@ if errorlevel 1 (
 )
 
 rem bin\Release is wiped below; keep the user's settings and log across the build.
-set "DATA_BACKUP=%TEMP%\windowoverlay-publish-data"
+set "DATA_BACKUP=%TEMP%\mirrorpondhud-publish-data"
 if exist "%DATA_BACKUP%" rd /s /q "%DATA_BACKUP%" >nul 2>&1
 mkdir "%DATA_BACKUP%" >nul 2>&1
-for %%F in (settings.json settings.json.bak overlay.log) do (
+for %%F in (settings.json settings.json.bak mirrorpond.log) do (
     if exist "%~dp0bin\Release\%%F" copy /y "%~dp0bin\Release\%%F" "%DATA_BACKUP%\%%F" >nul 2>&1
 )
 
@@ -41,23 +41,23 @@ echo.
 echo [INFO] Restoring x64 build in bin\Release for run.bat ...
 if exist "%~dp0bin" rd /s /q "%~dp0bin" >nul 2>&1
 if exist "%~dp0obj" rd /s /q "%~dp0obj" >nul 2>&1
-dotnet build WindowOverlay.csproj -c Release -nologo
+dotnet build MirrorpondHUD.csproj -c Release -nologo
 if errorlevel 1 goto :fail
 if exist "%~dp0sign.ps1" (
     powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0sign.ps1"
 )
 
 rem Put the user's settings and log back into the rebuilt bin\Release.
-for %%F in (settings.json settings.json.bak overlay.log) do (
+for %%F in (settings.json settings.json.bak mirrorpond.log) do (
     if exist "%DATA_BACKUP%\%%F" copy /y "%DATA_BACKUP%\%%F" "%~dp0bin\Release\%%F" >nul 2>&1
 )
 
 echo.
 echo [OK] Four single-file exes:
-echo      publish\arm64\WindowOverlay.exe                   self-contained, no .NET needed
-echo      publish\x64\WindowOverlay.exe                     self-contained, no .NET needed
-echo      publish\arm64-requires-dotnet\WindowOverlay.exe   needs .NET 8 Desktop Runtime
-echo      publish\x64-requires-dotnet\WindowOverlay.exe     needs .NET 8 Desktop Runtime
+echo      publish\arm64\MirrorpondHUD.exe                   self-contained, no .NET needed
+echo      publish\x64\MirrorpondHUD.exe                     self-contained, no .NET needed
+echo      publish\arm64-requires-dotnet\MirrorpondHUD.exe   needs .NET 8 Desktop Runtime
+echo      publish\x64-requires-dotnet\MirrorpondHUD.exe     needs .NET 8 Desktop Runtime
 pause
 exit /b 0
 
@@ -71,12 +71,12 @@ if exist "%~dp0bin" rd /s /q "%~dp0bin" >nul 2>&1
 if exist "%~dp0obj" rd /s /q "%~dp0obj" >nul 2>&1
 
 if /i "%~3"=="true" (
-    dotnet publish WindowOverlay.csproj -c Release -r %~1 --self-contained true ^
+    dotnet publish MirrorpondHUD.csproj -c Release -r %~1 --self-contained true ^
         -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true ^
         -p:EnableCompressionInSingleFile=true -p:DebugType=None -p:DebugSymbols=false ^
         -o "publish\%~2"
 ) else (
-    dotnet publish WindowOverlay.csproj -c Release -r %~1 --self-contained false ^
+    dotnet publish MirrorpondHUD.csproj -c Release -r %~1 --self-contained false ^
         -p:PublishSingleFile=true -p:DebugType=None -p:DebugSymbols=false ^
         -o "publish\%~2"
 )
@@ -84,8 +84,8 @@ if errorlevel 1 exit /b 1
 
 rem Sign the single-file exe as well (same self-signed cert as build.bat).
 if exist "%~dp0sign.ps1" (
-    echo [INFO] Signing publish\%~2\WindowOverlay.exe ...
-    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0sign.ps1" -Exe "%~dp0publish\%~2\WindowOverlay.exe"
+    echo [INFO] Signing publish\%~2\MirrorpondHUD.exe ...
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0sign.ps1" -Exe "%~dp0publish\%~2\MirrorpondHUD.exe"
 )
 exit /b 0
 

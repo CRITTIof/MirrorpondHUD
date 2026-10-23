@@ -3,10 +3,10 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Windows;
-using WindowOverlay.Core;
-using WindowOverlay.Ui;
+using MirrorpondHUD.Core;
+using MirrorpondHUD.Ui;
 
-namespace WindowOverlay
+namespace MirrorpondHUD
 {
     public partial class App : Application
     {
@@ -40,18 +40,18 @@ namespace WindowOverlay
                     "请把整个 bin\\Release 目录复制到一个你有完全控制权的普通文件夹\n" +
                     "（例如「文档」）后再运行。\n\n" +
                     "日志：" + Log.FilePath,
-                    "桌面叠层 · 权限受限", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    "镜谭一览 · 权限受限", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
 
             bool createdNew;
-            _mutex = new Mutex(true, "Local\\WindowOverlay.SingleInstance", out createdNew);
+            _mutex = new Mutex(true, "Local\\MirrorpondHUD.SingleInstance", out createdNew);
             if (!createdNew)
             {
                 // 已经有一个实例在跑：把它唤到前台（打开设置），而不是无声退出
                 Log.Info("已有实例在运行，通知它打开设置窗口");
                 try
                 {
-                    using (EventWaitHandle activation = EventWaitHandle.OpenExisting("Local\\WindowOverlay.Activate"))
+                    using (EventWaitHandle activation = EventWaitHandle.OpenExisting("Local\\MirrorpondHUD.Activate"))
                         activation.Set();
                 }
                 catch (Exception ex)
@@ -63,6 +63,14 @@ namespace WindowOverlay
             }
 
             List<string> args = e.Args.ToList();
+
+            string shotCards = GetOption(args, "--screenshot-cards");
+            if (shotCards != null)
+            {
+                Screenshots.CaptureCards(shotCards);
+                Shutdown(0);
+                return;
+            }
 
             string shot = GetOption(args, "--screenshot");
             if (shot != null)
@@ -95,7 +103,8 @@ namespace WindowOverlay
                 args.Remove(smoke);
                 args.Remove("--smoke");
                 bool visible = args.Remove("--smoke-visible");
-                if (!visible && !args.Contains("--minimized")) args.Add("--minimized");
+                if (visible) args.Add("--visible");
+                else if (!args.Contains("--minimized")) args.Add("--minimized");
 
                 int seconds;
                 if (!int.TryParse(smoke, out seconds)) seconds = 6;
@@ -123,7 +132,7 @@ namespace WindowOverlay
                 Log.Error("启动失败", ex);
                 MessageBox.Show(
                     "启动失败：" + ex.Message + "\n\n详细信息已写入日志：\n" + Log.FilePath,
-                    "桌面叠层", MessageBoxButton.OK, MessageBoxImage.Error);
+                    "镜谭一览", MessageBoxButton.OK, MessageBoxImage.Error);
                 Shutdown(1);
             }
         }

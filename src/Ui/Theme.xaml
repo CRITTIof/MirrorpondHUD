@@ -11,6 +11,10 @@
     <SolidColorBrush x:Key="TextSecondary" Color="#6B7280" />
     <SolidColorBrush x:Key="Danger" Color="#D14343" />
 
+    <!-- ReiconFont：内嵌的键帽 / 图标字体（设置页的页签图标、增删移动按钮都用它） -->
+    <FontFamily x:Key="ReiconFont">pack://application:,,,/assets/keycaps/#ReiconFont</FontFamily>
+
+
     <!-- ================= 文本 ================= -->
     <Style TargetType="TextBlock">
         <Setter Property="FontFamily" Value="Microsoft YaHei UI" />
@@ -108,6 +112,15 @@
         <Setter Property="FontFamily" Value="Consolas" />
         <Setter Property="Margin" Value="0,0,6,6" />
         <Setter Property="Background" Value="#FFFFFF" />
+    </Style>
+
+    <!-- 只有图标的小按钮（卡片标题栏的移动 / 删除 / 展开） -->
+    <Style x:Key="IconButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+        <Setter Property="Padding" Value="7,4" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="MinWidth" Value="30" />
+        <Setter Property="Foreground" Value="{StaticResource TextSecondary}" />
     </Style>
 
     <!-- ================= 输入框 ================= -->
@@ -278,21 +291,23 @@
         <Setter Property="MinHeight" Value="24" />
     </Style>
 
-    <!-- ================= 页签 ================= -->
+    <!-- ================= 页签（左侧竖排） ================= -->
     <Style TargetType="TabControl">
         <Setter Property="Background" Value="{StaticResource WindowBg}" />
         <Setter Property="BorderThickness" Value="0" />
         <Setter Property="Padding" Value="0" />
+        <Setter Property="TabStripPlacement" Value="Left" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="TabControl">
                     <DockPanel>
-                        <Border DockPanel.Dock="Top"
-                                Background="{StaticResource WindowBg}"
+                        <Border DockPanel.Dock="Left"
+                                Width="184"
+                                Background="{StaticResource CardBg}"
                                 BorderBrush="{StaticResource BorderSoft}"
-                                BorderThickness="0,0,0,1"
-                                Padding="14,0,14,0">
-                            <TabPanel IsItemsHost="True" Background="Transparent" />
+                                BorderThickness="0,0,1,0"
+                                Padding="0,10,0,10">
+                            <StackPanel IsItemsHost="True" />
                         </Border>
                         <Border Background="{TemplateBinding Background}">
                             <ContentPresenter ContentSource="SelectedContent" />
@@ -314,18 +329,27 @@
                     <Border x:Name="Bd"
                             Background="Transparent"
                             BorderBrush="Transparent"
-                            BorderThickness="0,0,0,2"
-                            Padding="14,11,14,9"
-                            Margin="0">
-                        <ContentPresenter ContentSource="Header"
-                                          HorizontalAlignment="Center"
-                                          VerticalAlignment="Center" />
+                            BorderThickness="3,0,0,0"
+                            Padding="14,10,12,10"
+                            Margin="8,2,8,0">
+                        <StackPanel Orientation="Horizontal">
+                            <!-- 页签图标：ReiconFont 的界面图标（U+E300 起），内容由 TabItem.Tag 指定 -->
+                            <TextBlock Text="{TemplateBinding Tag}"
+                                       FontFamily="{StaticResource ReiconFont}"
+                                       FontSize="17"
+                                       Foreground="{TemplateBinding Foreground}"
+                                       VerticalAlignment="Center" />
+                            <ContentPresenter ContentSource="Header"
+                                              Margin="10,0,0,0"
+                                              VerticalAlignment="Center" />
+                        </StackPanel>
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Bd" Property="Background" Value="#EDF1F7" />
+                            <Setter TargetName="Bd" Property="Background" Value="#F2F5F9" />
                         </Trigger>
                         <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="#EEF3FB" />
                             <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource Accent}" />
                             <Setter Property="Foreground" Value="{StaticResource Accent}" />
                             <Setter Property="FontWeight" Value="SemiBold" />

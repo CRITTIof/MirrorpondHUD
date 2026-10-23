@@ -5,8 +5,8 @@ cd /d "%~dp0"
 rem Build once (if needed) and run in place.
 rem Settings and log live next to the exe:
 rem   bin\Release\settings.json
-rem   bin\Release\overlay.log
-set "EXE=%~dp0bin\Release\WindowOverlay.exe"
+rem   bin\Release\mirrorpond.log
+set "EXE=%~dp0bin\Release\MirrorpondHUD.exe"
 
 if not exist "%EXE%" (
     where dotnet >nul 2>nul

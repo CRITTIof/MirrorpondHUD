@@ -2,7 +2,7 @@
 using System.Runtime.InteropServices;
 using System.Windows.Media;
 
-namespace WindowOverlay.Ui
+namespace MirrorpondHUD.Ui
 {
     internal static class Native
     {

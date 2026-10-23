@@ -4,7 +4,7 @@ using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text;
 
-namespace WindowOverlay.Core
+namespace MirrorpondHUD.Core
 {
     /// <summary>把一次采样展开成模板可用的变量表。</summary>
     public static class Variables
@@ -87,6 +87,16 @@ namespace WindowOverlay.Core
             string rendered = keys == null ? "" : keys.Render();
             map["keys"] = rendered.Length == 0 ? "—" : Keycaps.FromRendered(rendered);
             map["key_count"] = keys == null ? 0 : keys.Total;
+
+            // ---------- 硬件图标（ReiconFont U+E200–U+E205） ----------
+            map["cpu_icon"] = Icons.Cpu;
+            map["gpu_icon"] = Icons.Gpu;
+            map["mem_icon"] = Icons.Ram;
+            map["ram_icon"] = Icons.Ram;
+            map["disk_icon"] = Icons.Rom;
+            map["rom_icon"] = Icons.Rom;
+            map["net_down_icon"] = Icons.NetDown;
+            map["net_up_icon"] = Icons.NetUp;
 
             return map;
         }

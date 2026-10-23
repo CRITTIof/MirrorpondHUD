@@ -1,18 +1,31 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
-using System.IO;
 
-namespace WindowOverlay.Core
+namespace MirrorpondHUD.Core
 {
     /// <summary>全部可持久化的设置。字段名即 JSON 键名。</summary>
     public sealed class Settings
     {
-        public const string DefaultContent =
-            "{time}  {date}\n" +
-            "CPU {cpu:0.0}%   MEM {mem_pct:0}%   GPU {gpu:0.0}%\n" +
-            "↓ {net_down}   ↑ {net_up}   DISK {disk:0.0}%\n" +
-            "KEY {keys}";
+        /// <summary>当前配置结构版本。0/1 是旧的单窗口配置，加载时由 SettingsMigration 升级。</summary>
+        public const int CurrentSchemaVersion = 2;
+        public int SchemaVersion = 0;
 
+        /// <summary>系统信息卡的默认内容：CPU / 内存 / GPU / 网络 / 磁盘，前置 ReiconFont 图标。</summary>
+        public const string DefaultMetricsContent =
+            "{cpu_icon} {cpu:0.0}%   {mem_icon} {mem_pct:0}%   {gpu_icon} {gpu:0.0}%\n" +
+            "{net_down_icon} {net_down}   {net_up_icon} {net_up}   {disk_icon} {disk:0.0}%";
+
+        /// <summary>时钟卡的默认内容：时间、日期、星期、运行时长。</summary>
+        public const string DefaultClockContent =
+            "{time}  {date}\n{weekday}  {uptime}";
+
+        /// <summary>按键卡的默认内容：最近按键（键帽字形）。</summary>
+        public const string DefaultKeysContent = "KEY {keys}";
+
+        /// <summary>文本卡的默认内容：计算机名与用户名。</summary>
+        public const string DefaultTextContent = "{host} · {user}";
+
+        /// <summary>叠层锚点：所有卡片从坐标 (X, Y) 开始，按顺序向下堆叠。</summary>
         public OverlaySettings Overlay = new OverlaySettings();
         public StyleSettings Style = new StyleSettings();
         public DataSettings Data = new DataSettings();
@@ -20,12 +33,12 @@ namespace WindowOverlay.Core
         public HotkeySettings Hotkeys = new HotkeySettings();
         public CommandSettings Command = new CommandSettings();
 
-        /// <summary>显示内容模板，支持 {cpu} 等占位符，换行即多行。</summary>
-        public string Content = DefaultContent;
+        /// <summary>卡片列表，顺序即叠层上的显示顺序。</summary>
+        public List<CardSettings> Cards = new List<CardSettings>();
 
         public void Normalize()
         {
-            if (Content == null) Content = DefaultContent;
+            SchemaVersion = CurrentSchemaVersion;
 
             Style.FontSize = Clamp(Style.FontSize, 6, 96);
             Style.BackgroundOpacity = Clamp(Style.BackgroundOpacity, 0, 1);
@@ -61,14 +74,8 @@ namespace WindowOverlay.Core
             Hotkeys.ToggleOverlay = (Hotkeys.ToggleOverlay ?? "").Trim();
             Hotkeys.OpenSettings = NormalizeHotkey(Hotkeys.OpenSettings, "F10");
             Hotkeys.ToggleLock = NormalizeHotkey(Hotkeys.ToggleLock, "F8");
-            Hotkeys.CommandLine = NormalizeHotkey(Hotkeys.CommandLine, "F9");
 
-            // 命令行与显示/隐藏不能共用同一个组合键：命令行优先，另一个置空。
-            if (Hotkeys.ToggleOverlay.Length > 0 &&
-                string.Equals(Hotkeys.ToggleOverlay, Hotkeys.CommandLine, StringComparison.OrdinalIgnoreCase))
-            {
-                Hotkeys.ToggleOverlay = "";
-            }
+            // 命令行热键不再是全局热键：它属于「命令行」卡片（见 CardSettings.Hotkey）。
 
             Command.Shell = NormalizeShell(Command.Shell);
             Command.CustomShell = string.IsNullOrWhiteSpace(Command.CustomShell)
@@ -81,6 +88,8 @@ namespace WindowOverlay.Core
 
             if (!IsHexColor(Style.Foreground)) Style.Foreground = "#E6EDF3";
             if (!IsHexColor(Style.Background)) Style.Background = "#0D1117";
+
+            // 卡片列表的结构由 CardModel.Normalize 处理（需要卡片注册表里的元数据）。
         }
 
         static string NormalizeHotkey(string value, string fallback)
@@ -177,7 +186,7 @@ namespace WindowOverlay.Core
 
     public sealed class OverlaySettings
     {
-        /// <summary>叠层左上角坐标（DIP）。</summary>
+        /// <summary>叠层锚点坐标（DIP，相对所在显示器工作区左上角），第一张卡片放在这里。</summary>
         public double X = 48;
         public double Y = 48;
         /// <summary>0-based 显示器序号。</summary>
@@ -271,8 +280,6 @@ namespace WindowOverlay.Core
         public string ToggleOverlay = "";
         public string OpenSettings = "F10";
         public string ToggleLock = "F8";
-        /// <summary>呼出 / 关闭快捷命令行。</summary>
-        public string CommandLine = "F9";
     }
 
     public sealed class CommandSettings
@@ -290,5 +297,27 @@ namespace WindowOverlay.Core
         /// <summary>命令行区域最多保留多少行返回内容。</summary>
         public int MaxLines = 30;
         public int TimeoutSeconds = 20;
+    }
+
+    /// <summary>
+    /// 一张卡片（一个独立透明小窗口）的配置。
+    /// 位置不再单独保存：卡片按列表顺序自上而下堆叠，Spacing 是与上一张可见卡片之间的距离。
+    /// </summary>
+    public sealed class CardSettings
+    {
+        /// <summary>稳定标识，删除 / 重排都不变，热键动作也挂在它上面。</summary>
+        public string Id = "";
+        /// <summary>卡片种类（CardRegistry 里的 Kind）。</summary>
+        public string Kind = "metrics";
+        /// <summary>显示名称，允许重名。</summary>
+        public string Name = "";
+        /// <summary>常驻：叠层显示时一直在屏幕上；关闭后需要用热键呼出。</summary>
+        public bool Resident = true;
+        /// <summary>呼出热键（仅非常驻卡片使用）。</summary>
+        public string Hotkey = "";
+        /// <summary>与上一张可见卡片的间距（DIP）。</summary>
+        public double Spacing = 12;
+        /// <summary>内容模板；空 = 使用卡片自带的默认内容。</summary>
+        public string Content = "";
     }
 }

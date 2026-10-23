@@ -4,10 +4,11 @@ using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
-using WindowOverlay.Core;
-using WindowOverlay.Ui;
+using MirrorpondHUD.Cards;
+using MirrorpondHUD.Core;
+using MirrorpondHUD.Ui;
 
-namespace WindowOverlay
+namespace MirrorpondHUD
 {
     /// <summary>--selftest：在真实环境跑一遍采样 / 键盘钩子 / 热键注册，把结果写进日志。</summary>
     internal static class SelfTest
@@ -156,11 +157,12 @@ namespace WindowOverlay
                     bool a = RegisterIfSet(hotkeys, HotkeyManager.ActionToggleOverlay, settings.Hotkeys.ToggleOverlay);
                     bool b = RegisterIfSet(hotkeys, HotkeyManager.ActionOpenSettings, settings.Hotkeys.OpenSettings);
                     bool c = RegisterIfSet(hotkeys, HotkeyManager.ActionToggleLock, settings.Hotkeys.ToggleLock);
-                    bool d = RegisterIfSet(hotkeys, HotkeyManager.ActionCommandLine, settings.Hotkeys.CommandLine);
+                    string commandHotkey = CommandHotkey(settings);
+                    bool d = RegisterIfSet(hotkeys, HotkeyManager.CardAction("selftest-command"), commandHotkey);
 
                     Fix(sb, "热键",
                         Show(settings.Hotkeys.ToggleOverlay, a) + "  " +
-                        Show(settings.Hotkeys.CommandLine, d) + "  " +
+                        Show(commandHotkey, d) + "  " +
                         Show(settings.Hotkeys.OpenSettings, b) + "  " +
                         Show(settings.Hotkeys.ToggleLock, c));
                 }
@@ -199,6 +201,7 @@ namespace WindowOverlay
             bool collapseOk = false;
             bool thresholdOk = false;
             bool configOk = false;
+            bool cardOk = false;
             bool keyNameOk = false;
             bool keyLimitOk = false;
             bool keyOverflowOk = false;
@@ -314,16 +317,21 @@ namespace WindowOverlay
             {
                 var settings = new Settings
                 {
-                    Content = "x{cpu}",
                     Style = { FontSize = 21 },
                     Overlay = { X = 123.5, Locked = false },
                     Data = { DiskDrives = new List<string> { "C:\\" } },
                     Command = { Shell = "pwsh", MaxLineChars = 77, Truncate = false }
                 };
+                settings.Cards.Add(new CardSettings
+                {
+                    Id = "self", Kind = "text", Name = "自检", Content = "x{cpu}", Resident = true, Spacing = 16
+                });
 
                 Settings back = Json.Deserialize<Settings>(Json.Serialize(settings));
                 configOk = back != null
-                           && back.Content == "x{cpu}"
+                           && back.Cards != null && back.Cards.Count == 1
+                           && back.Cards[0].Content == "x{cpu}"
+                           && back.Cards[0].Kind == "text"
                            && Math.Abs(back.Style.FontSize - 21) < 0.001
                            && Math.Abs(back.Overlay.X - 123.5) < 0.001
                            && back.Overlay.Locked == false
@@ -337,12 +345,32 @@ namespace WindowOverlay
                 Log.Error("配置往返自检异常", ex);
             }
 
-            if (!(templateOk && unknownOk && collapseOk && thresholdOk && configOk &&
+            try
+            {
+                var settings = new Settings();
+                settings.Normalize();
+                CardModel.Normalize(settings);
+
+                string clock = CardRegistry.Get("clock").Render(
+                    new CardRenderContext(settings, Screenshots.DemoSnapshot(), null,
+                                          new CardSettings { Kind = "clock", Content = "{time}" }));
+
+                cardOk = CardRegistry.Modules.Count >= 4
+                         && settings.Cards.Count >= 1
+                         && !string.IsNullOrWhiteSpace(clock)
+                         && clock.IndexOf('{') < 0;
+            }
+            catch (Exception ex)
+            {
+                Log.Error("卡片模块自检异常", ex);
+            }
+
+            if (!(templateOk && unknownOk && collapseOk && thresholdOk && configOk && cardOk &&
                   keyNameOk && keyLimitOk && keyOverflowOk &&
                   commandOk && truncateOk && toolLabelOk)) failures++;
 
             Fix(sb, "逻辑自检", string.Format(
-                "模板={0} 未知占位符={1} 折叠={2} 阈值内展开={3} 配置读写={4} 键名={5} 按键长度={6} 超长截断={7} 命令行={8} 行截断={9} 工具名={10}",
+                "模板={0} 未知占位符={1} 折叠={2} 阈值内展开={3} 配置读写={4} 卡片模块={11} 键名={5} 按键长度={6} 超长截断={7} 命令行={8} 行截断={9} 工具名={10}",
                 templateOk ? "OK" : "FAIL",
                 unknownOk ? "OK" : "FAIL",
                 collapseOk ? "OK" : "FAIL",
@@ -353,13 +381,23 @@ namespace WindowOverlay
                 keyOverflowOk ? "OK" : "FAIL",
                 commandOk ? "OK" : "FAIL",
                 truncateOk ? "OK" : "FAIL",
-                toolLabelOk ? "OK" : "FAIL"));
+                toolLabelOk ? "OK" : "FAIL",
+                cardOk ? "OK" : "FAIL"));
         }
 
         static bool RegisterIfSet(HotkeyManager hotkeys, string action, string combination)
         {
             if (string.IsNullOrWhiteSpace(combination)) return true;   // 未设置也算正常
             return hotkeys.Register(action, combination);
+        }
+
+        static string CommandHotkey(Settings settings)
+        {
+            if (settings == null || settings.Cards == null) return "";
+            foreach (CardSettings card in settings.Cards)
+                if (card != null && string.Equals(card.Kind, "command", StringComparison.OrdinalIgnoreCase))
+                    return card.Hotkey ?? "";
+            return "";
         }
 
         static string Show(string combination, bool ok)

@@ -1,13 +1,13 @@
-﻿using System;
+using System;
 using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using WinForms = System.Windows.Forms;
-using WindowOverlay.Core;
+using MirrorpondHUD.Core;
 
-namespace WindowOverlay.Ui
+namespace MirrorpondHUD.Ui
 {
     /// <summary>
     /// 原生 Shell_NotifyIcon 托盘图标：
@@ -103,7 +103,7 @@ namespace WindowOverlay.Ui
 
                 CreateHandle(new WinForms.CreateParams
                 {
-                    Caption = "WindowOverlay.TrayHost",
+                    Caption = "MirrorpondHUD.TrayHost",
                     Style = 0,
                     ExStyle = 0,
                     X = 0,
@@ -289,7 +289,7 @@ namespace WindowOverlay.Ui
                 uID = TRAY_ICON_ID,
                 uCallbackMessage = WM_CALLBACK,
                 hIcon = _icon.Handle,
-                szTip = "桌面叠层"
+                szTip = "镜谭一览"
             };
         }
 
