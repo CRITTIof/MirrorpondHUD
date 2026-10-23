@@ -1,37 +1,39 @@
-# ReiKeycap 映射文档
+# ReiconFont 映射文档
 
-版本 **1.4.0** · **95** 个字形 · **101** 个 `event.code` · **62** 个 ASCII 别名 · **157** 个 cmap 条目。
+版本 **1.7.1** · **114** 个字形 · **106** 个 `event.code` · **62** 个 ASCII 别名 · **176** 个 cmap 条目。
 
-本文说明字符、PUA 码位和浏览器键盘事件如何对应到 **ReiKeycap** 中的字形。
+本文说明字符、PUA 码位和浏览器键盘事件如何对应到 **ReiconFont** 中的字形。
 
 ## 1. 三种取字方式
 
-1. **PUA 码位**：每个字形都有固定码位（`U+E000–U+E05E`），适合精确指定某个键帽或图标。
+1. **PUA 码位**：每个字形都有固定码位（键帽 `U+E000` 起，软件图标 `U+E100` 起，硬件图标 `U+E200` 起，界面图标 `U+E300` 起），适合精确指定某个键帽或图标。
 2. **ASCII 别名**：`A–Z`、`a–z`、`0–9` 直接映射到对应键帽；`A` 与 `a` 都会显示大写 A 键帽。
 3. **`event.code`**：先查下表把物理键映射到码位，再用 `String.fromCodePoint(codepoint)` 渲染。
 
 ```css
 @font-face {
-  font-family: "ReiKeycap";
-  src: url("fonts/ReiKeycap-Regular.woff2") format("woff2");
+  font-family: "ReiconFont";
+  src: url("fonts/ReiconFont-Regular.woff2") format("woff2");
 }
 
-.key { font: 400 38px/1 "ReiKeycap"; color: currentColor; }
+.key { font: 400 38px/1 "ReiconFont"; color: currentColor; }
 ```
 
 ```html
-<span class="key">&#xE000;</span>   <!-- Esc：PUA -->
+<span class="key">&#xE000;</span>   <!-- Esc：键帽 -->
+<span class="key">&#xE100;</span>   <!-- CLI：软件图标 -->
+<span class="key">&#xE200;</span>   <!-- CPU：硬件图标 -->
+<span class="key">&#xE300;</span>   <!-- 内容：界面图标 -->
 <span class="key">A</span>          <!-- A：ASCII 别名 -->
-<span class="key">7</span>          <!-- 7：ASCII 别名 -->
 ```
 
 > **注意：** ASCII 字母和数字被有意映射为键帽。不要把本字体用于正文；正文请使用普通文本字体。
 
 ## 2. PUA 码位表
 
-键帽占 `U+E000–U+E052`，12 个系统图标占 `U+E053–U+E05E`。
+键帽连续占用 `U+E000–U+E056`；软件图标（含文件与 AI）从 `U+E100` 开始，硬件图标从 `U+E200` 开始，界面图标从 `U+E300` 开始。每个区块预留 256 个码位，块内和块间的空位都留给后续扩展。
 
-| PUA | 字形 ID | 类型 | 分类 | 键帽文字 | 名称 | ASCII 别名 |
+| PUA | 字形 ID | 类型 | 分类 | 图例 | 名称 | ASCII 别名 |
 |---|---|---|---|---|---|---|
 | <code>U+E000</code> | <code>escape</code> | 键帽 | 功能键 | <code>Esc</code> | Escape | — |
 | <code>U+E001</code> | <code>f1</code> | 键帽 | 功能键 | <code>F1</code> | F1 | — |
@@ -116,23 +118,43 @@
 | <code>U+E050</code> | <code>num</code> | 键帽 | 小键盘 | <code>Num</code> | Num Lock | — |
 | <code>U+E051</code> | <code>asterisk</code> | 键帽 | 小键盘 | <code>*</code> | Multiply | — |
 | <code>U+E052</code> | <code>plus</code> | 键帽 | 小键盘 | <code>+</code> | Plus | — |
-| <code>U+E053</code> | <code>cpu</code> | 图标 | 硬件 | <code>CPU</code> | Processor | — |
-| <code>U+E054</code> | <code>gpu</code> | 图标 | 硬件 | <code>GPU</code> | Graphics processor | — |
-| <code>U+E055</code> | <code>ram</code> | 图标 | 硬件 | <code>RAM</code> | Memory | — |
-| <code>U+E056</code> | <code>rom</code> | 图标 | 硬件 | <code>ROM</code> | Hard drive (ROM) | — |
-| <code>U+E057</code> | <code>netup</code> | 图标 | 硬件 | <code>NetUp</code> | Network uplink | — |
-| <code>U+E058</code> | <code>netdown</code> | 图标 | 硬件 | <code>NetDown</code> | Network downlink | — |
-| <code>U+E059</code> | <code>terminal</code> | 图标 | 软件 | <code>CLI</code> | Command line | — |
-| <code>U+E05A</code> | <code>web</code> | 图标 | 软件 | <code>Web</code> | Web page | — |
-| <code>U+E05B</code> | <code>app</code> | 图标 | 软件 | <code>App</code> | Application | — |
-| <code>U+E05C</code> | <code>game</code> | 图标 | 软件 | <code>Game</code> | Game | — |
-| <code>U+E05D</code> | <code>usb</code> | 图标 | 硬件 | <code>USB</code> | USB drive | — |
-| <code>U+E05E</code> | <code>volume</code> | 图标 | 硬件 | <code>Vol</code> | Volume | — |
+| <code>U+E053</code> | <code>printscreen</code> | 键帽 | 功能键 | <code>PrtSc</code> | Print Screen | — |
+| <code>U+E054</code> | <code>scrolllock</code> | 键帽 | 功能键 | <code>ScrLk</code> | Scroll Lock | — |
+| <code>U+E055</code> | <code>pause</code> | 键帽 | 功能键 | <code>Pause</code> | Pause | — |
+| <code>U+E056</code> | <code>menu</code> | 键帽 | 修饰键 | <code>Menu</code> | Context Menu | — |
+| <code>U+E100</code> | <code>terminal</code> | 图标 | 软件 | <code>CLI</code> | Command line | — |
+| <code>U+E101</code> | <code>web</code> | 图标 | 软件 | <code>Web</code> | Web page | — |
+| <code>U+E102</code> | <code>app</code> | 图标 | 软件 | <code>App</code> | Application | — |
+| <code>U+E103</code> | <code>game</code> | 图标 | 软件 | <code>Game</code> | Game | — |
+| <code>U+E104</code> | <code>folder</code> | 图标 | 文件 | <code>Folder</code> | Folder | — |
+| <code>U+E105</code> | <code>txt</code> | 图标 | 文件 | <code>TXT</code> | Text file | — |
+| <code>U+E106</code> | <code>image</code> | 图标 | 文件 | <code>Image</code> | Image | — |
+| <code>U+E107</code> | <code>agent</code> | 图标 | AI | <code>AI</code> | AI Agent | — |
+| <code>U+E200</code> | <code>cpu</code> | 图标 | 硬件 | <code>CPU</code> | Processor | — |
+| <code>U+E201</code> | <code>gpu</code> | 图标 | 硬件 | <code>GPU</code> | Graphics processor | — |
+| <code>U+E202</code> | <code>ram</code> | 图标 | 硬件 | <code>RAM</code> | Memory | — |
+| <code>U+E203</code> | <code>rom</code> | 图标 | 硬件 | <code>ROM</code> | Hard drive (ROM) | — |
+| <code>U+E204</code> | <code>netup</code> | 图标 | 硬件 | <code>NetUp</code> | Network uplink | — |
+| <code>U+E205</code> | <code>netdown</code> | 图标 | 硬件 | <code>NetDown</code> | Network downlink | — |
+| <code>U+E206</code> | <code>usb</code> | 图标 | 硬件 | <code>USB</code> | USB drive | — |
+| <code>U+E207</code> | <code>volume</code> | 图标 | 硬件 | <code>Vol</code> | Volume | — |
+| <code>U+E208</code> | <code>microphone</code> | 图标 | 硬件 | <code>Mic</code> | Microphone | — |
+| <code>U+E300</code> | <code>content</code> | 图标 | 图标 | <code>Content</code> | Content | — |
+| <code>U+E301</code> | <code>appearance</code> | 图标 | 图标 | <code>Look</code> | Appearance | — |
+| <code>U+E302</code> | <code>datasource</code> | 图标 | 图标 | <code>Source</code> | Data source | — |
+| <code>U+E303</code> | <code>behavior</code> | 图标 | 图标 | <code>Action</code> | Behavior | — |
+| <code>U+E304</code> | <code>hotkey</code> | 图标 | 图标 | <code>Hotkey</code> | Hotkey | — |
+| <code>U+E305</code> | <code>search</code> | 图标 | 图标 | <code>Search</code> | Search | — |
+| <code>U+E306</code> | <code>trash</code> | 图标 | 图标 | <code>Delete</code> | Delete | — |
+| <code>U+E307</code> | <code>move</code> | 图标 | 图标 | <code>Move</code> | Move | — |
+| <code>U+E308</code> | <code>add</code> | 图标 | 图标 | <code>Add</code> | Add | — |
+| <code>U+E309</code> | <code>expand</code> | 图标 | 图标 | <code>Expand</code> | Expand | — |
 
 ### 字形说明
 
 - `ROM` 沿用键盘上的丝印；图形实际是**硬盘**（盘片、主轴、磁臂），不是 ROM 芯片。
-- 12 个图标分为 **4 个软件**（`CLI`、`Web`、`App`、`Game`）和 **8 个硬件**（`CPU`、`GPU`、`RAM`、`ROM`、`NetUp`、`NetDown`、`USB`、`Vol`）。
+- 27 个图标分为 **8 个软件 / 文件 / AI**（`CLI`、`Web`、`App`、`Game`、`Folder`、`TXT`、`Image`、`AI`）、**9 个硬件**（`CPU`、`GPU`、`RAM`、`ROM`、`NetUp`、`NetDown`、`USB`、`Vol`、`Mic`）和 **10 个界面图标**（`Content`、`Look`、`Source`、`Action`、`Hotkey`、`Search`、`Delete`、`Move`、`Add`、`Expand`）。
+- `PrtSc`、`ScrLk`、`Pause`、`Menu` 与其余键帽一样占 `U+E000` 区块，不单独分区；`MetaRight` 复用 `Win` 键帽。
 - 图标是象形符号，没有 `event.code`，也不属于文本。
 
 ## 3. ASCII 别名
@@ -215,7 +237,7 @@ document.addEventListener("keydown", (event) => {
 });
 ```
 
-`demo.html` 中的 `KEYS` 数组包含全部 101 条映射，可直接复制。
+`demo.html` 中的 `KEYS` 数组包含全部 106 条映射，可直接复制。
 
 | `event.code` | 键帽文字 | 字形 ID | PUA | 分区 |
 |---|---|---|---|---|
@@ -320,12 +342,17 @@ document.addEventListener("keydown", (event) => {
 | <code>NumpadEnter</code> | <code>Enter</code> | <code>enter</code> | <code>U+E03B</code> | 小键盘 |
 | <code>Numpad0</code> | <code>0</code> | <code>digit0</code> | <code>U+E01D</code> | 小键盘 |
 | <code>NumpadDecimal</code> | <code>.</code> | <code>period</code> | <code>U+E045</code> | 小键盘 |
+| <code>PrintScreen</code> | <code>PrtSc</code> | <code>printscreen</code> | <code>U+E053</code> | 功能键 |
+| <code>ScrollLock</code> | <code>ScrLk</code> | <code>scrolllock</code> | <code>U+E054</code> | 功能键 |
+| <code>Pause</code> | <code>Pause</code> | <code>pause</code> | <code>U+E055</code> | 功能键 |
+| <code>MetaRight</code> | <code>Win</code> | <code>win</code> | <code>U+E049</code> | 修饰键 |
+| <code>ContextMenu</code> | <code>Menu</code> | <code>menu</code> | <code>U+E056</code> | 修饰键 |
 
 重复的物理键共用一个字形，但每个 `event.code` 都单独列出。例如 `ShiftLeft` 与 `ShiftRight` 都使用 `shift`，`Digit7` 与 `Numpad7` 都使用 `digit7`。
 
 ## 5. 字体信息
 
-- 字体族：**ReiKeycap**，样式 **Regular**，版本 **1.400**。
+- 字体族：**ReiconFont**，样式 **Regular**，版本 **1.710**。
 - Units per em：**1000**；所有字形占满 **1em / 62 设计单位** 的显示高度。
 - 键帽边框高 1000 字体单位；独立 SVG 的设计高度为 62 单位。
 - 单色轮廓，内部透明，颜色由 `color` / `currentColor` 控制。

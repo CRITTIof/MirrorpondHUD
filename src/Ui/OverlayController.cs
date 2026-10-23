@@ -1,14 +1,19 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
-using WindowOverlay.Core;
+using MirrorpondHUD.Cards;
+using MirrorpondHUD.Core;
 
-namespace WindowOverlay.Ui
+namespace MirrorpondHUD.Ui
 {
-    /// <summary>把配置、采样、叠层窗口、托盘、热键串起来。每个子系统独立兜底，单点失败不影响其它功能。</summary>
+    /// <summary>
+    /// 把配置、采样、卡片窗口、托盘、热键串起来。
+    /// 卡片位置不再逐张保存：所有可见卡片从配置的锚点开始共享一条垂直堆叠，
+    /// 每张卡片只负责自己内容与「与上一张的间距」。
+    /// </summary>
     public sealed class OverlayController : IDisposable
     {
         enum IntroPhase
@@ -33,10 +38,20 @@ namespace WindowOverlay.Ui
             public bool Done;
         }
 
+        sealed class CardSlot
+        {
+            public CardSettings Config;
+            public ICardModule Module;
+            public Settings Dialog;
+            public OverlayWindow Window;
+            public bool Summoned;
+            public bool Shown;
+            public double BodyHeight;
+        }
+
         Settings _settings;
         MetricEngine _engine;
         KeyboardHook _hook;
-        OverlayWindow _overlay;
         SettingsWindow _settingsWindow;
         TrayIcon _tray;
         HotkeyManager _hotkeys;
@@ -47,13 +62,18 @@ namespace WindowOverlay.Ui
         MetricsSnapshot _last = new MetricsSnapshot();
         volatile bool _disposed;
         bool _overlayVisible;
+        bool _layoutScheduled;
 
+        readonly List<CardSlot> _cards = new List<CardSlot>();
+
+        CardSlot _commandCard;
         bool _commandMode;
         bool _commandRunning;
         string _commandInput = "";
         int _commandCaret;
         CancellationTokenSource _commandCancel;
 
+        CardSlot _introCard;
         IntroPhase _phase = IntroPhase.Live;
         DateTime _phaseStart;
         string _introWelcome = "";
@@ -75,26 +95,25 @@ namespace WindowOverlay.Ui
             _keys.Configure(_settings.Data.KeyHistoryCount, _settings.Data.RepeatThreshold,
                             _settings.Data.MaxKeyChars);
 
-            _overlay = CreateOverlay();
+            bool autoStarted = _args.Contains("--autostart");
+            bool forcedVisible = _args.Contains("--visible");
+            bool minimized = !forcedVisible &&
+                             ((!autoStarted && _settings.Behavior.StartMinimized) || _args.Contains("--minimized"));
+            bool intro = _settings.Behavior.IntroEnabled && !minimized;
 
-            bool intro = _settings.Behavior.IntroEnabled;
-            if (intro) _overlay.SetLayoutText(TemplateEngine.RenderPlaceholder(_settings.Content, "---"));
-            _overlay.Apply(_settings, intro ? "" : RenderText());
-            _overlay.Topmost = _settings.Overlay.Topmost;
+            CreateCards();
+            _overlayVisible = !minimized;
 
-            bool minimized = _settings.Behavior.StartMinimized || _args.Contains("--minimized");
-            if (!minimized)
-            {
-                _overlay.Show();
-                _overlayVisible = true;
-                if (intro) BeginIntro();
-            }
-            else
-            {
+            RefreshVisibility();
+            UpdateCommandInfo();
+
+            if (minimized)
                 _phase = IntroPhase.Live;
-            }
-            Log.Info("叠层窗口已创建，可见=" + _overlayVisible + "，置顶=" + _settings.Overlay.Topmost +
-                     "，锁定=" + _settings.Overlay.Locked);
+            else if (intro)
+                BeginIntro();
+
+            Log.Info("卡片已创建，数量=" + _cards.Count + "，可见=" + _overlayVisible +
+                     "，置顶=" + _settings.Overlay.Topmost + "，锁定=" + _settings.Overlay.Locked);
 
             _renderTimer = new DispatcherTimer(DispatcherPriority.Background)
             {
@@ -110,26 +129,218 @@ namespace WindowOverlay.Ui
             Safe("开机自启", ApplyAutoStart);
             Safe("单实例唤醒", StartActivationListener);
 
-            Log.Info("启动完成（叠层可见=" + _overlayVisible + "，热键=" + _settings.Hotkeys.ToggleOverlay +
-                     "/" + _settings.Hotkeys.OpenSettings + "/" + _settings.Hotkeys.ToggleLock + "）");
+            Log.Info("启动完成（叠层可见=" + _overlayVisible +
+                     "，全局热键=" + _settings.Hotkeys.ToggleOverlay + "/" + _settings.Hotkeys.OpenSettings +
+                     "/" + _settings.Hotkeys.ToggleLock + "）");
 
             ShowStartupBalloon();
         }
 
-        /// <summary>创建叠层窗口并接好事件（毛玻璃开关切换时需要重建窗口，所以单独抽出来）。</summary>
-        OverlayWindow CreateOverlay()
+        // ==================== 卡片 ====================
+
+        void CreateCards()
         {
-            var window = new OverlayWindow(_settings);
+            _cards.Clear();
+            _commandCard = null;
+            _introCard = null;
+
+            foreach (CardSettings config in _settings.Cards)
+                _cards.Add(CreateSlot(config));
+        }
+
+        CardSlot CreateSlot(CardSettings config)
+        {
+            Settings dialog = BuildDialog(config);
+            var slot = new CardSlot
+            {
+                Config = config,
+                Module = CardRegistry.Get(config.Kind),
+                Dialog = dialog
+            };
+
+            var window = new OverlayWindow(dialog);
+            slot.Window = window;
+
             window.SettingsRequested += ShowSettings;
             window.HideRequested += ToggleVisibility;
             window.LockToggleRequested += ToggleLock;
             window.ExitRequested += Exit;
-            window.PositionChanged += OnPositionChanged;
-            window.CommandLineRequested += ToggleCommandLine;
+            window.Moved += (dx, dy, monitor) => OnCardMoved(slot, dx, dy, monitor);
+            window.CommandLineRequested += () => ToggleCommandLine();
             window.CommandSubmitted += SubmitCommand;
             window.CommandCancelled += ExitCommandLine;
             window.CommandTextChanged += OnCommandInputChanged;
-            return window;
+            window.SizeChanged += (s, e) => ScheduleLayout();
+
+            return slot;
+        }
+
+        Settings BuildDialog(CardSettings config)
+        {
+            Settings dialog = CloneSettings(_settings);
+            dialog.Overlay.X = _settings.Overlay.X;
+            dialog.Overlay.Y = _settings.Overlay.Y;
+            dialog.Overlay.Monitor = _settings.Overlay.Monitor;
+            dialog.Overlay.Locked = _settings.Overlay.Locked;
+            return dialog;
+        }
+
+        static Settings CloneSettings(Settings source)
+        {
+            try { return Json.Deserialize<Settings>(Json.Serialize(source)); }
+            catch { return new Settings(); }
+        }
+
+        string CardTemplate(CardSlot slot)
+        {
+            string content = slot.Config == null ? null : slot.Config.Content;
+            return string.IsNullOrWhiteSpace(content) ? slot.Module.DefaultContent : content;
+        }
+
+        string RenderCardText(CardSlot slot)
+        {
+            if (slot == null || slot.Module.IsInteractive) return "";
+
+            try
+            {
+                return slot.Module.Render(new CardRenderContext(_settings, _last, _keys, slot.Config));
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("卡片渲染失败(" + slot.Config.Name + "): " + ex.Message);
+                return "(渲染失败)";
+            }
+        }
+
+        // ==================== 显示 / 隐藏 / 堆叠 ====================
+
+        void RefreshVisibility()
+        {
+            foreach (CardSlot slot in _cards)
+            {
+                bool show;
+                if (!_overlayVisible) show = false;
+                else if (slot.Module.IsInteractive) show = _commandMode && ReferenceEquals(slot, _commandCard);
+                else show = slot.Config.Resident || slot.Summoned;
+
+                if (show && !slot.Shown)
+                    ShowCard(slot, RenderCardText(slot));
+                else if (!show && slot.Shown)
+                    HideCard(slot);
+            }
+
+            LayoutCards();
+        }
+
+        void ShowCard(CardSlot slot, string text)
+        {
+            if (slot == null) return;
+
+            slot.Window.Apply(slot.Dialog, text ?? "");
+            slot.Window.Opacity = 0;
+            slot.Window.Show();
+            slot.Window.UpdateLayout();
+
+            slot.Shown = true;
+            slot.BodyHeight = slot.Window.CardHeight;
+            LayoutCards();
+
+            slot.Window.Opacity = 1;
+            slot.Window.UpdateClickThrough();
+            slot.Window.EnsureTopmost();
+        }
+
+        void HideCard(CardSlot slot)
+        {
+            if (slot == null || !slot.Shown) return;
+            slot.Shown = false;
+            slot.BodyHeight = 0;
+            slot.Window.Hide();
+            LayoutCards();
+        }
+
+        void SyncHeight(CardSlot slot)
+        {
+            if (slot == null) return;
+            slot.BodyHeight = slot.Shown ? slot.Window.CardHeight : 0;
+        }
+
+        void ScheduleLayout()
+        {
+            if (_layoutScheduled || _disposed) return;
+            _layoutScheduled = true;
+
+            Application.Current.Dispatcher.BeginInvoke(new Action(() =>
+            {
+                _layoutScheduled = false;
+                if (_disposed) return;
+                foreach (CardSlot slot in _cards) SyncHeight(slot);
+                LayoutCards();
+            }), DispatcherPriority.Render);
+        }
+
+        /// <summary>从锚点开始按顺序把可见卡片往下排，间距取每张卡片自己的 Spacing。</summary>
+        void LayoutCards()
+        {
+            double top = 0;
+            bool first = true;
+
+            foreach (CardSlot slot in _cards)
+            {
+                if (!slot.Shown) continue;
+
+                if (!first) top += Math.Max(0, slot.Config.Spacing);
+
+                slot.Dialog.Overlay.X = _settings.Overlay.X;
+                slot.Dialog.Overlay.Y = _settings.Overlay.Y + top;
+                slot.Dialog.Overlay.Monitor = _settings.Overlay.Monitor;
+                slot.Dialog.Overlay.Locked = _settings.Overlay.Locked;
+                slot.Window.ApplyPosition();
+
+                top += slot.BodyHeight > 0 ? slot.BodyHeight : slot.Window.CardHeight;
+                first = false;
+            }
+        }
+
+        void OnCardMoved(CardSlot slot, double dx, double dy, int monitor)
+        {
+            if (slot == null) return;
+
+            _settings.Overlay.X += dx;
+            _settings.Overlay.Y += dy;
+            _settings.Overlay.Monitor = monitor;
+
+            LayoutCards();
+            SaveSettings();
+
+            if (_settingsWindow != null)
+                _settingsWindow.SyncAnchor(_settings.Overlay.X, _settings.Overlay.Y, _settings.Overlay.Monitor);
+
+            Log.Info("叠层移动，锚点=" + _settings.Overlay.X + "," + _settings.Overlay.Y + " 显示器=" + monitor);
+        }
+
+        void UpdateCommandInfo()
+        {
+            CardSlot command = FindCommandCard();
+            string hotkey = command == null || command.Config == null ? "" : command.Config.Hotkey;
+
+            foreach (CardSlot slot in _cards)
+                slot.Window.SetCommandInfo(command != null, hotkey);
+        }
+
+        CardSlot FindCommandCard()
+        {
+            foreach (CardSlot slot in _cards)
+                if (slot.Module != null && slot.Module.IsInteractive) return slot;
+            return null;
+        }
+
+        CardSlot FindCard(string id)
+        {
+            foreach (CardSlot slot in _cards)
+                if (slot.Config != null && string.Equals(slot.Config.Id, id, StringComparison.OrdinalIgnoreCase))
+                    return slot;
+            return null;
         }
 
         void Safe(string name, Action action)
@@ -210,7 +421,7 @@ namespace WindowOverlay.Ui
             timer.Tick += (s, e) =>
             {
                 timer.Stop();
-                _tray.ShowBalloon("桌面叠层已启动",
+                _tray.ShowBalloon("镜潭一览已启动",
                     "左键单击托盘图标，或按 " + _settings.Hotkeys.OpenSettings + " 打开设置");
             };
             timer.Start();
@@ -218,7 +429,7 @@ namespace WindowOverlay.Ui
 
         void StartActivationListener()
         {
-            _activation = new EventWaitHandle(false, EventResetMode.AutoReset, "Local\\WindowOverlay.Activate");
+            _activation = new EventWaitHandle(false, EventResetMode.AutoReset, "Local\\MirrorpondHUD.Activate");
             _activationThread = new Thread(() =>
             {
                 while (!_disposed)
@@ -239,7 +450,7 @@ namespace WindowOverlay.Ui
             })
             {
                 IsBackground = true,
-                Name = "WindowOverlay.Activate"
+                Name = "MirrorpondHUD.Activate"
             };
             _activationThread.Start();
             Log.Info("单实例唤醒监听已启动");
@@ -247,64 +458,109 @@ namespace WindowOverlay.Ui
 
         // ==================== 渲染 ====================
 
-        string RenderText()
-        {
-            try
-            {
-                Dictionary<string, object> vars = Variables.Build(_last, _settings, _keys);
-                return TemplateEngine.Render(_settings.Content, vars);
-            }
-            catch (Exception ex)
-            {
-                Log.Warn("渲染失败: " + ex.Message);
-                return "(渲染失败)";
-            }
-        }
-
         void RenderNow()
         {
-            if (!_overlayVisible || _overlay == null) return;
-            if (_phase != IntroPhase.Live) return;   // 动画期间不刷新真实数据
+            if (!_overlayVisible) return;
             if (_commandMode)
             {
                 RenderCommandLine();
                 return;
             }
-            _overlay.SetText(RenderText(), false);
+
+            foreach (CardSlot slot in _cards)
+            {
+                if (!slot.Shown || slot.Module.IsInteractive) continue;
+                if (ReferenceEquals(slot, _introCard) && _phase != IntroPhase.Live) continue;
+                slot.Window.SetText(RenderCardText(slot), false);
+            }
+
+            LayoutIfNeeded();
+        }
+
+        /// <summary>
+        /// 文字变长 / 命令行展开后窗口会自己长高，这里在每次渲染后校正一次堆叠位置，
+        /// 不依赖 Window.SizeChanged 一定按时触发。
+        /// </summary>
+        void LayoutIfNeeded()
+        {
+            bool changed = false;
+            foreach (CardSlot slot in _cards)
+            {
+                if (!slot.Shown) continue;
+                double height = slot.Window.CardHeight;
+                if (Math.Abs(height - slot.BodyHeight) > 0.5)
+                {
+                    slot.BodyHeight = height;
+                    changed = true;
+                }
+            }
+
+            if (changed) LayoutCards();
+        }
+
+        void OnSnapshot(MetricsSnapshot snapshot)
+        {
+            _last = snapshot;
+
+            if (_phase != IntroPhase.Live)
+            {
+                // 动画期间不刷新内容，但可以按真实数据把整块尺寸先撑好，
+                // 这样动画结束时不会突然变宽、文字位置也不会跳。
+                Application.Current.Dispatcher.BeginInvoke(new Action(UpdateIntroLayout), DispatcherPriority.Background);
+                return;
+            }
+
+            Application.Current.Dispatcher.BeginInvoke(new Action(RenderNow), DispatcherPriority.Background);
         }
 
         // ==================== 快捷命令行 ====================
 
         public void ToggleCommandLine()
         {
-            if (_overlay == null) return;
+            ToggleCommandLine(FindCommandCard());
+        }
 
-            if (!_overlayVisible)
+        void ToggleCommandLine(CardSlot slot)
+        {
+            if (slot == null || slot.Module == null || !slot.Module.IsInteractive)
             {
-                Log.Info("叠层处于隐藏状态，快捷命令行不可用");
+                Log.Info("没有可用的命令行卡片");
                 return;
             }
-            if (_phase != IntroPhase.Live)
+
+            if (_commandMode && ReferenceEquals(_commandCard, slot))
             {
-                Log.Info("启动动画期间快捷命令行不可用");
+                ExitCommandLine();
                 return;
             }
 
             if (_commandMode) ExitCommandLine();
-            else EnterCommandLine();
+            if (_phase != IntroPhase.Live) FinishIntro();
+
+            if (!_overlayVisible)
+            {
+                _overlayVisible = true;
+                RefreshVisibility();
+            }
+
+            EnterCommandLine(slot);
         }
 
-        void EnterCommandLine()
+        void EnterCommandLine(CardSlot slot)
         {
             _commandMode = true;
+            _commandCard = slot;
             _commandEntries.Clear();
             _commandInput = "";
             _commandCaret = 0;
 
             if (_hook != null) _hook.Suppress = true;
 
-            _overlay.ResetStableSize();
-            _overlay.BeginCommandInput();
+            slot.Summoned = true;
+            slot.Window.ResetStableSize();
+            ShowCard(slot, "");
+            slot.Window.EnsureTopmost();
+            slot.Window.BeginCommandInput();
             RenderCommandLine();
 
             Log.Info("快捷命令行已打开（工具=" + CommandRunner.ToolLabel(_settings.Command) +
@@ -328,10 +584,18 @@ namespace WindowOverlay.Ui
 
             if (_hook != null) _hook.Suppress = false;
 
-            _overlay.EndCommandInput();
-            _overlay.ResetStableSize();
-            RenderNow();
+            CardSlot slot = _commandCard;
+            _commandCard = null;
 
+            if (slot != null)
+            {
+                slot.Window.EndCommandInput();
+                slot.Window.ResetStableSize();
+                slot.Summoned = false;
+                HideCard(slot);
+            }
+
+            RenderNow();
             Log.Info("快捷命令行已关闭，命令与返回已清空");
         }
 
@@ -350,16 +614,8 @@ namespace WindowOverlay.Ui
 
         string BuildCommandDisplay()
         {
-            string baseText = RenderText();
             string prompt = CommandPrompt;
-
-            var sb = new System.Text.StringBuilder(baseText.Length + 256);
-            if (baseText.Length > 0)
-            {
-                sb.Append(baseText);
-                if (!baseText.EndsWith("\n", StringComparison.Ordinal)) sb.Append('\n');
-            }
-            sb.Append('\n');
+            var sb = new System.Text.StringBuilder(512);
 
             foreach (CommandEntry entry in _commandEntries)
             {
@@ -379,12 +635,13 @@ namespace WindowOverlay.Ui
 
         void RenderCommandLine()
         {
-            if (!_commandMode || _overlay == null) return;
+            if (!_commandMode || _commandCard == null) return;
 
             string text = BuildCommandDisplay();
             int caret = Math.Max(0, Math.Min(_commandCaret, (_commandInput ?? "").Length));
             int cursorIndex = text.Length - ((_commandInput ?? "").Length - caret);
-            _overlay.SetText(text, true, cursorIndex);
+            _commandCard.Window.SetText(text, true, cursorIndex);
+            LayoutIfNeeded();
         }
 
         void SubmitCommand()
@@ -404,7 +661,7 @@ namespace WindowOverlay.Ui
 
             _commandInput = "";
             _commandCaret = 0;
-            _overlay.SetCommandText("");
+            _commandCard.Window.SetCommandText("");
             TrimCommandEntries();
             RenderCommandLine();
 
@@ -477,9 +734,17 @@ namespace WindowOverlay.Ui
 
         // ==================== 启动动画 ====================
 
+        CardSlot FirstLiveCard()
+        {
+            foreach (CardSlot slot in _cards)
+                if (slot.Shown && !slot.Module.IsInteractive) return slot;
+            return null;
+        }
+
         void BeginIntro()
         {
-            if (_overlay == null || !_overlayVisible || !_settings.Behavior.IntroEnabled)
+            _introCard = FirstLiveCard();
+            if (_introCard == null || !_settings.Behavior.IntroEnabled)
             {
                 _phase = IntroPhase.Live;
                 RenderNow();
@@ -489,12 +754,14 @@ namespace WindowOverlay.Ui
             _introWelcome = string.IsNullOrEmpty(_settings.Behavior.WelcomeText)
                 ? "Welcome Back"
                 : _settings.Behavior.WelcomeText;
-            _introContent = TemplateEngine.RenderPlaceholder(_settings.Content, "---");
+            _introContent = TemplateEngine.RenderPlaceholder(CardTemplate(_introCard), "---");
             _shownText = "";
 
             // 先用完整内容把整块尺寸定下来，逐字打字时窗口和文本位置都不会抖动
-            _overlay.SetLayoutText(_introContent);
-            _overlay.SetText("", true);
+            _introCard.Window.SetLayoutText(_introContent);
+            _introCard.Window.SetText("", true);
+            SyncHeight(_introCard);
+
             _phase = IntroPhase.WelcomeTyping;
             _phaseStart = DateTime.UtcNow;
 
@@ -513,9 +780,9 @@ namespace WindowOverlay.Ui
 
         void ShowIntroText(string text)
         {
-            if (text == _shownText) return;
+            if (text == _shownText || _introCard == null) return;
             _shownText = text;
-            _overlay.SetText(text, true);
+            _introCard.Window.SetText(text, true);
         }
 
         void IntroTick()
@@ -580,53 +847,46 @@ namespace WindowOverlay.Ui
             if (_phase == IntroPhase.Live) return;
             _phase = IntroPhase.Live;
             if (_introTimer != null) _introTimer.Stop();
-            _overlay.SetLayoutText(null);
+
+            if (_introCard != null)
+            {
+                _introCard.Window.SetLayoutText(null);
+                _introCard.Window.SetText(RenderCardText(_introCard), false);
+                SyncHeight(_introCard);
+            }
+
+            _introCard = null;
+            LayoutCards();
+
             Log.Info("启动动画结束，光标消失，开始刷新数据");
             RenderNow();
         }
 
-        void OnSnapshot(MetricsSnapshot snapshot)
-        {
-            _last = snapshot;
-
-            if (_phase != IntroPhase.Live)
-            {
-                // 动画期间不刷新内容，但可以按真实数据把整块尺寸先撑好，
-                // 这样动画结束时不会突然变宽、文字位置也不会跳。
-                Application.Current.Dispatcher.BeginInvoke(new Action(UpdateIntroLayout), DispatcherPriority.Background);
-                return;
-            }
-
-            Application.Current.Dispatcher.BeginInvoke(new Action(RenderNow), DispatcherPriority.Background);
-        }
-
         void UpdateIntroLayout()
         {
-            if (_phase == IntroPhase.Live || _overlay == null) return;
-            _overlay.SetLayoutText(RenderText());
+            if (_phase == IntroPhase.Live || _introCard == null) return;
+            _introCard.Window.SetLayoutText(RenderCardText(_introCard));
+            SyncHeight(_introCard);
+            LayoutCards();
         }
 
         // ==================== 操作 ====================
 
         public void ToggleVisibility()
         {
-            if (_overlay == null) return;
+            if (_cards.Count == 0) return;
 
             if (_overlayVisible)
             {
                 if (_commandMode) ExitCommandLine();
                 if (_phase != IntroPhase.Live) FinishIntro();
-                _overlay.Hide();
                 _overlayVisible = false;
+                foreach (CardSlot slot in _cards) HideCard(slot);
             }
             else
             {
-                _overlay.SetLayoutText(null);
-                _overlay.Apply(_settings, RenderText());
-                _overlay.Show();
-                _overlay.UpdateClickThrough();
-                _overlay.EnsureTopmost();
                 _overlayVisible = true;
+                RefreshVisibility();
                 RenderNow();
             }
 
@@ -646,7 +906,11 @@ namespace WindowOverlay.Ui
             bool changed = _settings.Overlay.Locked != locked;
             _settings.Overlay.Locked = locked;
 
-            if (_overlay != null) _overlay.RefreshSettings(_settings);
+            foreach (CardSlot slot in _cards)
+            {
+                slot.Dialog.Overlay.Locked = locked;
+                slot.Window.RefreshSettings(slot.Dialog);
+            }
 
             if (changed)
             {
@@ -662,7 +926,7 @@ namespace WindowOverlay.Ui
 
             if (_settingsWindow == null)
             {
-                _settingsWindow = new SettingsWindow(_settings, ApplySettings, ApplyPosition, ClearKeys);
+                _settingsWindow = new SettingsWindow(_settings, ApplySettings, ApplyAnchor, ClearKeys);
             }
             else
             {
@@ -688,61 +952,105 @@ namespace WindowOverlay.Ui
             if (_commandMode) ExitCommandLine();
 
             // 位置与锁定是运行时状态：只由拖动、F8 和托盘菜单改变。
-            // 设置窗口里的坐标是打开窗口那一刻的快照，这里必须以实时值为准，
-            // 否则保存设置会把叠层拉回打开设置时的位置（也顺手把 F8 的解锁状态覆盖掉）。
+            // 设置窗口里的坐标是打开窗口那一刻的快照，这里必须以实时值为准。
             settings.Overlay.X = _settings.Overlay.X;
             settings.Overlay.Y = _settings.Overlay.Y;
             settings.Overlay.Monitor = _settings.Overlay.Monitor;
             settings.Overlay.Locked = _settings.Overlay.Locked;
 
             FinishIntro();
+
+            var summoned = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+            foreach (CardSlot slot in _cards) summoned[slot.Config.Id] = slot.Summoned;
+
             _settings = settings;
             _settings.Normalize();
-            ConfigStore.Save(_settings);
+            CardModel.Normalize(_settings);
+
+            SyncCards(summoned);
 
             _keys.Configure(_settings.Data.KeyHistoryCount, _settings.Data.RepeatThreshold,
                             _settings.Data.MaxKeyChars);
 
-            if (_overlay != null)
-            {
-                _overlay.Apply(_settings, RenderText());
-                _overlay.UpdateClickThrough();
-                _overlay.Topmost = _settings.Overlay.Topmost;
-                _overlay.ApplyPosition();
-            }
-
+            ConfigStore.Save(_settings);
             if (_engine != null) _engine.UpdateSettings(_settings);
 
             RegisterHotkeys();
             ApplyAutoStart();
             UpdateTray();
+            UpdateCommandInfo();
+            RefreshVisibility();
             RenderNow();
-            Log.Info("设置已应用");
+
+            Log.Info("设置已应用（卡片 " + _cards.Count + " 张）");
         }
 
-        void ApplyPosition(double x, double y, int monitor)
+        /// <summary>按新设置增删 / 重排卡片窗口，保留仍在列表里的窗口和它们的呼出状态。</summary>
+        void SyncCards(Dictionary<string, bool> summoned)
+        {
+            var existing = new Dictionary<string, CardSlot>(StringComparer.OrdinalIgnoreCase);
+            foreach (CardSlot slot in _cards) existing[slot.Config.Id] = slot;
+
+            var next = new List<CardSlot>();
+
+            foreach (CardSettings config in _settings.Cards)
+            {
+                CardSlot slot;
+                if (existing.TryGetValue(config.Id, out slot))
+                {
+                    existing.Remove(config.Id);
+
+                    bool wasSummoned = slot.Summoned;
+                    bool saved;
+                    slot.Config = config;
+                    slot.Module = CardRegistry.Get(config.Kind);
+                    slot.Summoned = summoned.TryGetValue(config.Id, out saved) ? saved : wasSummoned;
+                    slot.Dialog = BuildDialog(config);
+                    slot.Window.Apply(slot.Dialog, "");
+
+                    next.Add(slot);
+                }
+                else
+                {
+                    next.Add(CreateSlot(config));
+                }
+            }
+
+            foreach (CardSlot removed in existing.Values)
+            {
+                if (ReferenceEquals(removed, _commandCard))
+                {
+                    _commandMode = false;
+                    _commandCard = null;
+                }
+
+                try { removed.Window.Close(); } catch { }
+            }
+
+            _cards.Clear();
+            _cards.AddRange(next);
+        }
+
+        void ApplyAnchor(double x, double y, int monitor)
         {
             _settings.Overlay.X = x;
             _settings.Overlay.Y = y;
             _settings.Overlay.Monitor = monitor;
 
-            if (_overlay != null)
+            if (!_overlayVisible)
             {
-                _overlay.ApplyPosition();
-                _overlay.Show();
                 _overlayVisible = true;
+                RefreshVisibility();
+            }
+            else
+            {
+                LayoutCards();
             }
 
             SaveSettings();
-        }
-
-        /// <summary>拖动结束后保存新坐标，并把实时坐标同步给打开着的设置窗口。</summary>
-        void OnPositionChanged()
-        {
-            SaveSettings();
 
             if (_settingsWindow != null)
-                _settingsWindow.SyncPosition(_settings.Overlay.X, _settings.Overlay.Y, _settings.Overlay.Monitor);
+                _settingsWindow.SyncAnchor(x, y, monitor);
         }
 
         void SaveSettings()
@@ -752,6 +1060,8 @@ namespace WindowOverlay.Ui
 
         void ApplyAutoStart()
         {
+            AutoStart.CleanLegacy();
+
             bool enabled = _settings.Behavior.AutoStart;
             if (AutoStart.IsEnabled() != enabled)
                 AutoStart.Set(enabled, _settings.Behavior.StartMinimized);
@@ -767,16 +1077,20 @@ namespace WindowOverlay.Ui
             UpdateTray();
         }
 
+        // ==================== 热键 ====================
+
         void RegisterHotkeys()
         {
             if (_hotkeys == null) return;
+
+            // 先清空：设置里删掉的卡片不应该继续占用旧组合键。
+            _hotkeys.UnregisterAll();
 
             var changed = new List<string>(4);
 
             string toggle = RegisterOne(HotkeyManager.ActionToggleOverlay, _settings.Hotkeys.ToggleOverlay);
             string open = RegisterOne(HotkeyManager.ActionOpenSettings, _settings.Hotkeys.OpenSettings);
             string lockKey = RegisterOne(HotkeyManager.ActionToggleLock, _settings.Hotkeys.ToggleLock);
-            string command = RegisterOne(HotkeyManager.ActionCommandLine, _settings.Hotkeys.CommandLine);
 
             if (toggle != _settings.Hotkeys.ToggleOverlay)
             {
@@ -793,11 +1107,6 @@ namespace WindowOverlay.Ui
                 changed.Add(_settings.Hotkeys.ToggleLock + " → " + lockKey);
                 _settings.Hotkeys.ToggleLock = lockKey;
             }
-            if (command != _settings.Hotkeys.CommandLine)
-            {
-                changed.Add(_settings.Hotkeys.CommandLine + " → " + command);
-                _settings.Hotkeys.CommandLine = command;
-            }
 
             if (changed.Count > 0)
             {
@@ -807,6 +1116,32 @@ namespace WindowOverlay.Ui
                 if (_tray != null)
                     _tray.ShowBalloon("热键被占用，已自动改用", string.Join("  ", changed));
             }
+
+            // 每张非常驻卡片一个呼出热键；相同组合键会合并成同一个注册，按下时同时呼出。
+            int failed = 0;
+            foreach (CardSlot slot in _cards)
+            {
+                string action = HotkeyManager.CardAction(slot.Config.Id);
+                string combination = slot.Config.Resident ? "" : slot.Config.Hotkey;
+
+                if (string.IsNullOrWhiteSpace(combination))
+                {
+                    _hotkeys.Register(action, "");
+                    continue;
+                }
+
+                if (!_hotkeys.Register(action, combination))
+                {
+                    failed++;
+                    Log.Warn("卡片热键注册失败: " + slot.Config.Name + " " + combination);
+                }
+            }
+
+            if (failed > 0 && _tray != null && _tray.Visible)
+            {
+                _tray.ShowBalloon("有 " + failed + " 张卡片的呼出热键注册失败",
+                    "组合键可能被其它程序占用，可在「内容」页换一个");
+            }
         }
 
         /// <summary>优先注册配置的组合键；被占用时退一步用 Ctrl+Alt+原键。空白 = 不启用。</summary>
@@ -815,7 +1150,6 @@ namespace WindowOverlay.Ui
             if (string.IsNullOrWhiteSpace(combination))
             {
                 _hotkeys.Register(action, "");
-                Log.Info("热键未设置（已禁用）: " + action);
                 return "";
             }
 
@@ -852,17 +1186,56 @@ namespace WindowOverlay.Ui
                 case HotkeyManager.ActionToggleLock:
                     ToggleLock();
                     break;
-                case HotkeyManager.ActionCommandLine:
-                    ToggleCommandLine();
+                default:
+                    if (action.StartsWith("card:", StringComparison.Ordinal))
+                    {
+                        CardSlot slot = FindCard(action.Substring(5));
+                        if (slot != null) ToggleCard(slot);
+                    }
                     break;
             }
+        }
+
+        /// <summary>非常驻卡片的呼出 / 收起。</summary>
+        void ToggleCard(CardSlot slot)
+        {
+            if (slot == null) return;
+
+            if (slot.Module.IsInteractive)
+            {
+                ToggleCommandLine(slot);
+                return;
+            }
+
+            if (!_overlayVisible)
+            {
+                _overlayVisible = true;
+                RefreshVisibility();
+            }
+
+            slot.Summoned = !slot.Summoned;
+
+            if (slot.Summoned)
+            {
+                ShowCard(slot, RenderCardText(slot));
+                slot.Window.EnsureTopmost();
+            }
+            else
+            {
+                HideCard(slot);
+            }
+
+            Log.Info("卡片「" + slot.Config.Name + "」" + (slot.Summoned ? "已呼出" : "已收起"));
+            UpdateTray();
         }
 
         void UpdateTray()
         {
             if (_tray == null) return;
             _tray.Visible = _settings.Behavior.TrayEnabled;
-            _tray.SetCommandHotkey(_settings.Hotkeys.CommandLine);
+
+            CardSlot command = FindCommandCard();
+            _tray.SetCommandHotkey(command == null ? "" : command.Config.Hotkey);
             _tray.Update(_overlayVisible, _settings.Overlay.Locked, _settings.Behavior.AutoStart);
         }
 
@@ -895,11 +1268,11 @@ namespace WindowOverlay.Ui
             }
             catch { }
 
-            try
+            foreach (CardSlot slot in _cards)
             {
-                if (_overlay != null) _overlay.Close();
+                try { slot.Window.Close(); } catch { }
             }
-            catch { }
+            _cards.Clear();
         }
     }
 }

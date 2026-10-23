@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -8,8 +8,8 @@
     <Nullable>disable</Nullable>
     <LangVersion>latest</LangVersion>
     <ImplicitUsings>disable</ImplicitUsings>
-    <AssemblyName>WindowOverlay</AssemblyName>
-    <RootNamespace>WindowOverlay</RootNamespace>
+    <AssemblyName>MirrorpondHUD</AssemblyName>
+    <RootNamespace>MirrorpondHUD</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>assets\logo.ico</ApplicationIcon>
     <!-- x64 by default; publish -r win-arm64 switches PlatformTarget automatically. -->
@@ -18,9 +18,9 @@
     <PlatformTarget Condition="'$(RuntimeIdentifier)' == 'win-arm64'">arm64</PlatformTarget>
     <NoWarn>$(NoWarn);WFAC010</NoWarn>
     <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
-    <Version>1.4.0</Version>
-    <Product>桌面置顶叠层</Product>
-    <AssemblyTitle>WindowOverlay</AssemblyTitle>
+    <Version>2.0.0</Version>
+    <Product>镜潭一览 (MirrorpondHUD)</Product>
+    <AssemblyTitle>MirrorpondHUD</AssemblyTitle>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
     <SatelliteResourceLanguages>en;zh-Hans</SatelliteResourceLanguages>
@@ -40,7 +40,7 @@
   <ItemGroup>
     <Resource Include="assets\logo.ico" />
     <Resource Include="assets\logo-light.ico" />
-    <Resource Include="assets\keycaps\ReiKeycap-Regular.ttf" />
+    <Resource Include="assets\keycaps\ReiconFont-Regular.ttf" />
   </ItemGroup>
 
 </Project>

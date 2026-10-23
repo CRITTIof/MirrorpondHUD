@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 
-namespace WindowOverlay.Core
+namespace MirrorpondHUD.Core
 {
     /// <summary>虚拟键码 → 显示名称。</summary>
     public static class KeyNames

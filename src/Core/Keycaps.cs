@@ -2,19 +2,19 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 
-namespace WindowOverlay.Core
+namespace MirrorpondHUD.Core
 {
     /// <summary>
-    /// 按键名 → ReiKeycap 字体的键帽字符（PUA U+E000–U+E052；U+E053–U+E05E 是图标，不映射）。
+    /// 按键名 → Reicon 字体的键帽字符（PUA U+E000–U+E056）。
     ///
     /// 这里只负责「换显示形态」：字符数截断仍由 <see cref="KeyHistory.Render"/> 按按键名计算，
     /// 所以改用键帽显示后，「最多显示多少个字符」的判定与原来完全一致。
-    /// 没有对应字形的键（Pause / PrtSc / 媒体键 / VKxx…）原样保留为文字。
+    /// 没有对应字形的键（媒体键 / VKxx…）原样保留为文字。
     /// </summary>
     public static class Keycaps
     {
         public const char First = '\uE000';
-        public const char Last = '\uE052';
+        public const char Last = '\uE056';
 
         static readonly Dictionary<string, char> Map = Build();
 
@@ -130,6 +130,12 @@ namespace WindowOverlay.Core
             map["Num-"] = '\uE01E';
             map["Num."] = '\uE045';
             map["Num/"] = '\uE046';
+
+            // 新版键帽：打印屏幕 / 滚动锁定 / 暂停 / 菜单
+            map["PrtSc"] = '\uE053';
+            map["ScrollLock"] = '\uE054';
+            map["Pause"] = '\uE055';
+            map["Menu"] = '\uE056';
             for (int i = 0; i <= 9; i++)
                 map["Num" + i] = i == 0 ? '\uE01D' : (char)(0xE013 + i);
 

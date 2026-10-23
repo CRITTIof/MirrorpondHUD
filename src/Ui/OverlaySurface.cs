@@ -6,9 +6,9 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Effects;
 using System.Windows.Media.Imaging;
-using WindowOverlay.Core;
+using MirrorpondHUD.Core;
 
-namespace WindowOverlay.Ui
+namespace MirrorpondHUD.Ui
 {
     /// <summary>叠层内容与设置面板预览共用的绘制表面：底色 / 背景图 / 圆角 / 投影 / 文字。</summary>
     public sealed class OverlaySurface : Border

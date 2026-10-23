@@ -4,7 +4,7 @@ using System.Globalization;
 using System.IO;
 using System.Text;
 
-namespace WindowOverlay.Core
+namespace MirrorpondHUD.Core
 {
     /// <summary>通过 nvidia-smi 读取温度 / 显存 / 功耗。没有 N 卡时静默降级。</summary>
     internal sealed class NvidiaSmi

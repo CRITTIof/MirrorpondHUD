@@ -1,7 +1,7 @@
 using System;
 using System.Runtime.InteropServices;
 
-namespace WindowOverlay.Core
+namespace MirrorpondHUD.Core
 {
     /// <summary>
     /// 进程完整性级别查询。低完整性（Low）下 Windows 会拒绝托盘图标、全局热键和键盘钩子，

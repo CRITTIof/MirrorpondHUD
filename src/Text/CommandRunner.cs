@@ -7,7 +7,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace WindowOverlay.Core
+namespace MirrorpondHUD.Core
 {
     public sealed class CommandResult
     {

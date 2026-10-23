@@ -6,9 +6,10 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
-using WindowOverlay.Core;
+using MirrorpondHUD.Cards;
+using MirrorpondHUD.Core;
 
-namespace WindowOverlay.Ui
+namespace MirrorpondHUD.Ui
 {
     /// <summary>离屏渲染成 PNG，用于自动化验收（--screenshot）。</summary>
     public static class Screenshots
@@ -57,6 +58,75 @@ namespace WindowOverlay.Ui
             return keys;
         }
 
+        public static void CaptureCards(string path)
+        {
+            try
+            {
+                Settings settings = ConfigStore.Load();
+                MetricsSnapshot snap = DemoSnapshot();
+                KeyHistory keys = DemoKeys(settings.Data.KeyHistoryCount, settings.Data.RepeatThreshold,
+                                           settings.Data.MaxKeyChars);
+
+                var stack = new StackPanel { Orientation = Orientation.Vertical };
+                int count = 0;
+
+                foreach (CardSettings card in settings.Cards)
+                {
+                    if (card == null || string.Equals(card.Kind, "command", StringComparison.OrdinalIgnoreCase)) continue;
+
+                    var surface = new OverlaySurface();
+                    surface.HorizontalAlignment = HorizontalAlignment.Left;
+                    surface.Margin = new Thickness(0, 0, 0, Math.Max(4, card.Spacing));
+                    surface.Apply(settings, CardRegistry.Get(card.Kind).Render(
+                        new CardRenderContext(settings, snap, keys, card)));
+                    stack.Children.Add(surface);
+                    count++;
+                }
+
+                if (count == 0)
+                {
+                    Log.Warn("没有可截图的卡片");
+                    return;
+                }
+
+                stack.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                Size size = stack.DesiredSize;
+
+                var host = new Grid
+                {
+                    Width = Math.Max(420, size.Width + 160),
+                    Height = Math.Max(220, size.Height + 160),
+                    Background = new LinearGradientBrush(
+                        Color.FromRgb(0x14, 0x1B, 0x2B),
+                        Color.FromRgb(0x2A, 0x1D, 0x2A),
+                        45)
+                };
+
+                stack.HorizontalAlignment = HorizontalAlignment.Left;
+                stack.VerticalAlignment = VerticalAlignment.Center;
+                stack.Margin = new Thickness(80, 0, 80, 0);
+                host.Children.Add(stack);
+
+                host.Measure(new Size(host.Width, host.Height));
+                host.Arrange(new Rect(0, 0, host.Width, host.Height));
+                host.UpdateLayout();
+
+                const double scale = 2.0;
+                var rtb = new RenderTargetBitmap(
+                    (int)Math.Ceiling(host.Width * scale),
+                    (int)Math.Ceiling(host.Height * scale),
+                    96 * scale, 96 * scale, PixelFormats.Pbgra32);
+                rtb.Render(host);
+
+                SavePng(rtb, path);
+                Log.Info("已生成卡片组截图: " + path + "（" + count + " 张）");
+            }
+            catch (Exception ex)
+            {
+                Log.Error("生成卡片组截图失败", ex);
+            }
+        }
+
         public static void CaptureOverlay(string path)
         {
             try
@@ -66,8 +136,25 @@ namespace WindowOverlay.Ui
                 KeyHistory keys = DemoKeys(settings.Data.KeyHistoryCount, settings.Data.RepeatThreshold,
                                            settings.Data.MaxKeyChars);
 
-                var vars = Variables.Build(snap, settings, keys);
-                string text = TemplateEngine.Render(settings.Content, vars);
+                CardSettings first = null;
+                foreach (CardSettings card in settings.Cards)
+                {
+                    if (card == null || string.Equals(card.Kind, "command", StringComparison.OrdinalIgnoreCase)) continue;
+                    first = card;
+                    break;
+                }
+
+                string text;
+                if (first != null)
+                {
+                    text = CardRegistry.Get(first.Kind).Render(
+                        new CardRenderContext(settings, snap, keys, first));
+                }
+                else
+                {
+                    text = TemplateEngine.Render(Settings.DefaultMetricsContent,
+                                                 Variables.Build(snap, settings, keys));
+                }
 
                 var surface = new OverlaySurface();
                 surface.Apply(settings, text);

@@ -1,19 +1,15 @@
-<h1 align="center">ReiKeycap</h1>
+<h1 align="center">ReiconFont</h1>
 
 <p align="center">
-  <b>透明、贴合内容的键帽与系统图标字体：83 个键帽 + 12 个图标，共用一套 1em 网格。</b><br>
-  <sub>A transparent, content-fitted keycap and system-icon font with 83 keycaps and 12 icons on a single 1em grid.</sub>
+  <b>透明、贴合内容的键帽与系统图标字体：87 个键帽 + 27 个图标，共用一套 1em 网格。</b><br>
+  <sub>A transparent, content-fitted keycap and system-icon font with 87 keycaps and 27 icons on a single 1em grid.</sub>
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-1.4.0-555">
-  <img alt="glyphs" src="https://img.shields.io/badge/glyphs-95-2C8EBB">
-  <img alt="keycaps" src="https://img.shields.io/badge/keycaps-83-0078D6">
+  <img alt="version" src="https://img.shields.io/badge/version-1.7.1-555">
+  <img alt="glyphs" src="https://img.shields.io/badge/glyphs-114-2C8EBB">
+  <img alt="keycaps" src="https://img.shields.io/badge/keycaps-87-0078D6">
   <img alt="license" src="https://img.shields.io/badge/license-OFL--1.1-3DA639">
-</p>
-
-<p align="center">
-  <img src="docs/preview.png" width="760" alt="ReiKeycap 实时键盘演示">
 </p>
 
 <p align="center">
@@ -26,7 +22,9 @@
 
 ## ✨ 特性
 
-- **95 个字形** — 83 个键帽 + 12 个系统图标，覆盖 101 个 `event.code`
+- **114 个字形** — 87 个键帽 + 27 个系统图标，覆盖 106 个 `event.code`
+- **分区码位** — 键帽从 `U+E000` 起，软件图标 `U+E100`，硬件图标 `U+E200`，界面图标 `U+E300`
+- **预留空位** — 每个分区各占 256 个码位，块内和块间的空位留给后续扩展
 - **统一网格** — 每个字形占满 1em，键帽高 1000 字体单位，混排不跳动
 - **透明内部** — 单色轮廓，跟随文字颜色，适合浅色 / 深色界面
 - **精确映射** — 每个字形有固定 PUA 码位；`A–Z`、`a–z`、`0–9` 可直接当别名
@@ -36,14 +34,15 @@
 
 ## 🚀 快速开始
 
-到 **[Releases](https://github.com/CRITTIof/rei-keycap-font/releases/latest)** 下载，四个文件按需选择：
+到 **[Releases](https://github.com/CRITTIof/reicon-font/releases/latest)** 下载，三个文件按需选择：
 
 | 文件 | 用途 | 说明 |
 | --- | --- | --- |
-| `ReiKeycap-Regular.ttf` | 桌面安装 | Windows / macOS 双击安装 |
-| `ReiKeycap-Regular.woff2` | 网页字体 | 体积小，适合 `@font-face` |
-| `MAPPING.md` | 映射文档 | 95 个 PUA、62 个 ASCII 别名、101 个 `event.code` |
-| `LICENSE` | 许可证 | SIL Open Font License 1.1 |
+| `ReiconFont-Regular.ttf` | 桌面安装 | Windows / macOS 双击安装 |
+| `ReiconFont-Regular.woff2` | 网页字体 | 体积小，适合 `@font-face` |
+| `MAPPING.md` | 映射文档 | 114 个 PUA、62 个 ASCII 别名、106 个 `event.code` |
+
+许可证见仓库根目录的 [LICENSE](LICENSE)。
 
 **桌面安装**：Windows 双击 TTF 选择“安装”；macOS 用“字体册”打开后选择“安装字体”。
 
@@ -51,15 +50,15 @@
 
 ```css
 @font-face {
-  font-family: "ReiKeycap";
-  src: url("fonts/ReiKeycap-Regular.woff2") format("woff2");
+  font-family: "ReiconFont";
+  src: url("fonts/ReiconFont-Regular.woff2") format("woff2");
   font-weight: 400;
   font-style: normal;
   font-display: block;
 }
 
 .key {
-  font: 400 38px/1 "ReiKeycap";
+  font: 400 38px/1 "ReiconFont";
   color: currentColor;
 }
 ```
@@ -78,18 +77,20 @@
 
 | 范围 | 内容 |
 | --- | --- |
-| `U+E000–U+E052` | 83 个键帽 |
-| `U+E053–U+E05E` | 12 个系统图标 |
+| `U+E000–U+E056` | 87 个键帽 |
+| `U+E100–U+E107` | 8 个软件 / 文件 / AI 图标 |
+| `U+E200–U+E208` | 9 个硬件图标 |
+| `U+E300–U+E309` | 10 个界面图标 |
 | `A–Z`、`a–z`、`0–9` | 键帽的 ASCII 别名 |
 
 ```html
 <span class="key">&#xE000;</span>  <!-- Esc -->
-<span class="key">&#xE053;</span>  <!-- CPU -->
-<span class="key">&#xE059;</span>  <!-- CLI -->
+<span class="key">&#xE100;</span>  <!-- CLI -->
+<span class="key">&#xE300;</span>  <!-- 内容 -->
 <span class="key">A</span>         <!-- A 键帽 -->
 ```
 
-字体本身不处理键盘事件。`demo.html` 里的 `KEYS` 数组包含全部 101 条映射，可以直接复制：
+字体本身不处理键盘事件。`demo.html` 里的 `KEYS` 数组包含全部 106 条映射，可以直接复制：
 
 ```js
 document.addEventListener("keydown", (event) => {
@@ -101,18 +102,15 @@ document.addEventListener("keydown", (event) => {
 完整中文对照表见 **[MAPPING.md](MAPPING.md)**。
 
 <details>
-<summary><b>12 个系统图标</b>（点击展开）</summary>
+<summary><b>27 个系统图标</b>（点击展开）</summary>
 
-| 软件 | PUA | 硬件 | PUA |
-| --- | --- | --- | --- |
-| CLI | `U+E059` | CPU | `U+E053` |
-| Web | `U+E05A` | GPU | `U+E054` |
-| App | `U+E05B` | RAM | `U+E055` |
-| Game | `U+E05C` | ROM / 硬盘 | `U+E056` |
-| | | NetUp | `U+E057` |
-| | | NetDown | `U+E058` |
-| | | USB | `U+E05D` |
-| | | Vol | `U+E05E` |
+| 类别 | 图标与 PUA |
+| --- | --- |
+| 软件 | CLI `U+E100` · Web `U+E101` · App `U+E102` · Game `U+E103` |
+| 文件 | Folder `U+E104` · TXT `U+E105` · Image `U+E106` |
+| AI | AI Agent `U+E107` |
+| 硬件 | CPU `U+E200` · GPU `U+E201` · RAM `U+E202` · ROM `U+E203` · NetUp `U+E204` · NetDown `U+E205` · USB `U+E206` · Vol `U+E207` · Mic `U+E208` |
+| 界面 | Content `U+E300` · Look `U+E301` · Source `U+E302` · Action `U+E303` · Hotkey `U+E304` · Search `U+E305` · Delete `U+E306` · Move `U+E307` · Add `U+E308` · Expand `U+E309` |
 
 </details>
 
@@ -134,33 +132,11 @@ python src/build_font.py
 输出：
 
 ```text
-fonts/ReiKeycap-Regular.ttf
-fonts/ReiKeycap-Regular.woff2
+fonts/ReiconFont-Regular.ttf
+fonts/ReiconFont-Regular.woff2
 ```
 
-构建不依赖 Node.js、浏览器、图像库或网络。修改键位和图标分类看 `src/data.py`，修改轮廓和几何看 `src/geometry.py`，修改字体元数据看 `src/build_font.py`。
-
-## 🗂️ 目录结构
-
-```text
-rei-keycap-font/
-├─ demo.html                     实时键盘演示
-├─ docs/preview.png              README 预览图
-├─ fonts/
-│  ├─ ReiKeycap-Regular.ttf      桌面字体
-│  └─ ReiKeycap-Regular.woff2    Web 字体
-├─ MAPPING.md                    中文完整映射文档
-├─ README.md
-├─ LICENSE                       SIL OFL 1.1
-├─ requirements.txt
-├─ assets/                       Noto Sans / JetBrains Mono 源字体
-└─ src/
-   ├─ build_font.py              构建入口
-   ├─ data.py                    键位、图例与图标分类
-   └─ geometry.py                字形轮廓与几何
-```
-
-逐字形 SVG、构建中间文件和 ZIP 不进入仓库；`docs/preview.png` 只用于 README 预览。Release 只保留字体、映射文档和许可证。
+构建不依赖 Node.js、浏览器、图像库或网络。修改键位、图标分类和 PUA 分区看 `src/data.py`，修改轮廓和几何看 `src/geometry.py`，修改字体元数据看 `src/build_font.py`。
 
 ## ⚠️ 注意
 
@@ -172,9 +148,9 @@ rei-keycap-font/
 
 字体以 **[SIL Open Font License 1.1](LICENSE)** 发布，可自由使用、嵌入、修改和再分发；再分发时请保留 `LICENSE`，不要单独售卖字体文件。用字体排版的文档、图片和网页不受该许可约束。
 
-字形轮廓来自 **Noto Sans SemiBold**（Copyright 2018 The Noto Project Authors）和 **JetBrains Mono SemiBold**（Copyright 2020 The JetBrains Mono Project Authors），两者同样以 OFL 1.1 使用。生成字体命名为 **ReiKeycap**，未使用源字体的保留名称。
+字形轮廓来自 **Noto Sans SemiBold**（Copyright 2018 The Noto Project Authors）和 **JetBrains Mono SemiBold**（Copyright 2020 The JetBrains Mono Project Authors），两者同样以 OFL 1.1 使用。生成字体命名为 **ReiconFont**，未使用源字体的保留名称。
 
-<p align="center"><sub>ReiKeycap v1.4.0 · 95 glyphs · SIL Open Font License 1.1</sub></p>
+<p align="center"><sub>ReiconFont v1.7.1 · 114 glyphs · SIL Open Font License 1.1</sub></p>
 
 ---
 
@@ -184,34 +160,37 @@ rei-keycap-font/
 
 **A transparent, content-fitted keycap and system-icon font**, redrawn from a photographed Windows keyboard. Every keycap frame and icon occupies the same **1em / 62-unit** slot, so they stay aligned at any size. The interior is transparent; color comes from `currentColor`.
 
-- **95 glyphs** — 83 keycaps + 12 system icons, covering 101 `event.code` values
-- **101 key mappings** and **62 ASCII aliases** (`A–Z`, `a–z`, `0–9`)
+- **114 glyphs** — 87 keycaps + 27 system icons, covering 106 `event.code` values
+- **Blocked codepoints** — keycaps from `U+E000`, software icons `U+E100`, hardware icons `U+E200`, interface icons `U+E300`
+- **Reserved room** — each block spans 256 codepoints, leaving gaps for later additions
+- **106 key mappings** and **62 ASCII aliases** (`A–Z`, `a–z`, `0–9`)
 - **TTF + WOFF2**, 1000 units/em, all glyphs exactly 1em tall
 - **Single-color outlines** with a transparent interior
 - **No runtime dependencies**; build with Python, `fonttools` and `brotli`
 
 ### Quick start
 
-Download the fonts from **[Releases](https://github.com/CRITTIof/rei-keycap-font/releases/latest)**.
+Download the fonts from **[Releases](https://github.com/CRITTIof/reicon-font/releases/latest)**.
 
 | File | Purpose |
 | --- | --- |
-| `ReiKeycap-Regular.ttf` | Desktop install |
-| `ReiKeycap-Regular.woff2` | Web font |
+| `ReiconFont-Regular.ttf` | Desktop install |
+| `ReiconFont-Regular.woff2` | Web font |
 | `MAPPING.md` | Full Chinese mapping reference |
-| `LICENSE` | SIL Open Font License 1.1 |
+
+The license is the [LICENSE](LICENSE) file at the repository root.
 
 ```css
 @font-face {
-  font-family: "ReiKeycap";
-  src: url("fonts/ReiKeycap-Regular.woff2") format("woff2");
+  font-family: "ReiconFont";
+  src: url("fonts/ReiconFont-Regular.woff2") format("woff2");
 }
-.key { font: 400 38px/1 "ReiKeycap"; color: currentColor; }
+.key { font: 400 38px/1 "ReiconFont"; color: currentColor; }
 ```
 
 ```html
 <span class="key">&#xE000;</span>  <!-- Esc -->
-<span class="key">&#xE053;</span>  <!-- CPU -->
+<span class="key">&#xE100;</span>  <!-- CLI -->
 <span class="key">A</span>         <!-- A keycap -->
 ```
 
@@ -224,10 +203,10 @@ pip install -r requirements.txt
 python src/build_font.py
 ```
 
-Outputs `fonts/ReiKeycap-Regular.ttf` and `.woff2`. Python 3.10+ only; no Node.js, browser or image tooling required.
+Outputs `fonts/ReiconFont-Regular.ttf` and `.woff2`. Python 3.10+ only; no Node.js, browser or image tooling required.
 
 ### License
 
-Released under the **[SIL Open Font License 1.1](LICENSE)**. Outlines are derived from **Noto Sans SemiBold** (Copyright 2018 The Noto Project Authors) and **JetBrains Mono SemiBold** (Copyright 2020 The JetBrains Mono Project Authors), also under OFL 1.1. The generated font is named **ReiKeycap** and uses no reserved name from either source font.
+Released under the **[SIL Open Font License 1.1](LICENSE)**. Outlines are derived from **Noto Sans SemiBold** (Copyright 2018 The Noto Project Authors) and **JetBrains Mono SemiBold** (Copyright 2020 The JetBrains Mono Project Authors), also under OFL 1.1. The generated font is named **ReiconFont** and uses no reserved name from either source font.
 
 <p align="center"><a href="#简体中文">返回中文 ↑</a></p>

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Threading;
 
-namespace WindowOverlay.Core
+namespace MirrorpondHUD.Core
 {
     internal struct InstanceValue
     {

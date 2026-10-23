@@ -4,21 +4,21 @@ param(
     [string]$Subject = 'CN=CRITTIof'
 )
 
-# Self-signed code-signing certificate for WindowOverlay.
+# Self-signed code-signing certificate for MirrorpondHUD.
 # Subject defaults to the GitHub account name of this machine (gh auth status).
 # Everything here uses pure .NET: the Cert: drive and the Security module are
 # not available in every PowerShell session on this machine.
 
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
-$exePath = if ($Exe) { $Exe } else { Join-Path $root 'bin\Release\WindowOverlay.exe' }
+$exePath = if ($Exe) { $Exe } else { Join-Path $root 'bin\Release\MirrorpondHUD.exe' }
 
 $certDir = Join-Path $root 'certs'
 New-Item -ItemType Directory -Force -Path $certDir | Out-Null
-$pfx = Join-Path $certDir 'windowoverlay.pfx'
-$cer = Join-Path $certDir 'windowoverlay.cer'
-$password = 'WindowOverlayDev!2026'
-$oldSubject = 'CN=WindowOverlay Dev'
+$pfx = Join-Path $certDir 'mirrorpondhud.pfx'
+$cer = Join-Path $certDir 'mirrorpondhud.cer'
+$password = 'MirrorpondHUDDev!2026'
+$oldSubject = 'CN=MirrorpondHUD Dev'
 
 function New-SigningCertificate([string]$name) {
     try {
@@ -57,7 +57,7 @@ function New-SigningCertificate([string]$name) {
         $secure.MakeReadOnly()
 
         $created = New-SelfSignedCertificate -Type CodeSigningCert -Subject $name `
-            -KeyUsage DigitalSignature -FriendlyName 'WindowOverlay (self-signed)' `
+            -KeyUsage DigitalSignature -FriendlyName 'MirrorpondHUD (self-signed)' `
             -CertStoreLocation Cert:\CurrentUser\My -NotAfter (Get-Date).AddYears(10)
         Export-PfxCertificate -Cert $created -FilePath $pfx -Password $secure | Out-Null
         Export-Certificate -Cert $created -FilePath $cer | Out-Null
@@ -113,7 +113,7 @@ if (-not $cert) {
         throw "certificate subject is '$($cert.Subject)', expected '$Subject'"
     }
 
-    try { $cert.FriendlyName = 'WindowOverlay (self-signed)' } catch { }
+    try { $cert.FriendlyName = 'MirrorpondHUD (self-signed)' } catch { }
 
     $pfxBytes = $cert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Pfx, $password)
     [System.IO.File]::WriteAllBytes($pfx, $pfxBytes)

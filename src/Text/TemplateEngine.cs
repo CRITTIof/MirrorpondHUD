@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
 
-namespace WindowOverlay.Core
+namespace MirrorpondHUD.Core
 {
     /// <summary>
     /// 模板渲染：{name}、{name:0.0}、{name,8}、{name,8:0.0}；

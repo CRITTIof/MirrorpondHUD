@@ -2,12 +2,12 @@ using System;
 using System.IO;
 using System.Text;
 
-namespace WindowOverlay.Core
+namespace MirrorpondHUD.Core
 {
     /// <summary>
     /// 极简文件日志。优先写到 exe 同目录（便携、权限问题最少），
-    /// 不可写时退到 %LOCALAPPDATA%\WindowOverlay，最后退到临时目录。
-    /// 可用环境变量 WINDOWOVERLAY_LOG 指定绝对路径。
+    /// 不可写时退到 %LOCALAPPDATA%\MirrorpondHUD，最后退到临时目录。
+    /// 可用环境变量 MIRRORPONDHUD_LOG 指定绝对路径。
     /// </summary>
     internal static class Log
     {
@@ -27,14 +27,14 @@ namespace WindowOverlay.Core
 
         static string ResolvePath()
         {
-            string overridePath = Environment.GetEnvironmentVariable("WINDOWOVERLAY_LOG");
+            string overridePath = Environment.GetEnvironmentVariable("MIRRORPONDHUD_LOG");
             if (!string.IsNullOrWhiteSpace(overridePath)) return overridePath;
 
             // 1) exe 同目录：最直观，也不受 %LOCALAPPDATA% 被重定向的影响
             try
             {
                 string exeDir = AppContext.BaseDirectory;
-                if (CanWrite(exeDir)) return Path.Combine(exeDir, "overlay.log");
+                if (CanWrite(exeDir)) return Path.Combine(exeDir, "mirrorpond.log");
             }
             catch { }
 
@@ -44,9 +44,9 @@ namespace WindowOverlay.Core
                 string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
                 if (!string.IsNullOrEmpty(local))
                 {
-                    string dir = Path.Combine(local, "WindowOverlay");
+                    string dir = Path.Combine(local, "MirrorpondHUD");
                     Directory.CreateDirectory(dir);
-                    if (CanWrite(dir)) return Path.Combine(dir, "overlay.log");
+                    if (CanWrite(dir)) return Path.Combine(dir, "mirrorpond.log");
                 }
             }
             catch { }
@@ -54,13 +54,13 @@ namespace WindowOverlay.Core
             // 3) 临时目录
             try
             {
-                string temp = Path.Combine(Path.GetTempPath(), "WindowOverlay");
+                string temp = Path.Combine(Path.GetTempPath(), "MirrorpondHUD");
                 Directory.CreateDirectory(temp);
-                return Path.Combine(temp, "overlay.log");
+                return Path.Combine(temp, "mirrorpond.log");
             }
             catch { }
 
-            return "overlay.log";
+            return "mirrorpond.log";
         }
 
         static bool CanWrite(string dir)

@@ -1,8 +1,9 @@
 using System;
 using System.IO;
 using System.Text;
+using MirrorpondHUD.Cards;
 
-namespace WindowOverlay.Core
+namespace MirrorpondHUD.Core
 {
     /// <summary>设置文件读写。优先放在 exe 同目录（便携），不可写时退回 %LOCALAPPDATA%。</summary>
     public static class ConfigStore
@@ -24,7 +25,7 @@ namespace WindowOverlay.Core
                 {
                     string dir = System.IO.Path.Combine(
                         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                        "WindowOverlay");
+                        "MirrorpondHUD");
                     Directory.CreateDirectory(dir);
                     _path = System.IO.Path.Combine(dir, "settings.json");
                 }
@@ -47,6 +48,7 @@ namespace WindowOverlay.Core
         public static Settings Load()
         {
             var settings = new Settings();
+            bool migrated = false;
             try
             {
                 string file = Path;
@@ -54,10 +56,7 @@ namespace WindowOverlay.Core
                 {
                     string text = File.ReadAllText(file, Encoding.UTF8);
                     if (!string.IsNullOrWhiteSpace(text))
-                    {
-                        Settings loaded = Json.Deserialize<Settings>(text);
-                        if (loaded != null) settings = loaded;
-                    }
+                        settings = SettingsMigration.Load(text, out migrated);
                 }
             }
             catch (Exception ex)
@@ -67,6 +66,10 @@ namespace WindowOverlay.Core
             }
 
             settings.Normalize();
+            CardModel.Normalize(settings);
+
+            // 旧版单窗口配置 / 初版多卡片配置：迁移后立刻落盘，避免每次启动重复迁移。
+            if (migrated) Save(settings);
             return settings;
         }
 
@@ -75,6 +78,8 @@ namespace WindowOverlay.Core
             try
             {
                 settings.Normalize();
+                CardModel.Normalize(settings);
+
                 string file = Path;
                 Directory.CreateDirectory(System.IO.Path.GetDirectoryName(file));
 

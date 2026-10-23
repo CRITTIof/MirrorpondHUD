@@ -7,7 +7,7 @@ using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media.Imaging;
 
-namespace WindowOverlay.Ui
+namespace MirrorpondHUD.Ui
 {
     /// <summary>
     /// 毛玻璃背景：抓取窗口后面那块屏幕，缩小后做模糊，再当作叠层背景。

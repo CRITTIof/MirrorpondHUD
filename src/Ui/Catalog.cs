@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Generic;
-using WindowOverlay.Core;
+using MirrorpondHUD.Core;
 
-namespace WindowOverlay.Ui
+namespace MirrorpondHUD.Ui
 {
     public sealed class PresetInfo
     {
@@ -61,7 +61,7 @@ namespace WindowOverlay.Ui
             new PresetInfo
             {
                 Name = "标准面板",
-                Content = Settings.DefaultContent
+                Content = Settings.DefaultMetricsContent
             },
             new PresetInfo
             {

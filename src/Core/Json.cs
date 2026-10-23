@@ -5,7 +5,7 @@ using System.Globalization;
 using System.Reflection;
 using System.Text;
 
-namespace WindowOverlay.Core
+namespace MirrorpondHUD.Core
 {
     /// <summary>
     /// 极简 JSON 读写。只服务于配置文件的“对象 / 数组 / 字符串 / 数字 / 布尔 / null”，
@@ -292,6 +292,18 @@ namespace WindowOverlay.Core
                 var outList = new List<string>(arr.Count);
                 foreach (var item in arr) outList.Add(item == null ? "" : Convert.ToString(item, CultureInfo.InvariantCulture));
                 return outList;
+            }
+
+            // 任意 List<T>：卡片的 List<CardSettings> 等配置数组都走这里。
+            if (target.IsGenericType && target.GetGenericTypeDefinition() == typeof(List<>))
+            {
+                Type itemType = target.GetGenericArguments()[0];
+                var list = (IList)Activator.CreateInstance(target);
+                if (node is List<object> items)
+                {
+                    foreach (object item in items) list.Add(Bind(itemType, item));
+                }
+                return list;
             }
 
             if (node is Dictionary<string, object> map)

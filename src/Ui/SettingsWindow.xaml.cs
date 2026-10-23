@@ -1,17 +1,18 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Markup;
 using System.Windows.Media;
-using System.Windows.Threading;
-using WindowOverlay.Core;
+using MirrorpondHUD.Cards;
+using MirrorpondHUD.Core;
 
-namespace WindowOverlay.Ui
+namespace MirrorpondHUD.Ui
 {
     public partial class SettingsWindow : Window
     {
@@ -22,8 +23,9 @@ namespace WindowOverlay.Ui
         readonly Action<Settings> _onApply;
         readonly Action<double, double, int> _onPosition;
         readonly Action _onClearKeys;
-        readonly DispatcherTimer _previewTimer;
-        readonly MetricsSnapshot _demo;
+
+        readonly List<CardEditor> _editors = new List<CardEditor>();
+        readonly Dictionary<string, bool> _expanded = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
 
         Settings _working;
         bool _suppress;
@@ -38,11 +40,7 @@ namespace WindowOverlay.Ui
             _onApply = onApply;
             _onPosition = onPosition;
             _onClearKeys = onClearKeys;
-            _demo = Screenshots.DemoSnapshot();
             try { VersionText.Text = "v" + typeof(SettingsWindow).Assembly.GetName().Version; } catch { }
-
-            _previewTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(120) };
-            _previewTimer.Tick += (s, e) => { _previewTimer.Stop(); UpdatePreview(); };
 
             HookEvents();
             BindNumberBoxes();
@@ -184,7 +182,6 @@ namespace WindowOverlay.Ui
 
         void HookEvents()
         {
-            ContentBox.TextChanged += (s, e) => UiChanged();
             FontCombo.SelectionChanged += (s, e) =>
             {
                 FontItem item = FontCombo.SelectedItem as FontItem;
@@ -225,12 +222,6 @@ namespace WindowOverlay.Ui
             WorkDirBox.TextChanged += (s, e) => { UpdateCommandUi(); UiChanged(); };
             TruncateCheck.Checked += (s, e) => { UpdateCommandUi(); UiChanged(); };
             TruncateCheck.Unchecked += (s, e) => { UpdateCommandUi(); UiChanged(); };
-
-            TokenList.MouseDoubleClick += (s, e) =>
-            {
-                var token = TokenList.SelectedItem as TokenInfo;
-                if (token != null) InsertToken(token.Name);
-            };
         }
 
         public void Reload(Settings live)
@@ -244,8 +235,7 @@ namespace WindowOverlay.Ui
             try
             {
                 _working = Clone(s);
-
-                ContentBox.Text = s.Content ?? "";
+                CardModel.Normalize(_working);
 
                 BuildFontList();
                 _selectedFont = _allFonts.FirstOrDefault(
@@ -317,7 +307,6 @@ namespace WindowOverlay.Ui
                 YBox.Text = s.Overlay.Y.ToString("0", CultureInfo.InvariantCulture);
 
                 HotkeyToggleBox.Text = s.Hotkeys.ToggleOverlay;
-                HotkeyCommandBox.Text = s.Hotkeys.CommandLine;
                 HotkeySettingsBox.Text = s.Hotkeys.OpenSettings;
                 HotkeyLockBox.Text = s.Hotkeys.ToggleLock;
 
@@ -329,10 +318,6 @@ namespace WindowOverlay.Ui
                 MaxLinesBox.Text = s.Command.MaxLines.ToString(CultureInfo.InvariantCulture);
                 TimeoutBox.Text = s.Command.TimeoutSeconds.ToString(CultureInfo.InvariantCulture);
 
-                TokenList.ItemsSource = Catalog.Tokens;
-                PresetCombo.ItemsSource = Catalog.Presets;
-                PresetCombo.SelectedIndex = 0;
-
                 PathText.Text = ConfigStore.Path;
                 StatusText.Text = "";
             }
@@ -343,7 +328,7 @@ namespace WindowOverlay.Ui
 
             UpdateSwatches();
             UpdateCommandUi();
-            UpdatePreview();
+            RebuildCardList();
         }
 
         static int AlignmentIndex(string value)
@@ -432,6 +417,8 @@ namespace WindowOverlay.Ui
             }
         }
 
+        // ==================== 下拉框数据 ====================
+
         void FillGpuCombo(int selected)
         {
             int count = 0;
@@ -518,13 +505,233 @@ namespace WindowOverlay.Ui
             MonitorCombo.SelectedIndex = current >= 0 && current < items.Count ? current : 0;
         }
 
+        // ==================== 卡片列表 ====================
+
+        void RebuildCardList()
+        {
+            _editors.Clear();
+
+            foreach (CardSettings config in _working.Cards)
+            {
+                bool expanded;
+                if (!_expanded.TryGetValue(config.Id, out expanded)) expanded = true;
+
+                var editor = new CardEditor(config, CardRegistry.Get(config.Kind), expanded);
+                string id = config.Id;
+                editor.PropertyChanged += (s, e) =>
+                {
+                    if (e.PropertyName == "IsExpanded") _expanded[id] = editor.IsExpanded;
+                };
+                _editors.Add(editor);
+            }
+
+            for (int i = 0; i < _editors.Count; i++)
+                _editors[i].SpacingEnabled = i > 0;
+
+            ApplyCardFilter();
+        }
+
+        void ApplyCardFilter()
+        {
+            string keyword = (SearchBox.Text ?? "").Trim();
+
+            // 每次都换一个新 List：ItemsControl 不对 List<T> 的增删做通知，
+            // 复用同一个实例会导致增删 / 移动后界面不刷新。
+            List<CardEditor> filtered;
+            if (keyword.Length == 0)
+            {
+                filtered = new List<CardEditor>(_editors);
+            }
+            else
+            {
+                filtered = _editors.Where(e =>
+                    e.DisplayName.IndexOf(keyword, StringComparison.CurrentCultureIgnoreCase) >= 0 ||
+                    e.KindLabel.IndexOf(keyword, StringComparison.CurrentCultureIgnoreCase) >= 0).ToList();
+            }
+
+            CardList.ItemsSource = filtered;
+            EmptyHint.Visibility = filtered.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+
+            CardCountText.Text = keyword.Length == 0
+                ? "共 " + _editors.Count + " 张卡片 · 列表顺序就是叠层上的显示顺序"
+                : "匹配 " + filtered.Count + " / " + _editors.Count + " 张卡片";
+        }
+
+        void SearchBoxTextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (_working != null) ApplyCardFilter();
+        }
+
+        void AddCardClick(object sender, RoutedEventArgs e)
+        {
+            var menu = new ContextMenu();
+
+            foreach (ICardModule module in CardRegistry.Modules)
+            {
+                var header = new StackPanel { Orientation = Orientation.Horizontal };
+                header.Children.Add(new TextBlock
+                {
+                    Text = module.Icon,
+                    FontFamily = (FontFamily)FindResource("ReiconFont"),
+                    FontSize = 15,
+                    Foreground = (Brush)FindResource("Accent"),
+                    VerticalAlignment = VerticalAlignment.Center
+                });
+                header.Children.Add(new TextBlock
+                {
+                    Text = module.DisplayName,
+                    Margin = new Thickness(9, 0, 0, 0),
+                    VerticalAlignment = VerticalAlignment.Center
+                });
+
+                var item = new MenuItem { Header = header, Tag = module };
+                item.Click += (s, a) => AddCard((ICardModule)((MenuItem)s).Tag);
+                menu.Items.Add(item);
+            }
+
+            menu.PlacementTarget = AddCardButton;
+            menu.Placement = PlacementMode.Bottom;
+            menu.IsOpen = true;
+        }
+
+        void AddCard(ICardModule module)
+        {
+            if (module == null) return;
+
+            CardSettings card = CardModel.Create(module, _working.Cards);
+            if (card == null) return;
+
+            _working.Cards.Add(card);
+            _expanded[card.Id] = true;
+
+            SearchBox.Text = "";
+            RebuildCardList();
+            StatusText.Text = "已添加卡片「" + card.Name + "」，保存并应用后生效";
+
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                try { CardScroll.ScrollToEnd(); } catch { }
+            }), System.Windows.Threading.DispatcherPriority.Background);
+        }
+
+        void DeleteCardClick(object sender, RoutedEventArgs e)
+        {
+            CardEditor editor = (sender as FrameworkElement)?.Tag as CardEditor;
+            if (editor == null) return;
+
+            if (_working.Cards.Count <= 1)
+            {
+                StatusText.Text = "至少保留一张卡片";
+                return;
+            }
+
+            MessageBoxResult answer = MessageBox.Show(this,
+                "删除卡片「" + editor.DisplayName + "」？\n保存并应用后生效。",
+                "镜潭一览", MessageBoxButton.OKCancel, MessageBoxImage.Question);
+            if (answer != MessageBoxResult.OK) return;
+
+            _working.Cards.Remove(editor.Config);
+            _expanded.Remove(editor.Config.Id);
+            RebuildCardList();
+            StatusText.Text = "已删除卡片「" + editor.DisplayName + "」，保存并应用后生效";
+        }
+
+        void MoveCardClick(object sender, RoutedEventArgs e)
+        {
+            CardEditor editor = (sender as FrameworkElement)?.Tag as CardEditor;
+            if (editor == null) return;
+
+            int index = _working.Cards.IndexOf(editor.Config);
+
+            var menu = new ContextMenu();
+            var up = new MenuItem { Header = "上移", IsEnabled = index > 0 };
+            up.Click += (s, a) => MoveCard(editor, -1);
+            var down = new MenuItem { Header = "下移", IsEnabled = index >= 0 && index < _working.Cards.Count - 1 };
+            down.Click += (s, a) => MoveCard(editor, 1);
+            menu.Items.Add(up);
+            menu.Items.Add(down);
+
+            menu.PlacementTarget = sender as UIElement;
+            menu.Placement = PlacementMode.Bottom;
+            menu.IsOpen = true;
+        }
+
+        void MoveCard(CardEditor editor, int delta)
+        {
+            int index = _working.Cards.IndexOf(editor.Config);
+            int target = index + delta;
+            if (index < 0 || target < 0 || target >= _working.Cards.Count) return;
+
+            _working.Cards.RemoveAt(index);
+            _working.Cards.Insert(target, editor.Config);
+
+            // 移到非首位时给一个可见的最小间距，避免和上一张卡片贴在一起。
+            if (target > 0 && editor.Config.Spacing < 1)
+                editor.Config.Spacing = 12;
+
+            RebuildCardList();
+            StatusText.Text = "卡片「" + editor.DisplayName + "」已移动到第 " + (target + 1) + " 位";
+        }
+
+        void ToggleCardClick(object sender, RoutedEventArgs e)
+        {
+            CardEditor editor = (sender as FrameworkElement)?.Tag as CardEditor;
+            if (editor != null) editor.IsExpanded = !editor.IsExpanded;
+        }
+
+        void CardHeaderClick(object sender, MouseButtonEventArgs e)
+        {
+            CardEditor editor = (sender as FrameworkElement)?.DataContext as CardEditor;
+            if (editor != null) editor.IsExpanded = !editor.IsExpanded;
+        }
+
+        void CardHotkeyPreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            var box = sender as TextBox;
+            CardEditor editor = box == null ? null : box.DataContext as CardEditor;
+            if (editor == null) return;
+
+            e.Handled = true;
+            Key key = e.Key == Key.System ? e.SystemKey : e.Key;
+
+            if (key == Key.Escape)
+            {
+                editor.Hotkey = "";
+                return;
+            }
+
+            if (IsModifierKey(key)) return;
+
+            editor.Hotkey = HotkeyManager.Format(key, Keyboard.Modifiers);
+        }
+
+        void InsertTokenClick(object sender, SelectionChangedEventArgs e)
+        {
+            var combo = sender as ComboBox;
+            if (combo == null) return;
+
+            var token = combo.SelectedItem as TokenInfo;
+            if (token == null) return;
+
+            var box = combo.Tag as TextBox;
+            if (box != null)
+            {
+                string insert = "{" + token.Name + "}";
+                string text = box.Text ?? "";
+                int caret = Math.Min(Math.Max(0, box.CaretIndex), text.Length);
+                box.Text = text.Insert(caret, insert);
+                box.CaretIndex = caret + insert.Length;
+                box.Focus();
+            }
+
+            combo.SelectedIndex = -1;
+        }
+
         // ==================== 读取 ====================
 
         Settings ReadUi()
         {
             Settings s = _working;
-
-            s.Content = ContentBox.Text ?? "";
 
             FontItem font = FontCombo.SelectedItem as FontItem ?? _selectedFont;
             if (font != null && !string.IsNullOrWhiteSpace(font.Family)) s.Style.FontFamily = font.Family;
@@ -599,7 +806,6 @@ namespace WindowOverlay.Ui
             s.Overlay.Y = ParseDouble(YBox.Text, s.Overlay.Y);
 
             s.Hotkeys.ToggleOverlay = (HotkeyToggleBox.Text ?? "").Trim();
-            s.Hotkeys.CommandLine = (HotkeyCommandBox.Text ?? "").Trim();
             s.Hotkeys.OpenSettings = (HotkeySettingsBox.Text ?? "").Trim();
             s.Hotkeys.ToggleLock = (HotkeyLockBox.Text ?? "").Trim();
 
@@ -612,6 +818,7 @@ namespace WindowOverlay.Ui
             s.Command.TimeoutSeconds = Math.Max(1, ParseInt(TimeoutBox.Text, s.Command.TimeoutSeconds));
 
             s.Normalize();
+            CardModel.Normalize(s);
             return s;
         }
 
@@ -633,74 +840,23 @@ namespace WindowOverlay.Ui
             return double.TryParse((text ?? "").Trim(), NumberStyles.Float, CultureInfo.CurrentCulture, out v) ? v : fallback;
         }
 
-        // ==================== 预览 ====================
+        // ==================== 状态 ====================
 
         void UiChanged()
         {
             if (_suppress) return;
             UpdateSwatches();
-            _previewTimer.Stop();
-            _previewTimer.Start();
         }
 
         void UpdateSwatches()
         {
+            if (FgSwatch == null) return;
             FgSwatch.Background = new SolidColorBrush(OverlaySurface.ParseColor(FgBox.Text));
             BgSwatch.Background = new SolidColorBrush(OverlaySurface.ParseColor(BgBox.Text));
             OutlineSwatch.Background = new SolidColorBrush(OverlaySurface.ParseColor(OutlineColorBox.Text));
         }
 
-        void UpdatePreview()
-        {
-            try
-            {
-                Settings s = ReadUi();
-                var keys = new KeyHistory();
-                keys.Configure(s.Data.KeyHistoryCount, s.Data.RepeatThreshold, s.Data.MaxKeyChars);
-                foreach (string k in new[] { "Ctrl", "C", "Ctrl", "V", "A", "A", "A", "A", "A", "A", "Enter" })
-                    keys.Push(k);
-
-                Dictionary<string, object> vars = Variables.Build(_demo, s, keys);
-                List<string> unknown;
-                string text = TemplateEngine.Render(s.Content, vars, out unknown);
-
-                PreviewSurface.Apply(s, text, s.Behavior.IntroEnabled);
-
-                UnknownHint.Text = unknown.Count == 0
-                    ? ""
-                    : "未知占位符: " + string.Join("、", unknown);
-            }
-            catch (Exception ex)
-            {
-                Log.Warn("预览失败: " + ex.Message);
-            }
-        }
-
-        void InsertToken(string name)
-        {
-            string insert = "{" + name + "}";
-            string text = ContentBox.Text ?? "";
-            int caret = Math.Min(Math.Max(0, ContentBox.CaretIndex), text.Length);
-            ContentBox.Text = text.Insert(caret, insert);
-            ContentBox.CaretIndex = caret + insert.Length;
-            ContentBox.Focus();
-        }
-
         // ==================== 事件 ====================
-
-        void ApplyPresetClick(object sender, RoutedEventArgs e)
-        {
-            var preset = PresetCombo.SelectedItem as PresetInfo;
-            if (preset == null) return;
-            ContentBox.Text = preset.Content;
-            ContentBox.CaretIndex = ContentBox.Text.Length;
-        }
-
-        void InsertTokenClick(object sender, RoutedEventArgs e)
-        {
-            var token = TokenList.SelectedItem as TokenInfo;
-            if (token != null) InsertToken(token.Name);
-        }
 
         void PickForegroundClick(object sender, RoutedEventArgs e)
         {
@@ -822,14 +978,14 @@ namespace WindowOverlay.Ui
             double y = ParseDouble(YBox.Text, 48);
             int monitor = Math.Max(0, MonitorCombo.SelectedIndex);
             if (_onPosition != null) _onPosition(x, y, monitor);
-            StatusText.Text = "已移动到 X=" + x + " Y=" + y;
+            StatusText.Text = "叠层已移动到 X=" + x + " Y=" + y;
         }
 
         /// <summary>
-        /// 把叠层的实时坐标同步到「显示器 / X / Y」输入框。
-        /// 拖动叠层和保存设置之后都会调用，保证对话框里显示的永远是叠层的真实位置。
+        /// 把叠层的实时锚点同步到「显示器 / X / Y」输入框。
+        /// 拖动叠层和保存设置之后都会调用，保证对话框里显示的永远是真实位置。
         /// </summary>
-        public void SyncPosition(double x, double y, int monitor)
+        public void SyncAnchor(double x, double y, int monitor)
         {
             bool old = _suppress;
             _suppress = true;
@@ -876,18 +1032,13 @@ namespace WindowOverlay.Ui
         }
 
         /// <summary>留空表示禁用；返回 null 表示全部合法。</summary>
-        static string ValidateHotkeys(Settings s, out uint mods, out uint vk)
+        static string ValidateSettings(Settings s)
         {
-            mods = 0;
-            vk = 0;
+            uint mods, vk;
 
             if (!string.IsNullOrWhiteSpace(s.Hotkeys.ToggleOverlay) &&
                 !HotkeyManager.TryParse(s.Hotkeys.ToggleOverlay, out mods, out vk))
                 return "显示/隐藏热键无效：" + s.Hotkeys.ToggleOverlay;
-
-            if (!string.IsNullOrWhiteSpace(s.Hotkeys.CommandLine) &&
-                !HotkeyManager.TryParse(s.Hotkeys.CommandLine, out mods, out vk))
-                return "快捷命令行热键无效：" + s.Hotkeys.CommandLine;
 
             if (!string.IsNullOrWhiteSpace(s.Hotkeys.OpenSettings) &&
                 !HotkeyManager.TryParse(s.Hotkeys.OpenSettings, out mods, out vk))
@@ -897,10 +1048,16 @@ namespace WindowOverlay.Ui
                 !HotkeyManager.TryParse(s.Hotkeys.ToggleLock, out mods, out vk))
                 return "锁定热键无效：" + s.Hotkeys.ToggleLock;
 
-            if (!string.IsNullOrWhiteSpace(s.Hotkeys.ToggleOverlay) &&
-                !string.IsNullOrWhiteSpace(s.Hotkeys.CommandLine) &&
-                string.Equals(s.Hotkeys.ToggleOverlay, s.Hotkeys.CommandLine, StringComparison.OrdinalIgnoreCase))
-                return "「显示/隐藏」和「快捷命令行」不能共用同一个热键";
+            foreach (CardSettings card in s.Cards)
+            {
+                if (card == null || card.Resident) continue;
+
+                if (string.IsNullOrWhiteSpace(card.Hotkey))
+                    return "卡片「" + card.Name + "」没有呼出热键：勾选「常驻」，或给它设一个组合键。";
+
+                if (!HotkeyManager.TryParse(card.Hotkey, out mods, out vk))
+                    return "卡片「" + card.Name + "」的呼出热键无效：" + card.Hotkey;
+            }
 
             return null;
         }
@@ -918,8 +1075,7 @@ namespace WindowOverlay.Ui
                 return;
             }
 
-            uint mods, vk;
-            string hotkeyError = ValidateHotkeys(s, out mods, out vk);
+            string hotkeyError = ValidateSettings(s);
             if (hotkeyError != null)
             {
                 StatusText.Text = hotkeyError;
@@ -928,16 +1084,22 @@ namespace WindowOverlay.Ui
 
             if (_onApply != null) _onApply(s);
 
-            // 控制器把位置 / 锁定换成了实时值，同步回界面，避免下次保存又写回旧坐标。
-            SyncPosition(s.Overlay.X, s.Overlay.Y, s.Overlay.Monitor);
+            // 控制器会把实时锚点带回来，同步到界面，避免下次保存又写回旧坐标。
+            SyncAnchor(s.Overlay.X, s.Overlay.Y, s.Overlay.Monitor);
 
             _working = Clone(s);
+            CardModel.Normalize(_working);
+            RebuildCardList();
+
             StatusText.Text = "已保存并应用（" + DateTime.Now.ToString("HH:mm:ss") + "）";
         }
 
         void ResetClick(object sender, RoutedEventArgs e)
         {
-            LoadUi(new Settings());
+            var fresh = new Settings();
+            fresh.Normalize();
+            CardModel.Normalize(fresh);
+            LoadUi(fresh);
             StatusText.Text = "已恢复默认值，点击“保存并应用”生效";
         }
 

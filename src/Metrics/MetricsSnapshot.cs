@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace WindowOverlay.Core
+namespace MirrorpondHUD.Core
 {
     public sealed class DriveSample
     {

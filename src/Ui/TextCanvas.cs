@@ -5,7 +5,7 @@ using System.Windows;
 using System.Windows.Media;
 using System.Windows.Threading;
 
-namespace WindowOverlay.Ui
+namespace MirrorpondHUD.Ui
 {
     /// <summary>
     /// 自绘文本表面：文字描边、命令行光标、以及"只增不减"的稳定尺寸。
@@ -48,8 +48,8 @@ namespace WindowOverlay.Ui
         static FontFamily _keycapFamily;
 
         /// <summary>
-        /// 内嵌的键帽字体 ReiKeycap（只用 U+E000–U+E052 这 83 个键帽字形，图标码位不映射）。
-        /// 源码里的 `{keys}` 会先被 <see cref="WindowOverlay.Core.Keycaps"/> 换成这些 PUA 字符，
+        /// 内嵌的键帽字体 Reicon（只用 U+E000–U+E052 这 83 个键帽字形，图标码位不映射）。
+        /// 源码里的 `{keys}` 会先被 <see cref="MirrorpondHUD.Core.Keycaps"/> 换成这些 PUA 字符，
         /// 再在这里按 run 单独用这个字体绘制，所以可以和普通文字混排。
         /// </summary>
         static FontFamily KeycapFamily
@@ -61,7 +61,7 @@ namespace WindowOverlay.Ui
                     try
                     {
                         _keycapFamily = new FontFamily(new Uri("pack://application:,,,/"),
-                                                       "./assets/keycaps/#ReiKeycap");
+                                                       "./assets/keycaps/#ReiconFont");
                     }
                     catch
                     {
@@ -74,7 +74,8 @@ namespace WindowOverlay.Ui
 
         static bool IsKeycapChar(char c)
         {
-            return c >= '\uE000' && c <= '\uE052';
+            // 键帽 U+E000–U+E056；硬件图标 U+E200–U+E208（CPU/GPU/RAM/ROM/网络/USB/音量/麦克风）。
+            return (c >= '\uE000' && c <= '\uE056') || (c >= '\uE200' && c <= '\uE208');
         }
 
         public TextCanvas()

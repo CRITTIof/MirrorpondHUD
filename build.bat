@@ -10,7 +10,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-dotnet build "WindowOverlay.csproj" -c Release -nologo
+dotnet build "MirrorpondHUD.csproj" -c Release -nologo
 if errorlevel 1 (
     echo.
     echo [ERROR] Build failed.
