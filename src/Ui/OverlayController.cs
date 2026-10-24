@@ -370,6 +370,16 @@ namespace MirrorpondHUD.Ui
         /// <summary>从锚点开始按顺序把可见卡片往下排，间距取每张卡片自己的 Spacing。</summary>
         void LayoutCards()
         {
+            // 先量出整叠卡片里最宽的一张：右对齐时每张卡片的 X = 锚点 + (最宽 - 自己宽度)，
+            // 这样所有卡片的右边缘落在同一条竖线上；左对齐时所有卡片共用锚点 X。
+            double stackWidth = 0;
+            foreach (CardSlot slot in _cards)
+            {
+                if (!slot.Shown) continue;
+                stackWidth = Math.Max(stackWidth, slot.Window.CardWidth);
+            }
+
+            string align = ResolveCardAlign(stackWidth);
             double top = 0;
             bool first = true;
 
@@ -379,7 +389,11 @@ namespace MirrorpondHUD.Ui
 
                 if (!first) top += Math.Max(0, slot.Config.Spacing);
 
-                slot.Dialog.Overlay.X = _settings.Overlay.X;
+                double x = _settings.Overlay.X;
+                if (align == "Right")
+                    x += Math.Max(0, stackWidth - slot.Window.CardWidth);
+
+                slot.Dialog.Overlay.X = x;
                 slot.Dialog.Overlay.Y = _settings.Overlay.Y + top;
                 slot.Dialog.Overlay.Monitor = _settings.Overlay.Monitor;
                 slot.Dialog.Overlay.Locked = _settings.Overlay.Locked;
@@ -387,6 +401,36 @@ namespace MirrorpondHUD.Ui
 
                 top += slot.BodyHeight > 0 ? slot.BodyHeight : slot.Window.CardHeight;
                 first = false;
+            }
+        }
+
+        /// <summary>左对齐 = 左边缘共线，右对齐 = 右边缘共线；自动按整叠卡片在屏幕左 / 右半边决定。</summary>
+        string ResolveCardAlign(double stackWidth)
+        {
+            string mode = Settings.NormalizeCardAlign(_settings.Style.CardAlign);
+            if (mode == "Left" || mode == "Right") return mode;
+
+            try
+            {
+                System.Windows.Forms.Screen[] screens = System.Windows.Forms.Screen.AllScreens;
+                if (screens.Length == 0) return "Left";
+
+                int index = Math.Max(0, Math.Min(_settings.Overlay.Monitor, screens.Length - 1));
+                System.Drawing.Rectangle work = screens[index].WorkingArea;
+
+                double scale = 1.0;
+                if (screens[0].Bounds.Width > 0)
+                {
+                    double candidate = System.Windows.SystemParameters.PrimaryScreenWidth / screens[0].Bounds.Width;
+                    if (candidate > 0.1 && candidate < 10) scale = candidate;
+                }
+
+                double center = _settings.Overlay.X + stackWidth / 2;
+                return center < work.Width * scale / 2 ? "Left" : "Right";
+            }
+            catch
+            {
+                return "Left";
             }
         }
 

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Runtime.InteropServices;
@@ -384,8 +384,9 @@ namespace MirrorpondHUD
                               && vars["weekday_zh"].ToString().StartsWith("星期", StringComparison.Ordinal)
                               && vars["weekday_en"].ToString().Length > 3;
 
-                cardOk = CardRegistry.Modules.Count >= 6
+                cardOk = CardRegistry.Modules.Count >= 3
                          && CardRegistry.Get("media") is IRichCardModule
+                         && CardRegistry.Get("infotext") is InfoTextCard
                          && settings.Cards.Count >= 1
                          && !string.IsNullOrWhiteSpace(clock)
                          && clock.IndexOf('{') < 0

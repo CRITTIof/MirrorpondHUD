@@ -1,4 +1,4 @@
-﻿# 卡片模块化：现在的实现
+# 卡片模块化：现在的实现
 
 > 目标：把「桌面信息叠层」做成一组**可添加、可删除、可排序**的卡片。
 > 现在六种内置卡片（系统信息 / 时钟 / 按键 / 文本信息 / 命令行 / 媒体）已经按这个结构跑起来；
@@ -142,6 +142,24 @@ for card in Cards where visible:
 - 拖动任意卡片：算出位移，移动锚点，所有卡片一起走（`OnCardMoved`）
 - 非常驻卡片被呼出时插入自己的位置，后面的卡片自动让开
 - 文本变长、命令行展开、视频换分辨率后，每次渲染后 `LayoutIfNeeded()` 校正一次高度，不依赖 `SizeChanged` 的时序
+
+### 4.1 卡片对齐（外观 → 卡片 → 对齐方式）
+
+`Style.CardAlign` 只决定每张卡片的 **X**，不改变锚点语义：
+
+```
+stackWidth = max(可见卡片宽度)          // CardWidth，不含投影的 10 DIP 留白
+align      = Left | Right | Auto
+for card in Cards where visible:
+    window.X = anchor.X + (align == "Right" ? stackWidth - card.CardWidth : 0)
+```
+
+- **左对齐**：所有卡片共用锚点 X，左边缘一条线；
+- **右对齐**：`X = 锚点 + (最宽 - 自己宽度)`，所有卡片右边缘一条线，整叠仍然占同一块外框；
+- **自动**：拿整叠卡片的中心（`anchor.X + stackWidth / 2`）和所在显示器工作区的中线比较，
+  在左半边就整叠左对齐、右半边就整叠右对齐；
+- 宽度变化（系统信息位数变多、媒体换分辨率）会触发 `SizeChanged → ScheduleLayout`，X 跟着重算；
+- 卡片内部文字的对齐仍由 `Style.TextAlignment` 单独控制，两者互不影响。
 
 ## 5. 富内容与视频子窗口
 

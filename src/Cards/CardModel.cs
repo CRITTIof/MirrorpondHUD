@@ -30,8 +30,18 @@ namespace MirrorpondHUD.Cards
                     continue;
                 }
 
+                // v2.1.1 起四种文字卡合并成「信息与文本」：旧 Kind 迁移成预设。
+                string legacy = (card.Kind ?? "").Trim().ToLowerInvariant();
+                if (legacy == "metrics" || legacy == "clock" || legacy == "keys" || legacy == "text")
+                {
+                    if (string.IsNullOrWhiteSpace(card.Preset)) card.Preset = legacy;
+                    card.Kind = "infotext";
+                }
+
                 card.Kind = CardRegistry.ResolveKind(card.Kind);
                 ICardModule module = CardRegistry.Get(card.Kind);
+                if (module is InfoTextCard)
+                    card.Preset = InfoTextCard.InferPreset(card.Preset, card.Content);
 
                 if (string.IsNullOrWhiteSpace(card.Id) || ids.Contains(card.Id))
                     card.Id = NewId();
@@ -63,17 +73,20 @@ namespace MirrorpondHUD.Cards
             {
                 new CardSettings
                 {
-                    Id = NewId(), Kind = "metrics", Name = CardRegistry.Get("metrics").DisplayName,
+                    Id = NewId(), Kind = "infotext", Preset = "metrics",
+                    Name = InfoTextCard.LabelFor("metrics"),
                     Resident = true, Spacing = 0, Content = Settings.DefaultMetricsContent
                 },
                 new CardSettings
                 {
-                    Id = NewId(), Kind = "clock", Name = CardRegistry.Get("clock").DisplayName,
+                    Id = NewId(), Kind = "infotext", Preset = "clock",
+                    Name = InfoTextCard.LabelFor("clock"),
                     Resident = true, Spacing = 12, Content = Settings.DefaultClockContent
                 },
                 new CardSettings
                 {
-                    Id = NewId(), Kind = "keys", Name = CardRegistry.Get("keys").DisplayName,
+                    Id = NewId(), Kind = "infotext", Preset = "keys",
+                    Name = InfoTextCard.LabelFor("keys"),
                     Resident = true, Spacing = 12, Content = Settings.DefaultKeysContent
                 },
                 new CardSettings

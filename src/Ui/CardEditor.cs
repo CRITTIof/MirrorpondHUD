@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Globalization;
@@ -34,8 +34,65 @@ namespace MirrorpondHUD.Ui
         public CardSettings Config { get { return _config; } }
         public ICardModule Module { get { return _module; } }
 
-        public string Icon { get { return _module.Icon; } }
-        public string KindLabel { get { return _module.DisplayName; } }
+        public string Icon
+        {
+            get
+            {
+                return IsInfoText ? InfoTextCard.IconFor(_config.Preset) : _module.Icon;
+            }
+        }
+
+        public string KindLabel
+        {
+            get
+            {
+                return IsInfoText
+                    ? _module.DisplayName + " · " + InfoTextCard.LabelFor(_config.Preset)
+                    : _module.DisplayName;
+            }
+        }
+
+        bool IsInfoText
+        {
+            get { return _module != null && _module.Kind == "infotext"; }
+        }
+
+        public Visibility PresetVisibility
+        {
+            get { return IsInfoText ? Visibility.Visible : Visibility.Collapsed; }
+        }
+
+        public int PresetIndex
+        {
+            get
+            {
+                IList<InfoTextPreset> presets = InfoTextCard.Presets;
+                string current = InfoTextCard.NormalizePreset(_config.Preset);
+                for (int i = 0; i < presets.Count; i++)
+                {
+                    if (presets[i].Id == current) return i;
+                }
+                return 0;
+            }
+            set
+            {
+                IList<InfoTextPreset> presets = InfoTextCard.Presets;
+                if (value < 0 || value >= presets.Count) return;
+
+                string next = presets[value].Id;
+                if (InfoTextCard.NormalizePreset(_config.Preset) == next) return;
+
+                _config.Preset = next;
+                _config.Content = "";   // 换预设回到该预设的默认内容，避免串模板
+
+                Raise("PresetIndex");
+                Raise("KindLabel");
+                Raise("Icon");
+                Raise("Content");
+                Raise("ContentVisibility");
+                Raise("Summary");
+            }
+        }
         public IList<TokenInfo> Tokens { get { return Catalog.Tokens; } }
 
         public string DisplayName
@@ -90,6 +147,16 @@ namespace MirrorpondHUD.Ui
                 Raise("BodyVisibility");
                 Raise("ChevronAngle");
                 Raise("HeaderCorner");
+            }
+        }
+
+        public Visibility ContentVisibility
+        {
+            get
+            {
+                if (!_module.SupportsContent) return Visibility.Collapsed;
+                if (IsInfoText && InfoTextCard.NormalizePreset(_config.Preset) == "keys") return Visibility.Collapsed;
+                return Visibility.Visible;
             }
         }
 
@@ -201,11 +268,6 @@ namespace MirrorpondHUD.Ui
         }
 
         public bool SupportsContent { get { return _module.SupportsContent; } }
-
-        public Visibility ContentVisibility
-        {
-            get { return _module.SupportsContent ? Visibility.Visible : Visibility.Collapsed; }
-        }
 
         // ==================== 命令行卡片 ====================
 
