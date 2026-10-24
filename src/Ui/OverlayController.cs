@@ -28,8 +28,6 @@ namespace MirrorpondHUD.Ui
         readonly List<string> _args;
         readonly KeyHistory _keys = new KeyHistory();
 
-        readonly List<CommandEntry> _commandEntries = new List<CommandEntry>();
-
         sealed class CommandEntry
         {
             public string Prompt;
@@ -42,11 +40,23 @@ namespace MirrorpondHUD.Ui
         {
             public CardSettings Config;
             public ICardModule Module;
+            /// <summary>模块同时是富内容卡片时（图片 / 视频）非空。</summary>
+            public IRichCardModule Rich;
             public Settings Dialog;
             public OverlayWindow Window;
             public bool Summoned;
             public bool Shown;
             public double BodyHeight;
+
+            /// <summary>富内容控件的当前实例（隐藏时保留，设置变化时重建）。</summary>
+            public FrameworkElement Content;
+
+            /// <summary>命令行卡片自己的历史与输入：多张命令行卡片各用各的工具和记录。</summary>
+            public readonly List<CommandEntry> Entries = new List<CommandEntry>();
+            public string Input = "";
+            public int Caret;
+            public bool Running;
+            public CancellationTokenSource Cancel;
         }
 
         Settings _settings;
@@ -63,15 +73,12 @@ namespace MirrorpondHUD.Ui
         volatile bool _disposed;
         bool _overlayVisible;
         bool _layoutScheduled;
+        bool _hasSnapshot;
 
         readonly List<CardSlot> _cards = new List<CardSlot>();
 
         CardSlot _commandCard;
         bool _commandMode;
-        bool _commandRunning;
-        string _commandInput = "";
-        int _commandCaret;
-        CancellationTokenSource _commandCancel;
 
         CardSlot _introCard;
         IntroPhase _phase = IntroPhase.Live;
@@ -157,6 +164,7 @@ namespace MirrorpondHUD.Ui
                 Module = CardRegistry.Get(config.Kind),
                 Dialog = dialog
             };
+            slot.Rich = slot.Module as IRichCardModule;
 
             var window = new OverlayWindow(dialog);
             slot.Window = window;
@@ -171,6 +179,11 @@ namespace MirrorpondHUD.Ui
             window.CommandCancelled += ExitCommandLine;
             window.CommandTextChanged += OnCommandInputChanged;
             window.SizeChanged += (s, e) => ScheduleLayout();
+            window.RaisedTopmost += () =>
+            {
+                if (slot.Rich == null || slot.Content == null) return;
+                try { slot.Rich.OnZOrderChanged(slot.Content); } catch { }
+            };
 
             return slot;
         }
@@ -212,6 +225,21 @@ namespace MirrorpondHUD.Ui
             }
         }
 
+        /// <summary>首帧采样还没回来：所有占位符换成 ---，避免显示一堆假的 0。</summary>
+        string RenderPlaceholderText(CardSlot slot)
+        {
+            if (slot == null || slot.Module.IsInteractive) return "";
+
+            try
+            {
+                return TemplateEngine.RenderPlaceholder(CardTemplate(slot), "---");
+            }
+            catch
+            {
+                return "";
+            }
+        }
+
         // ==================== 显示 / 隐藏 / 堆叠 ====================
 
         void RefreshVisibility()
@@ -224,7 +252,7 @@ namespace MirrorpondHUD.Ui
                 else show = slot.Config.Resident || slot.Summoned;
 
                 if (show && !slot.Shown)
-                    ShowCard(slot, RenderCardText(slot));
+                    ShowCard(slot, _hasSnapshot ? RenderCardText(slot) : RenderPlaceholderText(slot));
                 else if (!show && slot.Shown)
                     HideCard(slot);
             }
@@ -236,7 +264,16 @@ namespace MirrorpondHUD.Ui
         {
             if (slot == null) return;
 
-            slot.Window.Apply(slot.Dialog, text ?? "");
+            if (slot.Rich != null)
+            {
+                EnsureContent(slot);
+                slot.Window.ApplyRich(slot.Dialog, slot.Content);
+            }
+            else
+            {
+                slot.Window.Apply(slot.Dialog, text ?? "");
+            }
+
             slot.Window.Opacity = 0;
             slot.Window.Show();
             slot.Window.UpdateLayout();
@@ -248,11 +285,62 @@ namespace MirrorpondHUD.Ui
             slot.Window.Opacity = 1;
             slot.Window.UpdateClickThrough();
             slot.Window.EnsureTopmost();
+
+            // 富内容要等卡片窗口真正显示、布局完成后再开始播放（视频子窗口要贴到正确位置）。
+            if (slot.Rich != null && slot.Content != null)
+            {
+                try { slot.Rich.OnVisibilityChanged(slot.Content, true); } catch { }
+            }
+        }
+
+        /// <summary>富内容卡片的控件按需创建；重建前释放旧控件（停掉视频 / 动图）。</summary>
+        void EnsureContent(CardSlot slot)
+        {
+            if (slot == null || slot.Rich == null) return;
+            if (slot.Content != null) return;
+
+            try
+            {
+                slot.Content = slot.Rich.CreateContent(
+                    new CardRenderContext(_settings, _last, _keys, slot.Config));
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("卡片内容创建失败(" + slot.Config.Name + "): " + ex.Message);
+                slot.Content = null;
+            }
+        }
+
+        void ReleaseContent(CardSlot slot)
+        {
+            if (slot == null || slot.Content == null) return;
+
+            try
+            {
+                if (slot.Rich != null) slot.Rich.OnVisibilityChanged(slot.Content, false);
+            }
+            catch { }
+
+            try
+            {
+                var disposable = slot.Content as IDisposable;
+                if (disposable != null) disposable.Dispose();
+            }
+            catch { }
+
+            slot.Content = null;
+            try { slot.Window.ClearRichContent(); } catch { }
         }
 
         void HideCard(CardSlot slot)
         {
             if (slot == null || !slot.Shown) return;
+
+            if (slot.Rich != null && slot.Content != null)
+            {
+                try { slot.Rich.OnVisibilityChanged(slot.Content, false); } catch { }
+            }
+
             slot.Shown = false;
             slot.BodyHeight = 0;
             slot.Window.Hide();
@@ -470,8 +558,11 @@ namespace MirrorpondHUD.Ui
             foreach (CardSlot slot in _cards)
             {
                 if (!slot.Shown || slot.Module.IsInteractive) continue;
+                if (slot.Rich != null) continue;   // 富内容（图片 / 视频）不需要逐帧刷新文字
                 if (ReferenceEquals(slot, _introCard) && _phase != IntroPhase.Live) continue;
-                slot.Window.SetText(RenderCardText(slot), false);
+
+                // 首帧采样还没回来时显示占位符，不要把 "0.0%" 这种假数据显示给用户。
+                slot.Window.SetText(_hasSnapshot ? RenderCardText(slot) : RenderPlaceholderText(slot), false);
             }
 
             LayoutIfNeeded();
@@ -501,6 +592,7 @@ namespace MirrorpondHUD.Ui
         void OnSnapshot(MetricsSnapshot snapshot)
         {
             _last = snapshot;
+            _hasSnapshot = !snapshot.Warmup;
 
             if (_phase != IntroPhase.Live)
             {
@@ -550,9 +642,9 @@ namespace MirrorpondHUD.Ui
         {
             _commandMode = true;
             _commandCard = slot;
-            _commandEntries.Clear();
-            _commandInput = "";
-            _commandCaret = 0;
+            slot.Entries.Clear();
+            slot.Input = "";
+            slot.Caret = 0;
 
             if (_hook != null) _hook.Suppress = true;
 
@@ -563,8 +655,9 @@ namespace MirrorpondHUD.Ui
             slot.Window.BeginCommandInput();
             RenderCommandLine();
 
-            Log.Info("快捷命令行已打开（工具=" + CommandRunner.ToolLabel(_settings.Command) +
-                     "，目录=" + CommandRunner.ResolveWorkingDirectory(_settings.Command) + "）");
+            CommandSettings command = CommandOf(slot);
+            Log.Info("快捷命令行已打开（卡片=" + slot.Config.Name + " 工具=" + CommandRunner.ToolLabel(command) +
+                     "，目录=" + CommandRunner.ResolveWorkingDirectory(command) + "）");
         }
 
         public void ExitCommandLine()
@@ -572,52 +665,60 @@ namespace MirrorpondHUD.Ui
             if (!_commandMode) return;
 
             _commandMode = false;
-            _commandRunning = false;
-
-            try { _commandCancel?.Cancel(); } catch { }
-            try { _commandCancel?.Dispose(); } catch { }
-            _commandCancel = null;
-
-            _commandEntries.Clear();
-            _commandInput = "";
-            _commandCaret = 0;
-
-            if (_hook != null) _hook.Suppress = false;
 
             CardSlot slot = _commandCard;
             _commandCard = null;
 
             if (slot != null)
             {
+                slot.Running = false;
+                try { slot.Cancel?.Cancel(); } catch { }
+                try { slot.Cancel?.Dispose(); } catch { }
+                slot.Cancel = null;
+
+                slot.Entries.Clear();
+                slot.Input = "";
+                slot.Caret = 0;
+
                 slot.Window.EndCommandInput();
                 slot.Window.ResetStableSize();
                 slot.Summoned = false;
                 HideCard(slot);
             }
 
+            if (_hook != null) _hook.Suppress = false;
+
             RenderNow();
             Log.Info("快捷命令行已关闭，命令与返回已清空");
         }
 
+        /// <summary>命令行卡片自己的工具 / 目录 / 超时设置。</summary>
+        static CommandSettings CommandOf(CardSlot slot)
+        {
+            if (slot == null || slot.Config == null) return new CommandSettings();
+            if (slot.Config.Command == null) slot.Config.Command = new CommandSettings();
+            return slot.Config.Command;
+        }
+
         void OnCommandInputChanged(string text, int caret)
         {
-            if (!_commandMode) return;
-            _commandInput = text ?? "";
-            _commandCaret = caret;
+            if (!_commandMode || _commandCard == null) return;
+            _commandCard.Input = text ?? "";
+            _commandCard.Caret = caret;
             RenderCommandLine();
         }
 
-        string CommandPrompt
+        string CommandPrompt(CardSlot slot)
         {
-            get { return CommandRunner.BuildPrompt(_settings.Command); }
+            return CommandRunner.BuildPrompt(CommandOf(slot));
         }
 
-        string BuildCommandDisplay()
+        string BuildCommandDisplay(CardSlot slot)
         {
-            string prompt = CommandPrompt;
+            string prompt = CommandPrompt(slot);
             var sb = new System.Text.StringBuilder(512);
 
-            foreach (CommandEntry entry in _commandEntries)
+            foreach (CommandEntry entry in slot.Entries)
             {
                 sb.Append(entry.Prompt).Append('\n');
                 sb.Append(entry.Command).Append('\n');
@@ -629,43 +730,45 @@ namespace MirrorpondHUD.Ui
             }
 
             sb.Append(prompt).Append('\n');
-            sb.Append(_commandInput ?? "");
+            sb.Append(slot.Input ?? "");
             return sb.ToString();
         }
 
         void RenderCommandLine()
         {
-            if (!_commandMode || _commandCard == null) return;
+            CardSlot slot = _commandCard;
+            if (!_commandMode || slot == null) return;
 
-            string text = BuildCommandDisplay();
-            int caret = Math.Max(0, Math.Min(_commandCaret, (_commandInput ?? "").Length));
-            int cursorIndex = text.Length - ((_commandInput ?? "").Length - caret);
-            _commandCard.Window.SetText(text, true, cursorIndex);
+            string text = BuildCommandDisplay(slot);
+            int caret = Math.Max(0, Math.Min(slot.Caret, (slot.Input ?? "").Length));
+            int cursorIndex = text.Length - ((slot.Input ?? "").Length - caret);
+            slot.Window.SetText(text, true, cursorIndex);
             LayoutIfNeeded();
         }
 
         void SubmitCommand()
         {
-            if (!_commandMode) return;
+            CardSlot slot = _commandCard;
+            if (!_commandMode || slot == null) return;
 
-            string command = (_commandInput ?? "").Trim();
+            string command = (slot.Input ?? "").Trim();
             if (command.Length == 0) return;
 
             var entry = new CommandEntry
             {
-                Prompt = CommandPrompt,
+                Prompt = CommandPrompt(slot),
                 Command = command,
                 Done = false
             };
-            _commandEntries.Add(entry);
+            slot.Entries.Add(entry);
 
-            _commandInput = "";
-            _commandCaret = 0;
-            _commandCard.Window.SetCommandText("");
-            TrimCommandEntries();
+            slot.Input = "";
+            slot.Caret = 0;
+            slot.Window.SetCommandText("");
+            TrimCommandEntries(slot);
             RenderCommandLine();
 
-            if (_commandRunning)
+            if (slot.Running)
             {
                 entry.Done = true;
                 entry.Output = "(上一条命令仍在执行，请稍候)";
@@ -673,28 +776,30 @@ namespace MirrorpondHUD.Ui
                 return;
             }
 
-            _commandRunning = true;
-            _commandCancel = new CancellationTokenSource();
-            CancellationToken token = _commandCancel.Token;
-            Settings snapshot = _settings;
+            slot.Running = true;
+            slot.Cancel = new CancellationTokenSource();
+            CancellationToken token = slot.Cancel.Token;
+
+            // 命令跑在后台线程，用打开这一刻的卡片设置做快照。
+            CommandSettings commandSettings = CommandOf(slot).Clone();
 
             Task.Run(() =>
             {
-                CommandResult result = CommandRunner.Run(snapshot, command, token);
+                CommandResult result = CommandRunner.Run(commandSettings, command, token);
 
                 try
                 {
                     Application.Current.Dispatcher.BeginInvoke(new Action(() =>
                     {
-                        entry.Output = CommandRunner.FormatOutput(result, snapshot.Command);
+                        entry.Output = CommandRunner.FormatOutput(result, commandSettings);
                         entry.Done = true;
-                        _commandRunning = false;
+                        slot.Running = false;
 
-                        try { _commandCancel?.Dispose(); } catch { }
-                        _commandCancel = null;
+                        try { slot.Cancel?.Dispose(); } catch { }
+                        slot.Cancel = null;
 
-                        if (!_commandMode) return;
-                        TrimCommandEntries();
+                        if (!_commandMode || !ReferenceEquals(_commandCard, slot)) return;
+                        TrimCommandEntries(slot);
                         RenderCommandLine();
                     }), DispatcherPriority.Background);
                 }
@@ -705,18 +810,18 @@ namespace MirrorpondHUD.Ui
             });
         }
 
-        void TrimCommandEntries()
+        void TrimCommandEntries(CardSlot slot)
         {
-            int max = Math.Max(1, _settings.Command.MaxLines);
+            int max = Math.Max(1, CommandOf(slot).MaxLines);
             int total = 0;
-            foreach (CommandEntry entry in _commandEntries) total += CountEntryLines(entry);
+            foreach (CommandEntry entry in slot.Entries) total += CountEntryLines(entry);
 
-            while (_commandEntries.Count > 1 && total > max)
+            while (slot.Entries.Count > 1 && total > max)
             {
-                CommandEntry first = _commandEntries[0];
+                CommandEntry first = slot.Entries[0];
                 if (!first.Done) break;
                 total -= CountEntryLines(first);
-                _commandEntries.RemoveAt(0);
+                slot.Entries.RemoveAt(0);
             }
         }
 
@@ -737,7 +842,7 @@ namespace MirrorpondHUD.Ui
         CardSlot FirstLiveCard()
         {
             foreach (CardSlot slot in _cards)
-                if (slot.Shown && !slot.Module.IsInteractive) return slot;
+                if (slot.Shown && !slot.Module.IsInteractive && slot.Rich == null) return slot;
             return null;
         }
 
@@ -1004,9 +1109,22 @@ namespace MirrorpondHUD.Ui
                     bool saved;
                     slot.Config = config;
                     slot.Module = CardRegistry.Get(config.Kind);
+                    slot.Rich = slot.Module as IRichCardModule;
                     slot.Summoned = summoned.TryGetValue(config.Id, out saved) ? saved : wasSummoned;
                     slot.Dialog = BuildDialog(config);
-                    slot.Window.Apply(slot.Dialog, "");
+
+                    // 卡片设置变了：富内容按新设置重建（图片 / 视频路径可能换了）。
+                    ReleaseContent(slot);
+
+                    if (slot.Shown)
+                    {
+                        if (slot.Rich != null) ShowCard(slot, "");
+                        else slot.Window.Apply(slot.Dialog, RenderCardText(slot));
+                    }
+                    else
+                    {
+                        slot.Window.Apply(slot.Dialog, "");
+                    }
 
                     next.Add(slot);
                 }
@@ -1024,6 +1142,7 @@ namespace MirrorpondHUD.Ui
                     _commandCard = null;
                 }
 
+                ReleaseContent(removed);
                 try { removed.Window.Close(); } catch { }
             }
 
@@ -1119,6 +1238,8 @@ namespace MirrorpondHUD.Ui
 
             // 每张非常驻卡片一个呼出热键；相同组合键会合并成同一个注册，按下时同时呼出。
             int failed = 0;
+            var changedCards = new List<string>(4);
+
             foreach (CardSlot slot in _cards)
             {
                 string action = HotkeyManager.CardAction(slot.Config.Id);
@@ -1130,11 +1251,26 @@ namespace MirrorpondHUD.Ui
                     continue;
                 }
 
-                if (!_hotkeys.Register(action, combination))
+                string registered = RegisterOne(action, combination);
+                if (!string.Equals(registered, combination, StringComparison.OrdinalIgnoreCase))
+                {
+                    // 被占用时退到 Ctrl+Alt+原键，并把实际生效的组合键写回卡片设置。
+                    slot.Config.Hotkey = registered;
+                    changedCards.Add(slot.Config.Name + " → " + registered);
+                }
+
+                if (string.IsNullOrWhiteSpace(registered))
                 {
                     failed++;
                     Log.Warn("卡片热键注册失败: " + slot.Config.Name + " " + combination);
                 }
+            }
+
+            if (changedCards.Count > 0)
+            {
+                Log.Warn("部分卡片热键被占用，已自动改用：" + string.Join("，", changedCards));
+                ConfigStore.Save(_settings);
+                if (_settingsWindow != null) _settingsWindow.Reload(_settings);
             }
 
             if (failed > 0 && _tray != null && _tray.Visible)
@@ -1251,8 +1387,13 @@ namespace MirrorpondHUD.Ui
 
             try { _renderTimer?.Stop(); } catch { }
             try { _introTimer?.Stop(); } catch { }
-            try { _commandCancel?.Cancel(); } catch { }
-            try { _commandCancel?.Dispose(); } catch { }
+
+            foreach (CardSlot slot in _cards)
+            {
+                try { slot.Cancel?.Cancel(); } catch { }
+                try { slot.Cancel?.Dispose(); } catch { }
+                slot.Cancel = null;
+            }
 
             try { _activation?.Set(); } catch { }
             try { _activation?.Dispose(); } catch { }
@@ -1270,6 +1411,7 @@ namespace MirrorpondHUD.Ui
 
             foreach (CardSlot slot in _cards)
             {
+                ReleaseContent(slot);
                 try { slot.Window.Close(); } catch { }
             }
             _cards.Clear();

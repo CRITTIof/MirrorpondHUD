@@ -267,9 +267,8 @@ namespace MirrorpondHUD
 
             try
             {
-                var settings = new Settings();
-                settings.Command.Shell = "cmd";
-                CommandResult result = CommandRunner.Run(settings, "echo overlay-selftest", CancellationToken.None);
+                var command = new CommandSettings { Shell = "cmd" };
+                CommandResult result = CommandRunner.Run(command, "echo overlay-selftest", CancellationToken.None);
                 commandOk = !result.Failed && !result.TimedOut &&
                             result.Output != null &&
                             result.Output.IndexOf("overlay-selftest", StringComparison.Ordinal) >= 0;
@@ -317,28 +316,43 @@ namespace MirrorpondHUD
             {
                 var settings = new Settings
                 {
-                    Style = { FontSize = 21 },
+                    Style = { FontSize = 21, IconScale = 1.35 },
                     Overlay = { X = 123.5, Locked = false },
-                    Data = { DiskDrives = new List<string> { "C:\\" } },
-                    Command = { Shell = "pwsh", MaxLineChars = 77, Truncate = false }
+                    Data = { DiskDrives = new List<string> { "C:\\" } }
                 };
                 settings.Cards.Add(new CardSettings
                 {
                     Id = "self", Kind = "text", Name = "自检", Content = "x{cpu}", Resident = true, Spacing = 16
                 });
+                settings.Cards.Add(new CardSettings
+                {
+                    Id = "cmd", Kind = "command", Name = "自检命令行", Resident = false, Hotkey = "F9",
+                    Command = { Shell = "pwsh", MaxLineChars = 77, Truncate = false, WorkingDirectory = "C:\\Temp" }
+                });
+                settings.Cards.Add(new CardSettings
+                {
+                    Id = "media", Kind = "media", Name = "自检媒体", Resident = false, Hotkey = "F11",
+                    Media = { Path = "C:\\demo.png", Fit = "Cover", Width = 480, Muted = false }
+                });
 
                 Settings back = Json.Deserialize<Settings>(Json.Serialize(settings));
                 configOk = back != null
-                           && back.Cards != null && back.Cards.Count == 1
+                           && back.Cards != null && back.Cards.Count == 3
                            && back.Cards[0].Content == "x{cpu}"
                            && back.Cards[0].Kind == "text"
                            && Math.Abs(back.Style.FontSize - 21) < 0.001
+                           && Math.Abs(back.Style.IconScale - 1.35) < 0.001
                            && Math.Abs(back.Overlay.X - 123.5) < 0.001
                            && back.Overlay.Locked == false
                            && back.Data.DiskDrives.Count == 1
-                           && back.Command.Shell == "pwsh"
-                           && back.Command.MaxLineChars == 77
-                           && back.Command.Truncate == false;
+                           && back.Cards[1].Command.Shell == "pwsh"
+                           && back.Cards[1].Command.MaxLineChars == 77
+                           && back.Cards[1].Command.Truncate == false
+                           && back.Cards[1].Command.WorkingDirectory == "C:\\Temp"
+                           && back.Cards[2].Media.Path == "C:\\demo.png"
+                           && back.Cards[2].Media.Fit == "Cover"
+                           && Math.Abs(back.Cards[2].Media.Width - 480) < 0.001
+                           && back.Cards[2].Media.Muted == false;
             }
             catch (Exception ex)
             {
@@ -355,10 +369,17 @@ namespace MirrorpondHUD
                     new CardRenderContext(settings, Screenshots.DemoSnapshot(), null,
                                           new CardSettings { Kind = "clock", Content = "{time}" }));
 
-                cardOk = CardRegistry.Modules.Count >= 4
+                var vars = Variables.Build(Screenshots.DemoSnapshot(), settings, null);
+                bool weekdayOk = vars.ContainsKey("weekday_zh") && vars.ContainsKey("weekday_en")
+                              && vars["weekday_zh"].ToString().StartsWith("星期", StringComparison.Ordinal)
+                              && vars["weekday_en"].ToString().Length > 3;
+
+                cardOk = CardRegistry.Modules.Count >= 6
+                         && CardRegistry.Get("media") is IRichCardModule
                          && settings.Cards.Count >= 1
                          && !string.IsNullOrWhiteSpace(clock)
-                         && clock.IndexOf('{') < 0;
+                         && clock.IndexOf('{') < 0
+                         && weekdayOk;
             }
             catch (Exception ex)
             {

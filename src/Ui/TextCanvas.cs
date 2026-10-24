@@ -29,6 +29,7 @@ namespace MirrorpondHUD.Ui
 
         FontFamily _fontFamily = new FontFamily("Microsoft YaHei UI");
         double _fontSize = 15;
+        double _iconScale = 1.22;
         FontWeight _fontWeight = FontWeights.Normal;
         Brush _foreground = Brushes.White;
         double _lineHeight;
@@ -74,8 +75,16 @@ namespace MirrorpondHUD.Ui
 
         static bool IsKeycapChar(char c)
         {
-            // 键帽 U+E000–U+E056；硬件图标 U+E200–U+E208（CPU/GPU/RAM/ROM/网络/USB/音量/麦克风）。
-            return (c >= '\uE000' && c <= '\uE056') || (c >= '\uE200' && c <= '\uE208');
+            // 键帽 U+E000–U+E056（{keys} 里的按键字形）。
+            return c >= '\uE000' && c <= '\uE056';
+        }
+
+        /// <summary>Reicon 图标字形：软件 U+E100、硬件 U+E200、界面 U+E300。</summary>
+        static bool IsIconChar(char c)
+        {
+            return (c >= '\uE100' && c <= '\uE1FF')
+                || (c >= '\uE200' && c <= '\uE2FF')
+                || (c >= '\uE300' && c <= '\uE3FF');
         }
 
         public TextCanvas()
@@ -162,6 +171,24 @@ namespace MirrorpondHUD.Ui
                 value = Math.Max(2, value);
                 if (Math.Abs(_fontSize - value) < 0.01) return;
                 _fontSize = value;
+                InvalidateMeasure();
+                InvalidateVisual();
+            }
+        }
+
+        /// <summary>
+        /// 图标字号倍率。Reicon 的图标字形在 1em 里画得很小（约 0.6 个汉字高），
+        /// 直接和正文同字号会显得缩水；这里按倍率把图标字形放大，再按基线微调让它和文字居中对齐，
+        /// 因此不需要为了图标把整行字号调大。
+        /// </summary>
+        public double IconScale
+        {
+            get { return _iconScale; }
+            set
+            {
+                value = Math.Max(0.4, Math.Min(3, value));
+                if (Math.Abs(_iconScale - value) < 0.005) return;
+                _iconScale = value;
                 InvalidateMeasure();
                 InvalidateVisual();
             }
@@ -368,7 +395,7 @@ namespace MirrorpondHUD.Ui
         double LineHeightOf()
         {
             if (_lineHeight > 0) return _lineHeight;
-            TextRun run = CreateRun("Ag", false);
+            TextRun run = CreateRun("Ag", RunKind.Text);
             return run.Text.Height > 0 ? run.Text.Height : _fontSize * 1.35;
         }
 
@@ -381,11 +408,21 @@ namespace MirrorpondHUD.Ui
             return new List<string>(parts);
         }
 
+        enum RunKind
+        {
+            Text,
+            Keycap,
+            Icon
+        }
+
         sealed class TextRun
         {
             public FormattedText Text;
             public double Width;
             public double Baseline;
+            public RunKind Kind;
+            /// <summary>相对基线对齐的额外垂直偏移（图标按倍率放大后需要下移一点才和文字视觉居中）。</summary>
+            public double OffsetY;
         }
 
         sealed class TextLine
@@ -402,17 +439,19 @@ namespace MirrorpondHUD.Ui
             }
         }
 
-        TextRun CreateRun(string text, bool keycap)
+        TextRun CreateRun(string text, RunKind kind)
         {
-            FontFamily family = keycap ? KeycapFamily : _fontFamily;
-            FontWeight weight = keycap ? FontWeights.Normal : _fontWeight;
+            bool icon = kind == RunKind.Icon;
+            FontFamily family = (icon || kind == RunKind.Keycap) ? KeycapFamily : _fontFamily;
+            FontWeight weight = kind == RunKind.Text ? _fontWeight : FontWeights.Normal;
+            double size = icon ? _fontSize * _iconScale : _fontSize;
 
             var ft = new FormattedText(
                 text ?? "",
                 CultureInfo.CurrentUICulture,
                 FlowDirection.LeftToRight,
                 new Typeface(family, FontStyles.Normal, weight, FontStretches.Normal),
-                _fontSize,
+                size,
                 _foreground ?? Brushes.White,
                 null,
                 TextFormattingMode.Display,
@@ -425,30 +464,40 @@ namespace MirrorpondHUD.Ui
             {
                 Text = ft,
                 Width = ft.WidthIncludingTrailingWhitespace,
-                Baseline = ft.Baseline
+                Baseline = ft.Baseline,
+                Kind = kind,
+                // 图标字形放大后字形中心会比文字中心高一点，按放大出来的差额往下挪 0.3 倍。
+                OffsetY = icon ? (size - _fontSize) * 0.3 : 0
             };
         }
 
-        /// <summary>把一行拆成「普通文字 / 键帽」两种 run；键帽字符用内嵌字体的 PUA 字形绘制。</summary>
+        static RunKind KindOf(char c)
+        {
+            if (IsKeycapChar(c)) return RunKind.Keycap;
+            if (IsIconChar(c)) return RunKind.Icon;
+            return RunKind.Text;
+        }
+
+        /// <summary>把一行拆成「普通文字 / 键帽 / 图标」三种 run；后两种用内嵌字体的 PUA 字形绘制。</summary>
         TextLine BuildLine(string line)
         {
             var result = new TextLine();
             if (string.IsNullOrEmpty(line))
             {
-                result.Add(CreateRun("", false));
+                result.Add(CreateRun("", RunKind.Text));
                 return result;
             }
 
             int start = 0;
-            bool keycap = IsKeycapChar(line[0]);
+            RunKind kind = KindOf(line[0]);
             for (int i = 1; i <= line.Length; i++)
             {
-                bool next = i < line.Length && IsKeycapChar(line[i]);
-                if (i == line.Length || next != keycap)
+                RunKind next = i < line.Length ? KindOf(line[i]) : kind;
+                if (i == line.Length || next != kind)
                 {
-                    result.Add(CreateRun(line.Substring(start, i - start), keycap));
+                    result.Add(CreateRun(line.Substring(start, i - start), kind));
                     start = i;
-                    keycap = next;
+                    kind = next;
                 }
             }
             return result;
@@ -483,8 +532,8 @@ namespace MirrorpondHUD.Ui
                 for (int r = 0; r < line.Runs.Count; r++)
                 {
                     TextRun run = line.Runs[r];
-                    // 用基线对齐：键帽字体和正文字体的 ascent 不同，按顶部对齐会上下错位。
-                    DrawLine(dc, run.Text, x, y + (line.Baseline - run.Baseline));
+                    // 用基线对齐：键帽 / 图标字体和正文字体的 ascent 不同，按顶部对齐会上下错位。
+                    DrawLine(dc, run.Text, x, y + (line.Baseline - run.Baseline) + run.OffsetY);
                     x += run.Width;
                 }
             }

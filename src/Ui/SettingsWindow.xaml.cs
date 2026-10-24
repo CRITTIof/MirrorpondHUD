@@ -61,6 +61,8 @@ namespace MirrorpondHUD.Ui
             BindNumberBox(ImageOpacityValue, ImageOpacitySlider, "0.00");
             BindNumberBox(FixedWidthValue, FixedWidthSlider, "0");
             BindNumberBox(AcrylicBlurValue, AcrylicBlurSlider, "0");
+            BindNumberBox(AcrylicFpsValue, AcrylicFpsSlider, "0");
+            BindNumberBox(IconScaleValue, IconScaleSlider, "0.00");
         }
 
         void BindNumberBox(TextBox box, Slider slider, string format)
@@ -197,6 +199,8 @@ namespace MirrorpondHUD.Ui
             AcrylicCheck.Checked += (s, e) => UiChanged();
             AcrylicCheck.Unchecked += (s, e) => UiChanged();
             AcrylicBlurSlider.ValueChanged += (s, e) => UiChanged();
+            AcrylicFpsSlider.ValueChanged += (s, e) => UiChanged();
+            IconScaleSlider.ValueChanged += (s, e) => UiChanged();
             FontFilterBox.TextChanged += (s, e) => FilterFonts(FontFilterBox.Text);
             AlignCombo.SelectionChanged += (s, e) => UiChanged();
             PaddingSlider.ValueChanged += (s, e) => UiChanged();
@@ -216,12 +220,6 @@ namespace MirrorpondHUD.Ui
             CursorStyleCombo.SelectionChanged += (s, e) => UiChanged();
             CursorBlinkCheck.Checked += (s, e) => UiChanged();
             CursorBlinkCheck.Unchecked += (s, e) => UiChanged();
-
-            ShellCombo.SelectionChanged += (s, e) => { UpdateCommandUi(); UiChanged(); };
-            CustomShellBox.TextChanged += (s, e) => { UpdateCommandUi(); UiChanged(); };
-            WorkDirBox.TextChanged += (s, e) => { UpdateCommandUi(); UiChanged(); };
-            TruncateCheck.Checked += (s, e) => { UpdateCommandUi(); UiChanged(); };
-            TruncateCheck.Unchecked += (s, e) => { UpdateCommandUi(); UiChanged(); };
         }
 
         public void Reload(Settings live)
@@ -247,16 +245,18 @@ namespace MirrorpondHUD.Ui
                 FilterFonts("");
                 FontCombo.SelectedItem = _selectedFont;
 
-                bool acrylicSupported = Native.IsAcrylicSupported;
-                AcrylicCheck.IsEnabled = acrylicSupported;
-                AcrylicCheck.IsChecked = s.Style.Acrylic && acrylicSupported;
+                // 毛玻璃现在用 PrintWindow 取样，不再依赖抓屏排除，也没有系统版本门槛。
+                AcrylicCheck.IsEnabled = true;
+                AcrylicCheck.IsChecked = s.Style.Acrylic;
                 AcrylicBlurSlider.Value = s.Style.AcrylicBlur;
-                AcrylicBlurSlider.IsEnabled = acrylicSupported;
-                AcrylicHint.Text = acrylicSupported
-                    ? "实验功能：抓取叠层后面的桌面并模糊。把「背景不透明度」调到 0.5 左右更容易看出效果；模糊强度控制模糊半径。"
-                    : "当前系统不支持抓屏排除（需要 Windows 10 2004 / build 19041 及以上）。";
+                AcrylicBlurSlider.IsEnabled = true;
+                AcrylicFpsSlider.Value = s.Style.AcrylicFps;
+                AcrylicFpsSlider.IsEnabled = true;
+                AcrylicHint.Text = "取卡片后面那个窗口的画面、缩小模糊后当卡片底色；把「背景不透明度」调到 0.5 左右更容易看出效果。"
+                                 + "纯桌面背景时玻璃不显示（没有可取的窗口），也不会影响截图 / 录屏里叠层的可见性。";
 
                 FontSizeSlider.Value = s.Style.FontSize;
+                IconScaleSlider.Value = s.Style.IconScale;
                 BoldCheck.IsChecked = s.Style.Bold;
                 FgBox.Text = s.Style.Foreground;
                 BgBox.Text = s.Style.Background;
@@ -310,14 +310,6 @@ namespace MirrorpondHUD.Ui
                 HotkeySettingsBox.Text = s.Hotkeys.OpenSettings;
                 HotkeyLockBox.Text = s.Hotkeys.ToggleLock;
 
-                ShellCombo.SelectedIndex = ShellIndex(s.Command.Shell);
-                CustomShellBox.Text = s.Command.CustomShell;
-                WorkDirBox.Text = s.Command.WorkingDirectory;
-                TruncateCheck.IsChecked = s.Command.Truncate;
-                MaxLineCharsBox.Text = s.Command.MaxLineChars.ToString(CultureInfo.InvariantCulture);
-                MaxLinesBox.Text = s.Command.MaxLines.ToString(CultureInfo.InvariantCulture);
-                TimeoutBox.Text = s.Command.TimeoutSeconds.ToString(CultureInfo.InvariantCulture);
-
                 PathText.Text = ConfigStore.Path;
                 StatusText.Text = "";
             }
@@ -327,7 +319,6 @@ namespace MirrorpondHUD.Ui
             }
 
             UpdateSwatches();
-            UpdateCommandUi();
             RebuildCardList();
         }
 
@@ -371,50 +362,6 @@ namespace MirrorpondHUD.Ui
         {
             var item = CursorStyleCombo.SelectedItem as ComboBoxItem;
             return item == null ? "Block" : Settings.NormalizeCursor(item.Tag as string);
-        }
-
-        static int ShellIndex(string shell)
-        {
-            switch (Settings.NormalizeShell(shell))
-            {
-                case "powershell": return 1;
-                case "pwsh": return 2;
-                case "custom": return 3;
-                default: return 0;
-            }
-        }
-
-        string ShellTag()
-        {
-            var item = ShellCombo.SelectedItem as ComboBoxItem;
-            return item == null ? "cmd" : Settings.NormalizeShell(item.Tag as string);
-        }
-
-        CommandSettings BuildCommandSettings()
-        {
-            CommandSettings command = _working == null ? new CommandSettings() : _working.Command;
-            command.Shell = ShellTag();
-            command.CustomShell = (CustomShellBox.Text ?? "").Trim();
-            command.WorkingDirectory = (WorkDirBox.Text ?? "").Trim();
-            command.Truncate = TruncateCheck.IsChecked == true;
-            return command;
-        }
-
-        void UpdateCommandUi()
-        {
-            if (ShellCombo == null || CustomShellBox == null || PromptPreview == null) return;
-
-            CustomShellBox.IsEnabled = string.Equals(ShellTag(), "custom", StringComparison.OrdinalIgnoreCase);
-            MaxLineCharsBox.IsEnabled = TruncateCheck.IsChecked == true;
-
-            try
-            {
-                PromptPreview.Text = CommandRunner.BuildPrompt(BuildCommandSettings());
-            }
-            catch (Exception ex)
-            {
-                PromptPreview.Text = "(预览失败: " + ex.Message + ")";
-            }
         }
 
         // ==================== 下拉框数据 ====================
@@ -736,12 +683,14 @@ namespace MirrorpondHUD.Ui
             FontItem font = FontCombo.SelectedItem as FontItem ?? _selectedFont;
             if (font != null && !string.IsNullOrWhiteSpace(font.Family)) s.Style.FontFamily = font.Family;
             s.Style.FontSize = Math.Round(FontSizeSlider.Value);
+            s.Style.IconScale = Math.Round(IconScaleSlider.Value, 2);
             s.Style.Bold = BoldCheck.IsChecked == true;
             s.Style.Foreground = (FgBox.Text ?? "").Trim();
             s.Style.Background = (BgBox.Text ?? "").Trim();
             s.Style.BackgroundOpacity = BgOpacitySlider.Value;
             s.Style.Acrylic = AcrylicCheck.IsChecked == true;
             s.Style.AcrylicBlur = Math.Round(AcrylicBlurSlider.Value);
+            s.Style.AcrylicFps = (int)Math.Round(AcrylicFpsSlider.Value);
             s.Style.TextAlignment = AlignmentTag();
             s.Style.Padding = Math.Round(PaddingSlider.Value);
             s.Style.LineHeight = Math.Round(LineHeightSlider.Value);
@@ -808,14 +757,6 @@ namespace MirrorpondHUD.Ui
             s.Hotkeys.ToggleOverlay = (HotkeyToggleBox.Text ?? "").Trim();
             s.Hotkeys.OpenSettings = (HotkeySettingsBox.Text ?? "").Trim();
             s.Hotkeys.ToggleLock = (HotkeyLockBox.Text ?? "").Trim();
-
-            s.Command.Shell = ShellTag();
-            s.Command.CustomShell = (CustomShellBox.Text ?? "").Trim();
-            s.Command.WorkingDirectory = (WorkDirBox.Text ?? "").Trim();
-            s.Command.Truncate = TruncateCheck.IsChecked == true;
-            s.Command.MaxLineChars = Math.Max(20, ParseInt(MaxLineCharsBox.Text, s.Command.MaxLineChars));
-            s.Command.MaxLines = Math.Max(1, ParseInt(MaxLinesBox.Text, s.Command.MaxLines));
-            s.Command.TimeoutSeconds = Math.Max(1, ParseInt(TimeoutBox.Text, s.Command.TimeoutSeconds));
 
             s.Normalize();
             CardModel.Normalize(s);
@@ -912,21 +853,37 @@ namespace MirrorpondHUD.Ui
             StatusText.Text = "已清除背景图片";
         }
 
-        void PickWorkDirClick(object sender, RoutedEventArgs e)
+        // ==================== 卡片内部：命令行 / 媒体 ====================
+
+        static CardEditor EditorOf(object sender)
         {
+            var element = sender as FrameworkElement;
+            if (element == null) return null;
+            return element.Tag as CardEditor ?? element.DataContext as CardEditor;
+        }
+
+        void PickCardWorkDirClick(object sender, RoutedEventArgs e)
+        {
+            CardEditor editor = EditorOf(sender);
+            if (editor == null) return;
+
             try
             {
                 using (var dialog = new System.Windows.Forms.FolderBrowserDialog())
                 {
-                    dialog.Description = "选择快捷命令行的工作目录";
+                    dialog.Description = "选择这张命令行卡片的工作目录";
                     dialog.ShowNewFolderButton = true;
 
-                    string current = (WorkDirBox.Text ?? "").Trim();
+                    string current = (editor.WorkingDirectory ?? "").Trim();
                     if (current.Length > 0 && System.IO.Directory.Exists(current))
                         dialog.SelectedPath = current;
 
                     if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
-                        WorkDirBox.Text = dialog.SelectedPath;
+                    {
+                        editor.WorkingDirectory = dialog.SelectedPath;
+                        editor.RefreshSummary();
+                        StatusText.Text = "卡片「" + editor.DisplayName + "」的工作目录已修改";
+                    }
                 }
             }
             catch (Exception ex)
@@ -935,9 +892,56 @@ namespace MirrorpondHUD.Ui
             }
         }
 
-        void ResetWorkDirClick(object sender, RoutedEventArgs e)
+        void ClearCardWorkDirClick(object sender, RoutedEventArgs e)
         {
-            WorkDirBox.Text = "";
+            CardEditor editor = EditorOf(sender);
+            if (editor == null) return;
+            editor.WorkingDirectory = "";
+            editor.RefreshSummary();
+        }
+
+        void PickMediaFileClick(object sender, RoutedEventArgs e)
+        {
+            CardEditor editor = EditorOf(sender);
+            if (editor == null) return;
+
+            try
+            {
+                var dialog = new Microsoft.Win32.OpenFileDialog
+                {
+                    Title = "选择图片 / 动图 / 视频",
+                    Filter = "媒体文件|*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.tif;*.tiff;*.ico;*.mp4;*.m4v;*.wmv;*.avi;*.mov;*.mkv;*.webm|" +
+                             "图片|*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.tif;*.tiff;*.ico|" +
+                             "视频|*.mp4;*.m4v;*.wmv;*.avi;*.mov;*.mkv;*.webm|所有文件|*.*",
+                    CheckFileExists = true
+                };
+
+                string current = (editor.MediaPath ?? "").Trim();
+                if (current.Length > 0)
+                {
+                    try { dialog.InitialDirectory = System.IO.Path.GetDirectoryName(current); }
+                    catch { }
+                }
+
+                if (dialog.ShowDialog(this) == true)
+                {
+                    editor.MediaPath = dialog.FileName;
+                    editor.RefreshSummary();
+                    StatusText.Text = "已选择媒体文件，点击“保存并应用”后显示";
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("选择媒体文件失败: " + ex.Message);
+            }
+        }
+
+        void ClearMediaFileClick(object sender, RoutedEventArgs e)
+        {
+            CardEditor editor = EditorOf(sender);
+            if (editor == null) return;
+            editor.MediaPath = "";
+            editor.RefreshSummary();
         }
 
         static string PickColor(string current)
@@ -1050,7 +1054,20 @@ namespace MirrorpondHUD.Ui
 
             foreach (CardSettings card in s.Cards)
             {
-                if (card == null || card.Resident) continue;
+                if (card == null) continue;
+
+                if (card.Command != null &&
+                    string.Equals(Settings.NormalizeShell(card.Command.Shell), "custom", StringComparison.OrdinalIgnoreCase) &&
+                    string.IsNullOrWhiteSpace(card.Command.CustomShell))
+                    return "卡片「" + card.Name + "」选择了自定义命令行，但命令模板是空的。";
+
+                if (card.Media != null &&
+                    !string.IsNullOrWhiteSpace(card.Media.Path) &&
+                    !System.IO.File.Exists(card.Media.Path))
+                    return "卡片「" + card.Name + "」的媒体文件不存在：" + card.Media.Path;
+
+                if (card.Resident) continue;
+                if (CardRegistry.Get(card.Kind).IsInteractive) continue;
 
                 if (string.IsNullOrWhiteSpace(card.Hotkey))
                     return "卡片「" + card.Name + "」没有呼出热键：勾选「常驻」，或给它设一个组合键。";

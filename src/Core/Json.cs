@@ -133,6 +133,17 @@ namespace MirrorpondHUD.Core
             return (T)Bind(typeof(T), node);
         }
 
+        /// <summary>把已经解析好的 JSON 节点绑定成对象（迁移旧配置里的子对象时用）。</summary>
+        public static T BindNode<T>(object node) where T : class, new()
+        {
+            try { return (T)Bind(typeof(T), node); }
+            catch (Exception ex)
+            {
+                Log.Warn("解析配置节点 " + typeof(T).Name + " 失败: " + ex.Message);
+                return new T();
+            }
+        }
+
         public static object Parse(string text)
         {
             if (text == null) return null;

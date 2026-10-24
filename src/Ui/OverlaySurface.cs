@@ -20,6 +20,7 @@ namespace MirrorpondHUD.Ui
         readonly Border _tintLayer;
         readonly Border _glassLayer;
         readonly Border _imageLayer;
+        readonly Border _contentLayer;
         readonly TextCanvas _canvas;
 
         BitmapImage _image;
@@ -39,12 +40,19 @@ namespace MirrorpondHUD.Ui
                 Visibility = Visibility.Collapsed,
                 IsHitTestVisible = false
             };
+            _contentLayer = new Border
+            {
+                Visibility = Visibility.Collapsed,
+                IsHitTestVisible = false,
+                ClipToBounds = true
+            };
 
             _root = new Grid();
             _root.Children.Add(_glassLayer);
             _root.Children.Add(_tintLayer);
             _root.Children.Add(_imageLayer);
             _root.Children.Add(_canvas);
+            _root.Children.Add(_contentLayer);
 
             Child = _root;
             SnapsToDevicePixels = true;
@@ -54,6 +62,29 @@ namespace MirrorpondHUD.Ui
         }
 
         public TextCanvas Canvas { get { return _canvas; } }
+
+        /// <summary>富内容（图片 / 动图 / 视频）的宿主；有内容时文字层隐藏。</summary>
+        public void SetContent(FrameworkElement content)
+        {
+            if (content == null)
+            {
+                ClearContent();
+                return;
+            }
+
+            _contentLayer.Child = content;
+            _contentLayer.Visibility = Visibility.Visible;
+            _canvas.Visibility = Visibility.Collapsed;
+        }
+
+        public void ClearContent()
+        {
+            _contentLayer.Child = null;
+            _contentLayer.Visibility = Visibility.Collapsed;
+            _canvas.Visibility = Visibility.Visible;
+        }
+
+        public bool HasContent { get { return _contentLayer.Child != null; } }
 
         public void SetText(string text, bool cursor)
         {
@@ -93,6 +124,7 @@ namespace MirrorpondHUD.Ui
                 ? "Microsoft YaHei UI"
                 : style.FontFamily);
             _canvas.FontSize = Math.Max(4, style.FontSize);
+            _canvas.IconScale = style.IconScale > 0 ? style.IconScale : 1.0;
             _canvas.FontWeight = style.Bold ? FontWeights.SemiBold : FontWeights.Normal;
             _canvas.Foreground = GetBrush(style.Foreground, 1.0);
             _canvas.Alignment = ParseAlignment(style.TextAlignment);
@@ -119,7 +151,10 @@ namespace MirrorpondHUD.Ui
             Padding = new Thickness(0);
 
             double pad = Math.Max(0, style.Padding);
+            // 富内容（图片 / 视频）铺满卡片，文字按内边距缩进。
             _canvas.Margin = new Thickness(pad * 1.15, pad * 0.7, pad * 1.15, pad * 0.7);
+            _contentLayer.Margin = new Thickness(0);
+            _contentLayer.CornerRadius = CornerRadius;
 
             _imageLayer.CornerRadius = CornerRadius;
             ApplyImage(style);
@@ -223,6 +258,9 @@ namespace MirrorpondHUD.Ui
                 AlignmentY = AlignmentY.Center
             };
             brush.Freeze();
+
+            // 取样图很小（几十像素），放大时用高质量插值，边缘不会出现方块。
+            RenderOptions.SetBitmapScalingMode(_glassLayer, BitmapScalingMode.HighQuality);
 
             _glassLayer.Background = brush;
             _glassLayer.Visibility = Visibility.Visible;

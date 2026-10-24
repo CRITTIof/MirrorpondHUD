@@ -35,6 +35,12 @@ namespace MirrorpondHUD.Core
     {
         public DateTime Timestamp = DateTime.Now;
 
+        /// <summary>
+        /// 预热帧：进程刚起来时 PDH 速率计数器还没有有效基线（第一次读常常是 0% 或 100%），
+        /// 界面据此继续显示占位符，不要把假数据显示成真实占用。
+        /// </summary>
+        public bool Warmup;
+
         public double CpuPercent;
         public bool GpuAvailable;
         public double GpuPercent;

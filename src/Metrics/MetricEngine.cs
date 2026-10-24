@@ -130,10 +130,13 @@ namespace MirrorpondHUD.Core
             }
         }
 
+        int _sampleCount;
+
         public MetricsSnapshot Sample()
         {
             Settings s = _settings;
             var snap = new MetricsSnapshot { Timestamp = DateTime.Now };
+            snap.Warmup = _sampleCount++ == 0;
 
             bool collected = _pdh.Collect();
             if (!collected) snap.Error = "PDH 采集失败";
