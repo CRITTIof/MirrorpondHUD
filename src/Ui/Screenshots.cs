@@ -8,6 +8,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using MirrorpondHUD.Cards;
 using MirrorpondHUD.Core;
+using MirrorpondHUD.Media;
 
 namespace MirrorpondHUD.Ui
 {
@@ -90,9 +91,14 @@ namespace MirrorpondHUD.Ui
                     var rich = module as IRichCardModule;
                     if (rich != null)
                     {
-                        // 图片 / 动图：离屏渲染第一帧；视频需要真实窗口，这里的截图里不会出现。
+                        // 图片 / 动图：离屏渲染第一帧；视频没有真实窗口，取 ffmpeg 解出的第一帧当封面。
                         var view = rich.CreateContent(new CardRenderContext(settings, snap, keys, card));
                         if (view == null) continue;
+
+                        var mediaView = view as MediaView;
+                        if (mediaView != null && card.Media != null && MediaView.IsVideoPath(card.Media.Path))
+                            mediaView.ShowPoster(card.Media.Path);
+
                         surface.Apply(settings, "");
                         surface.SetContent(view);
                     }

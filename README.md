@@ -1,4 +1,4 @@
-﻿<h1 align="center">MirrorpondHUD · 镜潭一览</h1>
+<h1 align="center">MirrorpondHUD · 镜潭一览</h1>
 
 <p align="center">
   <b>可增删的桌面信息卡片：系统数据、时钟、按键、命令行、图片 / 动图 / 视频，各自一张独立小窗，按顺序堆叠在桌面最上层。</b><br>
@@ -35,7 +35,7 @@
 - **Reicon 图标** — 内嵌 [ReiconFont](https://github.com/CRITTIof/reicon-font)：87 个键帽字形、软件 / 硬件 / 界面图标；CPU、GPU、RAM、ROM、网络上下行图标已接入信息显示，设置页的页签与增删移动按钮也使用它。图标字号默认放大到正文的 1.45 倍，视觉高度与文字一致，不用为了图标把整行字号调大
 - **按键显示** — 全局键盘钩子，最近按键、重复折叠（`A×6`）、最大字符数限制，按键以键帽字形显示
 - **快捷命令行** — 命令行是一张普通卡片，按自己的热键展开；**工具 / 工作目录 / 超时都在这张卡片自己身上**，所以可以同时放 CMD、PowerShell、WSL 三张卡片各用各的
-- **媒体卡片** — 一张卡片显示图片 / 位图 / 动图（GIF）/ 视频，可调缩放方式、宽高、透明度、循环、静音、倍速，并可选择是否按外观的圆角裁圆；视频在跟随卡片的独立子窗口里播放
+- **媒体卡片** — 一张卡片显示图片 / 位图 / 动图（GIF）/ 视频，可调缩放方式、宽高、透明度、循环、静音、倍速，并可选择是否按外观的圆角裁圆；卡片顶部显示文件名（过长省略），视频底部带播放进度条；系统解不开的视频会自动改用 ffmpeg
 - **毛玻璃背景** — 按像素拼出卡片后面的画面（多个窗口 + 桌面壁纸），缩小模糊后当底色；压在桌面、窗口边角都正常，截图 / 录像里叠层照常可见
 - **外观可调** — 字体字号、图标倍率、描边、背景图、透明度、圆角、投影、固定宽度；尺寸只增不减，数值变化时不跳动
 - **启动动画** — 打字 / 退格动画 + 模拟光标（方块 / 竖线 / 下划线 / 空心框 / 关闭）
@@ -44,15 +44,13 @@
 
 ## 🚀 快速开始
 
-**下载即用**：到 [Releases](https://github.com/CRITTIof/MirrorpondHUD/releases) 下载最新版（已发布到 `v2.0.0`；
-`main` 上的媒体卡片、每卡命令行设置、毛玻璃与图标倍率尚未打包成 release）：
+**下载即用**：到 [Releases](https://github.com/CRITTIof/MirrorpondHUD/releases) 下载最新版 `v2.1.0`。
+自 v2.1.0 起只提供**需要手动安装 .NET 8 桌面运行时**的版本（体积小）；先装运行时，再双击 exe：
 
 | 文件 | 适用 | 说明 |
 | --- | --- | --- |
-| `MirrorpondHUD-x64.exe` | 普通电脑（x64） | 自带 .NET 8 运行时，双击即用 |
-| `MirrorpondHUD-arm64.exe` | Windows on ARM | 自带 .NET 8 运行时 |
-| `MirrorpondHUD-x64-requires-dotnet.exe` | 已装 .NET 8 桌面运行时 | 体积小，依赖系统运行时 |
-| `MirrorpondHUD-arm64-requires-dotnet.exe` | 已装 .NET 8 桌面运行时的 ARM 机器 | 体积小，依赖系统运行时 |
+| `MirrorpondHUD-x64-requires-dotnet.exe` | 普通电脑（x64） | 需要 [.NET 8 桌面运行时](https://dotnet.microsoft.com/download/dotnet/8.0) |
+| `MirrorpondHUD-arm64-requires-dotnet.exe` | Windows on ARM | 需要 [.NET 8 桌面运行时](https://dotnet.microsoft.com/download/dotnet/8.0) |
 
 **从源码运行**：
 
@@ -103,9 +101,16 @@ run.bat
 | 按键 | 最近按键（键帽字形） | 数量、折叠阈值在「数据源」页 |
 | 文本信息 | 任意文字 + 全部占位符 | 适合放常用信息 |
 | 命令行 | 提示符 / 历史 / 输入 | 独占键盘，按自己的热键展开；工具与超时是**每张卡片独立**的 |
-| 媒体 | 图片 / 位图 / 动图 / 视频 | 文件、缩放、透明度、循环 / 静音 / 倍速都在卡片里 |
+| 媒体 | 图片 / 位图 / 动图 / 视频 | 顶部文件名、视频进度条；文件、缩放、透明度、解码器都在卡片里 |
 
 ![媒体卡片](docs/media-cards.png)
+
+媒体卡片和文字卡片共用同一块底层：卡片底色、毛玻璃、圆角、投影都照旧，媒体四周留出和文字一样的内边距，
+顶部一行文件名（超长自动省略），视频在底部多一条 250 ms 刷新的进度条。
+
+视频默认交给 Windows 自带的 Media Foundation；放不了（mkv / webm / av1 …）且机器上有 ffmpeg 时，
+自动改用它逐帧解码并画回卡片里。设置页的「解码器」可以固定用系统或 ffmpeg，也可以指定自定义
+`ffmpeg.exe`；「检测」会重新扫描 PATH 与常见安装目录，把找到的 ffmpeg / mpv / VLC 列出来。
 
 卡片在屏幕上的位置由两部分决定：**锚点**（「行为」页的显示器 / X / Y）和**每张卡片的间距**。
 第一张可见卡片对齐锚点，之后依次向下排；非常驻卡片被呼出时也会插入到它自己的位置，其它卡片顺势让开。
@@ -171,7 +176,8 @@ run.bat
       "Spacing": 0,
       "Content": "{cpu_icon} CPU {cpu:0.0}%   {mem_icon} MEM {mem_pct:0}%",
       "Command": { "Shell": "cmd", "WorkingDirectory": "", "TimeoutSeconds": 20 },
-      "Media": { "Path": "", "Fit": "Contain", "Width": 320, "Loop": true, "Muted": true }
+      "Media": { "Path": "", "Fit": "Contain", "Width": 320, "Loop": true, "Muted": true,
+                 "Rounded": true, "Decoder": "Auto", "DecoderPath": "" }
     }
   ]
 }
@@ -183,7 +189,7 @@ run.bat
 - `Cards` 的顺序就是叠层顺序；`Spacing` 是与上一张可见卡片的间距
 - `Resident=false` 的卡片必须有 `Hotkey`，否则保存时会提示
 - `Command` 属于每张命令行卡片：工具、自定义模板、工作目录、行截断、行数、超时
-- `Media` 属于每张媒体卡片：文件、缩放（`Contain` / `Cover` / `Fill` / `None`）、宽高、透明度、循环、自动播放、静音、倍速
+- `Media` 属于每张媒体卡片：文件、缩放（`Contain` / `Cover` / `Fill` / `None`）、宽高、透明度、循环、自动播放、静音、倍速、圆角（`Rounded`）、解码器（`Decoder`：`Auto` / `BuiltIn` / `FFmpeg`）与自定义 `DecoderPath`
 - 外观（`Style`）是**全局**的：所有卡片共用字体、颜色、背景、图标倍率、毛玻璃等，卡片只负责内容与位置
 
 ## 🔨 编译
@@ -215,8 +221,9 @@ publish.bat        :: 生成 publish\ 下的四个单文件
 
 - 多张命令行卡片各自独立：各自的历史、输入、工具与超时，但**同一时间只有一张能处于输入状态**
 - 卡片结构（增删 / 排序 / 常驻 / 热键 / 内容）和外观都在「保存并应用」后生效
-- 媒体卡片的视频靠系统 Media Foundation 解码：mp4 / wmv 一般都能放，mkv / webm 取决于装了哪些解码器；
-  视频在跟随卡片的独立子窗口里播放（分层窗口画不出 `MediaElement`），因此视频区域不支持卡片内拖动、点击
+- 媒体卡片的视频优先用系统 Media Foundation 解码；解不开（mkv / webm / av1 …）且检测到 ffmpeg 时，
+  自动改用 ffmpeg 逐帧解码并画回卡片（**没有声音、固定 1× 速度**）。视频子窗口在跟随卡片的独立窗口里播放
+  （分层窗口画不出 `MediaElement`），因此视频区域不支持卡片内拖动、点击
 - 毛玻璃按像素合成「卡片后面能看到的窗口 + 桌面壁纸」，所以纯桌面、跨窗口、压窗口边角都有底色；
   它只取外部窗口，**本进程自己的窗口**（设置窗口、视频窗）不会出现在玻璃里；少数禁用 `PrintWindow`
   的程序（独占全屏 / 硬件覆盖层）会被跳过、退到下一层。原理与性能见 [docs/glass-options.md](docs/glass-options.md)
@@ -230,7 +237,7 @@ src/
   App.xaml(.cs)          入口、单实例、命令行参数
   Cards/                 卡片模块：ICardModule / IRichCardModule / 各卡片
   Core/                  设置、迁移、JSON、日志、图标、键帽映射
-  Media/                 图片 / 动图 / 视频控件与视频子窗口
+  Media/                 图片 / 动图 / 视频控件、视频子窗口、解码器探测与 ffmpeg 解码
   Metrics/               PDH / nvidia-smi 采样
   Text/                  模板引擎、占位符、按键名、命令执行
   Ui/                    叠层窗口、绘制、毛玻璃、设置窗口、托盘、热键、自启
@@ -242,6 +249,7 @@ assets/keycaps/          ReiconFont 与映射文档
 
 - [docs/cards-architecture.md](docs/cards-architecture.md) — 模块化卡片架构、富内容契约与扩展方式
 - [docs/glass-options.md](docs/glass-options.md) — 毛玻璃实现说明（`PrintWindow` + 模糊）与各方案调研
+- [docs/liquid-glass.md](docs/liquid-glass.md) — 液态玻璃调研：token-monitor 的毛玻璃 / 液态玻璃拆解与可行性评估
 
 ## 📄 许可与字体致谢
 
@@ -272,13 +280,13 @@ assets/keycaps/          ReiconFont 与映射文档
 - **Reicon icons** — embedded [ReiconFont](https://github.com/CRITTIof/reicon-font) keycaps and icons. Icons render at 1.45× the text size by default so they visually match the glyphs — no need to inflate the whole line
 - **Click-through** — the overlay never blocks the desktop unless unlocked with `F8`
 - **Command line cards** — each card owns its tool, working directory and timeout, so a CMD card, a PowerShell card and a WSL card can coexist
-- **Media cards** — one card per image / bitmap / animated GIF / video, with fit mode, size, opacity, loop, mute, speed and an optional corner-rounding toggle; video plays in a companion window that follows the card
+- **Media cards** — one card per image / bitmap / animated GIF / video, with fit mode, size, opacity, loop, mute, speed and an optional corner-rounding toggle; the card keeps the text-card backing and adds a filename header plus a progress bar under videos; Media Foundation decodes first and ffmpeg takes over when it cannot
 - **Frosted glass** — the content behind a card is composed per pixel (windows + desktop wallpaper), downscaled and blurred; works over the desktop and across window edges, and screenshots still see the overlay
 - **No runtime needed** — self-contained single-file builds for x64 and ARM64
 
 ## Quick start
 
-Download the latest release from [Releases](https://github.com/CRITTIof/MirrorpondHUD/releases) (`MirrorpondHUD-x64.exe` is the usual choice; the most recent release is `v2.0.0`, while `main` also carries the media cards, per-card command settings, glass and icon scaling described here), or build from source:
+Download the latest release from [Releases](https://github.com/CRITTIof/MirrorpondHUD/releases) (`MirrorpondHUD-x64-requires-dotnet.exe` is the usual choice; since `v2.1.0` only framework-dependent builds are published, so install the [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0) first), or build from source:
 
 ```bat
 git clone https://github.com/CRITTIof/MirrorpondHUD.git
@@ -305,7 +313,7 @@ Global hotkeys fall back to `Ctrl+Alt+<key>` when occupied; card hotkeys do the 
 
 ![Media cards](docs/media-cards.png)
 
-Images, bitmaps and animated GIFs are drawn inside the layered card window; video uses a companion window because WPF cannot composite `MediaElement` into a `WS_EX_LAYERED` window. Fit (`Contain` / `Cover` / `Fill` / `None`), size, opacity, loop, autoplay, mute, playback speed and corner rounding are stored per card. Codec support comes from Windows Media Foundation: mp4 / wmv usually play, mkv / webm depend on installed decoders.
+Images, bitmaps and animated GIFs are drawn inside the layered card window; video uses a companion window because WPF cannot composite `MediaElement` into a `WS_EX_LAYERED` window. The media card keeps the same backing as a text card (tint, glass, rounded corners, shadow) and adds a filename header (ellipsized when long) plus a progress bar under videos. Fit (`Contain` / `Cover` / `Fill` / `None`), size, opacity, loop, autoplay, mute, playback speed, corner rounding and the decoder are stored per card. Video is decoded by Windows Media Foundation first; when that fails (mkv / webm / av1 …) and ffmpeg is available, the card falls back to decoding frames with ffmpeg. The decoder row in the settings offers `Auto` / system only / ffmpeg only, a custom `ffmpeg.exe`, and a **Detect** button that rescans `PATH` and common install folders for ffmpeg / mpv / VLC.
 
 ## Configuration
 
@@ -314,7 +322,7 @@ Everything is stored in `settings.json` next to the executable (`SchemaVersion: 
 ## Known limitations
 
 - Only one command card can be in input mode at a time; history and settings are per card
-- Video needs the companion window, so the video area does not participate in drag or click handling
+- Video falls back to ffmpeg when Media Foundation cannot decode it; that path has no audio and plays at 1×. Video needs the companion window, so the video area does not participate in drag or click handling
 - Frosted glass composes the windows behind a card plus the desktop wallpaper; windows of this process (the settings window, the video window) are intentionally excluded, and programs that refuse `PrintWindow` are skipped
 - Runtime plugins (`cards/*.dll`) are not implemented; adding a card is one new class in `src/Cards` (text cards derive from `CardModuleBase`, rich cards from `RichCardModuleBase`)
 
@@ -329,4 +337,4 @@ publish.bat        :: four self-contained / framework-dependent single-file buil
 
 MIT — see [LICENSE](LICENSE). Keycap and icon glyphs come from [ReiconFont](https://github.com/CRITTIof/reicon-font), licensed under the SIL Open Font License 1.1 (`assets/keycaps/OFL.txt`, mapping in `assets/keycaps/MAPPING.md`).
 
-Design notes: [docs/cards-architecture.md](docs/cards-architecture.md) (module contract, rich cards, per-card settings) and [docs/glass-options.md](docs/glass-options.md) (how the glass works and why).
+Design notes: [docs/cards-architecture.md](docs/cards-architecture.md) (module contract, rich cards, per-card settings), [docs/glass-options.md](docs/glass-options.md) (how the glass works and why) and [docs/liquid-glass.md](docs/liquid-glass.md) (token-monitor's frosted / liquid glass, and whether this project can adopt it).

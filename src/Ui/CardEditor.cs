@@ -1,10 +1,11 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Globalization;
 using System.Windows;
 using MirrorpondHUD.Cards;
 using MirrorpondHUD.Core;
+using MirrorpondHUD.Media;
 
 namespace MirrorpondHUD.Ui
 {
@@ -473,6 +474,87 @@ namespace MirrorpondHUD.Ui
         public string MediaSpeedText
         {
             get { return _config.Media.Speed.ToString("0.00", CultureInfo.InvariantCulture) + "×"; }
+        }
+
+        /// <summary>0 = 自动，1 = 只用系统 Media Foundation，2 = 只用 ffmpeg。</summary>
+        public int MediaDecoderIndex
+        {
+            get
+            {
+                switch (MediaSettings.NormalizeDecoder(_config.Media.Decoder))
+                {
+                    case "BuiltIn": return 1;
+                    case "FFmpeg": return 2;
+                    default: return 0;
+                }
+            }
+            set
+            {
+                string decoder = value == 1 ? "BuiltIn" : value == 2 ? "FFmpeg" : "Auto";
+                if (MediaSettings.NormalizeDecoder(_config.Media.Decoder) == decoder) return;
+                _config.Media.Decoder = decoder;
+                Raise("MediaDecoderIndex");
+                Raise("DecoderHint");
+            }
+        }
+
+        /// <summary>自定义 ffmpeg.exe；空 = 自动在 PATH 与常见目录里找。</summary>
+        public string MediaDecoderPath
+        {
+            get { return _config.Media.DecoderPath; }
+            set
+            {
+                string text = (value ?? "").Trim();
+                if (string.Equals(_config.Media.DecoderPath ?? "", text, StringComparison.OrdinalIgnoreCase)) return;
+                _config.Media.DecoderPath = text;
+                Raise("MediaDecoderPath");
+                Raise("DecoderHint");
+            }
+        }
+
+        /// <summary>探测结果：找到哪些解码器、ffmpeg 在哪。</summary>
+        public string DecoderHint
+        {
+            get
+            {
+                if (!string.IsNullOrWhiteSpace(_config.Media.DecoderPath))
+                {
+                    return System.IO.File.Exists(_config.Media.DecoderPath)
+                        ? "使用自定义解码器：" + _config.Media.DecoderPath
+                        : "自定义解码器不存在：" + _config.Media.DecoderPath;
+                }
+
+                List<DecoderInfo> found = Decoders.Detect();
+                if (found.Count == 0)
+                    return "没找到 ffmpeg / mpv / VLC；视频只能用 Windows 自带的 Media Foundation";
+
+                DecoderInfo ffmpeg = null;
+                var others = new System.Text.StringBuilder();
+                foreach (DecoderInfo info in found)
+                {
+                    if (info.Frames && ffmpeg == null) { ffmpeg = info; continue; }
+                    if (others.Length > 0) others.Append("、");
+                    others.Append(info.Kind);
+                }
+
+                if (ffmpeg == null)
+                    return "找到 " + others + "，但没有 ffmpeg；视频仍走系统解码（可在上面指定 ffmpeg.exe）";
+
+                string label = string.IsNullOrWhiteSpace(ffmpeg.Version)
+                    ? "FFmpeg"
+                    : "FFmpeg " + ffmpeg.Version;
+                string text = "已找到 " + label + "（" + ffmpeg.Path + "）";
+                if (others.Length > 0) text += "；另有 " + others;
+                return text;
+            }
+        }
+
+        /// <summary>重新扫一遍 PATH（设置页的「检测」按钮）。</summary>
+        public void RefreshDecoders()
+        {
+            List<DecoderInfo> found = Decoders.Detect(true);
+            Log.Info("手动重新检测解码器：" + Decoders.Describe(found));
+            Raise("DecoderHint");
         }
 
         /// <summary>卡片标题栏的摘要可能需要刷新（改完设置后调用）。</summary>

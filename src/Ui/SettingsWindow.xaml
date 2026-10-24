@@ -1,4 +1,4 @@
-﻿<Window x:Class="MirrorpondHUD.Ui.SettingsWindow"
+<Window x:Class="MirrorpondHUD.Ui.SettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="镜潭一览 · 设置" Width="1120" Height="820" MinWidth="1000" MinHeight="700"
@@ -312,8 +312,40 @@
                                                             <TextBlock Text="{Binding MediaSpeedText}" VerticalAlignment="Center"
                                                                        Foreground="{StaticResource TextSecondary}" />
                                                         </WrapPanel>
-                                                        <TextBlock Style="{StaticResource Hint}" Margin="0,2,0,0"
-                                                                   Text="视频用系统的 Media Foundation 解码：mp4 / wmv 一般都能放，mkv / webm 取决于是否装了对应解码器。" />
+                                                        <TextBlock Text="解码器" Style="{StaticResource SectionTitle}" Margin="0,12,0,6" />
+
+                                                        <Grid Margin="0,0,0,6">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="88" />
+                                                                <ColumnDefinition Width="Auto" />
+                                                                <ColumnDefinition Width="*" />
+                                                                <ColumnDefinition Width="Auto" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock Text="视频 / 图片" VerticalAlignment="Center" />
+                                                            <ComboBox Grid.Column="1" Width="150" VerticalAlignment="Center"
+                                                                      SelectedIndex="{Binding MediaDecoderIndex}"
+                                                                      ToolTip="自动：系统放不了的格式（mkv / webm / av1 …）改用 ffmpeg&#x0a;仅 ffmpeg：所有视频都交给 ffmpeg（无声音、固定 1× 速度）">
+                                                                <ComboBoxItem Content="自动（系统优先）" />
+                                                                <ComboBoxItem Content="仅系统 Media Foundation" />
+                                                                <ComboBoxItem Content="仅 ffmpeg" />
+                                                            </ComboBox>
+                                                            <TextBox Grid.Column="2" Margin="8,0" VerticalAlignment="Center"
+                                                                     Text="{Binding MediaDecoderPath, UpdateSourceTrigger=PropertyChanged}"
+                                                                     ToolTip="自定义 ffmpeg.exe 的完整路径；留空 = 自动在 PATH 与常见安装目录里找" />
+                                                            <StackPanel Grid.Column="3" Orientation="Horizontal">
+                                                                <Button Content="选择…" Click="PickDecoderClick" Tag="{Binding}" />
+                                                                <Button Content="检测" Margin="6,0,0,0" Click="DetectDecodersClick" Tag="{Binding}"
+                                                                        ToolTip="重新扫描 PATH，看看有哪些解码器" />
+                                                            </StackPanel>
+                                                        </Grid>
+
+                                                        <TextBlock Text="{Binding DecoderHint}" Margin="0,0,0,2"
+                                                                   FontSize="12" TextWrapping="Wrap"
+                                                                   Foreground="{StaticResource TextSecondary}"
+                                                                   ToolTip="{Binding DecoderHint}" />
+
+                                                        <TextBlock Style="{StaticResource Hint}" Margin="0,2,0,0" TextWrapping="Wrap"
+                                                                   Text="自动模式下，系统解不开的视频或图片会改用 ffmpeg；ffmpeg 解码没有声音、速度固定 1×，其余格式与系统解码一致。" />
                                                     </StackPanel>
                                                 </StackPanel>
                                             </StackPanel>

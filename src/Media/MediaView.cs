@@ -1,9 +1,10 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using MirrorpondHUD.Core;
 
 namespace MirrorpondHUD.Media
@@ -11,11 +12,15 @@ namespace MirrorpondHUD.Media
     /// <summary>
     /// 媒体控件：一张卡片里的图片 / 位图 / 动图 / 视频，全部由这一个 Grid 承载。
     ///
+    /// 布局和文字卡片一致：卡片自己的底色、毛玻璃、圆角由外层 OverlaySurface 画，
+    /// 这里在四周留出和文字一样的内边距，顶部一行文件名（超长省略），
+    /// 视频再在底部加一条播放进度条，所以媒体卡看起来仍是同一叠卡片里的一张。
+    ///
     /// · 静态图片（png / jpg / bmp / tif / ico …）用 Image 绘制；
     /// · 动图（GIF）交给 <see cref="GifAnimator"/> 按每帧自带的延时播放；
-    /// · 视频交给 <see cref="VideoWindow"/>：分层窗口无法显示 MediaElement，
-    ///   视频放在一个跟随卡片位置的不透明子窗口里。
-    /// 控件自己按配置算好宽高，卡片窗口用 SizeToContent 就能自动贴合。
+    /// · 视频默认交给 <see cref="VideoWindow"/>（分层窗口无法显示 MediaElement，
+    ///   视频放在一个跟随卡片位置的不透明子窗口里）；
+    /// · 选了 ffmpeg 或系统解不开时交给 <see cref="FfmpegPlayer"/>，逐帧画回卡片里。
     /// </summary>
     public sealed class MediaView : Grid, IDisposable
     {
@@ -24,22 +29,50 @@ namespace MirrorpondHUD.Media
             ".mp4", ".m4v", ".wmv", ".avi", ".mov", ".mkv", ".webm", ".mpg", ".mpeg", ".ts"
         };
 
-        readonly Image _image;
+        readonly Grid _header;
+        readonly TextBlock _name;
         readonly Grid _host;
+        readonly Image _image;
         readonly TextBlock _message;
+        readonly Grid _footer;
+        readonly Border _track;
+        readonly Border _fill;
+
         GifAnimator _gif;
         VideoWindow _videoWindow;
+        FfmpegPlayer _player;
+        DispatcherTimer _progressTimer;
+
         MediaSettings _settings = new MediaSettings();
+        StyleSettings _style;
         string _loadedPath;
         string _pendingVideo;
         Size _natural = new Size(320, 180);
         double _cornerRadius = 10;
+        double _padX = 14;
+        double _padY = 10;
+        double _titleSize = 12;
+        Color _foreground = Color.FromRgb(0xE6, 0xED, 0xF3);
+        double _clipWidth;
+        double _clipHeight;
+        double _clipRadius = -1;
         bool _disposed;
 
         public MediaView()
         {
             ClipToBounds = true;
             SnapsToDevicePixels = true;
+
+            _name = new TextBlock
+            {
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                TextWrapping = TextWrapping.NoWrap,
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Stretch
+            };
+
+            _header = new Grid();
+            _header.Children.Add(_name);
 
             _image = new Image
             {
@@ -61,9 +94,45 @@ namespace MirrorpondHUD.Media
                 Margin = new Thickness(16)
             };
 
-            _host = new Grid();
+            _host = new Grid { ClipToBounds = true };
+            _host.Children.Add(_image);
+            _host.Children.Add(_message);
+
+            _track = new Border
+            {
+                Height = 3,
+                CornerRadius = new CornerRadius(1.5),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+
+            _fill = new Border
+            {
+                Height = 3,
+                CornerRadius = new CornerRadius(1.5),
+                HorizontalAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Center,
+                Width = 0
+            };
+
+            var trackHost = new Grid();
+            trackHost.Children.Add(_track);
+            trackHost.Children.Add(_fill);
+
+            _footer = new Grid { Visibility = Visibility.Collapsed };
+            _footer.Children.Add(trackHost);
+
+            RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            Children.Add(_header);
             Children.Add(_host);
-            Children.Add(_message);
+            Children.Add(_footer);
+            SetRow(_header, 0);
+            SetRow(_host, 1);
+            SetRow(_footer, 2);
+
+            ApplyChrome();
 
             Loaded += (s, e) =>
             {
@@ -73,24 +142,86 @@ namespace MirrorpondHUD.Media
             LayoutUpdated += (s, e) =>
             {
                 // 首次 Loaded 时卡片窗口可能还没真正 Loaded，这里补一次机会。
-                if (_pendingVideo != null && _videoWindow == null) TryStartVideo();
-                ApplyClip();
+                if (_pendingVideo != null && _videoWindow == null && _player == null) TryStartVideo();
                 UpdateVideoPlacement();
             };
             Unloaded += (s, e) => { if (_videoWindow != null) _videoWindow.Stop(); };
+
+            // 只在媒体区域真的变尺寸时重算圆角裁剪。
+            // 放进 LayoutUpdated 会变成「设 Clip → 重绘 → 再布局」的循环，白烧 CPU。
+            _host.SizeChanged += (s, e) => ApplyClip();
+            _track.SizeChanged += (s, e) => UpdateProgress();
         }
 
         /// <summary>媒体尺寸变化（视频打开、图片解码完成）时通知宿主重新排布叠层。</summary>
         public event Action LayoutChanged;
 
         public string LoadedPath { get { return _loadedPath; } }
-        public bool HasVideo { get { return _videoWindow != null || _pendingVideo != null; } }
+        public bool HasVideo { get { return _videoWindow != null || _player != null || _pendingVideo != null; } }
 
         public MediaView WithCornerRadius(double radius)
         {
             _cornerRadius = Math.Max(0, Math.Min(60, radius));
             ApplyClip();
             return this;
+        }
+
+        /// <summary>用全局外观（字体 / 颜色 / 内边距）画文件名与进度条，和文字卡片保持一致。</summary>
+        public MediaView WithStyle(StyleSettings style)
+        {
+            _style = style;
+            ApplyChrome();
+            return this;
+        }
+
+        void ApplyChrome()
+        {
+            StyleSettings style = _style;
+
+            _padX = Math.Max(6, style == null ? 14 : style.Padding);
+            _padY = Math.Max(5, (style == null ? 14 : style.Padding) * 0.7);
+            _titleSize = Math.Max(11, (style == null ? 15 : Math.Max(4, style.FontSize)) * 0.8);
+
+            Color foreground = ParseColor(style == null ? null : style.Foreground);
+            if (foreground != _foreground) _foreground = foreground;
+
+            _name.FontFamily = new FontFamily(style == null || string.IsNullOrWhiteSpace(style.FontFamily)
+                ? "Microsoft YaHei UI"
+                : style.FontFamily);
+            _name.FontSize = _titleSize;
+            _name.FontWeight = style != null && style.Bold ? FontWeights.SemiBold : FontWeights.Normal;
+            _name.Foreground = Solid(_foreground, 0.92);
+            _header.Margin = new Thickness(_padX, Math.Max(2, _padY * 0.5), _padX, Math.Max(1, _padY * 0.3));
+
+            _host.Margin = new Thickness(_padX, 0, _padX, 0);
+            _footer.Margin = new Thickness(_padX, 5, _padX, Math.Max(7, _padY * 0.85));
+
+            _track.Background = Solid(_foreground, 0.20);
+            _fill.Background = Solid(_foreground, 0.85);
+
+            ApplySize();
+        }
+
+        static SolidColorBrush Solid(Color color, double alpha)
+        {
+            var brush = new SolidColorBrush(Color.FromArgb((byte)Math.Round(alpha * 255), color.R, color.G, color.B));
+            brush.Freeze();
+            return brush;
+        }
+
+        static Color ParseColor(string text)
+        {
+            Color fallback = Color.FromRgb(0xE6, 0xED, 0xF3);
+            if (string.IsNullOrWhiteSpace(text)) return fallback;
+
+            try
+            {
+                object value = ColorConverter.ConvertFromString(text.Trim());
+                if (value is Color) return (Color)value;
+            }
+            catch { }
+
+            return fallback;
         }
 
         // ==================== 绑定 ====================
@@ -102,6 +233,7 @@ namespace MirrorpondHUD.Media
 
             MediaSettings previous = _settings;
             _settings = settings ?? new MediaSettings();
+            _host.Opacity = _settings.Opacity;
 
             string path = _settings.Path ?? "";
             bool samePath = _loadedPath != null &&
@@ -112,10 +244,17 @@ namespace MirrorpondHUD.Media
             if (path.Length == 0)
             {
                 ShowMessage("媒体卡片\n在「设置 → 内容 → 媒体」里选择图片 / 动图 / 视频");
+                _name.Text = "";
+                _header.Visibility = Visibility.Collapsed;
+                _footer.Visibility = Visibility.Collapsed;
                 _loadedPath = "";
                 ApplySize();
                 return;
             }
+
+            _name.Text = FileName(path);
+            _name.ToolTip = path;
+            _header.Visibility = Visibility.Visible;
 
             if (!File.Exists(path))
             {
@@ -125,10 +264,26 @@ namespace MirrorpondHUD.Media
                 return;
             }
 
+            bool video = IsVideo(path);
+            _footer.Visibility = video ? Visibility.Visible : Visibility.Collapsed;
+
             if (samePath)
             {
+                bool decoderChanged = previous != null &&
+                    (MediaSettings.NormalizeDecoder(previous.Decoder) != MediaSettings.NormalizeDecoder(_settings.Decoder) ||
+                     !string.Equals(previous.DecoderPath ?? "", _settings.DecoderPath ?? "",
+                                    StringComparison.OrdinalIgnoreCase));
+
+                if (video && decoderChanged)
+                {
+                    _pendingVideo = path;
+                    ReleaseVideo();
+                    TryStartVideo();
+                }
+
                 ApplyVideoSettings(previous);
                 ApplyFit();
+                _host.Opacity = _settings.Opacity;
                 ApplySize();
                 return;
             }
@@ -136,9 +291,10 @@ namespace MirrorpondHUD.Media
             _loadedPath = path;
             _message.Visibility = Visibility.Collapsed;
 
-            if (IsVideo(path))
+            if (video)
             {
                 _pendingVideo = path;
+                StartPoster(path);
                 TryStartVideo();
             }
             else
@@ -149,11 +305,21 @@ namespace MirrorpondHUD.Media
             ApplySize();
         }
 
+        static string FileName(string path)
+        {
+            try { return Path.GetFileName(path); }
+            catch { return path; }
+        }
+
         static bool IsVideo(string path)
         {
-            string ext = "";
-            try { ext = Path.GetExtension(path) ?? ""; } catch { }
-            return Array.IndexOf(VideoExtensions, ext.ToLowerInvariant()) >= 0;
+            return Array.IndexOf(VideoExtensions, SafeExtension(path)) >= 0;
+        }
+
+        static string SafeExtension(string path)
+        {
+            try { return (Path.GetExtension(path) ?? "").ToLowerInvariant(); }
+            catch { return ""; }
         }
 
         // ==================== 图片 / 动图 ====================
@@ -161,22 +327,30 @@ namespace MirrorpondHUD.Media
         void LoadImage(string path)
         {
             BitmapSource still = TryLoadBitmap(path);
+            string ffmpeg = Decoders.FindFfmpeg(_settings);
+
+            // WPF 解不开的格式（webp / avif / heic …）交给 ffmpeg 转一帧出来。
+            if (still == null && ffmpeg != null)
+            {
+                Log.Info("系统解不开图片，改用 ffmpeg：" + path);
+                still = FfmpegPlayer.ExtractImage(ffmpeg, path);
+            }
+
             if (still == null)
             {
-                ShowMessage("无法解码这个文件：\n" + Path.GetFileName(path));
+                ShowMessage("无法解码这个文件：\n" + FileName(path) +
+                            (ffmpeg == null ? "\n（可在设置里指定 ffmpeg 解码器）" : ""));
                 return;
             }
 
             _natural = new Size(still.PixelWidth, still.PixelHeight);
 
-            if (_settings.Loop)
+            if (_settings.Loop && string.Equals(SafeExtension(path), ".gif", StringComparison.OrdinalIgnoreCase))
             {
                 _gif = GifAnimator.TryCreate(path, _image, true);
                 if (_gif != null)
                 {
                     if (_gif.CanvasSize.Width > 0 && _gif.CanvasSize.Height > 0) _natural = _gif.CanvasSize;
-                    _host.Children.Clear();
-                    _host.Children.Add(_image);
                     _image.Stretch = ParseStretch(_settings.Fit);
                     _gif.Play();
                     return;
@@ -185,8 +359,6 @@ namespace MirrorpondHUD.Media
 
             _image.Source = still;
             _image.Stretch = ParseStretch(_settings.Fit);
-            _host.Children.Clear();
-            _host.Children.Add(_image);
         }
 
         static BitmapSource TryLoadBitmap(string path)
@@ -222,9 +394,24 @@ namespace MirrorpondHUD.Media
             Window card = Window.GetWindow(this);
             if (card == null || !card.IsLoaded)
             {
-                Log.Info("视频等待卡片窗口：pending=" + _pendingVideo +
-                         " window=" + (card == null ? "null" : card.IsLoaded.ToString()));
-                return;   // 等卡片窗口出来再建子窗口
+                return;   // 等卡片窗口出来再建子窗口 / 开解码器
+            }
+
+            string ffmpeg = Decoders.FindFfmpeg(_settings);
+            string decoder = MediaSettings.NormalizeDecoder(_settings.Decoder);
+            string path = _pendingVideo;
+
+            if (decoder == "FFmpeg" && ffmpeg == null)
+            {
+                Log.Warn("选择了 ffmpeg 解码，但 PATH 里找不到 ffmpeg.exe，改回系统解码");
+            }
+
+            // 「自动」= 先让系统解（能硬解、有声音），解不开再在 OnVideoFailed 里换 ffmpeg；
+            // 用户明确选了「仅 ffmpeg」才一开始就走外部解码。
+            if (decoder == "FFmpeg" && ffmpeg != null)
+            {
+                StartFfmpeg(ffmpeg, path);
+                return;
             }
 
             try
@@ -235,12 +422,12 @@ namespace MirrorpondHUD.Media
                     _videoWindow.Video.MediaOpened += OnVideoOpened;
                     _videoWindow.Video.MediaFailed += OnVideoFailed;
                     _videoWindow.Video.MediaEnded += OnVideoEnded;
-                    Log.Info("视频窗已创建：" + _pendingVideo);
+                    Log.Info("视频窗已创建：" + path);
                 }
 
-                _host.Children.Clear();
-                _videoWindow.Open(_pendingVideo, _settings);
+                _videoWindow.Open(path, _settings);
                 ApplyFit();
+                StartProgress();
 
                 if (card.IsVisible) UpdateVideoPlacement();
             }
@@ -249,6 +436,112 @@ namespace MirrorpondHUD.Media
                 Log.Warn("打开视频失败: " + ex.Message);
                 ShowMessage("无法打开视频：\n" + ex.Message);
             }
+        }
+
+        /// <summary>用 ffmpeg 解出一帧当封面，先填住视频区域（异步，不阻塞卡片显示）。</summary>
+        void StartPoster(string path)
+        {
+            string ffmpeg = Decoders.FindFfmpeg(_settings);
+            if (ffmpeg == null) return;
+
+            string captured = path;
+            System.Threading.Tasks.Task.Run(() => FfmpegPlayer.ExtractImage(ffmpeg, captured))
+                .ContinueWith(task =>
+                {
+                    if (task.Status != System.Threading.Tasks.TaskStatus.RanToCompletion) return;
+                    BitmapSource frame = task.Result;
+                    if (frame == null) return;
+
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        if (_disposed || _image.Source != null) return;
+                        if (!string.Equals(_loadedPath, captured, StringComparison.OrdinalIgnoreCase)) return;
+                        _image.Source = frame;
+                        _message.Visibility = Visibility.Collapsed;
+                    }));
+                });
+        }
+
+        /// <summary>同步取一帧当封面（离屏截图用：视频没有窗口可渲染）。</summary>
+        public void ShowPoster(string path)
+        {
+            string ffmpeg = Decoders.FindFfmpeg(_settings);
+            if (ffmpeg == null) return;
+
+            BitmapSource frame = FfmpegPlayer.ExtractImage(ffmpeg, path);
+            if (frame == null) return;
+
+            _image.Source = frame;
+            _message.Visibility = Visibility.Collapsed;
+        }
+
+        /// <summary>这个路径要不要走视频分支（宿主 / 截图工具复用）。</summary>
+        public static bool IsVideoPath(string path)
+        {
+            return IsVideo(path);
+        }
+
+        /// <summary>用 ffmpeg 解码：帧直接画在卡片里，不需要子窗口。</summary>
+        void StartFfmpeg(string ffmpeg, string path)
+        {
+            try
+            {
+                ReleaseVideo();
+
+                VideoInfo info = FfmpegPlayer.Probe(ffmpeg, path);
+                double aspect = info.Width > 0 && info.Height > 0 ? (double)info.Height / info.Width : 9.0 / 16;
+                _natural = new Size(info.Width > 0 ? info.Width : 1280, info.Height > 0 ? info.Height : 720);
+
+                _player = new FfmpegPlayer();
+                _player.FrameReady += frame =>
+                {
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        if (_disposed || _player == null) return;
+                        _image.Source = frame;
+                        _message.Visibility = Visibility.Collapsed;
+                    }), DispatcherPriority.Render);
+                };
+                _player.Failed += message =>
+                {
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        ShowMessage("ffmpeg 解码失败：\n" + message);
+                    }));
+                };
+
+                ApplySize();
+
+                int width = DecodeWidth(aspect);
+                int height = Math.Max(16, (int)Math.Round(width * aspect));
+
+                _image.Stretch = ParseStretch(_settings.Fit);
+                _image.Source = null;
+
+                _player.Start(ffmpeg, path, width, height, info.Fps,
+                              _settings.Loop, info.Duration, _settings.Autoplay);
+
+                Log.Info("ffmpeg 解码：" + FileName(path) + " " + width + "×" + height +
+                         " " + info.Fps.ToString("0.##") + "fps");
+                StartProgress();
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("ffmpeg 解码启动失败: " + ex.Message);
+                ShowMessage("ffmpeg 解码启动失败：\n" + ex.Message);
+            }
+        }
+
+        int DecodeWidth(double aspect)
+        {
+            double dpi = 1;
+            try { dpi = VisualTreeHelper.GetDpi(this).DpiScaleX; } catch { }
+
+            double mediaWidth = _settings.Width > 0 ? _settings.Width : 320;
+            int width = (int)Math.Round(mediaWidth * (dpi > 0.1 ? dpi : 1));
+
+            width = (int)Math.Max(160, Math.Min(1280, width));
+            return width - width % 2;
         }
 
         void OnVideoOpened(object sender, RoutedEventArgs e)
@@ -266,6 +559,7 @@ namespace MirrorpondHUD.Media
                 }
 
                 UpdateVideoPlacement();
+                StartProgress();
             }
             catch (Exception ex)
             {
@@ -279,7 +573,20 @@ namespace MirrorpondHUD.Media
                 ? e.ErrorException.Message
                 : "系统缺少这个视频格式的解码器";
             Log.Warn("视频播放失败: " + reason);
-            ShowMessage("无法播放这个视频：\n" + reason);
+
+            string ffmpeg = Decoders.FindFfmpeg(_settings);
+            string decoder = MediaSettings.NormalizeDecoder(_settings.Decoder);
+
+            // 「自动」模式：系统放不了就换 ffmpeg，用户不用自己判断格式。
+            if (ffmpeg != null && decoder != "BuiltIn" && _pendingVideo != null)
+            {
+                Log.Info("系统解码失败，改用 ffmpeg：" + FileName(_pendingVideo));
+                StartFfmpeg(ffmpeg, _pendingVideo);
+                return;
+            }
+
+            ShowMessage("无法播放这个视频：\n" + reason +
+                        (ffmpeg == null ? "\n（可在设置里指定 ffmpeg 解码器）" : ""));
         }
 
         void OnVideoEnded(object sender, RoutedEventArgs e)
@@ -314,23 +621,24 @@ namespace MirrorpondHUD.Media
             }
         }
 
-        /// <summary>把视频子窗口贴到本控件在屏幕上的位置（卡片拖动、换排布时都会重新算）。</summary>
+        /// <summary>把视频子窗口贴到媒体区域在屏幕上的位置（卡片拖动、换排布时都会重新算）。</summary>
         void UpdateVideoPlacement()
         {
             if (_videoWindow == null || _disposed) return;
 
             Window card = Window.GetWindow(this);
             if (card == null || !card.IsVisible) return;
+            if (_host.ActualWidth < 8 || _host.ActualHeight < 8) return;
 
             try
             {
-                Point origin = PointToScreen(new Point(0, 0));
+                Point origin = _host.PointToScreen(new Point(0, 0));
                 DpiScale dpi = VisualTreeHelper.GetDpi(this);
                 double sx = dpi.DpiScaleX > 0.1 ? dpi.DpiScaleX : 1;
                 double sy = dpi.DpiScaleY > 0.1 ? dpi.DpiScaleY : 1;
 
                 double radius = _settings != null && _settings.Rounded ? _cornerRadius : 0;
-                _videoWindow.Place(origin.X / sx, origin.Y / sy, ActualWidth, ActualHeight, radius);
+                _videoWindow.Place(origin.X / sx, origin.Y / sy, _host.ActualWidth, _host.ActualHeight, radius);
             }
             catch (Exception ex)
             {
@@ -338,23 +646,80 @@ namespace MirrorpondHUD.Media
             }
         }
 
+        // ==================== 进度条 ====================
+
+        void StartProgress()
+        {
+            if (_progressTimer == null)
+            {
+                _progressTimer = new DispatcherTimer(DispatcherPriority.Background)
+                {
+                    Interval = TimeSpan.FromMilliseconds(250)
+                };
+                _progressTimer.Tick += (s, e) => UpdateProgress();
+            }
+
+            _footer.Visibility = Visibility.Visible;
+            if (!_progressTimer.IsEnabled) _progressTimer.Start();
+            UpdateProgress();
+        }
+
+        void UpdateProgress()
+        {
+            if (_disposed) return;
+
+            double position = 0;
+            double duration = 0;
+
+            if (_player != null)
+            {
+                position = _player.Position;
+                duration = _player.Duration;
+            }
+            else if (_videoWindow != null)
+            {
+                try
+                {
+                    position = _videoWindow.Video.Position.TotalSeconds;
+                    Duration natural = _videoWindow.Video.NaturalDuration;
+                    if (natural.HasTimeSpan) duration = natural.TimeSpan.TotalSeconds;
+                }
+                catch { }
+            }
+
+            double fraction = duration > 0.05 ? Math.Min(1, Math.Max(0, position / duration)) : 0;
+            double width = _track.ActualWidth * fraction;
+            _fill.Width = double.IsNaN(width) || width < 0 ? 0 : width;
+        }
+
         // ==================== 尺寸 ====================
 
-        /// <summary>按卡片圆角裁掉媒体的四个角（关闭「圆角」时保持方角）。</summary>
+        /// <summary>按卡片圆角裁掉媒体区域的四个角（关闭「圆角」时保持方角）。</summary>
         void ApplyClip()
         {
+            if (_host == null) return;
+
             if (_settings == null || !_settings.Rounded)
             {
-                Clip = null;
+                _host.Clip = null;
                 return;
             }
 
-            double width = ActualWidth > 0 ? ActualWidth : Width;
-            double height = ActualHeight > 0 ? ActualHeight : Height;
-            if (width <= 0 || height <= 0 || double.IsNaN(width) || double.IsNaN(height)) return;
+            double width = _host.ActualWidth;
+            double height = _host.ActualHeight;
+            if (width <= 0 || height <= 0) return;
 
             double radius = Math.Max(0, Math.Min(_cornerRadius, Math.Min(width, height) / 2));
-            Clip = new RectangleGeometry(new Rect(0, 0, width, height), radius, radius);
+
+            // 尺寸 / 圆角没变就别换 Geometry：每次换都会让 WPF 重新渲染一遍。
+            if (Math.Abs(_clipWidth - width) < 0.01 && Math.Abs(_clipHeight - height) < 0.01 &&
+                Math.Abs(_clipRadius - radius) < 0.01 && _host.Clip != null)
+                return;
+
+            _clipWidth = width;
+            _clipHeight = height;
+            _clipRadius = radius;
+            _host.Clip = new RectangleGeometry(new Rect(0, 0, width, height), radius, radius);
         }
 
         void ApplyFit()
@@ -366,6 +731,8 @@ namespace MirrorpondHUD.Media
 
         void ApplySize()
         {
+            if (_disposed) return;
+
             double width;
             if (_settings.Width > 0) width = _settings.Width;
             else if (_natural.Width > 0) width = _natural.Width;
@@ -378,8 +745,11 @@ namespace MirrorpondHUD.Media
             else if (_natural.Width > 0 && _natural.Height > 0) height = width * _natural.Height / _natural.Width;
             else height = width * 9 / 16.0;
 
-            Width = width;
-            Height = Math.Max(20, Math.Min(3000, height));
+            height = Math.Max(20, Math.Min(3000, height));
+
+            Width = width + _padX * 2;
+            _host.Width = width;
+            _host.Height = height;
 
             ApplyClip();
 
@@ -402,7 +772,8 @@ namespace MirrorpondHUD.Media
         {
             _message.Text = text;
             _message.Visibility = Visibility.Visible;
-            _host.Children.Clear();
+            _image.Source = null;
+            _footer.Visibility = Visibility.Collapsed;
         }
 
         // ==================== 播放控制 ====================
@@ -413,6 +784,7 @@ namespace MirrorpondHUD.Media
             try
             {
                 if (_gif != null) _gif.Play();
+                if (_player != null) _player.Resume();
                 if (_videoWindow != null)
                 {
                     UpdateVideoPlacement();
@@ -431,6 +803,7 @@ namespace MirrorpondHUD.Media
             try
             {
                 if (_gif != null) _gif.Stop();
+                if (_player != null) _player.Pause();
                 if (_videoWindow != null) _videoWindow.Pause();
             }
             catch { }
@@ -451,7 +824,6 @@ namespace MirrorpondHUD.Media
 
             ReleaseVideo();
 
-            _host.Children.Clear();
             _image.Source = null;
             _loadedPath = null;
         }
@@ -459,6 +831,17 @@ namespace MirrorpondHUD.Media
         void ReleaseVideo()
         {
             _pendingVideo = null;
+
+            if (_progressTimer != null) _progressTimer.Stop();
+            _footer.Visibility = Visibility.Collapsed;
+            _fill.Width = 0;
+
+            if (_player != null)
+            {
+                try { _player.Dispose(); } catch { }
+                _player = null;
+            }
+
             if (_videoWindow == null) return;
 
             try
@@ -477,6 +860,13 @@ namespace MirrorpondHUD.Media
         {
             if (_disposed) return;
             _disposed = true;
+
+            if (_progressTimer != null)
+            {
+                _progressTimer.Stop();
+                _progressTimer = null;
+            }
+
             Unload();
         }
     }
