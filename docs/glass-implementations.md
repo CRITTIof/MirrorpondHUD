@@ -14,7 +14,7 @@
 | --- | --- | --- |
 | 做法 | 每张卡片下面再放一个**从不绘制的 HWND**，给它未文档化的 `WCA_ACCENT_POLICY = ACRYLICBLURBEHIND`，由 DWM 在那个矩形里实时模糊 | 枚举卡片矩形内的外部窗口 → `PrintWindow` 逐层取图 → 按像素取「盖住这个点的最上层」→ 缩小、多次盒式模糊 |
 | 谁在干活 | DWM / GPU | 本进程（后台线程 + 定时器） |
-| 实测 CPU（5 张卡，身后一个 820×560 窗口） | **1.5–2.2%** 单核（≈ 关闭毛玻璃的 1.6%） | **≈ 41%** 单核（纯壁纸背景时 8–11%） |
+| 实测 CPU（5 张卡，身后一个 820×560 窗口） | **1.5–2.2%** 单核（≈ 关闭毛玻璃的 1.6%） | **≈ 41%** 单核（纯壁纸背景时 8–14%） |
 | 模糊程度 | 由系统决定，不可调 | 0–40px 可调，帧率 2–30 可调 |
 | 截图 / 录屏 | 正常 | 正常（不抓屏，也不会把自己拍进去） |
 
@@ -79,7 +79,7 @@ DWM materials, and the dead ends they led to) is not published with the reposito
 | --- | --- | --- |
 | How | A never-drawn HWND sits **under each card** with the undocumented `WCA_ACCENT_POLICY = ACRYLICBLURBEHIND`; DWM blurs that rectangle live | Enumerate the windows behind the card → `PrintWindow` each of them → pick the topmost layer per pixel → downscale and box-blur |
 | Who pays | DWM / GPU | This process (worker thread + timer) |
-| Measured CPU (5 cards, one 820×560 window behind) | **1.5–2.2%** of one core (≈ 1.6% with glass off) | **≈ 41%** of one core (8–11% over a plain wallpaper) |
+| Measured CPU (5 cards, one 820×560 window behind) | **1.5–2.2%** of one core (≈ 1.6% with glass off) | **≈ 41%** of one core (8–14% over a plain wallpaper) |
 | Blur amount | Chosen by the system | 0–40 px, 2–30 fps, both adjustable |
 | Screenshots / recording | Normal | Normal (it never captures the screen, so it cannot include itself) |
 
