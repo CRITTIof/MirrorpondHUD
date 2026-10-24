@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -26,6 +26,7 @@ namespace MirrorpondHUD.Ui
 
         readonly List<CardEditor> _editors = new List<CardEditor>();
         readonly Dictionary<string, bool> _expanded = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        readonly List<KeyValuePair<string, TextBox>> _cardHotkeyBoxes = new List<KeyValuePair<string, TextBox>>();
 
         Settings _working;
         bool _suppress;
@@ -309,6 +310,7 @@ namespace MirrorpondHUD.Ui
                 HotkeyToggleBox.Text = s.Hotkeys.ToggleOverlay;
                 HotkeySettingsBox.Text = s.Hotkeys.OpenSettings;
                 HotkeyLockBox.Text = s.Hotkeys.ToggleLock;
+                BuildCardHotkeyPanel();
 
                 PathText.Text = ConfigStore.Path;
                 StatusText.Text = "";
@@ -758,6 +760,10 @@ namespace MirrorpondHUD.Ui
             s.Hotkeys.OpenSettings = (HotkeySettingsBox.Text ?? "").Trim();
             s.Hotkeys.ToggleLock = (HotkeyLockBox.Text ?? "").Trim();
 
+
+            foreach (KeyValuePair<string, TextBox> pair in _cardHotkeyBoxes)
+                s.Hotkeys.SetCardAction(pair.Key, (pair.Value.Text ?? "").Trim());
+
             s.Normalize();
             CardModel.Normalize(s);
             return s;
@@ -1053,6 +1059,94 @@ namespace MirrorpondHUD.Ui
             finally
             {
                 _suppress = old;
+            }
+        }
+
+        /// <summary>
+        /// 按「有这种卡片」的模块生成热键分组：每组前面一条分割线 + 标题，
+        /// 组内的动作由模块自己声明（目前是媒体卡的播放 / 暂停、前进、后退、加速、减速）。
+        /// </summary>
+        void BuildCardHotkeyPanel()
+        {
+            if (CardHotkeyPanel == null) return;
+
+            CardHotkeyPanel.Children.Clear();
+            _cardHotkeyBoxes.Clear();
+
+            if (_working == null) return;
+
+            var kinds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (CardSettings card in _working.Cards)
+            {
+                if (card != null && !string.IsNullOrWhiteSpace(card.Kind)) kinds.Add(card.Kind);
+            }
+
+            Brush line = null;
+            try { line = FindResource("BorderSoft") as Brush; } catch { }
+
+            Style sectionTitle = null;
+            try { sectionTitle = FindResource("SectionTitle") as Style; } catch { }
+
+            foreach (ICardModule module in CardRegistry.Modules)
+            {
+                var source = module as ICardHotkeySource;
+                if (source == null || source.HotkeyActions == null || source.HotkeyActions.Count == 0) continue;
+                if (!kinds.Contains(module.Kind)) continue;
+
+                var section = new StackPanel { Margin = new Thickness(0, 18, 0, 0) };
+
+                section.Children.Add(new Border
+                {
+                    Height = 1,
+                    Background = line ?? Brushes.Gray,
+                    Margin = new Thickness(0, 0, 0, 12)
+                });
+
+                section.Children.Add(new TextBlock
+                {
+                    Text = module.DisplayName + "卡片",
+                    Style = sectionTitle,
+                    Margin = new Thickness(0, 0, 0, 8)
+                });
+
+                var grid = new Grid();
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(200) });
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(220) });
+
+                int row = 0;
+                foreach (CardHotkeyAction action in source.HotkeyActions)
+                {
+                    grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+                    var label = new TextBlock
+                    {
+                        Text = action.Label,
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Margin = new Thickness(0, 0, 0, 10)
+                    };
+
+                    var box = new TextBox
+                    {
+                        IsReadOnly = true,
+                        Text = _working.Hotkeys.GetCardAction(action.Action),
+                        Tag = action.Action,
+                        Margin = new Thickness(0, 0, 0, 10)
+                    };
+                    box.PreviewKeyDown += HotkeyBoxPreviewKeyDown;
+
+                    Grid.SetRow(label, row);
+                    Grid.SetColumn(label, 0);
+                    Grid.SetRow(box, row);
+                    Grid.SetColumn(box, 1);
+
+                    grid.Children.Add(label);
+                    grid.Children.Add(box);
+                    _cardHotkeyBoxes.Add(new KeyValuePair<string, TextBox>(action.Action, box));
+                    row++;
+                }
+
+                section.Children.Add(grid);
+                CardHotkeyPanel.Children.Add(section);
             }
         }
 

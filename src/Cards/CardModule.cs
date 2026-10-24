@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Windows;
 using MirrorpondHUD.Core;
 
 namespace MirrorpondHUD.Cards
@@ -82,6 +83,39 @@ namespace MirrorpondHUD.Cards
             string content = Config == null ? null : Config.Content;
             return Render(string.IsNullOrWhiteSpace(content) ? defaultContent : content);
         }
+    }
+
+    /// <summary>
+    /// 一种卡片可以对外提供「这种卡片通用」的热键动作（作用于全部同类卡片）。
+    /// 例如媒体卡的播放 / 暂停、前进、后退、加速、减速。
+    /// </summary>
+    public sealed class CardHotkeyAction
+    {
+        public CardHotkeyAction(string action, string label, string defaultHotkey)
+        {
+            Action = action ?? "";
+            Label = label ?? action ?? "";
+            DefaultHotkey = defaultHotkey ?? "";
+        }
+
+        /// <summary>稳定动作名，写进配置并用作热键动作名（如 media.play-pause）。</summary>
+        public string Action { get; private set; }
+        /// <summary>设置页显示的名字。</summary>
+        public string Label { get; private set; }
+        /// <summary>新配置的默认热键；空 = 默认不启用。</summary>
+        public string DefaultHotkey { get; private set; }
+    }
+
+    /// <summary>卡片模块提供一组通用热键（设置页「热键」里按卡片分组显示）。</summary>
+    public interface ICardHotkeySource
+    {
+        IList<CardHotkeyAction> HotkeyActions { get; }
+    }
+
+    /// <summary>卡片模块执行通用热键（宿主把动作转发给每张同类卡片的内容）。</summary>
+    public interface ICardHotkeyTarget
+    {
+        void ExecuteHotkey(string action, FrameworkElement content);
     }
 
     /// <summary>卡片模块的公共基类：只提供默认实现，子类覆盖需要的部分。</summary>

@@ -1,4 +1,4 @@
-<h1 align="center">MirrorpondHUD · 镜谭一览</h1>
+﻿<h1 align="center">MirrorpondHUD · 镜谭一览</h1>
 
 <p align="center">
   <b>可增删的桌面信息卡片：系统数据、时钟、按键、命令行、图片 / 动图 / 视频，各自一张独立小窗，按顺序堆叠在桌面最上层。</b><br>
@@ -110,8 +110,10 @@ run.bat
 顶部一行文件名（超长自动省略），视频在底部多一条 250 ms 刷新的进度条。
 
 视频默认交给 Windows 自带的 Media Foundation；放不了（mkv / webm / av1 …）且机器上有 ffmpeg 时，
-自动改用它逐帧解码并画回卡片里。设置页的「解码器」可以固定用系统或 ffmpeg，也可以指定自定义
-`ffmpeg.exe`；「检测」会重新扫描 PATH 与常见安装目录，把找到的 ffmpeg / mpv / VLC 列出来。
+自动改用它逐帧解码并画回卡片里（**有声音**：音频走第二条 ffmpeg 进程 + winmm 输出，支持变速）。
+右上角显示播放 / 暂停状态、当前时长 / 总时长，速度不是 1× 时再追加「· 1.5×」。
+设置页的「解码器」可以固定用系统或 ffmpeg，也可以指定自定义 `ffmpeg.exe`；「检测」会重新扫描
+PATH 与常见安装目录，把找到的 ffmpeg / mpv / VLC 列出来。
 
 卡片在屏幕上的位置由两部分决定：**锚点**（「行为」页的显示器 / X / Y）和**每张卡片的间距**。
 第一张可见卡片对齐锚点，之后依次向下排；非常驻卡片被呼出时也会插入到它自己的位置，其它卡片顺势让开。
@@ -224,8 +226,9 @@ publish.bat        :: 生成 publish\ 下的四个单文件
 - 多张命令行卡片各自独立：各自的历史、输入、工具与超时，但**同一时间只有一张能处于输入状态**
 - 卡片结构（增删 / 排序 / 常驻 / 热键 / 内容）和外观都在「保存并应用」后生效
 - 媒体卡片的视频优先用系统 Media Foundation 解码；解不开（mkv / webm / av1 …）且检测到 ffmpeg 时，
-  自动改用 ffmpeg 逐帧解码并画回卡片（**没有声音、固定 1× 速度**）。视频子窗口在跟随卡片的独立窗口里播放
-  （分层窗口画不出 `MediaElement`），因此视频区域不支持卡片内拖动、点击
+  自动改用 ffmpeg 逐帧解码并画回卡片。系统解码路径用 `MediaElement` 自己的声音；ffmpeg 路径的
+  声音由第二条 ffmpeg 进程转成 PCM、经 winmm 输出，两端都支持 0.25–4× 变速
+- 视频子窗口在跟随卡片的独立窗口里播放（分层窗口画不出 `MediaElement`），因此视频区域不支持卡片内拖动、点击
 - 毛玻璃按像素合成「卡片后面能看到的窗口 + 桌面壁纸」，所以纯桌面、跨窗口、压窗口边角都有底色；
   它只取外部窗口，**本进程自己的窗口**（设置窗口、视频窗）不会出现在玻璃里；少数禁用 `PrintWindow`
   的程序（独占全屏 / 硬件覆盖层）会被跳过、退到下一层。原理与性能见 [docs/glass-options.md](docs/glass-options.md)
@@ -252,6 +255,8 @@ assets/keycaps/          ReiconFont 与映射文档
 - [docs/cards-architecture.md](docs/cards-architecture.md) — 模块化卡片架构、富内容契约与扩展方式
 - [docs/glass-options.md](docs/glass-options.md) — 毛玻璃实现说明（`PrintWindow` + 模糊）与各方案调研
 - [docs/liquid-glass.md](docs/liquid-glass.md) — 液态玻璃调研：token-monitor 的毛玻璃 / 液态玻璃拆解与可行性评估
+- 「热键」页：全局三个热键置顶；媒体卡片单独一组（播放 / 暂停、前进、后退、加速、减速），
+  由卡片模块自己声明，新增卡片类型可以注册自己的通用热键
 
 ## 📄 许可与字体致谢
 
@@ -308,6 +313,7 @@ run.bat
 | Show / hide everything | unbound |
 | Per-card summon | configured in *Content* |
 | Media card | `F11` (default for a new media card) |
+| Media playback | play/pause, forward/backward 5 s, faster/slower — set in *Hotkeys → 卡片* |
 
 Global hotkeys fall back to `Ctrl+Alt+<key>` when occupied; card hotkeys do the same and the fallback is written back to the card. Duplicates are allowed and summon all matching cards.
 
@@ -315,7 +321,7 @@ Global hotkeys fall back to `Ctrl+Alt+<key>` when occupied; card hotkeys do the 
 
 ![Media cards](docs/media-cards.png)
 
-Images, bitmaps and animated GIFs are drawn inside the layered card window; video uses a companion window because WPF cannot composite `MediaElement` into a `WS_EX_LAYERED` window. The media card keeps the same backing as a text card (tint, glass, rounded corners, shadow) and adds a filename header (ellipsized when long) plus a progress bar under videos. Fit (`Contain` / `Cover` / `Fill` / `None`), size, opacity, loop, autoplay, mute, playback speed, corner rounding and the decoder are stored per card. Video is decoded by Windows Media Foundation first; when that fails (mkv / webm / av1 …) and ffmpeg is available, the card falls back to decoding frames with ffmpeg. The decoder row in the settings offers `Auto` / system only / ffmpeg only, a custom `ffmpeg.exe`, and a **Detect** button that rescans `PATH` and common install folders for ffmpeg / mpv / VLC.
+Images, bitmaps and animated GIFs are drawn inside the layered card window; video uses a companion window because WPF cannot composite `MediaElement` into a `WS_EX_LAYERED` window. The media card keeps the same backing as a text card (tint, glass, rounded corners, shadow) and adds a filename header (ellipsized when long) plus a progress bar under videos. Fit (`Contain` / `Cover` / `Fill` / `None`), size, opacity, loop, autoplay, mute, playback speed, corner rounding and the decoder are stored per card. Video is decoded by Windows Media Foundation first; when that fails (mkv / webm / av1 …) and ffmpeg is available, the card falls back to decoding frames with ffmpeg — including audio (a second ffmpeg process feeds 48 kHz PCM to winmm) and speed changes. The header shows the play/pause state, current / total time and the speed when it is not 1×. The decoder row in the settings offers `Auto` / system only / ffmpeg only, a custom `ffmpeg.exe`, and a **Detect** button that rescans `PATH` and common install folders for ffmpeg / mpv / VLC.
 
 ## Configuration
 
@@ -324,7 +330,7 @@ Everything is stored in `settings.json` next to the executable (`SchemaVersion: 
 ## Known limitations
 
 - Only one command card can be in input mode at a time; history and settings are per card
-- Video falls back to ffmpeg when Media Foundation cannot decode it; that path has no audio and plays at 1×. Video needs the companion window, so the video area does not participate in drag or click handling
+- Video falls back to ffmpeg when Media Foundation cannot decode it; both paths play audio and support 0.25–4× speed. Video needs the companion window, so the video area does not participate in drag or click handling
 - Frosted glass composes the windows behind a card plus the desktop wallpaper; windows of this process (the settings window, the video window) are intentionally excluded, and programs that refuse `PrintWindow` are skipped
 - Runtime plugins (`cards/*.dll`) are not implemented; adding a card is one new class in `src/Cards` (text cards derive from `CardModuleBase`, rich cards from `RichCardModuleBase`)
 

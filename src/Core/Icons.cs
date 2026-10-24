@@ -29,7 +29,7 @@ namespace MirrorpondHUD.Core
         public const string Volume = "\uE207";
         public const string Microphone = "\uE208";
 
-        // ---------- 界面图标 U+E300–U+E309 ----------
+        // ---------- 界面图标 U+E300–U+E30E ----------
         public const string TabContent = "\uE300";
         public const string TabAppearance = "\uE301";
         public const string TabDataSource = "\uE302";
@@ -40,5 +40,10 @@ namespace MirrorpondHUD.Core
         public const string Move = "\uE307";
         public const string Add = "\uE308";
         public const string Expand = "\uE309";
+        public const string Video = "\uE30A";
+        public const string Clock = "\uE30B";
+        public const string Press = "\uE30C";
+        public const string Play = "\uE30D";
+        public const string PauseMedia = "\uE30E";
     }
 }

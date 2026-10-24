@@ -1278,6 +1278,55 @@ namespace MirrorpondHUD.Ui
                 _tray.ShowBalloon("有 " + failed + " 张卡片的呼出热键注册失败",
                     "组合键可能被其它程序占用，可在「内容」页换一个");
             }
+
+            RegisterCardActionHotkeys();
+        }
+
+        /// <summary>卡片模块提供的通用热键（媒体卡的前进 / 后退 / 变速 / 播放暂停）。</summary>
+        void RegisterCardActionHotkeys()
+        {
+            var changed = new List<string>(4);
+
+            foreach (ICardModule module in CardRegistry.Modules)
+            {
+                var source = module as ICardHotkeySource;
+                if (source == null) continue;
+
+                bool used = false;
+                foreach (CardSlot slot in _cards)
+                {
+                    if (slot.Module != null && string.Equals(slot.Module.Kind, module.Kind, StringComparison.OrdinalIgnoreCase))
+                    {
+                        used = true;
+                        break;
+                    }
+                }
+                if (!used) continue;   // 没有这种卡片就不注册，免得占着组合键
+
+                foreach (CardHotkeyAction entry in source.HotkeyActions)
+                {
+                    string saved = _settings.Hotkeys.GetCardAction(entry.Action);
+                    if (string.IsNullOrWhiteSpace(saved)) saved = entry.DefaultHotkey;
+
+                    string registered = RegisterOne(entry.Action, saved);
+                    _settings.Hotkeys.SetCardAction(entry.Action, registered);
+
+                    if (!string.IsNullOrWhiteSpace(saved) &&
+                        !string.Equals(registered, saved, StringComparison.OrdinalIgnoreCase))
+                    {
+                        changed.Add(entry.Label + " " + saved + " → " + registered);
+                    }
+                }
+            }
+
+            if (changed.Count > 0)
+            {
+                Log.Warn("部分卡片通用热键被占用，已自动改用：" + string.Join("，", changed));
+                ConfigStore.Save(_settings);
+                if (_settingsWindow != null) _settingsWindow.Reload(_settings);
+                if (_tray != null)
+                    _tray.ShowBalloon("卡片热键被占用，已自动改用", string.Join("  ", changed));
+            }
         }
 
         /// <summary>优先注册配置的组合键；被占用时退一步用 Ctrl+Alt+原键。空白 = 不启用。</summary>
@@ -1328,7 +1377,39 @@ namespace MirrorpondHUD.Ui
                         CardSlot slot = FindCard(action.Substring(5));
                         if (slot != null) ToggleCard(slot);
                     }
+                    else
+                    {
+                        ExecuteCardAction(action);
+                    }
                     break;
+            }
+        }
+
+        /// <summary>把卡片模块的通用热键转发给每张同类卡片的富内容。</summary>
+        void ExecuteCardAction(string action)
+        {
+            if (string.IsNullOrEmpty(action)) return;
+
+            foreach (CardSlot slot in _cards)
+            {
+                var target = slot.Module as ICardHotkeyTarget;
+                var source = slot.Module as ICardHotkeySource;
+                if (target == null || source == null || slot.Content == null) continue;
+
+                bool known = false;
+                foreach (CardHotkeyAction entry in source.HotkeyActions)
+                {
+                    if (string.Equals(entry.Action, action, StringComparison.OrdinalIgnoreCase))
+                    {
+                        known = true;
+                        break;
+                    }
+                }
+
+                if (!known) continue;
+
+                try { target.ExecuteHotkey(action, slot.Content); }
+                catch (Exception ex) { Log.Warn("执行卡片热键失败: " + ex.Message); }
             }
         }
 

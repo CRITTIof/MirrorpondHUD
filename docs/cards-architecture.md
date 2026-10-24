@@ -1,4 +1,4 @@
-# 卡片模块化：现在的实现
+﻿# 卡片模块化：现在的实现
 
 > 目标：把「桌面信息叠层」做成一组**可添加、可删除、可排序**的卡片。
 > 现在六种内置卡片（系统信息 / 时钟 / 按键 / 文本信息 / 命令行 / 媒体）已经按这个结构跑起来；
@@ -18,7 +18,8 @@
 | `src/Media/GifAnimator.cs` | 动图按帧播放（GDI+ 取帧 + `DispatcherTimer`） |
 | `src/Media/VideoWindow.cs` | 视频子窗口：分层窗口画不出 `MediaElement`，视频单独开窗贴在卡片上 |
 | `src/Media/Decoders.cs` | 解码器探测：自定义路径 → PATH → 常见安装目录，找 ffmpeg / mpv / VLC |
-| `src/Media/FfmpegPlayer.cs` | 外部 ffmpeg 解码：原始 BGRA 帧管道、进度、循环、图片兜底 |
+| `src/Media/FfmpegPlayer.cs` | 外部 ffmpeg 解码：原始 BGRA 帧管道、进度、循环、变速、图片兜底 |
+| `src/Media/WaveOutPlayer.cs` | winmm waveOut 播放 ffmpeg 的 PCM 音频（暂停 / 继续 / 音量） |
 | `src/Ui/OverlayController.cs` | 每张卡片一个窗口，负责堆叠、显示 / 隐藏、热键、命令行会话、富内容生命周期 |
 | `src/Ui/CardEditor.cs` | 设置页「内容」里的一张卡片设置卡（双向绑定，含每卡命令行 / 媒体设置） |
 
@@ -185,7 +186,24 @@ ffmpeg 路线把视频解成逐帧原始像素，什么格式都能放（代价�
 - 设置页展示探测结果（版本 + 路径），「检测」按钮强制重新扫描；
 - 系统解码失败（`MediaElement.MediaFailed`）且 `Auto` 时，自动 `ReleaseVideo()` 并切到
   `FfmpegPlayer`；图片（webp / avif / heic）解不开时同样用 `ffmpeg -frames:v 1` 转一帧；
-- ffmpeg 逐帧解码的进度 = 已读帧数 / 探测到的帧率，卡片底部进度条直接用这个值。
+- ffmpeg 逐帧解码的进度 = 已读帧数 / 探测到的帧率，卡片底部进度条直接用这个值；
+- ffmpeg 路线有声音：第二条 ffmpeg 进程只取音频，`atempo` 跟随倍速，输出 48 kHz / 立体声 / 16 bit PCM
+  交给 `WaveOutPlayer`；暂停时同时停读管道与音频设备；
+- 右上角状态行：播放 / 暂停图标（ReiconFont `Play` / `PauseMedia`）+ `当前 / 总时长`，
+  速度不是 1× 时追加 `· 1.5×`，垫一层深色圆角小底保证浅色背景上也看得清。
+
+### 媒体卡通用热键
+
+`MediaCard` 实现 `ICardHotkeySource`（声明动作）与 `ICardHotkeyTarget`（执行动作）：
+
+| 动作 | 默认 | 说明 |
+| --- | --- | --- |
+| `media.play-pause` | 空 | 播放 / 暂停 |
+| `media.forward` / `media.backward` | 空 | 前进 / 后退 5 秒 |
+| `media.speed-up` / `media.speed-down` | 空 | 变速 ±0.25×（0.25–4） |
+
+设置页「热键」在「全局」下面按卡片种类分组（组间有分割线），只需要卡片模块声明
+`ICardHotkeySource.HotkeyActions`；新增卡片类型不用改设置页或宿主代码。
 
 ## 6. 热键
 

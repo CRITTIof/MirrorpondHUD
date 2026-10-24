@@ -26,11 +26,14 @@ namespace MirrorpondHUD.Media
     /// mp4 / wmv 一般能放，mkv / webm / av1 / 部分 hevc 就放不了，而装解码包也不一定
     /// 对 Media Foundation 生效。这里改成直接问 ffmpeg 要 BGRA 原始帧：
     ///
-    ///   ffmpeg -re -i 文件 -an -vf scale=W:H -r 帧率 -f rawvideo -pix_fmt bgra pipe:1
+    ///   ffmpeg -readrate 1 -i 文件 -map 0:v:0 -an -vf scale=W:H -r 帧率 -f rawvideo -pix_fmt bgra pipe:1
     ///
     /// 自己读 stdout，每 W×H×4 字节包成一张 BitmapSource。暂停 = 不再读管道
     /// （管道写满后 ffmpeg 自己会停下），继续 = 接着读；循环 = 读完从头再来。
-    /// 代价是没有声音（HUD 场景默认静音），播放速度固定为 1×。
+    ///
+    /// 声音走第二条 ffmpeg 进程：只取音频、转成 48 kHz 立体声 16 bit PCM，
+    /// 交给 <see cref="WaveOutPlayer"/>（winmm waveOut）播放。`-readrate` 控制视频速度，
+    /// `atempo` 控制音频速度，两边同时重启即可实现快进 / 快退 / 变速。
     /// </summary>
     internal sealed class FfmpegPlayer : IDisposable
     {
@@ -41,28 +44,48 @@ namespace MirrorpondHUD.Media
         readonly ManualResetEventSlim _resume = new ManualResetEventSlim(true);
 
         Process _process;
+        Process _audioProcess;
         Thread _reader;
+        WaveOutPlayer _audio;
+
         string _ffmpeg = "";
         string _path = "";
         int _width;
         int _height;
         double _fps = 25;
         double _duration;
+        double _speed = 1;
+        double _startSeconds;
+        int _volume = 100;
         long _frames;
         bool _loop;
+        bool _audioEnabled;
         volatile bool _stop;
         volatile bool _startPaused;
         bool _disposed;
+        bool _readrateRetried;
 
         public double Duration { get { return _duration; } }
-        public double Position { get { return _fps > 0 ? _frames / _fps : 0; } }
+
+        public double Position
+        {
+            get
+            {
+                double position = _startSeconds + (_fps > 0 ? _frames / _fps : 0);
+                return _duration > 0.01 ? Math.Min(_duration, position) : position;
+            }
+        }
+
         public bool IsRunning { get { return _process != null && !_stop; } }
+        public bool IsPaused { get { return !_resume.IsSet; } }
+        public double Speed { get { return _speed; } }
 
         // ==================== 播放 ====================
 
         /// <summary>开始（或换一个文件）播放；参数里的尺寸是解码尺寸。</summary>
         public void Start(string ffmpeg, string path, int width, int height,
-                          double fps, bool loop, double duration, bool autoplay)
+                          double fps, bool loop, double duration, bool autoplay,
+                          double speed, double startSeconds, bool audio, int volume)
         {
             StopInternal();
 
@@ -75,12 +98,17 @@ namespace MirrorpondHUD.Media
             _loop = loop;
             _frames = 0;
             _stop = false;
+            _readrateRetried = false;
+            _speed = ClampSpeed(speed);
+            _startSeconds = Math.Max(0, startSeconds);
+            _audioEnabled = audio;
+            _volume = Math.Max(0, Math.Min(100, volume));
             _startPaused = !autoplay;
             _resume.Set();
 
             try
             {
-                Launch();
+                LaunchAll();
             }
             catch (Exception ex)
             {
@@ -89,6 +117,11 @@ namespace MirrorpondHUD.Media
                 return;
             }
 
+            StartReader();
+        }
+
+        void StartReader()
+        {
             _reader = new Thread(ReadLoop)
             {
                 IsBackground = true,
@@ -97,7 +130,13 @@ namespace MirrorpondHUD.Media
             _reader.Start();
         }
 
-        void Launch()
+        void LaunchAll()
+        {
+            LaunchVideo();
+            LaunchAudio();
+        }
+
+        void LaunchVideo()
         {
             var psi = new ProcessStartInfo(_ffmpeg)
             {
@@ -107,11 +146,9 @@ namespace MirrorpondHUD.Media
                 RedirectStandardError = true
             };
 
-            psi.ArgumentList.Add("-hide_banner");
-            psi.ArgumentList.Add("-loglevel");
-            psi.ArgumentList.Add("error");
-            psi.ArgumentList.Add("-nostdin");
-            psi.ArgumentList.Add("-re");            // 按片源速度读，画面才不会一秒钟播完
+            AddInput(psi);
+            psi.ArgumentList.Add("-readrate");
+            psi.ArgumentList.Add(_speed.ToString("0.###", CultureInfo.InvariantCulture));
             psi.ArgumentList.Add("-i");
             psi.ArgumentList.Add(_path);
             psi.ArgumentList.Add("-map");
@@ -143,6 +180,117 @@ namespace MirrorpondHUD.Media
             _process = process;
         }
 
+        void LaunchAudio()
+        {
+            if (!_audioEnabled || _volume <= 0) return;
+
+            try
+            {
+                var psi = new ProcessStartInfo(_ffmpeg)
+                {
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true
+                };
+
+                AddInput(psi);
+                psi.ArgumentList.Add("-i");
+                psi.ArgumentList.Add(_path);
+                psi.ArgumentList.Add("-vn");
+                psi.ArgumentList.Add("-sn");
+                psi.ArgumentList.Add("-dn");
+
+                string tempo = Atempo(_speed);
+                if (tempo != null)
+                {
+                    psi.ArgumentList.Add("-af");
+                    psi.ArgumentList.Add(tempo);
+                }
+
+                psi.ArgumentList.Add("-ac");
+                psi.ArgumentList.Add("2");
+                psi.ArgumentList.Add("-ar");
+                psi.ArgumentList.Add("48000");
+                psi.ArgumentList.Add("-f");
+                psi.ArgumentList.Add("s16le");
+                psi.ArgumentList.Add("pipe:1");
+
+                Process process = Process.Start(psi);
+                if (process == null) return;
+
+                process.ErrorDataReceived += (s, e) =>
+                {
+                    if (e != null && !string.IsNullOrWhiteSpace(e.Data))
+                        Log.Warn("ffmpeg(音频): " + e.Data.Trim());
+                };
+                process.BeginErrorReadLine();
+
+                _audioProcess = process;
+
+                _audio = new WaveOutPlayer { Volume = _volume };
+                if (!_audio.Start(process.StandardOutput.BaseStream))
+                {
+                    Log.Warn("音频输出启动失败，继续静音播放");
+                    StopAudio();
+                }
+                else
+                {
+                    Log.Info("音频输出已启动（48 kHz 立体声，音量 " + _volume + "%）");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("启动音频解码失败: " + ex.Message);
+                StopAudio();
+            }
+        }
+
+        void AddInput(ProcessStartInfo psi)
+        {
+            psi.ArgumentList.Add("-hide_banner");
+            psi.ArgumentList.Add("-loglevel");
+            psi.ArgumentList.Add("error");
+            psi.ArgumentList.Add("-nostdin");
+
+            if (_startSeconds > 0.01)
+            {
+                psi.ArgumentList.Add("-ss");
+                psi.ArgumentList.Add(_startSeconds.ToString("0.###", CultureInfo.InvariantCulture));
+            }
+        }
+
+        /// <summary>把倍速拆成 atempo 链（单次 atempo 只支持 0.5–2.0）。</summary>
+        static string Atempo(double speed)
+        {
+            if (Math.Abs(speed - 1) < 0.001) return null;
+
+            var parts = new System.Collections.Generic.List<string>();
+            double value = speed;
+
+            while (value > 2.0001)
+            {
+                parts.Add("atempo=2.0");
+                value /= 2.0;
+            }
+            while (value < 0.4999)
+            {
+                parts.Add("atempo=0.5");
+                value /= 0.5;
+            }
+
+            parts.Add("atempo=" + value.ToString("0.###", CultureInfo.InvariantCulture));
+            return string.Join(",", parts);
+        }
+
+        static double ClampSpeed(double speed)
+        {
+            if (double.IsNaN(speed) || double.IsInfinity(speed) || speed <= 0) return 1;
+            return Math.Max(0.25, Math.Min(4.0, speed));
+        }
+
+        // ==================== 读帧 ====================
+
         void ReadLoop()
         {
             try
@@ -164,6 +312,19 @@ namespace MirrorpondHUD.Media
                     {
                         if (_stop) break;
 
+                        // 一帧都没解出来：可能是老版本 ffmpeg 不认 -readrate，退回 -re 再试一次。
+                        if (framesSinceLaunch == 0 && !_readrateRetried)
+                        {
+                            _readrateRetried = true;
+                            if (Math.Abs(_speed - 1) > 0.001)
+                            {
+                                Log.Warn("ffmpeg 不支持 -readrate，改用 -re 并以 1× 播放");
+                                _speed = 1;
+                                LoopRestart(0);
+                                continue;
+                            }
+                        }
+
                         // 一帧都没解出来 = 文件打不开 / 格式不支持，再重开也是死循环。
                         if (framesSinceLaunch == 0)
                         {
@@ -173,7 +334,7 @@ namespace MirrorpondHUD.Media
 
                         if (_loop)
                         {
-                            Restart();
+                            LoopRestart(0);
                             framesSinceLaunch = 0;
                             continue;
                         }
@@ -205,6 +366,7 @@ namespace MirrorpondHUD.Media
                     {
                         _startPaused = false;
                         _resume.Reset();
+                        PauseAudio();
                     }
                 }
             }
@@ -215,21 +377,6 @@ namespace MirrorpondHUD.Media
                     Log.Warn("ffmpeg 解码线程结束: " + ex.Message);
                     RaiseFailed(ex.Message);
                 }
-            }
-        }
-
-        void Restart()
-        {
-            try
-            {
-                KillProcess();
-                _frames = 0;
-                Launch();
-            }
-            catch (Exception ex)
-            {
-                Log.Warn("ffmpeg 重新打开失败: " + ex.Message);
-                RaiseFailed(ex.Message);
             }
         }
 
@@ -245,15 +392,135 @@ namespace MirrorpondHUD.Media
             return true;
         }
 
+        /// <summary>读线程内部的重开：不 join 自己，只换进程。</summary>
+        void LoopRestart(double seconds)
+        {
+            StopAudio();
+            KillProcess();
+
+            _startSeconds = Math.Max(0, seconds);
+            _frames = 0;
+
+            try
+            {
+                LaunchVideo();
+                LaunchAudio();
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("ffmpeg 重新打开失败: " + ex.Message);
+                RaiseFailed(ex.Message);
+            }
+        }
+
+        /// <summary>从指定秒数重新开始（快进 / 快退 / 变速用）。</summary>
+        void RestartAt(double seconds)
+        {
+            bool paused = IsPaused;
+
+            StopInternal();
+
+            _stop = false;
+            _startSeconds = Math.Max(0, seconds);
+            _frames = 0;
+            _startPaused = paused;
+            _resume.Set();
+
+            try
+            {
+                LaunchAll();
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("ffmpeg 重新打开失败: " + ex.Message);
+                RaiseFailed(ex.Message);
+                return;
+            }
+
+            StartReader();
+        }
+
+        // ==================== 控制 ====================
+
+        public void Seek(double seconds)
+        {
+            if (_disposed || _stop) return;
+
+            double target = Math.Max(0, seconds);
+            if (_duration > 0.01) target = Math.Min(_duration - 0.05, target);
+            RestartAt(target);
+        }
+
+        /// <summary>相对当前位置快进 / 快退（负数后退）。</summary>
+        public void SeekBy(double seconds)
+        {
+            if (_disposed || _stop) return;
+            Seek(Position + seconds);
+        }
+
+        public void SetSpeed(double speed)
+        {
+            if (_disposed || _stop) return;
+
+            double next = ClampSpeed(speed);
+            if (Math.Abs(next - _speed) < 0.001) return;
+
+            double position = Position;
+            _speed = next;
+            Log.Info("ffmpeg 播放速度：" + next.ToString("0.##") + "×");
+            RestartAt(position);
+        }
+
         public void Pause()
         {
             _resume.Reset();
+            PauseAudio();
         }
 
         public void Resume()
         {
             if (_disposed || _stop) return;
             _resume.Set();
+            ResumeAudio();
+        }
+
+        void PauseAudio()
+        {
+            try { if (_audio != null) _audio.Pause(); } catch { }
+        }
+
+        void ResumeAudio()
+        {
+            try { if (_audio != null) _audio.Resume(); } catch { }
+        }
+
+        void StopAudio()
+        {
+            Process process = _audioProcess;
+            _audioProcess = null;
+            if (process != null)
+            {
+                try { if (!process.HasExited) process.Kill(); } catch { }
+                try { process.Dispose(); } catch { }
+            }
+
+            WaveOutPlayer audio = _audio;
+            _audio = null;
+            if (audio != null)
+            {
+                try { audio.Stop(); } catch { }
+                try { audio.Dispose(); } catch { }
+            }
+        }
+
+        void KillProcess()
+        {
+            Process process = _process;
+            _process = null;
+            if (process == null) return;
+
+            try { if (!process.HasExited) process.Kill(); } catch { }
+            try { process.Dispose(); } catch { }
         }
 
         void RaiseFailed(string message)
@@ -434,21 +701,12 @@ namespace MirrorpondHUD.Media
 
         // ==================== 释放 ====================
 
-        void KillProcess()
-        {
-            Process process = _process;
-            _process = null;
-            if (process == null) return;
-
-            try { if (!process.HasExited) process.Kill(); } catch { }
-            try { process.Dispose(); } catch { }
-        }
-
         void StopInternal()
         {
             _stop = true;
             _resume.Set();
 
+            StopAudio();
             KillProcess();
 
             Thread reader = _reader;
