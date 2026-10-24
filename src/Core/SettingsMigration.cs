@@ -4,8 +4,9 @@ using System.Collections.Generic;
 namespace MirrorpondHUD.Core
 {
     /// <summary>
-    /// 旧版（单窗口 / 初版多卡片）配置 → 当前配置结构。
-    /// 旧文件没有 SchemaVersion，字段包括全局 Content 和带 X/Y/Visible 的 Cards。
+    /// 旧版配置 → 当前配置结构。
+    /// · 0/1：旧的单窗口配置（全局 Content + 带 X/Y/Visible 的 Cards），走 LegacySettings。
+    /// · 2：初版卡片配置（命令行工具是全局设置），把 Settings.Command 拷进每张命令行卡片。
     /// 迁移只做一次：ConfigStore 升级后立即写回新结构。
     /// </summary>
     internal static class SettingsMigration
@@ -24,6 +25,19 @@ namespace MirrorpondHUD.Core
             }
 
             needsSave = true;
+
+            if (version == 2)
+            {
+                Settings two = null;
+                try { two = Json.Deserialize<Settings>(json); }
+                catch (Exception ex) { Log.Warn("读取 v2 设置失败: " + ex.Message); }
+                two = two ?? new Settings();
+
+                UpgradeV2Command(json, two);
+                Log.Info("设置已从 SchemaVersion 2 升级到 " + Settings.CurrentSchemaVersion + "（命令行设置改为每张卡片独立）");
+                return two;
+            }
+
             LegacySettings legacy = null;
             try { legacy = Json.Deserialize<LegacySettings>(json); }
             catch (Exception ex) { Log.Warn("迁移旧设置失败，使用默认值: " + ex.Message); }
@@ -32,6 +46,33 @@ namespace MirrorpondHUD.Core
             Log.Info("旧设置已升级到 SchemaVersion " + Settings.CurrentSchemaVersion +
                      "（卡片 " + migrated.Cards.Count + " 张）");
             return migrated;
+        }
+
+        /// <summary>v2 的全局命令行设置 → 每张命令行卡片各一份。</summary>
+        static void UpgradeV2Command(string json, Settings settings)
+        {
+            CommandSettings legacy = null;
+            try
+            {
+                var map = Json.Parse(json) as Dictionary<string, object>;
+                object raw;
+                if (map != null && map.TryGetValue("Command", out raw) && raw != null)
+                    legacy = Json.BindNode<CommandSettings>(raw);
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("读取旧命令行设置失败: " + ex.Message);
+            }
+
+            if (legacy == null || settings.Cards == null) return;
+            legacy.Normalize();
+
+            foreach (CardSettings card in settings.Cards)
+            {
+                if (card == null) continue;
+                if (!string.Equals(card.Kind, "command", StringComparison.OrdinalIgnoreCase)) continue;
+                card.Command = legacy.Clone();
+            }
         }
 
         static int ReadVersion(string json)
@@ -59,7 +100,6 @@ namespace MirrorpondHUD.Core
                 Style = legacy.Style ?? new StyleSettings(),
                 Data = legacy.Data ?? new DataSettings(),
                 Behavior = legacy.Behavior ?? new BehaviorSettings(),
-                Command = legacy.Command ?? new CommandSettings(),
                 Hotkeys = new HotkeySettings
                 {
                     ToggleOverlay = legacy.Hotkeys == null ? "" : (legacy.Hotkeys.ToggleOverlay ?? ""),
@@ -67,6 +107,9 @@ namespace MirrorpondHUD.Core
                     ToggleLock = legacy.Hotkeys == null ? "F8" : legacy.Hotkeys.ToggleLock
                 }
             };
+
+            CommandSettings legacyCommand = legacy.Command ?? new CommandSettings();
+            legacyCommand.Normalize();
 
             string commandHotkey = legacy.Hotkeys == null || string.IsNullOrWhiteSpace(legacy.Hotkeys.CommandLine)
                 ? "F9"
@@ -89,7 +132,8 @@ namespace MirrorpondHUD.Core
                         Resident = resident,
                         Hotkey = kind == "command" ? commandHotkey : "",
                         Spacing = s.Cards.Count == 0 ? 0 : 16,
-                        Content = old.Content ?? ""
+                        Content = old.Content ?? "",
+                        Command = legacyCommand.Clone()
                     };
 
                     if (kind == "metrics" && string.IsNullOrWhiteSpace(card.Content))
@@ -120,7 +164,8 @@ namespace MirrorpondHUD.Core
                     Kind = "command",
                     Resident = false,
                     Hotkey = commandHotkey,
-                    Spacing = 16
+                    Spacing = 16,
+                    Command = legacyCommand.Clone()
                 });
             }
 

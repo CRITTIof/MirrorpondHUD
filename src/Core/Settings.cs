@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace MirrorpondHUD.Core
@@ -6,8 +6,11 @@ namespace MirrorpondHUD.Core
     /// <summary>全部可持久化的设置。字段名即 JSON 键名。</summary>
     public sealed class Settings
     {
-        /// <summary>当前配置结构版本。0/1 是旧的单窗口配置，加载时由 SettingsMigration 升级。</summary>
-        public const int CurrentSchemaVersion = 2;
+        /// <summary>
+        /// 当前配置结构版本。0/1 是旧的单窗口配置，2 是「命令行设置全局」的初版卡片配置，
+        /// 都由 SettingsMigration 升级（3 起命令行工具、工作目录等属于每张命令行卡片）。
+        /// </summary>
+        public const int CurrentSchemaVersion = 3;
         public int SchemaVersion = 0;
 
         /// <summary>系统信息卡的默认内容：CPU / 内存 / GPU / 网络 / 磁盘，前置 ReiconFont 图标。</summary>
@@ -15,9 +18,9 @@ namespace MirrorpondHUD.Core
             "{cpu_icon} {cpu:0.0}%   {mem_icon} {mem_pct:0}%   {gpu_icon} {gpu:0.0}%\n" +
             "{net_down_icon} {net_down}   {net_up_icon} {net_up}   {disk_icon} {disk:0.0}%";
 
-        /// <summary>时钟卡的默认内容：时间、日期、星期、运行时长。</summary>
+        /// <summary>时钟卡的默认内容：时间、日期、星期（中文）、运行时长。</summary>
         public const string DefaultClockContent =
-            "{time}  {date}\n{weekday}  {uptime}";
+            "{time}  {date}\n{weekday_zh}  {uptime}";
 
         /// <summary>按键卡的默认内容：最近按键（键帽字形）。</summary>
         public const string DefaultKeysContent = "KEY {keys}";
@@ -31,7 +34,6 @@ namespace MirrorpondHUD.Core
         public DataSettings Data = new DataSettings();
         public BehaviorSettings Behavior = new BehaviorSettings();
         public HotkeySettings Hotkeys = new HotkeySettings();
-        public CommandSettings Command = new CommandSettings();
 
         /// <summary>卡片列表，顺序即叠层上的显示顺序。</summary>
         public List<CardSettings> Cards = new List<CardSettings>();
@@ -49,6 +51,8 @@ namespace MirrorpondHUD.Core
             Style.FixedWidth = Clamp(Style.FixedWidth, 0, 4000);
             Style.ImageOpacity = Clamp(Style.ImageOpacity, 0, 1);
             Style.AcrylicBlur = Clamp(Style.AcrylicBlur, 0, 60);
+            Style.AcrylicFps = (int)Clamp(Style.AcrylicFps, 2, 30);
+            Style.IconScale = Clamp(Style.IconScale, 0.5, 3);
             if (string.IsNullOrWhiteSpace(Style.BackgroundImage)) Style.BackgroundImage = "";
             Style.ImageStretch = NormalizeStretch(Style.ImageStretch);
 
@@ -75,16 +79,8 @@ namespace MirrorpondHUD.Core
             Hotkeys.OpenSettings = NormalizeHotkey(Hotkeys.OpenSettings, "F10");
             Hotkeys.ToggleLock = NormalizeHotkey(Hotkeys.ToggleLock, "F8");
 
-            // 命令行热键不再是全局热键：它属于「命令行」卡片（见 CardSettings.Hotkey）。
-
-            Command.Shell = NormalizeShell(Command.Shell);
-            Command.CustomShell = string.IsNullOrWhiteSpace(Command.CustomShell)
-                ? "cmd.exe /c {cmd}"
-                : Command.CustomShell.Trim();
-            Command.WorkingDirectory = (Command.WorkingDirectory ?? "").Trim();
-            Command.MaxLineChars = (int)Clamp(Command.MaxLineChars, 20, 4000);
-            Command.MaxLines = (int)Clamp(Command.MaxLines, 1, 500);
-            Command.TimeoutSeconds = (int)Clamp(Command.TimeoutSeconds, 1, 300);
+            // 命令行工具 / 工作目录不再全局保存：它们属于每张「命令行」卡片（CardSettings.Command），
+            // 这样同时放 cmd、pwsh、自定义工具的多张命令行卡片可以各用各的。
 
             if (!IsHexColor(Style.Foreground)) Style.Foreground = "#E6EDF3";
             if (!IsHexColor(Style.Background)) Style.Background = "#0D1117";
@@ -225,11 +221,20 @@ namespace MirrorpondHUD.Core
         /// <summary>固定内容宽度（DIP），0 = 自适应但只增不减（避免数值变化时整块跳动）。</summary>
         public double FixedWidth = 0;
 
+        /// <summary>
+        /// 图标字号倍率：Reicon 图标字形的实际字形比汉字小一圈，1.0 = 与正文同字号。
+        /// 默认放大到 1.45，图标与文字的视觉高度就一致，不用把整行字号调大。
+        /// </summary>
+        public double IconScale = 1.45;
+
         /// <summary>毛玻璃背景：抓取窗口后面的桌面并模糊。背景不透明度决定玻璃厚度。</summary>
         public bool Acrylic = false;
 
         /// <summary>毛玻璃模糊强度（像素）。</summary>
         public double AcrylicBlur = 12;
+
+        /// <summary>毛玻璃刷新率（帧/秒）。越高越跟手，抓屏与 GPU 开销也越大。</summary>
+        public int AcrylicFps = 15;
     }
 
     public sealed class DataSettings
@@ -297,6 +302,94 @@ namespace MirrorpondHUD.Core
         /// <summary>命令行区域最多保留多少行返回内容。</summary>
         public int MaxLines = 30;
         public int TimeoutSeconds = 20;
+
+        public CommandSettings Clone()
+        {
+            return new CommandSettings
+            {
+                Shell = Shell,
+                CustomShell = CustomShell,
+                WorkingDirectory = WorkingDirectory,
+                Truncate = Truncate,
+                MaxLineChars = MaxLineChars,
+                MaxLines = MaxLines,
+                TimeoutSeconds = TimeoutSeconds
+            };
+        }
+
+        public void Normalize()
+        {
+            Shell = Settings.NormalizeShell(Shell);
+            CustomShell = string.IsNullOrWhiteSpace(CustomShell) ? "cmd.exe /c {cmd}" : CustomShell.Trim();
+            WorkingDirectory = (WorkingDirectory ?? "").Trim();
+            MaxLineChars = (int)Settings.Clamp(MaxLineChars, 20, 4000);
+            MaxLines = (int)Settings.Clamp(MaxLines, 1, 500);
+            TimeoutSeconds = (int)Settings.Clamp(TimeoutSeconds, 1, 300);
+        }
+    }
+
+    /// <summary>媒体卡片（图片 / 动图 / 视频）的配置。</summary>
+    public sealed class MediaSettings
+    {
+        /// <summary>文件路径；空 = 卡片显示占位提示。</summary>
+        public string Path = "";
+        /// <summary>缩放方式：Contain（完整显示）/ Cover（裁剪填满）/ Fill（拉伸）/ None（原始大小）。</summary>
+        public string Fit = "Contain";
+        /// <summary>卡片内容宽度（DIP）；0 = 用媒体原始尺寸（会被 MaxWidth 夹住）。</summary>
+        public double Width = 320;
+        /// <summary>卡片内容高度（DIP）；0 = 按媒体长宽比自动。</summary>
+        public double Height = 0;
+        /// <summary>媒体不透明度 0~1。</summary>
+        public double Opacity = 1.0;
+        /// <summary>视频 / 动图循环播放。</summary>
+        public bool Loop = true;
+        /// <summary>视频自动播放。</summary>
+        public bool Autoplay = true;
+        /// <summary>视频静音（默认静音，避免打扰）。</summary>
+        public bool Muted = true;
+        /// <summary>视频播放速度倍率 0.25~4。</summary>
+        public double Speed = 1.0;
+        /// <summary>按外观里的圆角把媒体的四个角裁圆。</summary>
+        public bool Rounded = true;
+
+        public MediaSettings Clone()
+        {
+            return new MediaSettings
+            {
+                Path = Path, Fit = Fit, Width = Width, Height = Height, Opacity = Opacity,
+                Loop = Loop, Autoplay = Autoplay, Muted = Muted, Speed = Speed, Rounded = Rounded
+            };
+        }
+
+        public void Normalize()
+        {
+            Path = (Path ?? "").Trim().Trim('"');
+            Fit = NormalizeFit(Fit);
+            Width = Settings.Clamp(Width, 0, 4000);
+            Height = Settings.Clamp(Height, 0, 4000);
+            Opacity = Settings.Clamp(Opacity, 0, 1);
+            Speed = Settings.Clamp(Speed, 0.25, 4);
+        }
+
+        /// <summary>缩放方式：Contain / Cover / Fill / None（也接受 WPF 的 Stretch 名称）。</summary>
+        public static string NormalizeFit(string value)
+        {
+            switch ((value ?? "").Trim().ToLowerInvariant())
+            {
+                case "cover":
+                case "uniformtofill":
+                case "crop":
+                    return "Cover";
+                case "fill":
+                case "stretch":
+                    return "Fill";
+                case "none":
+                case "original":
+                    return "None";
+                default:
+                    return "Contain";
+            }
+        }
     }
 
     /// <summary>
@@ -319,5 +412,11 @@ namespace MirrorpondHUD.Core
         public double Spacing = 12;
         /// <summary>内容模板；空 = 使用卡片自带的默认内容。</summary>
         public string Content = "";
+
+        /// <summary>命令行卡片自己的工具 / 目录 / 超时设置；每张命令行卡片互不影响。</summary>
+        public CommandSettings Command = new CommandSettings();
+
+        /// <summary>媒体卡片自己的文件与缩放设置。</summary>
+        public MediaSettings Media = new MediaSettings();
     }
 }

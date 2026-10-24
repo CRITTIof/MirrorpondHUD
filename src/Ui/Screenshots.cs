@@ -63,6 +63,8 @@ namespace MirrorpondHUD.Ui
             try
             {
                 Settings settings = ConfigStore.Load();
+                // 文档截图关掉投影、拉开间距：卡片边缘干净，不会互相压到。
+                settings.Overlay.Shadow = false;
                 MetricsSnapshot snap = DemoSnapshot();
                 KeyHistory keys = DemoKeys(settings.Data.KeyHistoryCount, settings.Data.RepeatThreshold,
                                            settings.Data.MaxKeyChars);
@@ -74,12 +76,33 @@ namespace MirrorpondHUD.Ui
                 {
                     if (card == null || string.Equals(card.Kind, "command", StringComparison.OrdinalIgnoreCase)) continue;
 
+                    ICardModule module = CardRegistry.Get(card.Kind);
                     var surface = new OverlaySurface();
-                    surface.HorizontalAlignment = HorizontalAlignment.Left;
-                    surface.Margin = new Thickness(0, 0, 0, Math.Max(4, card.Spacing));
-                    surface.Apply(settings, CardRegistry.Get(card.Kind).Render(
-                        new CardRenderContext(settings, snap, keys, card)));
-                    stack.Children.Add(surface);
+
+                    // 每张卡片外面再包一层来留间距：OverlaySurface.Apply 会重写自己的 Margin（投影留白）。
+                    var cardHost = new Border
+                    {
+                        HorizontalAlignment = HorizontalAlignment.Left,
+                        Margin = new Thickness(0, 0, 0, Math.Max(16, card.Spacing)),
+                        Child = surface
+                    };
+
+                    var rich = module as IRichCardModule;
+                    if (rich != null)
+                    {
+                        // 图片 / 动图：离屏渲染第一帧；视频需要真实窗口，这里的截图里不会出现。
+                        var view = rich.CreateContent(new CardRenderContext(settings, snap, keys, card));
+                        if (view == null) continue;
+                        surface.Apply(settings, "");
+                        surface.SetContent(view);
+                    }
+                    else
+                    {
+                        surface.Apply(settings, module.Render(
+                            new CardRenderContext(settings, snap, keys, card)));
+                    }
+
+                    stack.Children.Add(cardHost);
                     count++;
                 }
 
@@ -132,6 +155,7 @@ namespace MirrorpondHUD.Ui
             try
             {
                 Settings settings = ConfigStore.Load();
+                settings.Overlay.Shadow = false;
                 MetricsSnapshot snap = DemoSnapshot();
                 KeyHistory keys = DemoKeys(settings.Data.KeyHistoryCount, settings.Data.RepeatThreshold,
                                            settings.Data.MaxKeyChars);

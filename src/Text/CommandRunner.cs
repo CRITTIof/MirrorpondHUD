@@ -145,10 +145,10 @@ namespace MirrorpondHUD.Core
 
         // ==================== 执行 ====================
 
-        public static CommandResult Run(Settings settings, string command, CancellationToken token)
+        public static CommandResult Run(CommandSettings commandSettings, string command, CancellationToken token)
         {
             var result = new CommandResult { Command = command ?? "" };
-            CommandSettings command_settings = settings == null ? new CommandSettings() : settings.Command;
+            CommandSettings command_settings = commandSettings == null ? new CommandSettings() : commandSettings;
 
             string executable, arguments;
             BuildProcess(command_settings, command, out executable, out arguments);

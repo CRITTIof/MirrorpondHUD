@@ -17,7 +17,9 @@ namespace MirrorpondHUD.Core
         string _exe;
         bool _searched;
         bool _reportedMissing;
-        DateTime _nextTryUtc = DateTime.MinValue;
+        // 第一次调用 nvidia-smi 常见的要好几秒（冷启动 + 驱动初始化）。
+        // 放到启动 6 秒后再跑，避免把采样线程的首帧拖住，CPU / 内存 / GPU 先出数据。
+        DateTime _nextTryUtc = DateTime.UtcNow.AddSeconds(6);
         NvidiaSample _current = new NvidiaSample();
 
         public NvidiaSample Current

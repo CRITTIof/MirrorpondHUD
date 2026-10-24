@@ -126,31 +126,5 @@ namespace MirrorpondHUD.Ui
         [DllImport("user32.dll")]
         public static extern bool GetWindowRect(IntPtr hwnd, out Rect rect);
 
-        // ==================== 毛玻璃（抓屏时的窗口排除） ====================
-
-        const uint WdaNone = 0x00000000;
-        const uint WdaExcludeFromCapture = 0x00000011;
-
-        [DllImport("user32.dll", SetLastError = true)]
-        static extern bool SetWindowDisplayAffinity(IntPtr hwnd, uint affinity);
-
-        /// <summary>抓屏 + 模糊需要 WDA_EXCLUDEFROMCAPTURE（Windows 10 2004 / build 19041 起）。</summary>
-        public static bool IsAcrylicSupported
-        {
-            get
-            {
-                try { return Environment.OSVersion.Version.Build >= 19041; }
-                catch { return false; }
-            }
-        }
-
-        /// <summary>让窗口在截屏 / 抓屏时不可见（用户仍然看得到），用于抓取叠层后面的桌面。</summary>
-        public static void SetCaptureExclusion(IntPtr hwnd, bool exclude)
-        {
-            if (hwnd == IntPtr.Zero) return;
-            try { SetWindowDisplayAffinity(hwnd, exclude ? WdaExcludeFromCapture : WdaNone); }
-            catch { }
-        }
-
     }
 }

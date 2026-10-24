@@ -1,19 +1,24 @@
 # 卡片模块化：现在的实现
 
 > 目标：把「桌面信息叠层」做成一组**可添加、可删除、可排序**的卡片。
-> 现在五种内置卡片（系统信息 / 时钟 / 按键 / 文本信息 / 命令行）已经按这个结构跑起来；
-> 以后加文件中转站、游戏账号数据、AI 对话，只需要在 `src/Cards` 里新增一个文件，宿主不用改。
+> 现在六种内置卡片（系统信息 / 时钟 / 按键 / 文本信息 / 命令行 / 媒体）已经按这个结构跑起来；
+> 以后加文件中转站、游戏账号数据、AI 对话，只需要在 `src/Cards` 里新增一个文件，宿主不用改
+> ——文字卡用 `CardModuleBase`，图片 / 视频这类富内容卡用 `RichCardModuleBase`。
 
 ## 1. 文件结构
 
 | 文件 | 职责 |
 | --- | --- |
 | `src/Cards/CardModule.cs` | `ICardModule` 接口、`CardRenderContext`、`CardModuleBase` 默认实现 |
+| `src/Cards/RichCard.cs` | `IRichCardModule` / `RichCardModuleBase`：返回任意 WPF 内容的卡片契约 |
 | `src/Cards/CardRegistry.cs` | 反射扫描本程序集里所有 `ICardModule` 实现，按 `Order` 排序 |
 | `src/Cards/CardModel.cs` | 卡片列表的创建、补全、校验、名称去重 |
-| `src/Cards/MetricsCard.cs` 等 | 五种卡片各自的元数据与渲染 |
-| `src/Ui/OverlayController.cs` | 每张卡片一个窗口，负责堆叠、显示 / 隐藏、热键、命令行会话 |
-| `src/Ui/CardEditor.cs` | 设置页「内容」里的一张卡片设置卡（双向绑定） |
+| `src/Cards/MetricsCard.cs` 等 | 六种卡片各自的元数据与渲染 |
+| `src/Media/MediaView.cs` | 图片 / 动图 / 视频控件：卡片内容的实际绘制者 |
+| `src/Media/GifAnimator.cs` | 动图按帧播放（GDI+ 取帧 + `DispatcherTimer`） |
+| `src/Media/VideoWindow.cs` | 视频子窗口：分层窗口画不出 `MediaElement`，视频单独开窗贴在卡片上 |
+| `src/Ui/OverlayController.cs` | 每张卡片一个窗口，负责堆叠、显示 / 隐藏、热键、命令行会话、富内容生命周期 |
+| `src/Ui/CardEditor.cs` | 设置页「内容」里的一张卡片设置卡（双向绑定，含每卡命令行 / 媒体设置） |
 
 ## 2. 卡片接口
 
@@ -36,7 +41,7 @@ public interface ICardModule
 `CardRenderContext` 持有本次采样的 `Settings`、`MetricsSnapshot`、`KeyHistory` 和当前 `CardSettings`；
 变量表按需构建一次，卡片拿到的都是同一帧的数据。
 
-新增一种卡片：
+新增一张**文字卡**：
 
 ```csharp
 public sealed class WeatherCard : CardModuleBase
@@ -54,13 +59,36 @@ public sealed class WeatherCard : CardModuleBase
 }
 ```
 
+新增一张**富内容卡**（图片、动图、视频、以后的自定义面板）：
+
+```csharp
+public sealed class MyMediaCard : RichCardModuleBase
+{
+    public override string Kind { get { return "mymedia"; } }
+    public override string DisplayName { get { return "我的媒体"; } }
+    public override string Icon { get { return Icons.Image; } }
+    public override int Order { get { return 30; } }
+
+    public override FrameworkElement CreateContent(CardRenderContext context)
+    {
+        var view = new MediaView().WithCornerRadius(context.Settings.Overlay.CornerRadius);
+        view.Bind(context.Config.Media);
+        return view;
+    }
+}
+```
+
+富内容契约只有三个方法：`CreateContent`（建控件）、`UpdateContent`（设置没变时刷新数据）、
+`OnVisibilityChanged` / `OnZOrderChanged`（卡片显示 / 隐藏、重新置顶时通知）。
+控件自己不碰窗口，所以卡片模块依旧是「新增一个类即可」。
+
 把文件放进 `src/Cards/` 即可：工程默认包含全部 `.cs`，`CardRegistry` 启动时反射发现，
 「添加卡片」菜单、设置页编辑、默认内容、热键校验全部自动生效。
 
 ## 3. 配置模型
 
 ```json
-"SchemaVersion": 2,
+"SchemaVersion": 3,
 "Cards": [
   {
     "Id": "3f6c...",
@@ -69,7 +97,11 @@ public sealed class WeatherCard : CardModuleBase
     "Resident": true,
     "Hotkey": "",
     "Spacing": 0,
-    "Content": "{cpu_icon} CPU {cpu:0.0}%"
+    "Content": "{cpu_icon} CPU {cpu:0.0}%",
+    "Command": { "Shell": "cmd", "CustomShell": "cmd.exe /c {cmd}", "WorkingDirectory": "",
+                 "Truncate": true, "MaxLineChars": 120, "MaxLines": 30, "TimeoutSeconds": 20 },
+    "Media": { "Path": "", "Fit": "Contain", "Width": 320, "Height": 0, "Opacity": 1,
+               "Loop": true, "Autoplay": true, "Muted": true, "Speed": 1 }
   }
 ]
 ```
@@ -80,10 +112,13 @@ public sealed class WeatherCard : CardModuleBase
 - `Resident`：常驻；`false` 时必须给 `Hotkey`，否则保存时提示
 - `Spacing`：与上一张**可见**卡片的间距
 - `Content`：内容模板；空 = 用卡片默认内容
+- `Command`：**每张命令行卡片自己的**工具 / 模板 / 工作目录 / 截断 / 行数 / 超时。
+  v2 里这些是全局设置，v3 起拆到卡片上，于是 cmd、pwsh、WSL 可以各放一张卡片同时待命
+- `Media`：**每张媒体卡片自己的**文件、缩放方式、宽高、不透明度、循环 / 自动播放 / 静音 / 倍速
 - 命令行卡强制 `Resident=false`、无内容模板
 
-旧配置（没有 `SchemaVersion`，全局 `Content` + 带 `X/Y/Visible` 的 Cards）由
-`Core/SettingsMigration.cs` 一次性迁移，迁移后立刻写回。
+旧配置由 `Core/SettingsMigration.cs` 一次性迁移：v0/v1（单窗口，全局 `Content` + `X/Y/Visible`）
+走 `LegacySettings`；v2 把全局 `Command` 复制进每张命令行卡片。迁移后立刻写回。
 
 ## 4. 布局：一条垂直堆叠
 
@@ -99,32 +134,52 @@ for card in Cards where visible:
 
 - 拖动任意卡片：算出位移，移动锚点，所有卡片一起走（`OnCardMoved`）
 - 非常驻卡片被呼出时插入自己的位置，后面的卡片自动让开
-- 文本变长、命令行展开后，每次渲染后 `LayoutIfNeeded()` 校正一次高度，不依赖 `SizeChanged` 的时序
+- 文本变长、命令行展开、视频换分辨率后，每次渲染后 `LayoutIfNeeded()` 校正一次高度，不依赖 `SizeChanged` 的时序
 
-## 5. 热键
+## 5. 富内容与视频子窗口
+
+| 内容 | 承载方式 |
+| --- | --- |
+| 静态图片 | `Image` + `BitmapDecoder`（png / jpg / bmp / tif / ico），高质量缩放 |
+| 动图 GIF | `GifAnimator`：GDI+ 逐帧合成、按 GIF 自带延时切换，卡片隐藏时停表 |
+| 视频 | `VideoWindow`：**独立的不透明子窗口**，`Owner` = 卡片，跟随位置并做圆角 |
+
+媒体默认按外观里的圆角把四个角裁圆（`MediaSettings.Rounded`，可在卡片里关掉）；
+图片 / 动图用 `RectangleGeometry` 裁剪，视频子窗口用 `SetWindowRgn` 得到同样的圆角。
+
+视频为什么要单独开窗：叠层用 `AllowsTransparency=true`（`WS_EX_LAYERED`），WPF 在这种窗口上用软件渲染，
+`MediaElement` 的视频画面会被整块丢弃。子窗口不透明、`WS_EX_TRANSPARENT|NOACTIVATE|TOOLWINDOW`
+（鼠标穿透、不抢焦点、不进 Alt+Tab），`SetWindowRgn` 做圆角，视觉上仍然是一张圆角卡片。
+卡片每次 `EnsureTopmost()` 之后会通过 `RaisedTopmost` 事件让子窗口重新 `SetWindowPos(HWND_TOPMOST)`，
+否则会被卡片自己压住。
+
+## 6. 热键
 
 - 全局热键：`toggle-overlay` / `open-settings` / `toggle-lock`，被占用时退到 `Ctrl+Alt+原键`
-- 卡片热键：动作名 `card:<Id>`，关闭常驻的卡片各注册一个
+- 卡片热键：动作名 `card:<Id>`，关闭常驻的卡片各注册一个；同样带 `Ctrl+Alt+原键` 兜底，
+  兜底成功后把实际生效的组合键写回卡片设置
 - `HotkeyManager` 支持**同一组合键挂多个动作**：两张卡片设成同一个热键，按一次同时呼出
 - 删除卡片后重新注册时会先 `UnregisterAll()`，不会留下失效热键
 
-## 6. 生命周期
+## 7. 生命周期
 
-`OverlayController` 持有 `List<CardSlot>`，每个 `CardSlot` = `CardSettings` + `ICardModule` + `OverlayWindow` + 运行状态。
+`OverlayController` 持有 `List<CardSlot>`，每个 `CardSlot` = `CardSettings` + `ICardModule` + `OverlayWindow`
++ 富内容控件 + 命令行状态（历史 / 输入 / 取消令牌）。
+
 `ApplySettings` 时按 `Id` 对齐：
 
-- 仍在列表里：复用窗口，换 `Dialog` / `Module` / `Config`，保留呼出状态
+- 仍在列表里：复用窗口，换 `Dialog` / `Module` / `Config`，保留呼出状态；
+  富内容控件按新设置重建（换图片 / 换视频路径立即生效）
 - 新增：创建窗口并接入事件
-- 删除：关闭窗口；如果删的是正在输入的命令行卡片，先退出命令行模式
+- 删除：释放富内容（停视频 / 停动图）、关闭窗口；如果删的是正在输入的命令行卡片，先退出命令行模式
 
 设置窗口只编辑一份克隆，点「保存并应用」才回到宿主；卡片结构与外观都是显式保存。
 
-## 7. 还没做的
+## 8. 还没做的
 
 | 事项 | 说明 |
 | --- | --- |
 | 运行期插件 | `cards/*.dll` + `AssemblyLoadContext` + ApiVersion 校验；先留接口 |
-| 富内容卡片 | 现在卡片都是 `TextCanvas` 文本；文件中转站 / AI 对话需要新的基类与滚动容器 |
-| 毛玻璃调度 | 仍由每个窗口各自抓屏；卡片多时应改成串行 `GlassScheduler`，见 [glass-options.md](glass-options.md) |
-| 卡片独立样式 | `Style` 目前全局共享；需要时给 `CardSettings` 加可空的样式覆盖 |
+| 每卡独立样式 | `Style` 目前全局共享（字体、颜色、图标倍率、毛玻璃都是全局）；需要时给 `CardSettings` 加可空的样式覆盖 |
+| 卡片内交互 | 富内容目前只显示不交互；要支持播放控制、滚动、点击，需要临时解除鼠标穿透并把命中区域限制在控件上 |
 | 托盘增删 | 现在只能从设置页增删卡片 |

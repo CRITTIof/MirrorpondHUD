@@ -45,12 +45,18 @@ namespace MirrorpondHUD.Cards
                 if (module.IsInteractive) card.Resident = false;
 
                 card.Spacing = Math.Round(Settings.Clamp(card.Spacing, 0, 300));
+
+                if (card.Command == null) card.Command = new CommandSettings();
+                card.Command.Normalize();
+
+                if (card.Media == null) card.Media = new MediaSettings();
+                card.Media.Normalize();
             }
 
             if (settings.Cards.Count == 0) settings.Cards = CreateDefaultCards();
         }
 
-        /// <summary>全新配置的默认卡片：系统信息、时钟、按键（常驻）+ 命令行（F9 呼出）。</summary>
+        /// <summary>全新配置的默认卡片：系统信息、时钟、按键（常驻）+ 命令行（F9）、媒体（F11）。</summary>
         public static List<CardSettings> CreateDefaultCards()
         {
             return new List<CardSettings>
@@ -74,6 +80,11 @@ namespace MirrorpondHUD.Cards
                 {
                     Id = NewId(), Kind = "command", Name = CardRegistry.Get("command").DisplayName,
                     Resident = false, Spacing = 12, Hotkey = "F9", Content = ""
+                },
+                new CardSettings
+                {
+                    Id = NewId(), Kind = "media", Name = CardRegistry.Get("media").DisplayName,
+                    Resident = false, Spacing = 12, Hotkey = "F11", Content = ""
                 }
             };
         }

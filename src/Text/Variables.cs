@@ -11,6 +11,9 @@ namespace MirrorpondHUD.Core
     {
         const double Gb = 1024.0 * 1024.0 * 1024.0;
 
+        static readonly string[] WeekdayZh = { "星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六" };
+        static readonly string[] WeekdayZhShort = { "周日", "周一", "周二", "周三", "周四", "周五", "周六" };
+
         [DllImport("kernel32.dll")]
         static extern ulong GetTickCount64();
 
@@ -25,7 +28,14 @@ namespace MirrorpondHUD.Core
             // ---------- 通用 ----------
             map["time"] = now.ToString("HH:mm:ss");
             map["date"] = now.ToString("yyyy-MM-dd");
+
+            // 星期分中英两套：{weekday} 保留为「跟随系统区域」的旧行为，新配置用明确的两种。
+            int dow = (int)now.DayOfWeek;
             map["weekday"] = CultureInfo.CurrentCulture.DateTimeFormat.GetShortestDayName(now.DayOfWeek);
+            map["weekday_zh"] = WeekdayZh[dow];
+            map["weekday_zh_short"] = WeekdayZhShort[dow];
+            map["weekday_en"] = now.ToString("dddd", CultureInfo.InvariantCulture);
+            map["weekday_en_short"] = now.ToString("ddd", CultureInfo.InvariantCulture);
             map["host"] = Environment.MachineName;
             map["user"] = Environment.UserName;
             map["uptime"] = FormatUptime(TimeSpan.FromMilliseconds(GetTickCount64()));

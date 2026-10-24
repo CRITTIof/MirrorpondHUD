@@ -1,4 +1,5 @@
-using System;
+﻿using System;
+using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -42,6 +43,8 @@ namespace MirrorpondHUD.Ui
         public event Action<string, int> CommandTextChanged;
         public event Action CommandSubmitted;
         public event Action CommandCancelled;
+        /// <summary>窗口重新置顶后触发，富内容（视频子窗口）需要据此重新摆正 z 序。</summary>
+        public event Action RaisedTopmost;
 
         public OverlayWindow(Settings settings)
         {
@@ -76,11 +79,30 @@ namespace MirrorpondHUD.Ui
         public void Apply(Settings settings, string text)
         {
             _settings = settings;
+            Surface.ClearContent();
             Surface.Apply(settings, text);
             if (_handleReady) UpdateGlassCapture();
             Topmost = settings.Overlay.Topmost;
             UpdateClickThrough();
             UpdateMenuHeaders();
+        }
+
+        /// <summary>富内容卡片（图片 / 动图 / 视频）：文字层空着，直接把控件放进卡片。</summary>
+        public void ApplyRich(Settings settings, FrameworkElement content)
+        {
+            _settings = settings;
+            Surface.Apply(settings, "");
+            Surface.SetContent(content);
+            if (_handleReady) UpdateGlassCapture();
+            Topmost = settings.Overlay.Topmost;
+            UpdateClickThrough();
+            UpdateMenuHeaders();
+        }
+
+        /// <summary>换成纯文字卡片时释放富内容（停掉视频 / 动图）。</summary>
+        public void ClearRichContent()
+        {
+            Surface.ClearContent();
         }
 
         /// <summary>只同步设置对象与鼠标穿透状态，不重画内容（F8 / 托盘切换锁定时用）。</summary>
@@ -266,20 +288,22 @@ namespace MirrorpondHUD.Ui
 
             Native.SetWindowPos(hwnd, Native.HwndTopmost, 0, 0, 0, 0,
                 Native.SwpNoMove | Native.SwpNoSize | Native.SwpNoActivate | Native.SwpNoOwnerZorder);
+
+            // 置顶之后自己的子窗口（视频）会被压下去，通知内容层重新摆好。
+            Action handler = RaisedTopmost;
+            if (handler != null) handler();
         }
 
         // ==================== 毛玻璃 ====================
-        // 抓取窗口后面那块桌面、缩小模糊后当作叠层背景。
-        // 抓屏时给窗口设置 WDA_EXCLUDEFROMCAPTURE，这样截到的画面里不会包含叠层自己。
+        // 把卡片后面的画面拼出来：枚举卡片矩形内的外部窗口（上 → 下），最后垫上桌面窗口，
+        // 每个采样点取盖住它的最上层窗口的像素，再缩小模糊。不抓屏，所以截图 / 录像里叠层始终可见。
+        // 刷新率由「毛玻璃帧率」控制，窗口隐藏时自动停。
 
         void UpdateGlassCapture()
         {
             if (!_handleReady) return;
 
-            IntPtr hwnd = new WindowInteropHelper(this).Handle;
-            if (hwnd == IntPtr.Zero) return;
-
-            bool enabled = _settings.Style.Acrylic && Native.IsAcrylicSupported;
+            bool enabled = _settings.Style.Acrylic;
 
             if (!enabled)
             {
@@ -288,25 +312,37 @@ namespace MirrorpondHUD.Ui
                 return;
             }
 
+            int fps = Math.Max(2, Math.Min(30, _settings.Style.AcrylicFps));
+            var interval = TimeSpan.FromMilliseconds(1000.0 / fps);
+
             if (_glassTimer == null)
             {
                 _glassTimer = new DispatcherTimer(DispatcherPriority.Background)
                 {
-                    Interval = TimeSpan.FromMilliseconds(1200)
+                    Interval = interval
                 };
                 _glassTimer.Tick += (s, e) => CaptureGlass();
             }
+            else
+            {
+                _glassTimer.Interval = interval;
+            }
 
-            _glassTimer.Start();
+            if (!_glassTimer.IsEnabled)
+            {
+                _glassTimer.Start();
+                Log.Info("毛玻璃背景已启用（" + fps + " 帧/秒，模糊 " + _settings.Style.AcrylicBlur + "px）");
+            }
+
             CaptureGlass();
-            Log.Info("毛玻璃背景已启用（每 1.2 秒刷新一次）");
         }
 
         bool _glassBusy;
 
         void CaptureGlass()
         {
-            if (!_settings.Style.Acrylic || !_handleReady || !IsVisible || _glassBusy) return;
+            if (!_settings.Style.Acrylic || !_handleReady || _glassBusy) return;
+            if (!IsVisible || WindowState == WindowState.Minimized) return;
 
             IntPtr hwnd = new WindowInteropHelper(this).Handle;
             if (hwnd == IntPtr.Zero) return;
@@ -316,36 +352,47 @@ namespace MirrorpondHUD.Ui
 
             int width = rect.Right - rect.Left;
             int height = rect.Bottom - rect.Top;
-            if (width < 4 || height < 4) return;
+            if (width < 8 || height < 8) return;
 
-            _glassBusy = true;
             int left = rect.Left;
             int top = rect.Top;
+            double blur = _settings.Style.AcrylicBlur;
+
+            // 卡片后面可能压着好几个窗口，甚至只压着桌面：
+            // FindLayers 会按 z 序收集（桌面垫底），Grab 再逐点选最上层的那一层。
+            List<GlassCapture.Layer> layers = GlassCapture.FindLayers(left, top, width, height);
+            if (layers.Count == 0)
+            {
+                Surface.ClearGlass();
+                return;
+            }
+
+            _glassBusy = true;
 
             Task.Run(() =>
             {
                 BitmapSource image = null;
                 try
                 {
-                    // 抓屏瞬间把叠层从画面里排除掉，抓完立刻恢复（否则用户截图也会看不到叠层）
-                    Native.SetCaptureExclusion(hwnd, true);
-                    Thread.Sleep(20);
-                    image = GlassCapture.Grab(left, top, width, height, _settings.Style.AcrylicBlur);
+                    image = GlassCapture.Grab(layers, left, top, width, height, blur);
                 }
                 catch (Exception ex)
                 {
-                    Log.Warn("毛玻璃抓屏失败: " + ex.Message);
-                }
-                finally
-                {
-                    Native.SetCaptureExclusion(hwnd, false);
+                    Log.Warn("毛玻璃取样失败: " + ex.Message);
                 }
 
-                Dispatcher.BeginInvoke(new Action(() =>
+                try
+                {
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        _glassBusy = false;
+                        if (image != null) Surface.SetGlass(image);
+                    }));
+                }
+                catch
                 {
                     _glassBusy = false;
-                    if (image != null) Surface.SetGlass(image);
-                }));
+                }
             });
         }
 

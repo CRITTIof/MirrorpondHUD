@@ -51,6 +51,11 @@ namespace MirrorpondHUD.Ui
             new TokenInfo { Name = "key_count", Description = "累计按键次数" },
             new TokenInfo { Name = "time", Description = "当前时间" },
             new TokenInfo { Name = "date", Description = "当前日期" },
+            new TokenInfo { Name = "weekday_zh", Description = "星期（中文，星期一）" },
+            new TokenInfo { Name = "weekday_zh_short", Description = "星期（中文简写，周一）" },
+            new TokenInfo { Name = "weekday_en", Description = "星期（英文，Monday）" },
+            new TokenInfo { Name = "weekday_en_short", Description = "星期（英文简写，Mon）" },
+            new TokenInfo { Name = "weekday", Description = "星期（跟随系统区域，旧配置沿用）" },
             new TokenInfo { Name = "uptime", Description = "系统运行时长" },
             new TokenInfo { Name = "host", Description = "计算机名" },
             new TokenInfo { Name = "user", Description = "用户名" }
