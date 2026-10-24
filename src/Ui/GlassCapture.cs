@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -106,7 +106,7 @@ namespace MirrorpondHUD.Ui
         [DllImport("user32.dll")]
         static extern int ReleaseDC(IntPtr hwnd, IntPtr hdc);
 
-        /// <summary>一层背景：一个窗口 + 它在屏幕上的矩形。</summary>
+        /// <summary>一层背景：一个窗口 + 它在屏幕上的矩形；`Window == 0` 表示合成出来的桌面壁纸层。</summary>
         public struct Layer
         {
             public IntPtr Window;
@@ -130,22 +130,17 @@ namespace MirrorpondHUD.Ui
         // ==================== 找卡片后面的窗口 ====================
 
         /// <summary>
-        /// 收集卡片矩形内、从上层到下层的外部窗口，最后补上桌面窗口。
-        /// 跳过本进程窗口与截图 / 录屏工具的浮层，否则它们会让毛玻璃变色。
+        /// 收集卡片矩形内、从上层到下层的外部窗口，最后补一层桌面壁纸。
+        /// 跳过本进程窗口、截图 / 录屏工具浮层、以及拖拽图标时的拖动影像窗口，
+        /// 否则它们会让毛玻璃变色 / 闪烁。
         /// </summary>
         public static List<Layer> FindLayers(int left, int top, int width, int height)
         {
             var layers = new List<Layer>(MaxLayers);
-            bool hasDesktop = false;
 
             uint self = GetOwnProcessId();
             int right = left + width;
             int bottom = top + height;
-
-            // 「显示桌面」时 Progman 会跑到 z 序最前面，所以桌面层必须留在它真实的位置上，
-            // 不能一律垫到最底部，否则会把后面（其实被桌面挡住）的窗口内容当成背景。
-            int screenWidth = Math.Max(640, width * 2);
-            int screenHeight = Math.Max(480, height * 2);
 
             try
             {
@@ -162,17 +157,14 @@ namespace MirrorpondHUD.Ui
 
                     string cls = ClassNameOf(hwnd);
 
-                    if (IsDesktopClass(cls))
-                    {
-                        // 桌面上还有一堆 136x39 的 WorkerW 助手窗口，按尺寸过滤掉。
-                        if (hasDesktop) return true;
-                        if (rect.Width < screenWidth / 2 || rect.Height < screenHeight / 2) return true;
-                        if (layers.Count >= MaxLayers) return true;
+                    // 桌面（Progman / WorkerW / SHELLDLL_DefView）不再用 PrintWindow 抓：
+                    // 壁纸由 DWM 绘制，抓到的经常是黑的；拖图标时还会让桌面重绘。
+                    // 统一换成下面合成的壁纸层。
+                    if (IsDesktopClass(cls)) return true;
 
-                        layers.Add(new Layer { Window = hwnd, Rect = rect, Desktop = true });
-                        hasDesktop = true;
-                        return true;
-                    }
+                    // 拖动桌面图标 / 文件时，Explorer 会挂一个跟着鼠标走的拖动影像窗口，
+                    // 它盖在卡片区域上时会把玻璃变成一块扭动的图标残影，直接忽略。
+                    if (IsDragImageClass(cls)) return true;
 
                     if (layers.Count >= MaxLayers) return true;
 
@@ -190,7 +182,31 @@ namespace MirrorpondHUD.Ui
                 Log.Warn("枚举卡片后方窗口失败: " + ex.Message);
             }
 
+            // 最后垫一层合成出来的桌面壁纸（覆盖整个虚拟屏幕），保证卡片压在桌面上也有内容。
+            RECT screen = VirtualScreenRect();
+            if (screen.Width > 0 && screen.Height > 0)
+                layers.Add(new Layer { Window = IntPtr.Zero, Rect = screen, Desktop = true });
+
             return layers;
+        }
+
+        /// <summary>所有显示器并起来的虚拟屏幕（物理像素）。</summary>
+        static RECT VirtualScreenRect()
+        {
+            try
+            {
+                System.Windows.Forms.Screen[] screens = System.Windows.Forms.Screen.AllScreens;
+                if (screens.Length == 0) return default(RECT);
+
+                System.Drawing.Rectangle union = screens[0].Bounds;
+                for (int i = 1; i < screens.Length; i++) union = System.Drawing.Rectangle.Union(union, screens[i].Bounds);
+
+                return new RECT { Left = union.Left, Top = union.Top, Right = union.Right, Bottom = union.Bottom };
+            }
+            catch
+            {
+                return default(RECT);
+            }
         }
 
         static string ClassNameOf(IntPtr hwnd)
@@ -209,6 +225,13 @@ namespace MirrorpondHUD.Ui
             return string.Equals(cls, "Progman", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(cls, "WorkerW", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(cls, "SHELLDLL_DefView", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>拖动图标 / 文件时跟随鼠标的拖动影像窗口。</summary>
+        static bool IsDragImageClass(string cls)
+        {
+            if (string.IsNullOrEmpty(cls)) return false;
+            return cls.IndexOf("drag", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         /// <summary>
@@ -279,18 +302,40 @@ namespace MirrorpondHUD.Ui
         {
             if (layers == null || layers.Count == 0 || cardWidth <= 0 || cardHeight <= 0) return null;
 
-            int divisor = Math.Max(3, Math.Min(12, (int)Math.Round(blur * 0.45 + 3)));
+            // 取样精度：以前最多缩到 1/12，一张 400px 宽的卡片只剩几十像素，放大后基本是一块纯色。
+            // 现在只缩到 1/2–1/4，模糊半径仍按物理像素换算，玻璃里能留下画面结构（文字块、窗口边缘）。
+            int divisor = Math.Max(2, Math.Min(4, (int)Math.Round(Math.Max(0, blur) / 12.0) + 2));
             int targetWidth = Math.Max(8, cardWidth / divisor);
             int targetHeight = Math.Max(8, cardHeight / divisor);
 
-            // 每层整窗像素（带缓存）
+            // 每层整窗像素（带缓存）；桌面层用壁纸合成，缩放 1/2，需要单独记录比例。
             var pixels = new byte[layers.Count][];
+            var scales = new double[layers.Count];
+            var sourceWidths = new int[layers.Count];
+            var sourceHeights = new int[layers.Count];
+
             for (int i = 0; i < layers.Count; i++)
             {
                 Layer layer = layers[i];
+
+                if (layer.Window == IntPtr.Zero)
+                {
+                    DesktopBackground.Frame frame;
+                    if (!DesktopBackground.TryGet(layer.Rect, out frame)) continue;
+
+                    pixels[i] = frame.Pixels;
+                    sourceWidths[i] = frame.Width;
+                    sourceHeights[i] = frame.Height;
+                    scales[i] = layer.Rect.Width > 0 ? layer.Rect.Width / (double)frame.Width : 1.0;
+                    continue;
+                }
+
                 if (layer.Rect.Width <= 0 || layer.Rect.Height <= 0) continue;
                 pixels[i] = GetFramePixels(layer.Window, layer.Rect.Width, layer.Rect.Height,
                                            layer.Desktop ? DesktopCacheMs : CacheMs);
+                sourceWidths[i] = layer.Rect.Width;
+                sourceHeights[i] = layer.Rect.Height;
+                scales[i] = 1.0;
             }
 
             var small = new byte[targetWidth * targetHeight * 4];
@@ -298,57 +343,98 @@ namespace MirrorpondHUD.Ui
 
             for (int y = 0; y < targetHeight; y++)
             {
-                int sy = cardTop + (int)((long)y * cardHeight / targetHeight);
+                int sy0 = cardTop + (int)((long)y * cardHeight / targetHeight);
+                int sy1 = cardTop + (int)((long)(y + 1) * cardHeight / targetHeight);
+                if (sy1 <= sy0) sy1 = sy0 + 1;
+
                 int destRow = y * targetWidth * 4;
 
                 for (int x = 0; x < targetWidth; x++)
                 {
-                    int sx = cardLeft + (int)((long)x * cardWidth / targetWidth);
+                    int sx0 = cardLeft + (int)((long)x * cardWidth / targetWidth);
+                    int sx1 = cardLeft + (int)((long)(x + 1) * cardWidth / targetWidth);
+                    if (sx1 <= sx0) sx1 = sx0 + 1;
 
-                    int source = -1;
-                    for (int i = 0; i < layers.Count; i++)
+                    // 每个目标像素在它覆盖的源矩形里取 2×2 个样本求平均：
+                    // 比原来「只取一个点」更稳（不会正好踩到文字边缘），也不会把每个源像素都读一遍。
+                    int dx = Math.Max(1, (sx1 - sx0) / 2);
+                    int dy = Math.Max(1, (sy1 - sy0) / 2);
+
+                    int sumB = 0, sumG = 0, sumR = 0, hits = 0;
+
+                    for (int oy = 0; oy < 2; oy++)
                     {
-                        Layer layer = layers[i];
-                        if (pixels[i] == null) continue;
-                        if (sx < layer.Rect.Left || sx >= layer.Rect.Right) continue;
-                        if (sy < layer.Rect.Top || sy >= layer.Rect.Bottom) continue;
-                        source = i;
-                        break;
+                        int sy = sy0 + oy * dy;
+                        if (sy >= sy1) sy = sy1 - 1;
+
+                        for (int ox = 0; ox < 2; ox++)
+                        {
+                            int sx = sx0 + ox * dx;
+                            if (sx >= sx1) sx = sx1 - 1;
+
+                            int source = -1;
+                            for (int i = 0; i < layers.Count; i++)
+                            {
+                                Layer layer = layers[i];
+                                if (pixels[i] == null) continue;
+                                if (sx < layer.Rect.Left || sx >= layer.Rect.Right) continue;
+                                if (sy < layer.Rect.Top || sy >= layer.Rect.Bottom) continue;
+                                source = i;
+                                break;
+                            }
+
+                            if (source < 0) continue;
+
+                            Layer hit = layers[source];
+                            double scale = scales[source] > 0 ? scales[source] : 1.0;
+
+                            int px = (int)((sx - hit.Rect.Left) / scale);
+                            int py = (int)((sy - hit.Rect.Top) / scale);
+                            if (px < 0) px = 0;
+                            if (py < 0) py = 0;
+                            if (px >= sourceWidths[source]) px = sourceWidths[source] - 1;
+                            if (py >= sourceHeights[source]) py = sourceHeights[source] - 1;
+
+                            int s = (py * sourceWidths[source] + px) * 4;
+                            byte[] buffer = pixels[source];
+                            if (s + 3 >= buffer.Length) continue;
+
+                            sumB += buffer[s];
+                            sumG += buffer[s + 1];
+                            sumR += buffer[s + 2];
+                            hits++;
+                        }
                     }
 
                     int d = destRow + x * 4;
+                    small[d + 3] = 255;
 
-                    if (source < 0)
+                    if (hits == 0)
                     {
                         // 没有任何一层覆盖这个点（连桌面都没取到）：留黑，最后统一判空
-                        small[d + 3] = 255;
                         continue;
                     }
 
-                    Layer hit = layers[source];
-                    int px = sx - hit.Rect.Left;
-                    int py = sy - hit.Rect.Top;
-                    if (px < 0) px = 0;
-                    if (py < 0) py = 0;
-                    if (px >= hit.Rect.Width) px = hit.Rect.Width - 1;
-                    if (py >= hit.Rect.Height) py = hit.Rect.Height - 1;
-
-                    int s = (py * hit.Rect.Width + px) * 4;
-                    byte[] buffer = pixels[source];
-                    if (s + 3 >= buffer.Length) continue;
-
-                    small[d] = buffer[s];
-                    small[d + 1] = buffer[s + 1];
-                    small[d + 2] = buffer[s + 2];
-                    small[d + 3] = 255;
+                    small[d] = (byte)(sumB / hits);
+                    small[d + 1] = (byte)(sumG / hits);
+                    small[d + 2] = (byte)(sumR / hits);
                     any = true;
                 }
             }
 
             if (!any || IsBlank(small)) return null;
 
-            int radius = (int)Math.Round(Math.Max(0, blur) / Math.Max(2, divisor * 0.9));
-            if (radius > 0) BoxBlur(small, targetWidth, targetHeight, targetWidth * 4, radius);
+            int radius = (int)Math.Round(Math.Max(0, blur) / Math.Max(2, divisor));
+            if (radius > 0)
+            {
+                // 三次盒式模糊已经很接近高斯，过渡比原来的两次更自然；滑动窗口实现，
+                // 半径变大也只是线性开销。
+                for (int pass = 0; pass < 3; pass++)
+                {
+                    BoxBlur(small, targetWidth, targetHeight, radius, true);
+                    BoxBlur(small, targetWidth, targetHeight, radius, false);
+                }
+            }
 
             BitmapSource image = BitmapSource.Create(targetWidth, targetHeight, 96, 96,
                                                      PixelFormats.Bgr32, null, small, targetWidth * 4);
@@ -462,77 +548,70 @@ namespace MirrorpondHUD.Ui
             return total == 0 || bright * 100 / Math.Max(1, total) < 2;
         }
 
-        /// <summary>两遍可分离方框模糊；在小图上跑，几千个像素，开销可以忽略。</summary>
-        static void BoxBlur(byte[] buffer, int width, int height, int stride, int radius)
+        /// <summary>
+        /// 单方向方框模糊，滑动窗口实现：每行 / 每列只扫一遍，半径再大也是 O(像素数)。
+        /// 三次 H + V 组合接近高斯，配合更细的取样图，玻璃不会糊成一块纯色。
+        /// </summary>
+        static void BoxBlur(byte[] buffer, int width, int height, int radius, bool horizontal)
         {
             if (radius <= 0 || width < 3 || height < 3) return;
 
-            var line = new int[Math.Max(width, height) * 4];
+            int length = horizontal ? width : height;
+            int lines = horizontal ? height : width;
+            int step = horizontal ? 4 : width * 4;
+            var line = new int[length * 4];
 
-            for (int pass = 0; pass < 2; pass++)
+            for (int index = 0; index < lines; index++)
             {
-                for (int y = 0; y < height; y++)
+                int start = horizontal ? index * width * 4 : index * 4;
+
+                int sumB = 0, sumG = 0, sumR = 0;
+                int window = 0;
+
+                int last = Math.Min(radius, length - 1);
+                for (int i = 0; i <= last; i++)
                 {
-                    int row = y * stride;
-                    for (int x = 0; x < width; x++)
+                    int p = start + i * step;
+                    sumB += buffer[p];
+                    sumG += buffer[p + 1];
+                    sumR += buffer[p + 2];
+                    window++;
+                }
+
+                for (int i = 0; i < length; i++)
+                {
+                    int q = i * 4;
+                    line[q] = sumB / window;
+                    line[q + 1] = sumG / window;
+                    line[q + 2] = sumR / window;
+
+                    int add = i + radius + 1;
+                    if (add < length)
                     {
-                        int from = Math.Max(0, x - radius);
-                        int to = Math.Min(width - 1, x + radius);
-
-                        int sumB = 0, sumG = 0, sumR = 0;
-                        for (int i = from; i <= to; i++)
-                        {
-                            int p = row + i * 4;
-                            sumB += buffer[p];
-                            sumG += buffer[p + 1];
-                            sumR += buffer[p + 2];
-                        }
-
-                        int count = to - from + 1;
-                        int q = x * 4;
-                        line[q] = sumB / count;
-                        line[q + 1] = sumG / count;
-                        line[q + 2] = sumR / count;
+                        int p = start + add * step;
+                        sumB += buffer[p];
+                        sumG += buffer[p + 1];
+                        sumR += buffer[p + 2];
+                        window++;
                     }
 
-                    for (int x = 0; x < width; x++)
+                    int remove = i - radius;
+                    if (remove >= 0)
                     {
-                        int q = row + x * 4;
-                        buffer[q] = (byte)line[x * 4];
-                        buffer[q + 1] = (byte)line[x * 4 + 1];
-                        buffer[q + 2] = (byte)line[x * 4 + 2];
+                        int p = start + remove * step;
+                        sumB -= buffer[p];
+                        sumG -= buffer[p + 1];
+                        sumR -= buffer[p + 2];
+                        window--;
                     }
                 }
 
-                for (int x = 0; x < width; x++)
+                for (int i = 0; i < length; i++)
                 {
-                    for (int y = 0; y < height; y++)
-                    {
-                        int from = Math.Max(0, y - radius);
-                        int to = Math.Min(height - 1, y + radius);
-
-                        int sumB = 0, sumG = 0, sumR = 0;
-                        for (int i = from; i <= to; i++)
-                        {
-                            int p = i * stride + x * 4;
-                            sumB += buffer[p];
-                            sumG += buffer[p + 1];
-                            sumR += buffer[p + 2];
-                        }
-
-                        int count = to - from + 1;
-                        line[y * 4] = sumB / count;
-                        line[y * 4 + 1] = sumG / count;
-                        line[y * 4 + 2] = sumR / count;
-                    }
-
-                    for (int y = 0; y < height; y++)
-                    {
-                        int q = y * stride + x * 4;
-                        buffer[q] = (byte)line[y * 4];
-                        buffer[q + 1] = (byte)line[y * 4 + 1];
-                        buffer[q + 2] = (byte)line[y * 4 + 2];
-                    }
+                    int q = start + i * step;
+                    buffer[q] = (byte)line[i * 4];
+                    buffer[q + 1] = (byte)line[i * 4 + 1];
+                    buffer[q + 2] = (byte)line[i * 4 + 2];
                 }
             }
         }

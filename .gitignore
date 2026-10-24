@@ -10,6 +10,14 @@ settings.json.broken-*
 # 源码说明文档放在独立仓库里，不随主仓库发布
 docs/source/
 
+# 毛玻璃调研笔记、探针截图与一次性 PoC 工程：只留本地，不进主仓库
+.proto/
+docs/blockhelm-glass.md
+docs/glass-options.md
+docs/liquid-glass.md
+docs/glass-system-mode.md
+docs/glass-probe-*.png
+
 # WPF 编译期临时工程与本地构建日志
 *_wpftmp.csproj
 publish-run.log

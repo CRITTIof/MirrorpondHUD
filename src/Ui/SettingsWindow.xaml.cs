@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -247,14 +247,15 @@ namespace MirrorpondHUD.Ui
                 FontCombo.SelectedItem = _selectedFont;
 
                 // 毛玻璃现在用 PrintWindow 取样，不再依赖抓屏排除，也没有系统版本门槛。
+                string align = Settings.NormalizeCardAlign(s.Style.CardAlign);
+                CardAlignCombo.SelectedIndex = align == "Left" ? 1 : align == "Right" ? 2 : 0;
+
                 AcrylicCheck.IsEnabled = true;
                 AcrylicCheck.IsChecked = s.Style.Acrylic;
                 AcrylicBlurSlider.Value = s.Style.AcrylicBlur;
                 AcrylicBlurSlider.IsEnabled = true;
                 AcrylicFpsSlider.Value = s.Style.AcrylicFps;
                 AcrylicFpsSlider.IsEnabled = true;
-                AcrylicHint.Text = "取卡片后面那个窗口的画面、缩小模糊后当卡片底色；把「背景不透明度」调到 0.5 左右更容易看出效果。"
-                                 + "纯桌面背景时玻璃不显示（没有可取的窗口），也不会影响截图 / 录屏里叠层的可见性。";
 
                 FontSizeSlider.Value = s.Style.FontSize;
                 IconScaleSlider.Value = s.Style.IconScale;
@@ -500,10 +501,9 @@ namespace MirrorpondHUD.Ui
 
             CardList.ItemsSource = filtered;
             EmptyHint.Visibility = filtered.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-
-            CardCountText.Text = keyword.Length == 0
-                ? "共 " + _editors.Count + " 张卡片 · 列表顺序就是叠层上的显示顺序"
-                : "匹配 " + filtered.Count + " / " + _editors.Count + " 张卡片";
+            EmptyHint.Text = keyword.Length == 0
+                ? "还没有卡片，点左上角「添加卡片」新建一张"
+                : "没有匹配「" + keyword + "」的卡片";
         }
 
         void SearchBoxTextChanged(object sender, TextChangedEventArgs e)
@@ -755,6 +755,9 @@ namespace MirrorpondHUD.Ui
             s.Overlay.Monitor = Math.Max(0, MonitorCombo.SelectedIndex);
             s.Overlay.X = ParseDouble(XBox.Text, s.Overlay.X);
             s.Overlay.Y = ParseDouble(YBox.Text, s.Overlay.Y);
+
+            s.Style.CardAlign = CardAlignCombo.SelectedIndex == 1 ? "Left"
+                               : CardAlignCombo.SelectedIndex == 2 ? "Right" : "Auto";
 
             s.Hotkeys.ToggleOverlay = (HotkeyToggleBox.Text ?? "").Trim();
             s.Hotkeys.OpenSettings = (HotkeySettingsBox.Text ?? "").Trim();
@@ -1112,6 +1115,7 @@ namespace MirrorpondHUD.Ui
                 var grid = new Grid();
                 grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(200) });
                 grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(220) });
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
                 int row = 0;
                 foreach (CardHotkeyAction action in source.HotkeyActions)
@@ -1139,8 +1143,24 @@ namespace MirrorpondHUD.Ui
                     Grid.SetRow(box, row);
                     Grid.SetColumn(box, 1);
 
+                    var clear = new Button
+                    {
+                        Content = "清空",
+                        Tag = box,
+                        Padding = new Thickness(10, 2, 10, 2),
+                        Margin = new Thickness(8, 0, 0, 10),
+                        VerticalAlignment = VerticalAlignment.Center,
+                        ToolTip = "清除这个热键（留空 = 不启用）"
+                    };
+                    clear.Click += ClearHotkeyBoxClick;
+
                     grid.Children.Add(label);
                     grid.Children.Add(box);
+                    grid.Children.Add(clear);
+
+                    Grid.SetRow(clear, row);
+                    Grid.SetColumn(clear, 2);
+
                     _cardHotkeyBoxes.Add(new KeyValuePair<string, TextBox>(action.Action, box));
                     row++;
                 }
@@ -1169,6 +1189,27 @@ namespace MirrorpondHUD.Ui
             ModifierKeys mods = Keyboard.Modifiers;
             box.Text = HotkeyManager.Format(key, mods);
             box.CaretIndex = box.Text.Length;
+        }
+
+        /// <summary>「清空」按钮：按钮的 Tag 指向要清空的热键输入框。</summary>
+        void ClearHotkeyBoxClick(object sender, RoutedEventArgs e)
+        {
+            var button = sender as FrameworkElement;
+            var box = button == null ? null : button.Tag as TextBox;
+            if (box == null) return;
+
+            box.Text = "";
+            box.CaretIndex = 0;
+        }
+
+        /// <summary>「内容」页每张卡片的呼出热键清空。</summary>
+        void ClearCardHotkeyClick(object sender, RoutedEventArgs e)
+        {
+            var element = sender as FrameworkElement;
+            CardEditor editor = element == null ? null : element.DataContext as CardEditor;
+            if (editor == null) return;
+
+            editor.Hotkey = "";
         }
 
         static bool IsModifierKey(Key key)

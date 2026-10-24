@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Windows;
@@ -53,6 +53,7 @@ namespace MirrorpondHUD.Ui
             _root.Children.Add(_imageLayer);
             _root.Children.Add(_canvas);
             _root.Children.Add(_contentLayer);
+
 
             Child = _root;
             SnapsToDevicePixels = true;
@@ -243,6 +244,7 @@ namespace MirrorpondHUD.Ui
 
         // ==================== 毛玻璃 ====================
 
+        /// <summary>设置玻璃底图（已经在 CPU 上模糊好的小图，直接铺满卡片）。</summary>
         public void SetGlass(ImageSource image)
         {
             if (image == null)
@@ -250,6 +252,8 @@ namespace MirrorpondHUD.Ui
                 ClearGlass();
                 return;
             }
+
+            _glassLayer.Child = null;
 
             var brush = new ImageBrush(image)
             {
@@ -269,6 +273,7 @@ namespace MirrorpondHUD.Ui
         public void ClearGlass()
         {
             _glassLayer.Background = null;
+            _glassLayer.Child = null;
             _glassLayer.Visibility = Visibility.Collapsed;
         }
 

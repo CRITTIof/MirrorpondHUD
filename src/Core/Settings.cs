@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace MirrorpondHUD.Core
@@ -53,6 +53,7 @@ namespace MirrorpondHUD.Core
             Style.AcrylicBlur = Clamp(Style.AcrylicBlur, 0, 60);
             Style.AcrylicFps = (int)Clamp(Style.AcrylicFps, 2, 30);
             Style.IconScale = Clamp(Style.IconScale, 0.5, 3);
+            Style.CardAlign = NormalizeCardAlign(Style.CardAlign);
             if (string.IsNullOrWhiteSpace(Style.BackgroundImage)) Style.BackgroundImage = "";
             Style.ImageStretch = NormalizeStretch(Style.ImageStretch);
 
@@ -94,6 +95,20 @@ namespace MirrorpondHUD.Core
             return string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
         }
 
+
+        /// <summary>卡片对齐：Auto / Left / Right。</summary>
+        public static string NormalizeCardAlign(string value)
+        {
+            switch ((value ?? "").Trim().ToLowerInvariant())
+            {
+                case "left":
+                    return "Left";
+                case "right":
+                    return "Right";
+                default:
+                    return "Auto";
+            }
+        }
 
         /// <summary>背景图片拉伸方式：UniformToFill / Uniform / Fill / None。</summary>
         public static string NormalizeStretch(string value)
@@ -222,6 +237,9 @@ namespace MirrorpondHUD.Core
 
         /// <summary>固定内容宽度（DIP），0 = 自适应但只增不减（避免数值变化时整块跳动）。</summary>
         public double FixedWidth = 0;
+
+        /// <summary>卡片对齐：Left = 所有卡片左边缘共线，Right = 右边缘共线；Auto = 按整叠卡片在屏幕左 / 右半边决定。</summary>
+        public string CardAlign = "Auto";
 
         /// <summary>
         /// 图标字号倍率：Reicon 图标字形的实际字形比汉字小一圈，1.0 = 与正文同字号。
@@ -512,6 +530,9 @@ namespace MirrorpondHUD.Core
         public double Spacing = 12;
         /// <summary>内容模板；空 = 使用卡片自带的默认内容。</summary>
         public string Content = "";
+
+        /// <summary>「信息与文本」卡的预设：metrics / clock / keys / text。</summary>
+        public string Preset = "metrics";
 
         /// <summary>命令行卡片自己的工具 / 目录 / 超时设置；每张命令行卡片互不影响。</summary>
         public CommandSettings Command = new CommandSettings();

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
@@ -80,7 +80,7 @@ namespace MirrorpondHUD.Ui
         {
             _settings = settings;
             Surface.ClearContent();
-            Surface.Apply(settings, text);
+            Surface.Apply(settings, text, false);
             if (_handleReady) UpdateGlassCapture();
             Topmost = settings.Overlay.Topmost;
             UpdateClickThrough();
@@ -458,6 +458,17 @@ namespace MirrorpondHUD.Ui
 
             Action<double, double, int> handler = Moved;
             if (handler != null) handler(dx, dy, monitor);
+        }
+
+        /// <summary>卡片本身的可见宽度（不含投影预留的 10 DIP 透明边），右对齐时用它算 X。</summary>
+        public double CardWidth
+        {
+            get
+            {
+                double width = ActualWidth;
+                if (_settings.Overlay.Shadow) width -= 20;
+                return Math.Max(0, width);
+            }
         }
 
         /// <summary>卡片本身的可见高度（不含投影预留的 10 DIP 透明边），堆叠时用它算间距。</summary>
