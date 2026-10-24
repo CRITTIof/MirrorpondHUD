@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace MirrorpondHUD.Core
@@ -78,6 +78,7 @@ namespace MirrorpondHUD.Core
             Hotkeys.ToggleOverlay = (Hotkeys.ToggleOverlay ?? "").Trim();
             Hotkeys.OpenSettings = NormalizeHotkey(Hotkeys.OpenSettings, "F10");
             Hotkeys.ToggleLock = NormalizeHotkey(Hotkeys.ToggleLock, "F8");
+            Hotkeys.NormalizeCardActions();
 
             // 命令行工具 / 工作目录不再全局保存：它们属于每张「命令行」卡片（CardSettings.Command），
             // 这样同时放 cmd、pwsh、自定义工具的多张命令行卡片可以各用各的。
@@ -92,6 +93,7 @@ namespace MirrorpondHUD.Core
         {
             return string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
         }
+
 
         /// <summary>背景图片拉伸方式：UniformToFill / Uniform / Fill / None。</summary>
         public static string NormalizeStretch(string value)
@@ -235,6 +237,7 @@ namespace MirrorpondHUD.Core
 
         /// <summary>毛玻璃刷新率（帧/秒）。越高越跟手，抓屏与 GPU 开销也越大。</summary>
         public int AcrylicFps = 15;
+
     }
 
     public sealed class DataSettings
@@ -285,6 +288,71 @@ namespace MirrorpondHUD.Core
         public string ToggleOverlay = "";
         public string OpenSettings = "F10";
         public string ToggleLock = "F8";
+
+        /// <summary>卡片模块提供的通用热键（如 media.play-pause），按动作名保存。</summary>
+        public List<CardActionHotkey> CardActions = new List<CardActionHotkey>();
+
+        public string GetCardAction(string action)
+        {
+            if (CardActions == null || string.IsNullOrWhiteSpace(action)) return "";
+
+            foreach (CardActionHotkey entry in CardActions)
+            {
+                if (entry != null && string.Equals(entry.Action, action, StringComparison.OrdinalIgnoreCase))
+                    return entry.Hotkey ?? "";
+            }
+
+            return "";
+        }
+
+        public void SetCardAction(string action, string hotkey)
+        {
+            if (string.IsNullOrWhiteSpace(action)) return;
+            if (CardActions == null) CardActions = new List<CardActionHotkey>();
+
+            foreach (CardActionHotkey entry in CardActions)
+            {
+                if (entry != null && string.Equals(entry.Action, action, StringComparison.OrdinalIgnoreCase))
+                {
+                    entry.Hotkey = hotkey ?? "";
+                    return;
+                }
+            }
+
+            CardActions.Add(new CardActionHotkey { Action = action, Hotkey = hotkey ?? "" });
+        }
+
+        public void NormalizeCardActions()
+        {
+            if (CardActions == null)
+            {
+                CardActions = new List<CardActionHotkey>();
+                return;
+            }
+
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var cleaned = new List<CardActionHotkey>();
+
+            foreach (CardActionHotkey entry in CardActions)
+            {
+                if (entry == null) continue;
+
+                entry.Action = (entry.Action ?? "").Trim();
+                entry.Hotkey = (entry.Hotkey ?? "").Trim();
+                if (entry.Action.Length == 0 || !seen.Add(entry.Action)) continue;
+
+                cleaned.Add(entry);
+            }
+
+            CardActions = cleaned;
+        }
+    }
+
+    /// <summary>卡片模块的一个通用热键：动作名 + 组合键。</summary>
+    public sealed class CardActionHotkey
+    {
+        public string Action = "";
+        public string Hotkey = "";
     }
 
     public sealed class CommandSettings

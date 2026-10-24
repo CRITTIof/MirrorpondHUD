@@ -1,7 +1,8 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
@@ -31,6 +32,8 @@ namespace MirrorpondHUD.Media
 
         readonly Grid _header;
         readonly TextBlock _name;
+        readonly TextBlock _statusText;
+        readonly Border _statusHost;
         readonly Grid _host;
         readonly Image _image;
         readonly TextBlock _message;
@@ -52,6 +55,8 @@ namespace MirrorpondHUD.Media
         double _padX = 14;
         double _padY = 10;
         double _titleSize = 12;
+        double _speed = 1;
+        bool _playing = true;
         Color _foreground = Color.FromRgb(0xE6, 0xED, 0xF3);
         double _clipWidth;
         double _clipHeight;
@@ -71,8 +76,32 @@ namespace MirrorpondHUD.Media
                 HorizontalAlignment = HorizontalAlignment.Stretch
             };
 
+            _statusText = new TextBlock
+            {
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Right
+            };
+
+            // 卡片底色可能是浅色的（毛玻璃 / 淡背景），状态行加一层深色圆角小底，
+            // 保证「▶ 00:05 / 00:12 · 1.5×」在任何背景上都看得清。
+            _statusHost = new Border
+            {
+                Background = new SolidColorBrush(Color.FromArgb(110, 0, 0, 0)),
+                CornerRadius = new CornerRadius(4),
+                Padding = new Thickness(6, 1, 6, 2),
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Margin = new Thickness(8, 0, 0, 0),
+                Child = _statusText
+            };
+
             _header = new Grid();
+            _header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            _header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             _header.Children.Add(_name);
+            _header.Children.Add(_statusHost);
+            Grid.SetColumn(_name, 0);
+            Grid.SetColumn(_statusHost, 1);
 
             _image = new Image
             {
@@ -193,12 +222,17 @@ namespace MirrorpondHUD.Media
             _name.Foreground = Solid(_foreground, 0.92);
             _header.Margin = new Thickness(_padX, Math.Max(2, _padY * 0.5), _padX, Math.Max(1, _padY * 0.3));
 
+            _statusText.FontFamily = _name.FontFamily;
+            _statusText.FontSize = Math.Max(10, _titleSize * 0.9);
+            _statusText.Foreground = Solid(_foreground, 0.95);
+
             _host.Margin = new Thickness(_padX, 0, _padX, 0);
             _footer.Margin = new Thickness(_padX, 5, _padX, Math.Max(7, _padY * 0.85));
 
             _track.Background = Solid(_foreground, 0.20);
             _fill.Background = Solid(_foreground, 0.85);
 
+            UpdateStatus();
             ApplySize();
         }
 
@@ -247,6 +281,7 @@ namespace MirrorpondHUD.Media
                 _name.Text = "";
                 _header.Visibility = Visibility.Collapsed;
                 _footer.Visibility = Visibility.Collapsed;
+                _statusHost.Visibility = Visibility.Collapsed;
                 _loadedPath = "";
                 ApplySize();
                 return;
@@ -266,6 +301,9 @@ namespace MirrorpondHUD.Media
 
             bool video = IsVideo(path);
             _footer.Visibility = video ? Visibility.Visible : Visibility.Collapsed;
+            _statusHost.Visibility = video ? Visibility.Visible : Visibility.Collapsed;
+            _speed = _settings.Speed > 0 ? _settings.Speed : 1;
+            _playing = _settings.Autoplay;
 
             if (samePath)
             {
@@ -519,7 +557,8 @@ namespace MirrorpondHUD.Media
                 _image.Source = null;
 
                 _player.Start(ffmpeg, path, width, height, info.Fps,
-                              _settings.Loop, info.Duration, _settings.Autoplay);
+                              _settings.Loop, info.Duration, _settings.Autoplay,
+                              _speed, 0, !_settings.Muted, 100);
 
                 Log.Info("ffmpeg 解码：" + FileName(path) + " " + width + "×" + height +
                          " " + info.Fps.ToString("0.##") + "fps");
@@ -656,12 +695,18 @@ namespace MirrorpondHUD.Media
                 {
                     Interval = TimeSpan.FromMilliseconds(250)
                 };
-                _progressTimer.Tick += (s, e) => UpdateProgress();
+                _progressTimer.Tick += (s, e) =>
+                {
+                    UpdateProgress();
+                    UpdateStatus();
+                };
             }
 
             _footer.Visibility = Visibility.Visible;
+            _statusHost.Visibility = Visibility.Visible;
             if (!_progressTimer.IsEnabled) _progressTimer.Start();
             UpdateProgress();
+            UpdateStatus();
         }
 
         void UpdateProgress()
@@ -774,6 +819,7 @@ namespace MirrorpondHUD.Media
             _message.Visibility = Visibility.Visible;
             _image.Source = null;
             _footer.Visibility = Visibility.Collapsed;
+            _statusHost.Visibility = Visibility.Collapsed;
         }
 
         // ==================== 播放控制 ====================
@@ -791,6 +837,8 @@ namespace MirrorpondHUD.Media
                     _videoWindow.Play();
                     UpdateVideoPlacement();
                 }
+                _playing = true;
+                UpdateStatus();
             }
             catch (Exception ex)
             {
@@ -805,8 +853,197 @@ namespace MirrorpondHUD.Media
                 if (_gif != null) _gif.Stop();
                 if (_player != null) _player.Pause();
                 if (_videoWindow != null) _videoWindow.Pause();
+                _playing = false;
+                UpdateStatus();
             }
             catch { }
+        }
+
+        // ==================== 热键控制 ====================
+
+        /// <summary>媒体卡片的通用热键：播放 / 暂停、前进、后退、加速、减速。</summary>
+        public void HandleHotkey(string action)
+        {
+            switch (action)
+            {
+                case "media.play-pause":
+                    TogglePlayPause();
+                    break;
+                case "media.forward":
+                    SeekBy(5);
+                    break;
+                case "media.backward":
+                    SeekBy(-5);
+                    break;
+                case "media.speed-up":
+                    ChangeSpeed(0.25);
+                    break;
+                case "media.speed-down":
+                    ChangeSpeed(-0.25);
+                    break;
+            }
+        }
+
+        public void TogglePlayPause()
+        {
+            if (_disposed) return;
+
+            try
+            {
+                if (_player != null)
+                {
+                    if (_player.IsPaused) { _player.Resume(); _playing = true; }
+                    else { _player.Pause(); _playing = false; }
+                }
+                else if (_videoWindow != null)
+                {
+                    if (_playing) { _videoWindow.Pause(); _playing = false; }
+                    else { _videoWindow.Play(); _playing = true; }
+                }
+                else if (_gif != null)
+                {
+                    if (_playing) _gif.Stop();
+                    else _gif.Play();
+                    _playing = !_playing;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("切换播放状态失败: " + ex.Message);
+            }
+
+            UpdateStatus();
+        }
+
+        /// <summary>相对当前位置快进 / 快退（负数是后退）。</summary>
+        public void SeekBy(double seconds)
+        {
+            if (_disposed) return;
+
+            try
+            {
+                if (_player != null)
+                {
+                    _player.SeekBy(seconds);
+                }
+                else if (_videoWindow != null)
+                {
+                    MediaElement video = _videoWindow.Video;
+                    double duration = 0;
+                    try
+                    {
+                        Duration natural = video.NaturalDuration;
+                        if (natural.HasTimeSpan) duration = natural.TimeSpan.TotalSeconds;
+                    }
+                    catch { }
+
+                    double target = video.Position.TotalSeconds + seconds;
+                    if (target < 0) target = 0;
+                    if (duration > 0 && target > duration - 0.1) target = Math.Max(0, duration - 0.1);
+                    video.Position = TimeSpan.FromSeconds(target);
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("视频跳转失败: " + ex.Message);
+            }
+
+            UpdateProgress();
+        }
+
+        /// <summary>调整播放速度（±0.25×，夹在 0.25–4）。</summary>
+        public void ChangeSpeed(double delta)
+        {
+            if (_disposed) return;
+
+            double next = Math.Max(0.25, Math.Min(4.0, _speed + delta));
+            next = Math.Round(next * 100) / 100;
+            if (Math.Abs(next - _speed) < 0.001) return;
+
+            _speed = next;
+
+            try
+            {
+                if (_player != null) _player.SetSpeed(next);
+                else if (_videoWindow != null) _videoWindow.Video.SpeedRatio = next;
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("调整播放速度失败: " + ex.Message);
+            }
+
+            UpdateStatus();
+        }
+
+        // ==================== 状态行 ====================
+
+        static FontFamily _iconFont;
+
+        static FontFamily IconFont()
+        {
+            if (_iconFont != null) return _iconFont;
+
+            try
+            {
+                var found = Application.Current == null ? null : Application.Current.TryFindResource("ReiconFont");
+                _iconFont = found as FontFamily;
+            }
+            catch { }
+
+            if (_iconFont == null)
+                _iconFont = new FontFamily("pack://application:,,,/assets/keycaps/#ReiconFont");
+
+            return _iconFont;
+        }
+
+        /// <summary>右上角：播放 / 暂停状态、当前时长 / 总时长、非 1× 时的速度。</summary>
+        void UpdateStatus()
+        {
+            if (_statusText == null) return;
+            if (_statusHost.Visibility != Visibility.Visible) return;
+
+            double position = 0;
+            double duration = 0;
+
+            if (_player != null)
+            {
+                position = _player.Position;
+                duration = _player.Duration;
+            }
+            else if (_videoWindow != null)
+            {
+                try
+                {
+                    position = _videoWindow.Video.Position.TotalSeconds;
+                    Duration natural = _videoWindow.Video.NaturalDuration;
+                    if (natural.HasTimeSpan) duration = natural.TimeSpan.TotalSeconds;
+                }
+                catch { }
+            }
+
+            _statusText.Inlines.Clear();
+            _statusText.Inlines.Add(new Run(_playing ? Icons.Play : Icons.PauseMedia)
+            {
+                FontFamily = IconFont(),
+                FontSize = _statusText.FontSize + 1
+            });
+            _statusText.Inlines.Add(new Run(" " + Clock(position) + " / " + Clock(duration)));
+
+            if (Math.Abs(_speed - 1) > 0.001)
+            {
+                _statusText.Inlines.Add(new Run(" · " + _speed.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "×"));
+            }
+        }
+
+        static string Clock(double seconds)
+        {
+            if (double.IsNaN(seconds) || double.IsInfinity(seconds) || seconds < 0) seconds = 0;
+
+            long total = (long)Math.Round(seconds);
+            if (total >= 3600)
+                return (total / 3600).ToString("0") + ":" + (total / 60 % 60).ToString("00") + ":" + (total % 60).ToString("00");
+
+            return (total / 60).ToString("00") + ":" + (total % 60).ToString("00");
         }
 
         /// <summary>把视频子窗口重新摆到卡片上方（卡片置顶后会被压下去）。</summary>
@@ -834,6 +1071,7 @@ namespace MirrorpondHUD.Media
 
             if (_progressTimer != null) _progressTimer.Stop();
             _footer.Visibility = Visibility.Collapsed;
+            _statusHost.Visibility = Visibility.Collapsed;
             _fill.Width = 0;
 
             if (_player != null)

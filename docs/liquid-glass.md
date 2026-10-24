@@ -1,4 +1,4 @@
-# 毛玻璃与液态玻璃：token-monitor 拆解与本项目可行性评估
+﻿# 毛玻璃与液态玻璃：token-monitor 拆解与本项目可行性评估
 
 > 调研对象：[Javis603/token-monitor](https://github.com/Javis603/token-monitor)（Electron 0.78.0，
 > 2026-10-24 的 `main`，commit `e1c393c`）。本文只做**提炼与评估**，本项目本次不实现。
@@ -221,6 +221,20 @@ DWM 的私有实现不可调用。只能做“看起来像”的高光与渐变�
 3. **跟随与 z 序**：拖动、缩卡、`EnsureTopmost`、托盘隐藏/显示、多屏 DPI；
 4. **回退**：Win10 失败 / 关闭系统透明效果 / 高对比度时自动切回 `PrintWindow`；
 5. **设置项**：玻璃实现方式 + 性能说明，默认「系统（可用时）」或「兼容」。
+
+## 8.5 原型结果（2026-10-24）
+
+按方案 B 做了一个原型：独立底板窗口（`WS_EX_NOREDIRECTIONBITMAP`）+ `Windows.UI.Composition`
+的 `CreateHostBackdropBrush` + `DWMWA_USE_HOSTBACKDROPBRUSH`，合成器跑在带 `DispatcherQueue` 的
+独立线程上。结果：
+
+- 合成器初始化成功，但 **HostBackdropBrush 在测试机（Win11 24H2）上渲染为纯色**，
+  没有采到桌面内容（截屏采样能正常出模糊）；换成 `DWMWA_SYSTEMBACKDROP_TYPE = Transient`
+  同样是纯色。原因可能是 Win32 窗口缺少 XAML host 提供的 host backdrop，或该 API 只对
+  WinUI 窗口生效，需要继续查。
+- 因此这次**没有合入**：继续用已验证的截屏采样实现，避免用户看到一块纯色卡片。
+- 下一步要么把底板换成 WinUI/DesktopWindowXamlSource 宿主，要么回到 WGC + D3D11；
+  两者都需要 Windows SDK 投影，先记在方案 E 里。
 
 ## 9. 本次不实现的原因
 

@@ -1,6 +1,6 @@
 # ReiconFont 映射文档
 
-版本 **1.7.1** · **114** 个字形 · **106** 个 `event.code` · **62** 个 ASCII 别名 · **176** 个 cmap 条目。
+版本 **1.8.0** · **119** 个字形 · **106** 个 `event.code` · **62** 个 ASCII 别名 · **181** 个 cmap 条目。
 
 本文说明字符、PUA 码位和浏览器键盘事件如何对应到 **ReiconFont** 中的字形。
 
@@ -149,11 +149,16 @@
 | <code>U+E307</code> | <code>move</code> | 图标 | 图标 | <code>Move</code> | Move | — |
 | <code>U+E308</code> | <code>add</code> | 图标 | 图标 | <code>Add</code> | Add | — |
 | <code>U+E309</code> | <code>expand</code> | 图标 | 图标 | <code>Expand</code> | Expand | — |
+| <code>U+E30A</code> | <code>video</code> | 图标 | 图标 | <code>Video</code> | Video | — |
+| <code>U+E30B</code> | <code>clock</code> | 图标 | 图标 | <code>Clock</code> | Clock | — |
+| <code>U+E30C</code> | <code>keypress</code> | 图标 | 图标 | <code>Press</code> | Key press | — |
+| <code>U+E30D</code> | <code>play</code> | 图标 | 图标 | <code>Play</code> | Play | — |
+| <code>U+E30E</code> | <code>pausemedia</code> | 图标 | 图标 | <code>Pause</code> | Pause | — |
 
 ### 字形说明
 
 - `ROM` 沿用键盘上的丝印；图形实际是**硬盘**（盘片、主轴、磁臂），不是 ROM 芯片。
-- 27 个图标分为 **8 个软件 / 文件 / AI**（`CLI`、`Web`、`App`、`Game`、`Folder`、`TXT`、`Image`、`AI`）、**9 个硬件**（`CPU`、`GPU`、`RAM`、`ROM`、`NetUp`、`NetDown`、`USB`、`Vol`、`Mic`）和 **10 个界面图标**（`Content`、`Look`、`Source`、`Action`、`Hotkey`、`Search`、`Delete`、`Move`、`Add`、`Expand`）。
+- 32 个图标分为 **8 个软件 / 文件 / AI**（`CLI`、`Web`、`App`、`Game`、`Folder`、`TXT`、`Image`、`AI`）、**9 个硬件**（`CPU`、`GPU`、`RAM`、`ROM`、`NetUp`、`NetDown`、`USB`、`Vol`、`Mic`）和 **15 个界面图标**（`Content`、`Look`、`Source`、`Action`、`Hotkey`、`Search`、`Delete`、`Move`、`Add`、`Expand`、`Video`、`Clock`、`Press`、`Play`、`Pause`）。
 - `PrtSc`、`ScrLk`、`Pause`、`Menu` 与其余键帽一样占 `U+E000` 区块，不单独分区；`MetaRight` 复用 `Win` 键帽。
 - 图标是象形符号，没有 `event.code`，也不属于文本。
 
@@ -352,7 +357,7 @@ document.addEventListener("keydown", (event) => {
 
 ## 5. 字体信息
 
-- 字体族：**ReiconFont**，样式 **Regular**，版本 **1.710**。
+- 字体族：**ReiconFont**，样式 **Regular**，版本 **1.800**。
 - Units per em：**1000**；所有字形占满 **1em / 62 设计单位** 的显示高度。
 - 键帽边框高 1000 字体单位；独立 SVG 的设计高度为 62 单位。
 - 单色轮廓，内部透明，颜色由 `color` / `currentColor` 控制。
