@@ -589,6 +589,19 @@
                         <TextBlock Text="高级（实验性）" Style="{StaticResource SectionTitle}" Margin="0,18,0,6" />
 
                         <CheckBox x:Name="AcrylicCheck" Content="毛玻璃背景" Margin="0,0,0,4" />
+
+                        <Grid Margin="0,6,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="110" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="玻璃实现" VerticalAlignment="Center" />
+                            <ComboBox x:Name="GlassModeCombo" Grid.Column="1" Width="290" HorizontalAlignment="Left">
+                                <ComboBoxItem Content="系统亚克力（DWM 合成，进程侧不抓屏）" Tag="System" />
+                                <ComboBoxItem Content="兼容（截屏取样，CPU 模糊，参数可调）" Tag="Compat" />
+                            </ComboBox>
+                        </Grid>
+
                         <TextBlock x:Name="AcrylicHint" FontSize="12" Foreground="#6B7280" Margin="0,0,0,10"
                                    Text="抓取卡片后面的画面并模糊，当作卡片底色；压在桌面上时直接用壁纸取样（图标不参与）。把「背景不透明度」调到 0.5 左右更容易看出效果。"
                                    TextWrapping="Wrap" />
@@ -617,7 +630,7 @@
                                 <TextBlock Text="帧/秒" VerticalAlignment="Center" Margin="8,0,0,0" />
                             </StackPanel>
                         </Grid>
-                        <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="110,0,0,0"
+                        <TextBlock x:Name="AcrylicFpsHint" Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="110,0,0,0"
                                    Text="每秒抓几次桌面：15 帧几乎看不出延迟，30 帧更跟手；桌面静止时可调到 8 帧省电。" />
 
                     </StackPanel>

@@ -22,6 +22,11 @@ namespace MirrorpondHUD.Ui
         IntPtr _previousForeground;
         DispatcherTimer _glassTimer;
 
+        /// <summary>系统亚克力底板（方案 G）：null = 没启用 / 不可用，毛玻璃走截屏取样。</summary>
+        GlassBackdrop _backdrop;
+        bool _backdropActive;
+        bool _backdropUnavailable;
+
         bool _dragging;
         Point _dragStartScreen;
         Point _dragStartWindow;
@@ -54,6 +59,13 @@ namespace MirrorpondHUD.Ui
             SourceInitialized += OnSourceInitialized;
             Deactivated += (s, e) => { if (_settings.Overlay.Topmost) EnsureTopmost(); };
 
+            // 亚克力底板要跟着卡片走：位置 / 尺寸 / 可见性 / DPI 任何一个变了都重摆。
+            LocationChanged += (s, e) => UpdateBackdrop();
+            SizeChanged += (s, e) => UpdateBackdrop();
+            IsVisibleChanged += (s, e) => UpdateBackdrop();
+            DpiChanged += (s, e) => UpdateBackdrop();
+            Closed += (s, e) => ReleaseBackdrop();
+
             BuildContextMenu();
         }
 
@@ -79,6 +91,7 @@ namespace MirrorpondHUD.Ui
         public void Apply(Settings settings, string text)
         {
             _settings = settings;
+            _backdropUnavailable = false;   // 设置变了就再给系统底板一次机会
             Surface.ClearContent();
             Surface.Apply(settings, text, false);
             if (_handleReady) UpdateGlassCapture();
@@ -91,6 +104,7 @@ namespace MirrorpondHUD.Ui
         public void ApplyRich(Settings settings, FrameworkElement content)
         {
             _settings = settings;
+            _backdropUnavailable = false;
             Surface.Apply(settings, "");
             Surface.SetContent(content);
             if (_handleReady) UpdateGlassCapture();
@@ -257,6 +271,7 @@ namespace MirrorpondHUD.Ui
 
             Left = left;
             Top = top;
+            UpdateBackdrop();
 
             if (_settings.Style.Acrylic) CaptureGlass();
         }
@@ -289,19 +304,89 @@ namespace MirrorpondHUD.Ui
             Native.SetWindowPos(hwnd, Native.HwndTopmost, 0, 0, 0, 0,
                 Native.SwpNoMove | Native.SwpNoSize | Native.SwpNoActivate | Native.SwpNoOwnerZorder);
 
+            // 卡片重新置顶后，底板要重新插回它正下方（别的置顶窗口可能插进来）。
+            UpdateBackdrop();
+
             // 置顶之后自己的子窗口（视频）会被压下去，通知内容层重新摆好。
             Action handler = RaisedTopmost;
             if (handler != null) handler();
         }
 
         // ==================== 毛玻璃 ====================
-        // 把卡片后面的画面拼出来：枚举卡片矩形内的外部窗口（上 → 下），最后垫上桌面窗口，
-        // 每个采样点取盖住它的最上层窗口的像素，再缩小模糊。不抓屏，所以截图 / 录像里叠层始终可见。
-        // 刷新率由「毛玻璃帧率」控制，窗口隐藏时自动停。
+        // 两种实现：
+        // 1) 系统（默认）：卡片下面一个独立的亚克力底板窗口，DWM / GPU 负责实时模糊，
+        //    进程侧零逐帧工作，模糊半径由系统决定；
+        // 2) 兼容：把卡片后面的画面拼出来（枚举窗口 + PrintWindow + 壁纸），缩小模糊后当底色，
+        //    可调半径与帧率，任何系统都能用。
+        // 系统实现不可用（关闭透明效果 / 远程桌面 / 高对比度 / 接口失效）时自动退回兼容。
+        // 两者都只影响观感，不抓屏，所以截图 / 录像里叠层始终可见。
+
+        /// <summary>
+        /// 决定这一帧由谁提供模糊，并把底板摆到卡片内容区。
+        /// 不可用时保持 <c>_backdropActive = false</c>，截屏取样照常工作。
+        /// </summary>
+        void UpdateBackdrop()
+        {
+            if (!_handleReady) return;
+
+            bool want = _settings.Style.Acrylic
+                        && !_backdropUnavailable
+                        && Settings.NormalizeGlassMode(_settings.Style.GlassMode) == "System";
+
+            if (!want)
+            {
+                _backdropActive = false;
+                if (_backdrop != null) _backdrop.Follow(this, _settings.Overlay.Shadow, false);
+                return;
+            }
+
+            if (_backdrop == null)
+            {
+                string reason;
+                if (!GlassBackdrop.TryCreate(out _backdrop, out reason))
+                {
+                    _backdropUnavailable = true;
+                    _backdropActive = false;
+                    Log.Warn("系统亚克力底板不可用（" + reason + "），毛玻璃改用截屏取样");
+                    return;
+                }
+
+                Log.Info("毛玻璃改用系统亚克力底板：模糊在 DWM / GPU 上完成，进程侧不再抓屏");
+            }
+
+            if (!_backdropActive)
+            {
+                _backdropActive = true;
+                Log.Info("毛玻璃背景已启用（系统亚克力底板，模糊半径由系统决定）");
+            }
+
+            _backdrop.SetTint(OverlaySurface.ParseColor(_settings.Style.Background));
+            _backdrop.Follow(this, _settings.Overlay.Shadow, IsVisible);
+        }
+
+        void ReleaseBackdrop()
+        {
+            _backdropActive = false;
+            if (_backdrop == null) return;
+
+            try { _backdrop.Dispose(); }
+            catch (Exception ex) { Log.Warn("释放亚克力底板失败: " + ex.Message); }
+            _backdrop = null;
+        }
 
         void UpdateGlassCapture()
         {
             if (!_handleReady) return;
+
+            UpdateBackdrop();
+
+            // 系统底板已经在卡片下面画模糊了：不能再叠一张采样图，也不用跑定时器。
+            if (_backdropActive)
+            {
+                if (_glassTimer != null) _glassTimer.Stop();
+                Surface.ClearGlass();
+                return;
+            }
 
             bool enabled = _settings.Style.Acrylic;
 
@@ -341,6 +426,7 @@ namespace MirrorpondHUD.Ui
 
         void CaptureGlass()
         {
+            if (_backdropActive) return;                     // 系统底板接管时不抓屏
             if (!_settings.Style.Acrylic || !_handleReady || _glassBusy) return;
             if (!IsVisible || WindowState == WindowState.Minimized) return;
 

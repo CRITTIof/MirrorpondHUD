@@ -1,4 +1,4 @@
-﻿<h1 align="center">MirrorpondHUD · 镜潭一览</h1>
+<h1 align="center">MirrorpondHUD · 镜潭一览</h1>
 
 <p align="center">
   <b>可增删的桌面信息卡片：系统数据、时钟、按键、命令行、图片 / 动图 / 视频，各自一张独立小窗，按顺序堆叠在桌面最上层。</b><br>
@@ -27,16 +27,16 @@
 
 ## ✨ 功能
 
-- **卡片化** — 系统信息 / 时钟 / 按键 / 文本信息 / 命令行 / 媒体六种卡片，可随时添加、删除、上下移动；同一种卡片可以有任意多张，名称也可以重名
+- **卡片化** — 信息与文本 / 命令行 / 媒体三种卡片，可随时添加、删除、上下移动；同一种卡片可以有任意多张，名称也可以重名
 - **常驻或呼出** — 每张卡片可以「常驻」在屏幕上，也可以关掉常驻、绑定一个全局热键按需呼出；两张卡片设成同一个热键时，按下会**同时**显示
-- **按顺序堆叠** — 设置页里的顺序就是叠层上的顺序；第一张对齐到锚点，其余按各自的「与上方卡片间距」向下排列，解锁后拖动任意一张会移动整叠
+- **按顺序堆叠** — 设置页里的顺序就是叠层上的顺序；第一张对齐到锚点，其余按各自的「与上方卡片间距」向下排列，解锁后拖动任意一张会移动整叠；「对齐方式」可选自动 / 左对齐 / 右对齐，让所有卡片共线的是卡片边缘而不是文字边缘
 - **实时数据** — CPU / GPU / 磁盘 / 网络 / 内存 / 分区空间 / 时间 / 运行时长，PDH 性能计数器采样，独立线程不卡 UI
 - **模板化内容** — `{cpu:0.0}%`、`{net_down}`、`{cpu_icon} CPU {cpu:0.0}%`，支持 .NET 格式串与对齐；每张卡片单独编辑内容
 - **Reicon 图标** — 内嵌 [ReiconFont](https://github.com/CRITTIof/reicon-font)：87 个键帽字形、软件 / 硬件 / 界面图标；CPU、GPU、RAM、ROM、网络上下行图标已接入信息显示，设置页的页签与增删移动按钮也使用它。图标字号默认放大到正文的 1.45 倍，视觉高度与文字一致，不用为了图标把整行字号调大
 - **按键显示** — 全局键盘钩子，最近按键、重复折叠（`A×6`）、最大字符数限制，按键以键帽字形显示
 - **快捷命令行** — 命令行是一张普通卡片，按自己的热键展开；**工具 / 工作目录 / 超时都在这张卡片自己身上**，所以可以同时放 CMD、PowerShell、WSL 三张卡片各用各的
 - **媒体卡片** — 一张卡片显示图片 / 位图 / 动图（GIF）/ 视频，可调缩放方式、宽高、透明度、循环、静音、倍速，并可选择是否按外观的圆角裁圆；卡片顶部显示文件名（过长省略），视频底部带播放进度条；系统解不开的视频会自动改用 ffmpeg
-- **毛玻璃背景** — 按像素拼出卡片后面的画面（多个窗口 + 桌面壁纸），缩小模糊后当底色；压在桌面、窗口边角都正常，截图 / 录像里叠层照常可见
+- **毛玻璃背景** — 两种实现：**系统亚克力**（卡片下面一块独立底板，DWM / GPU 实时模糊身后的桌面与窗口，进程侧零开销）与**兼容**（按像素拼出卡片后面的画面再缩小模糊，任何 Windows 都能用、半径可调）。**默认关闭、暂不推荐**——两种实现各自都有绕不过去的毛病，见 [docs/glass-implementations.md](docs/glass-implementations.md)
 - **外观可调** — 字体字号、图标倍率、描边、背景图、透明度、圆角、投影、固定宽度；尺寸只增不减，数值变化时不跳动
 - **启动动画** — 打字 / 退格动画 + 模拟光标（方块 / 竖线 / 下划线 / 空心框 / 关闭）
 - **托盘常驻** — 单实例唤醒、开机自启、可自定义的全局热键、鼠标穿透锁定
@@ -44,7 +44,7 @@
 
 ## 🚀 快速开始
 
-**下载即用**：到 [Releases](https://github.com/CRITTIof/MirrorpondHUD/releases) 下载最新版 `v2.1.0`。
+**下载即用**：到 [Releases](https://github.com/CRITTIof/MirrorpondHUD/releases) 下载最新版 `v2.3.0`。
 自 v2.1.0 起只提供**需要手动安装 .NET 8 桌面运行时**的版本（体积小）；先装运行时，再双击 exe：
 
 | 文件 | 适用 | 说明 |
@@ -92,14 +92,11 @@ run.bat
 - **常驻**：勾选后一直显示；取消后必须设置「呼出热键」
 - **不再有实时预览**：内容在叠层上直接看效果，设置页只做编辑
 
-六种卡片：
+三种卡片：
 
 | 卡片 | 内容 | 说明 |
 | --- | --- | --- |
-| 系统信息 | CPU / 内存 / GPU / 网络 / 磁盘，带 Reicon 图标 | 默认内容见下 |
-| 时钟 | 时间 / 日期 / 星期 / 运行时长 | 每秒刷新 |
-| 按键 | 最近按键（键帽字形） | 数量、折叠阈值在「数据源」页 |
-| 文本信息 | 任意文字 + 全部占位符 | 适合放常用信息 |
+| 信息与文本 | 系统信息（CPU / 内存 / GPU / 网络 / 磁盘）、时钟、按键、任意文字 | 一张卡片，用「预设」切换：系统信息 / 时钟 / 按键 / 文本信息；四种内容都支持全部占位符 |
 | 命令行 | 提示符 / 历史 / 输入 | 独占键盘，按自己的热键展开；工具与超时是**每张卡片独立**的 |
 | 媒体 | 图片 / 位图 / 动图 / 视频 | 顶部文件名、视频进度条；文件、缩放、透明度、解码器都在卡片里 |
 
@@ -227,9 +224,11 @@ publish.bat        :: 生成 publish\ 下的四个单文件
   自动改用 ffmpeg 逐帧解码并画回卡片。系统解码路径用 `MediaElement` 自己的声音；ffmpeg 路径的
   声音由第二条 ffmpeg 进程转成 PCM、经 winmm 输出，两端都支持 0.25–4× 变速
 - 视频子窗口在跟随卡片的独立窗口里播放（分层窗口画不出 `MediaElement`），因此视频区域不支持卡片内拖动、点击
-- 毛玻璃按像素合成「卡片后面能看到的窗口 + 桌面壁纸」，所以纯桌面、跨窗口、压窗口边角都有底色；
-  它只取外部窗口，**本进程自己的窗口**（设置窗口、视频窗）不会出现在玻璃里；少数禁用 `PrintWindow`
-  的程序（独占全屏 / 硬件覆盖层）会被跳过、退到下一层。原理与性能见 [docs/glass-options.md](docs/glass-options.md)
+- **毛玻璃暂时不推荐开启（默认关闭）**。它有两套实现：系统亚克力靠未文档化的 DWM 接口，圆角卡片会露直角补角、
+  亮度只由色调决定；兼容实现每帧对身后每个窗口做 `PrintWindow`，5 张卡实测约 40% 单核，且抓不到动态壁纸 /
+  独占全屏。两条路都说得清的优缺点、实测数据和选择建议见
+  **[docs/glass-implementations.md](docs/glass-implementations.md)**。只想要半透明卡片的话，把「背景不透明度」
+  调到 0.5–0.7 即可，没有额外开销
 - 运行期插件（`cards/*.dll`）暂未实现；加一种卡片只需在 `src/Cards` 新增一个类——文字卡继承 `CardModuleBase`，
   图片 / 视频这类富内容卡继承 `RichCardModuleBase`，宿主不用改
 
@@ -243,7 +242,7 @@ src/
   Media/                 图片 / 动图 / 视频控件、视频子窗口、解码器探测与 ffmpeg 解码
   Metrics/               PDH / nvidia-smi 采样
   Text/                  模板引擎、占位符、按键名、命令执行
-  Ui/                    叠层窗口、绘制、毛玻璃、设置窗口、托盘、热键、自启
+  Ui/                    叠层窗口、绘制、毛玻璃（GlassBackdrop / GlassCapture）、设置窗口、托盘、热键、自启
 docs/                    设计文档与截图
 assets/keycaps/          ReiconFont 与映射文档
 ```
@@ -251,8 +250,7 @@ assets/keycaps/          ReiconFont 与映射文档
 设计资料：
 
 - [docs/cards-architecture.md](docs/cards-architecture.md) — 模块化卡片架构、富内容契约与扩展方式
-- [docs/glass-options.md](docs/glass-options.md) — 毛玻璃实现说明（`PrintWindow` + 模糊）与各方案调研
-- [docs/liquid-glass.md](docs/liquid-glass.md) — 液态玻璃调研：token-monitor 的毛玻璃 / 液态玻璃拆解与可行性评估
+- [docs/glass-implementations.md](docs/glass-implementations.md) — 毛玻璃的两种实现（系统亚克力 / 截屏取样）：各自的毛病与实测数据，中英双语
 - 「热键」页：全局三个热键置顶；媒体卡片单独一组（播放 / 暂停、前进、后退、加速、减速），
   由卡片模块自己声明，新增卡片类型可以注册自己的通用热键
 
@@ -277,16 +275,16 @@ assets/keycaps/          ReiconFont 与映射文档
 
 ## Features
 
-- **Card modules** — metrics, clock, keys, text, command line and media; add / delete / reorder from *Settings → Content*, duplicates allowed
+- **Card modules** — info & text, command line and media; add / delete / reorder from *Settings → Content*, duplicates allowed
 - **Resident or hotkey** — a card is either always visible, or hidden until its own hotkey is pressed; two cards may share one hotkey and appear together
-- **Stack layout** — list order is screen order; the first card is anchored at a monitor-relative X/Y, every following card keeps its own gap to the previous one; dragging any card moves the whole stack
+- **Stack layout** — list order is screen order; the first card is anchored at a monitor-relative X/Y, every following card keeps its own gap to the previous one; dragging any card moves the whole stack. *Alignment* (auto / left / right) lines up card edges, not text, and *auto* switches sides with the half of the screen the stack sits on
 - **Live metrics** — CPU / GPU / disk / network / memory / drives / uptime through PDH counters on a background thread
 - **Templated content** — `{cpu:0.0}%`, `{net_down}`, `{cpu_icon} CPU {cpu:0.0}%`; every card has its own template
 - **Reicon icons** — embedded [ReiconFont](https://github.com/CRITTIof/reicon-font) keycaps and icons. Icons render at 1.45× the text size by default so they visually match the glyphs — no need to inflate the whole line
 - **Click-through** — the overlay never blocks the desktop unless unlocked with `F8`
 - **Command line cards** — each card owns its tool, working directory and timeout, so a CMD card, a PowerShell card and a WSL card can coexist
 - **Media cards** — one card per image / bitmap / animated GIF / video, with fit mode, size, opacity, loop, mute, speed and an optional corner-rounding toggle; the card keeps the text-card backing and adds a filename header plus a progress bar under videos; Media Foundation decodes first and ffmpeg takes over when it cannot
-- **Frosted glass** — the content behind a card is composed per pixel (windows + desktop wallpaper), downscaled and blurred; works over the desktop and across window edges, and screenshots still see the overlay
+- **Frosted glass** — two implementations: **system acrylic** (a separate backdrop window under each card, blurred live by DWM / the GPU at zero cost in this process) and **compat** (windows behind the card are composed per pixel, downscaled and blurred; adjustable radius, works on any Windows). **Off by default and not recommended yet** — both have flaws this project cannot fix, see [docs/glass-implementations.md](docs/glass-implementations.md)
 - **No runtime needed** — self-contained single-file builds for x64 and ARM64
 
 ## Quick start
@@ -329,7 +327,12 @@ Everything is stored in `settings.json` next to the executable (`SchemaVersion: 
 
 - Only one command card can be in input mode at a time; history and settings are per card
 - Video falls back to ffmpeg when Media Foundation cannot decode it; both paths play audio and support 0.25–4× speed. Video needs the companion window, so the video area does not participate in drag or click handling
-- Frosted glass composes the windows behind a card plus the desktop wallpaper; windows of this process (the settings window, the video window) are intentionally excluded, and programs that refuse `PrintWindow` are skipped
+- **Frosted glass is off by default and not recommended yet.** The system-acrylic path leans on an
+  undocumented DWM call, shows square corner slivers under rounded cards and takes its brightness from the
+  tint only; the compat path calls `PrintWindow` for every window behind every card each frame (≈ 40% of one
+  core with 5 cards), and cannot see animated wallpapers or exclusive-fullscreen windows. Measured numbers,
+  the full list of flaws and how to choose: **[docs/glass-implementations.md](docs/glass-implementations.md)**
+  (bilingual). If all you want is a translucent card, set *Background opacity* to 0.5–0.7 — it costs nothing
 - Runtime plugins (`cards/*.dll`) are not implemented; adding a card is one new class in `src/Cards` (text cards derive from `CardModuleBase`, rich cards from `RichCardModuleBase`)
 
 ## Build
@@ -343,4 +346,4 @@ publish.bat        :: four self-contained / framework-dependent single-file buil
 
 MIT — see [LICENSE](LICENSE). Keycap and icon glyphs come from [ReiconFont](https://github.com/CRITTIof/reicon-font), licensed under the SIL Open Font License 1.1 (`assets/keycaps/OFL.txt`, mapping in `assets/keycaps/MAPPING.md`).
 
-Design notes: [docs/cards-architecture.md](docs/cards-architecture.md) (module contract, rich cards, per-card settings), [docs/glass-options.md](docs/glass-options.md) (how the glass works and why) and [docs/liquid-glass.md](docs/liquid-glass.md) (token-monitor's frosted / liquid glass, and whether this project can adopt it).
+Design notes: [docs/cards-architecture.md](docs/cards-architecture.md) (module contract, rich cards, per-card settings) and [docs/glass-implementations.md](docs/glass-implementations.md) (the two frosted-glass implementations, their flaws and the measurements behind them).

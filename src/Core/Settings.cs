@@ -54,6 +54,7 @@ namespace MirrorpondHUD.Core
             Style.AcrylicFps = (int)Clamp(Style.AcrylicFps, 2, 30);
             Style.IconScale = Clamp(Style.IconScale, 0.5, 3);
             Style.CardAlign = NormalizeCardAlign(Style.CardAlign);
+            Style.GlassMode = NormalizeGlassMode(Style.GlassMode);
             if (string.IsNullOrWhiteSpace(Style.BackgroundImage)) Style.BackgroundImage = "";
             Style.ImageStretch = NormalizeStretch(Style.ImageStretch);
 
@@ -107,6 +108,21 @@ namespace MirrorpondHUD.Core
                     return "Right";
                 default:
                     return "Auto";
+            }
+        }
+
+        /// <summary>毛玻璃实现方式：System（系统亚克力底板） / Compat（截屏取样 + CPU 模糊）。</summary>
+        public static string NormalizeGlassMode(string value)
+        {
+            switch ((value ?? "").Trim().ToLowerInvariant())
+            {
+                case "compat":
+                case "compatible":
+                case "compatibility":
+                case "printwindow":
+                    return "Compat";
+                default:
+                    return "System";
             }
         }
 
@@ -250,11 +266,19 @@ namespace MirrorpondHUD.Core
         /// <summary>毛玻璃背景：抓取窗口后面的桌面并模糊。背景不透明度决定玻璃厚度。</summary>
         public bool Acrylic = false;
 
-        /// <summary>毛玻璃模糊强度（像素）。</summary>
+        /// <summary>毛玻璃模糊强度（像素）。仅兼容实现（截屏取样）使用。</summary>
         public double AcrylicBlur = 12;
 
-        /// <summary>毛玻璃刷新率（帧/秒）。越高越跟手，抓屏与 GPU 开销也越大。</summary>
+        /// <summary>毛玻璃刷新率（帧/秒）。仅兼容实现（截屏取样）使用。</summary>
         public int AcrylicFps = 15;
+
+        /// <summary>
+        /// 毛玻璃实现方式：
+        /// System = 卡片下面的独立亚克力底板窗口（DWM 合成，进程侧零开销，模糊半径由系统决定）；
+        /// Compat = 截屏取样 + CPU 模糊（v2.1 的 PrintWindow 路线，可调半径 / 帧率）。
+        /// 系统不支持（关闭透明效果 / 远程桌面 / 高对比度 / 接口失效）时自动退回 Compat。
+        /// </summary>
+        public string GlassMode = "System";
 
     }
 

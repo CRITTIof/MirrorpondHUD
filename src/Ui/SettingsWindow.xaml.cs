@@ -199,6 +199,7 @@ namespace MirrorpondHUD.Ui
             BgOpacitySlider.ValueChanged += (s, e) => UiChanged();
             AcrylicCheck.Checked += (s, e) => UiChanged();
             AcrylicCheck.Unchecked += (s, e) => UiChanged();
+            GlassModeCombo.SelectionChanged += (s, e) => { UiChanged(); UpdateGlassUiState(); };
             AcrylicBlurSlider.ValueChanged += (s, e) => UiChanged();
             AcrylicFpsSlider.ValueChanged += (s, e) => UiChanged();
             IconScaleSlider.ValueChanged += (s, e) => UiChanged();
@@ -246,16 +247,16 @@ namespace MirrorpondHUD.Ui
                 FilterFonts("");
                 FontCombo.SelectedItem = _selectedFont;
 
-                // 毛玻璃现在用 PrintWindow 取样，不再依赖抓屏排除，也没有系统版本门槛。
+                // 毛玻璃有两条实现：系统亚克力底板（方案 G）/ 截屏取样（兼容）。
                 string align = Settings.NormalizeCardAlign(s.Style.CardAlign);
                 CardAlignCombo.SelectedIndex = align == "Left" ? 1 : align == "Right" ? 2 : 0;
 
+                GlassModeCombo.SelectedIndex = Settings.NormalizeGlassMode(s.Style.GlassMode) == "Compat" ? 1 : 0;
                 AcrylicCheck.IsEnabled = true;
                 AcrylicCheck.IsChecked = s.Style.Acrylic;
                 AcrylicBlurSlider.Value = s.Style.AcrylicBlur;
-                AcrylicBlurSlider.IsEnabled = true;
                 AcrylicFpsSlider.Value = s.Style.AcrylicFps;
-                AcrylicFpsSlider.IsEnabled = true;
+                UpdateGlassUiState();
 
                 FontSizeSlider.Value = s.Style.FontSize;
                 IconScaleSlider.Value = s.Style.IconScale;
@@ -347,6 +348,36 @@ namespace MirrorpondHUD.Ui
         {
             var item = StretchCombo.SelectedItem as ComboBoxItem;
             return item == null ? "UniformToFill" : Settings.NormalizeStretch(item.Tag as string);
+        }
+
+        string GlassModeTag()
+        {
+            var item = GlassModeCombo == null ? null : GlassModeCombo.SelectedItem as ComboBoxItem;
+            return Settings.NormalizeGlassMode(item == null ? null : item.Tag as string);
+        }
+
+        /// <summary>
+        /// 系统亚克力接管时，模糊强度 / 刷新帧率由 DWM 决定，界面上禁用并说明原因；
+        /// 兼容实现则恢复成可调的截屏取样参数。
+        /// </summary>
+        void UpdateGlassUiState()
+        {
+            if (AcrylicHint == null) return;
+
+            bool system = GlassModeTag() == "System";
+
+            AcrylicBlurSlider.IsEnabled = !system;
+            AcrylicBlurValue.IsEnabled = !system;
+            AcrylicFpsSlider.IsEnabled = !system;
+            AcrylicFpsValue.IsEnabled = !system;
+            if (AcrylicFpsHint != null)
+                AcrylicFpsHint.Visibility = system ? Visibility.Collapsed : Visibility.Visible;
+
+            AcrylicHint.Text = system
+                ? "由 DWM 在卡片下面的独立底板上画实时亚克力：模糊在 GPU 上完成、进程侧不抓屏，"
+                  + "「模糊强度 / 刷新帧率」由系统决定（这里不可调）。关闭系统透明效果、远程桌面或高对比度时会自动退回兼容实现。"
+                : "抓取卡片后面的画面并模糊，当作卡片底色；压在桌面上时直接用壁纸取样（图标不参与）。"
+                  + "把「背景不透明度」调到 0.5 左右更容易看出效果。";
         }
 
         static int CursorIndex(string value)
@@ -691,6 +722,7 @@ namespace MirrorpondHUD.Ui
             s.Style.Background = (BgBox.Text ?? "").Trim();
             s.Style.BackgroundOpacity = BgOpacitySlider.Value;
             s.Style.Acrylic = AcrylicCheck.IsChecked == true;
+            s.Style.GlassMode = GlassModeTag();
             s.Style.AcrylicBlur = Math.Round(AcrylicBlurSlider.Value);
             s.Style.AcrylicFps = (int)Math.Round(AcrylicFpsSlider.Value);
             s.Style.TextAlignment = AlignmentTag();
