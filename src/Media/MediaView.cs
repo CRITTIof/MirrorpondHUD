@@ -1022,7 +1022,7 @@ namespace MirrorpondHUD.Media
             }
 
             _statusText.Inlines.Clear();
-            _statusText.Inlines.Add(new Run(_playing ? Icons.Play : Icons.PauseMedia)
+            _statusText.Inlines.Add(new Run(_playing ? Icons.PauseMedia : Icons.Play)
             {
                 FontFamily = IconFont(),
                 FontSize = _statusText.FontSize + 1
