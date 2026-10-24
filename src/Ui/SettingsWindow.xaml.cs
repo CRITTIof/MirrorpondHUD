@@ -944,6 +944,56 @@ namespace MirrorpondHUD.Ui
             editor.RefreshSummary();
         }
 
+        void PickDecoderClick(object sender, RoutedEventArgs e)
+        {
+            CardEditor editor = EditorOf(sender);
+            if (editor == null) return;
+
+            try
+            {
+                var dialog = new Microsoft.Win32.OpenFileDialog
+                {
+                    Title = "选择 ffmpeg.exe",
+                    Filter = "ffmpeg|ffmpeg.exe|可执行文件|*.exe|所有文件|*.*",
+                    CheckFileExists = true
+                };
+
+                string current = (editor.MediaDecoderPath ?? "").Trim();
+                if (current.Length > 0)
+                {
+                    try { dialog.InitialDirectory = System.IO.Path.GetDirectoryName(current); }
+                    catch { }
+                }
+
+                if (dialog.ShowDialog(this) == true)
+                {
+                    editor.MediaDecoderPath = dialog.FileName;
+                    StatusText.Text = "解码器已设为 " + System.IO.Path.GetFileName(dialog.FileName) +
+                                      "，点击“保存并应用”后生效";
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("选择解码器失败: " + ex.Message);
+            }
+        }
+
+        void DetectDecodersClick(object sender, RoutedEventArgs e)
+        {
+            CardEditor editor = EditorOf(sender);
+            if (editor == null) return;
+
+            try
+            {
+                editor.RefreshDecoders();
+                StatusText.Text = editor.DecoderHint;
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("检测解码器失败: " + ex.Message);
+            }
+        }
+
         static string PickColor(string current)
         {
             try

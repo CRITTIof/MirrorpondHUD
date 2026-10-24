@@ -24,7 +24,10 @@ namespace MirrorpondHUD.Cards
                 ? context.Settings.Overlay.CornerRadius
                 : 10;
 
-            var view = new MediaView().WithCornerRadius(radius);
+            var view = new MediaView()
+                .WithCornerRadius(radius)
+                .WithStyle(context == null ? null : context.Settings.Style);
+
             view.Bind(Media(context));
             return view;
         }

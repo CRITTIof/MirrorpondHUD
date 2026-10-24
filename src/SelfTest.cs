@@ -332,7 +332,11 @@ namespace MirrorpondHUD
                 settings.Cards.Add(new CardSettings
                 {
                     Id = "media", Kind = "media", Name = "自检媒体", Resident = false, Hotkey = "F11",
-                    Media = { Path = "C:\\demo.png", Fit = "Cover", Width = 480, Muted = false }
+                    Media =
+                    {
+                        Path = "C:\\demo.png", Fit = "Cover", Width = 480, Muted = false,
+                        Rounded = false, Decoder = "FFmpeg", DecoderPath = "C:\\ffmpeg.exe"
+                    }
                 });
 
                 Settings back = Json.Deserialize<Settings>(Json.Serialize(settings));
@@ -352,7 +356,13 @@ namespace MirrorpondHUD
                            && back.Cards[2].Media.Path == "C:\\demo.png"
                            && back.Cards[2].Media.Fit == "Cover"
                            && Math.Abs(back.Cards[2].Media.Width - 480) < 0.001
-                           && back.Cards[2].Media.Muted == false;
+                           && back.Cards[2].Media.Muted == false
+                           && back.Cards[2].Media.Rounded == false
+                           && back.Cards[2].Media.Decoder == "FFmpeg"
+                           && back.Cards[2].Media.DecoderPath == "C:\\ffmpeg.exe"
+                           && MediaSettings.NormalizeDecoder("mediafoundation") == "BuiltIn"
+                           && MediaSettings.NormalizeDecoder("ffmpeg.exe") == "FFmpeg"
+                           && MediaSettings.NormalizeDecoder("whatever") == "Auto";
             }
             catch (Exception ex)
             {

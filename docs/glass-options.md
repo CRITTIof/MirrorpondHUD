@@ -3,6 +3,10 @@
 > 结论先行：`AllowsTransparency=true`（`WS_EX_LAYERED` + 逐像素 alpha）与 DWM 的系统亚克力**结构性互斥**——
 > 材质由 DWM 画在窗口的 redirect surface 之下，而分层窗口提交的是一张带 alpha 的位图，DWM 不会为它绘制材质
 > （典型表现：整窗发黑或纯透明）。所以自 v2.1 起用的是**自采 + 模糊**路线，具体见下文「已实现」。
+>
+> 另：token-monitor 用「**独立底板窗口** + `HostBackdropBrush`」绕开了这个冲突——模糊画在卡片
+> 下面的另一个 HWND 上，WPF 卡片继续保留分层窗口。拆解与可行性见
+> [liquid-glass.md](liquid-glass.md)。
 
 ## 已实现（v2.1）
 
@@ -49,7 +53,7 @@
 | A. DWM 系统背景材质（Win11 22621+） | 是 | **否** | 低 | 只能配非分层窗口，需双窗 |
 | B. `SetWindowCompositionAttribute` | 是 | 未定义 | 低 | 未文档化、无模糊半径、整窗矩形 |
 | C. Windows App SDK SystemBackdrop | 是 | 否 | 高 | 要 XAML Islands / DComp target |
-| D. HostBackdropBrush + DComp | 是 | 否 | 最高 | 接管 HWND 内容来源 |
+| D. HostBackdropBrush + DComp（独立底板窗口） | 是 | **是**（底板是另一个 HWND） | 中高 | 真模糊、CPU≈0；需 WinRT 投影，Win10 待验证 |
 | E. WGC + D3D11 模糊 | 是 | 是 | 中高 | 目标方案，当前未做（见上） |
 | **F. PrintWindow + CPU 模糊（已实现）** | 15 fps | 是 | 低 | **当前方案** |
 
@@ -78,10 +82,16 @@
 `DesktopAcrylicController` / `MicaController` 需要目标实现 `ICompositionSupportsSystemBackdrop`，WPF 窗口不实现；
 得挂 `DesktopWindowXamlSource` 或自建 DComp target，底层仍要求非分层窗口，成本最高。
 
-### D. HostBackdropBrush + DirectComposition
+### D. HostBackdropBrush + DirectComposition（独立底板窗口）
 
-`DWMWA_USE_HOSTBACKDROPBRUSH=17` + `Compositor.CreateHostBackdropBrush()` + `CompositionEffectBrush`，
-经 DComp 呈现；会接管 HWND 内容来源，与 WPF / layered 不共存。
+`DWMWA_USE_HOSTBACKDROPBRUSH=17` + `Compositor.CreateHostBackdropBrush()` + `CompositionGeometricClip`，
+画在**卡片下面的一个独立 HWND** 上（`WS_EX_NOREDIRECTIONBITMAP`，无分层），再由
+`SetWindowPos(backdrop, cardHwnd, ...)` 插到卡片正下方。
+
+- 这样就不占用 WPF 窗口的内容来源，卡片可以继续 `AllowsTransparency=true`；
+- 真模糊（GPU）、零截屏，Win11 实时亚克力同一套材质；
+- 需要 `Windows.UI.Composition` 投影（`net8.0-windows10.0.19041.0` / CsWinRT），Win10 行为待验证；
+- 详细拆解与 PoC 计划见 [liquid-glass.md](liquid-glass.md)。
 
 ### E. WGC + GPU 模糊
 

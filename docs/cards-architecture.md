@@ -14,9 +14,11 @@
 | `src/Cards/CardRegistry.cs` | 反射扫描本程序集里所有 `ICardModule` 实现，按 `Order` 排序 |
 | `src/Cards/CardModel.cs` | 卡片列表的创建、补全、校验、名称去重 |
 | `src/Cards/MetricsCard.cs` 等 | 六种卡片各自的元数据与渲染 |
-| `src/Media/MediaView.cs` | 图片 / 动图 / 视频控件：卡片内容的实际绘制者 |
+| `src/Media/MediaView.cs` | 图片 / 动图 / 视频控件：卡片内容的实际绘制者（文件名 + 进度条 + 圆角） |
 | `src/Media/GifAnimator.cs` | 动图按帧播放（GDI+ 取帧 + `DispatcherTimer`） |
 | `src/Media/VideoWindow.cs` | 视频子窗口：分层窗口画不出 `MediaElement`，视频单独开窗贴在卡片上 |
+| `src/Media/Decoders.cs` | 解码器探测：自定义路径 → PATH → 常见安装目录，找 ffmpeg / mpv / VLC |
+| `src/Media/FfmpegPlayer.cs` | 外部 ffmpeg 解码：原始 BGRA 帧管道、进度、循环、图片兜底 |
 | `src/Ui/OverlayController.cs` | 每张卡片一个窗口，负责堆叠、显示 / 隐藏、热键、命令行会话、富内容生命周期 |
 | `src/Ui/CardEditor.cs` | 设置页「内容」里的一张卡片设置卡（双向绑定，含每卡命令行 / 媒体设置） |
 
@@ -71,7 +73,9 @@ public sealed class MyMediaCard : RichCardModuleBase
 
     public override FrameworkElement CreateContent(CardRenderContext context)
     {
-        var view = new MediaView().WithCornerRadius(context.Settings.Overlay.CornerRadius);
+        var view = new MediaView()
+            .WithCornerRadius(context.Settings.Overlay.CornerRadius)
+            .WithStyle(context.Settings.Style);
         view.Bind(context.Config.Media);
         return view;
     }
@@ -101,7 +105,8 @@ public sealed class MyMediaCard : RichCardModuleBase
     "Command": { "Shell": "cmd", "CustomShell": "cmd.exe /c {cmd}", "WorkingDirectory": "",
                  "Truncate": true, "MaxLineChars": 120, "MaxLines": 30, "TimeoutSeconds": 20 },
     "Media": { "Path": "", "Fit": "Contain", "Width": 320, "Height": 0, "Opacity": 1,
-               "Loop": true, "Autoplay": true, "Muted": true, "Speed": 1 }
+               "Loop": true, "Autoplay": true, "Muted": true, "Speed": 1, "Rounded": true,
+               "Decoder": "Auto", "DecoderPath": "" }
   }
 ]
 ```
@@ -114,7 +119,8 @@ public sealed class MyMediaCard : RichCardModuleBase
 - `Content`：内容模板；空 = 用卡片默认内容
 - `Command`：**每张命令行卡片自己的**工具 / 模板 / 工作目录 / 截断 / 行数 / 超时。
   v2 里这些是全局设置，v3 起拆到卡片上，于是 cmd、pwsh、WSL 可以各放一张卡片同时待命
-- `Media`：**每张媒体卡片自己的**文件、缩放方式、宽高、不透明度、循环 / 自动播放 / 静音 / 倍速
+- `Media`：**每张媒体卡片自己的**文件、缩放方式、宽高、不透明度、循环 / 自动播放 / 静音 / 倍速、
+  圆角开关、解码器（`Auto` / `BuiltIn` / `FFmpeg`）与自定义 `ffmpeg.exe` 路径
 - 命令行卡强制 `Resident=false`、无内容模板
 
 旧配置由 `Core/SettingsMigration.cs` 一次性迁移：v0/v1（单窗口，全局 `Content` + `X/Y/Visible`）
@@ -138,20 +144,48 @@ for card in Cards where visible:
 
 ## 5. 富内容与视频子窗口
 
+媒体卡片和文字卡片共用同一块「底层」：卡片窗口照常由 `OverlaySurface` 画底色 / 毛玻璃 / 圆角 /
+投影，`MediaView` 在四周留出和文字一样的内边距，所以媒体卡看起来仍是同一叠卡片里的一张：
+
+```
+┌──────────────────────────────┐  ← OverlaySurface：tint / 毛玻璃 / 圆角 / 投影
+│  clip.mkv                    │  ← 顶部：文件名，超长 TextTrimming=CharacterEllipsis
+│  ┌────────────────────────┐  │
+│  │      媒体画面          │  │  ← 按外观圆角裁剪（MediaSettings.Rounded）
+│  └────────────────────────┘  │
+│  ▬▬▬▬▬▬▬▬▬▬▬▬▬▬░░░░░░░░░░░░  │  ← 底部：视频进度条（250 ms 刷新，图片不显示）
+└──────────────────────────────┘
+```
+
 | 内容 | 承载方式 |
 | --- | --- |
-| 静态图片 | `Image` + `BitmapDecoder`（png / jpg / bmp / tif / ico），高质量缩放 |
+| 静态图片 | `Image` + `BitmapDecoder`（png / jpg / bmp / tif / ico），高质量缩放；WPF 解不开时交给 ffmpeg 转一帧 |
 | 动图 GIF | `GifAnimator`：GDI+ 逐帧合成、按 GIF 自带延时切换，卡片隐藏时停表 |
-| 视频 | `VideoWindow`：**独立的不透明子窗口**，`Owner` = 卡片，跟随位置并做圆角 |
+| 视频（系统） | `VideoWindow`：**独立的不透明子窗口**，`Owner` = 卡片，跟随位置并做圆角 |
+| 视频（ffmpeg） | `FfmpegPlayer`：`-re -f rawvideo -pix_fmt bgra` 管道逐帧画回卡片，不需要子窗口 |
 
 媒体默认按外观里的圆角把四个角裁圆（`MediaSettings.Rounded`，可在卡片里关掉）；
-图片 / 动图用 `RectangleGeometry` 裁剪，视频子窗口用 `SetWindowRgn` 得到同样的圆角。
+图片 / 动图 / ffmpeg 帧用 `RectangleGeometry` 裁剪，视频子窗口用 `SetWindowRgn` 得到同样的圆角。
 
 视频为什么要单独开窗：叠层用 `AllowsTransparency=true`（`WS_EX_LAYERED`），WPF 在这种窗口上用软件渲染，
 `MediaElement` 的视频画面会被整块丢弃。子窗口不透明、`WS_EX_TRANSPARENT|NOACTIVATE|TOOLWINDOW`
 （鼠标穿透、不抢焦点、不进 Alt+Tab），`SetWindowRgn` 做圆角，视觉上仍然是一张圆角卡片。
 卡片每次 `EnsureTopmost()` 之后会通过 `RaisedTopmost` 事件让子窗口重新 `SetWindowPos(HWND_TOPMOST)`，
 否则会被卡片自己压住。
+
+### 解码器
+
+系统自带的 Media Foundation 能放 mp4 / wmv，但 mkv / webm / av1 / 部分 hevc 取决于系统与扩展；
+ffmpeg 路线把视频解成逐帧原始像素，什么格式都能放（代价是没有声音、固定 1×、走 CPU）。
+
+- `MediaSettings.Decoder`：`Auto`（系统优先，失败自动换 ffmpeg）/ `BuiltIn`（只用系统）/
+  `FFmpeg`（只用 ffmpeg）；
+- `MediaSettings.DecoderPath`：自定义 `ffmpeg.exe`，留空则 `Decoders` 依次查
+  自定义路径 → `PATH` → 常见安装目录（Program Files、Chocolatey、Scoop、WinGet Links…）；
+- 设置页展示探测结果（版本 + 路径），「检测」按钮强制重新扫描；
+- 系统解码失败（`MediaElement.MediaFailed`）且 `Auto` 时，自动 `ReleaseVideo()` 并切到
+  `FfmpegPlayer`；图片（webp / avif / heic）解不开时同样用 `ffmpeg -frames:v 1` 转一帧；
+- ffmpeg 逐帧解码的进度 = 已读帧数 / 探测到的帧率，卡片底部进度条直接用这个值。
 
 ## 6. 热键
 
