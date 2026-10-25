@@ -108,7 +108,19 @@ namespace MirrorpondHUD.Ui
 
         IntPtr _handle;
         bool _visible;
-        DispatcherTimer _timer;
+
+        /// <summary>唯一的那只截屏定时器（200 ms）：不再每块底板一个。</summary>
+        static DispatcherTimer _pump;
+
+        /// <summary>
+        /// 整叠卡片区域的屏幕快照（1:1）。每轮只从屏幕上读一次，各块底板再从这张图里
+        /// 取自己那一块 —— 屏幕 DC 的 StretchBlt 要等 DWM 合成，一次 10–17 ms。
+        /// </summary>
+        static IntPtr _sharedDc;
+        static IntPtr _sharedDib;
+        static IntPtr _sharedPrevious;
+        static int _sharedWidth;
+        static int _sharedHeight;
 
         IntPtr _memoryDc;
         IntPtr _dib;
@@ -126,9 +138,121 @@ namespace MirrorpondHUD.Ui
         {
             _handle = handle;
             lock (Live) Live.Add(this);
+            EnsureWinEventHook();
         }
 
         public bool IsActive { get { return _handle != IntPtr.Zero; } }
+
+        // ==================== 窗口栈变了就补帧 ====================
+        // 底板只靠 200 ms 的定时器刷新，等于「切窗口 / 最小化 / 弹出新窗口」之后
+        // 玻璃要等最多一整帧才跟上，观感就是「换窗口时玻璃不跟手」。
+        // 这里挂一个全局 WinEvent 钩子（跳过本进程），一有窗口栈变化就立刻补一帧，
+        // 40 ms 后再补一帧接住切换动画的最后一帧；定时器继续负责视频 / 动画壁纸。
+
+        const uint WineventOutofcontext = 0x0000;
+        const uint WineventSkipownprocess = 0x0002;
+        const uint EventSystemForeground = 0x0003;
+        const uint EventSystemMovesizeEnd = 0x000B;
+        const uint EventSystemSwitchEnd = 0x0015;
+        const uint EventSystemMinimizeStart = 0x0016;
+        const uint EventSystemMinimizeEnd = 0x0017;
+        const uint EventObjectShow = 0x8002;
+        const uint EventObjectHide = 0x8003;
+
+        static WinEventDelegate _winEventProc;
+        static IntPtr _winEventHookSystem;
+        static IntPtr _winEventHookObject;
+        static DateTime _lastRefreshRequest;
+        static DispatcherTimer _burst;
+        static int _burstStep;
+
+        const int BurstIntervalMs = 40;   // 补帧间隔
+        const int BurstFrames = 2;        // 立刻 + 40 ms（切换动画期间画面还在变）
+
+        /// <summary>装钩子（幂等）。必须在有消息循环的线程上调用 —— 也就是 UI 线程。</summary>
+        static void EnsureWinEventHook()
+        {
+            if (_winEventProc != null) return;
+
+            try
+            {
+                _winEventProc = OnWinEvent;
+                _winEventHookSystem = SetWinEventHook(
+                    EventSystemForeground, EventSystemMinimizeEnd, IntPtr.Zero, _winEventProc,
+                    0, 0, WineventOutofcontext | WineventSkipownprocess);
+                _winEventHookObject = SetWinEventHook(
+                    EventObjectShow, EventObjectHide, IntPtr.Zero, _winEventProc,
+                    0, 0, WineventOutofcontext | WineventSkipownprocess);
+            }
+            catch (Exception ex)
+            {
+                _winEventProc = null;
+                Log.Warn("窗口事件钩子安装失败，玻璃只按定时器刷新: " + ex.Message);
+            }
+        }
+
+        static void OnWinEvent(IntPtr hook, uint evt, IntPtr hwnd, int idObject, int idChild,
+                               uint thread, uint time)
+        {
+            switch (evt)
+            {
+                case EventSystemForeground:
+                case EventSystemMovesizeEnd:
+                case EventSystemSwitchEnd:
+                case EventSystemMinimizeStart:
+                case EventSystemMinimizeEnd:
+                case EventObjectShow:
+                case EventObjectHide:
+                    break;
+
+                default:
+                    return;
+            }
+
+            // out-of-context 钩子回到安装线程，但统一丢回 UI 线程更稳（Capture 要用 UI 线程）。
+            Dispatcher dispatcher = Application.Current == null ? null : Application.Current.Dispatcher;
+            if (dispatcher == null) return;
+
+            try { dispatcher.BeginInvoke(new Action(ScheduleRefresh), DispatcherPriority.Input); }
+            catch { }
+        }
+
+        static void ScheduleRefresh()
+        {
+            DateTime now = DateTime.UtcNow;
+
+            // 切一次窗口会连发好几个事件（FOREGROUND + SHOW + SWITCHEND…），合并掉
+            if ((now - _lastRefreshRequest).TotalMilliseconds < 30) return;
+            _lastRefreshRequest = now;
+
+            // 一次切换补一串帧（立刻 + 40 / 80 / 120 ms）：只补一帧的话很容易正好落在
+            // 「DWM 还没合成完」或「切换动画中间」上，实测仍然要 ~80 ms 才看得到新画面。
+            _burstStep = 0;
+            CaptureAll();
+            StartBurst();
+        }
+
+        /// <summary>补帧的尾巴：切换动画期间画面还在变，多补几帧才能接住最后一帧。</summary>
+        static void StartBurst()
+        {
+            if (_burst == null)
+            {
+                _burst = new DispatcherTimer(DispatcherPriority.Input)
+                {
+                    Interval = TimeSpan.FromMilliseconds(BurstIntervalMs)
+                };
+                _burst.Tick += (s, e) => TickBurst();
+            }
+
+            _burst.Stop();
+            _burst.Start();
+        }
+
+        static void TickBurst()
+        {
+            CaptureAll();
+            if (++_burstStep >= BurstFrames) _burst.Stop();
+        }
 
         // ==================== 可用性 ====================
 
@@ -283,12 +407,14 @@ namespace MirrorpondHUD.Ui
 
         public void Dispose()
         {
+            bool empty;
             lock (Live)
             {
                 Live.Remove(this);
+                empty = Live.Count == 0;
             }
 
-            if (_timer != null) { _timer.Stop(); _timer = null; }
+            if (empty) ReleaseSharedSurface();
 
             if (_handle == IntPtr.Zero) return;
 
@@ -420,8 +546,8 @@ namespace MirrorpondHUD.Ui
                 return;
             }
 
-            if (_timer == null) StartCapture();
-            else if (moved) Capture();
+            EnsurePump();
+            if (moved) CaptureAll();
         }
 
         void SetShown(bool show)
@@ -431,28 +557,97 @@ namespace MirrorpondHUD.Ui
 
             ShowWindow(_handle, show ? SwShowNoActivate : SwHide);
             _visible = show;
-
-            if (_timer != null)
-            {
-                if (show) _timer.Start();
-                else _timer.Stop();
-            }
         }
 
         // ==================== 截屏 + 模糊 ====================
 
-        void StartCapture()
+        static void EnsurePump()
         {
-            _timer = new DispatcherTimer(DispatcherPriority.Background)
+            if (_pump != null) return;
+
+            _pump = new DispatcherTimer(DispatcherPriority.Background)
             {
                 Interval = TimeSpan.FromMilliseconds(200)
             };
-            _timer.Tick += (s, e) => Capture();
-            _timer.Start();
-            Capture();
+            _pump.Tick += (s, e) => CaptureAll();
+            _pump.Start();
+
+            CaptureAll();
         }
 
-        void Capture()
+        /// <summary>
+        /// 把整叠卡片区域从屏幕上读一次，再分给每块底板。
+        ///
+        /// 为什么不是每块底板各读一次屏：从屏幕 DC 做 StretchBlt 要 10–17 ms
+        /// （约一个 vsync，得等 DWM 合成完），4 张卡顺序读就是 66 ms —— 这段时间 UI 线程
+        /// 被占住，切窗口时玻璃要等下一轮才跟上，也就是「换窗口不跟手」的根源。
+        /// 改成「整叠区域读一次 + 内存 DC 之间拉伸」以后，一轮只花一帧。
+        /// </summary>
+        static void CaptureAll()
+        {
+            AcrylicBackdrop[] snapshot;
+            lock (Live)
+            {
+                snapshot = new AcrylicBackdrop[Live.Count];
+                Live.CopyTo(snapshot);
+            }
+
+            int left = int.MaxValue, top = int.MaxValue, right = int.MinValue, bottom = int.MinValue;
+            int count = 0;
+
+            foreach (AcrylicBackdrop item in snapshot)
+            {
+                int l, t, w, h;
+                if (!item.TryGetScreenRect(out l, out t, out w, out h)) continue;
+
+                count++;
+                if (l < left) left = l;
+                if (t < top) top = t;
+                if (l + w > right) right = l + w;
+                if (t + h > bottom) bottom = t + h;
+            }
+
+            if (count == 0) return;
+
+            int width = right - left;
+            int height = bottom - top;
+            if (width < 4 || height < 4) return;
+
+            // 共享图按 128 px 取整，免得开场动画每长一行字就重建一次 DIB
+            // （实际只用到左上角 width × height 这一块）。
+            int surfaceWidth = RoundUp(width);
+            int surfaceHeight = RoundUp(height);
+            if (!EnsureSharedSurface(surfaceWidth, surfaceHeight)) return;
+
+            IntPtr screen = GetDC(IntPtr.Zero);
+            try
+            {
+                BitBlt(_sharedDc, 0, 0, width, height, screen, left, top, Srccopy);
+            }
+            finally
+            {
+                ReleaseDC(IntPtr.Zero, screen);
+            }
+
+            foreach (AcrylicBackdrop item in snapshot) item.CaptureFrom(_sharedDc, left, top);
+        }
+
+        static int RoundUp(int value)
+        {
+            return ((value + 127) / 128) * 128;
+        }
+
+        bool TryGetScreenRect(out int left, out int top, out int width, out int height)
+        {
+            left = _left;
+            top = _top;
+            width = _width;
+            height = _height;
+            return _handle != IntPtr.Zero && _visible && width >= 4 && height >= 4;
+        }
+
+        /// <summary>从共享的屏幕图里取自己这一块，缩小 + 模糊，然后请求重画。</summary>
+        void CaptureFrom(IntPtr sourceDc, int originLeft, int originTop)
         {
             if (_handle == IntPtr.Zero || !_visible) return;
             if (_width < 4 || _height < 4) return;
@@ -465,18 +660,16 @@ namespace MirrorpondHUD.Ui
                 if (!Allocate(w, h)) return;
             }
 
-            IntPtr screen = GetDC(IntPtr.Zero);
-            try
-            {
-                SetStretchBltMode(_memoryDc, Halftone);
-                StretchBlt(_memoryDc, 0, 0, w, h, screen, _left, _top, _width, _height, Srccopy);
-            }
-            finally
-            {
-                ReleaseDC(IntPtr.Zero, screen);
-            }
+            SetStretchBltMode(_memoryDc, Halftone);
+            StretchBlt(_memoryDc, 0, 0, w, h, sourceDc, _left - originLeft, _top - originTop,
+                       _width, _height, Srccopy);
 
-            // 在缩略图上做两遍方框模糊（横 + 竖），等价于原图上约 2× 的半径
+            FinishFrame(w, h);
+        }
+
+        /// <summary>缩略图 → 两遍方框模糊 → 写回 DIB → 请求重画。</summary>
+        void FinishFrame(int w, int h)
+        {
             var buffer = new byte[w * h * 4];
             Marshal.Copy(_dibBits, buffer, 0, buffer.Length);
 
@@ -489,6 +682,65 @@ namespace MirrorpondHUD.Ui
             Marshal.Copy(buffer, 0, _dibBits, buffer.Length);
 
             InvalidateRect(_handle, IntPtr.Zero, false);
+        }
+
+        static bool EnsureSharedSurface(int width, int height)
+        {
+            if (_sharedDc != IntPtr.Zero && _sharedWidth == width && _sharedHeight == height) return true;
+            ReleaseSharedSurface();
+
+            var bmi = new BitmapInfo
+            {
+                Size = Marshal.SizeOf(typeof(BitmapInfo)),
+                Width = width,
+                Height = -height,     // 负数 = 自上而下
+                Planes = 1,
+                BitCount = 32,
+                Compression = 0       // BI_RGB
+            };
+
+            IntPtr screen = GetDC(IntPtr.Zero);
+            try
+            {
+                _sharedDc = CreateCompatibleDC(screen);
+                IntPtr bits;
+                _sharedDib = CreateDIBSection(screen, ref bmi, 0, out bits, IntPtr.Zero, 0);
+            }
+            finally
+            {
+                ReleaseDC(IntPtr.Zero, screen);
+            }
+
+            if (_sharedDc == IntPtr.Zero || _sharedDib == IntPtr.Zero)
+            {
+                ReleaseSharedSurface();
+                return false;
+            }
+
+            _sharedPrevious = SelectObject(_sharedDc, _sharedDib);
+            if (_sharedPrevious == IntPtr.Zero || _sharedPrevious == new IntPtr(-1))
+            {
+                ReleaseSharedSurface();
+                return false;
+            }
+
+            _sharedWidth = width;
+            _sharedHeight = height;
+            return true;
+        }
+
+        static void ReleaseSharedSurface()
+        {
+            if (_sharedPrevious != IntPtr.Zero && _sharedDc != IntPtr.Zero)
+            {
+                SelectObject(_sharedDc, _sharedPrevious);
+                _sharedPrevious = IntPtr.Zero;
+            }
+
+            if (_sharedDib != IntPtr.Zero) { DeleteObject(_sharedDib); _sharedDib = IntPtr.Zero; }
+            if (_sharedDc != IntPtr.Zero) { DeleteDC(_sharedDc); _sharedDc = IntPtr.Zero; }
+            _sharedWidth = 0;
+            _sharedHeight = 0;
         }
 
         /// <summary>底板取不到内容时通知宿主（<see cref="Unavailable"/>）。</summary>
@@ -797,6 +1049,14 @@ namespace MirrorpondHUD.Ui
         [DllImport("user32.dll")]
         static extern IntPtr GetWindow(IntPtr hwnd, int command);
 
+        delegate void WinEventDelegate(IntPtr hook, uint evt, IntPtr hwnd, int idObject, int idChild,
+                                       uint thread, uint time);
+
+        [DllImport("user32.dll")]
+        static extern IntPtr SetWinEventHook(uint eventMin, uint eventMax, IntPtr module,
+                                             WinEventDelegate callback, uint processId, uint threadId,
+                                             uint flags);
+
         [DllImport("user32.dll")]
         static extern int GetSystemMetrics(int index);
 
@@ -824,6 +1084,10 @@ namespace MirrorpondHUD.Ui
 
         [DllImport("gdi32.dll")]
         static extern int SetStretchBltMode(IntPtr hdc, int mode);
+
+        [DllImport("gdi32.dll")]
+        static extern bool BitBlt(IntPtr dest, int destX, int destY, int destW, int destH,
+                                  IntPtr src, int srcX, int srcY, uint rop);
 
         [DllImport("gdi32.dll")]
         static extern bool StretchBlt(IntPtr dest, int destX, int destY, int destW, int destH,
