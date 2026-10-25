@@ -469,12 +469,11 @@ namespace MirrorpondHUD.Ui
             bool first = !_acrylicActive;
             _acrylicActive = true;
 
-            if (first)
-            {
-                // 底板截的是屏幕：卡片必须先排除在截屏之外，否则会被拍进玻璃里形成拖影。
-                AcrylicBackdrop.ExcludeFromCapture(this, true);
-                Log.Info("毛玻璃背景已启用（DWM 桌面亚克力底板，进程侧截屏 + 模糊）");
-            }
+            // 底板截的是屏幕：卡片（连同 owner 是它的子窗口，比如视频窗）必须先排除在截屏之外，
+            // 否则会被拍进玻璃里形成拖影。每次都塞一遍，是为了照顾之后才创建出来的子窗口。
+            AcrylicBackdrop.ExcludeFromCapture(this, true);
+
+            if (first) Log.Info("毛玻璃背景已启用（DWM 桌面亚克力底板，进程侧截屏 + 模糊）");
 
             _acrylicBackdrop.Follow(this, _settings.Overlay.Shadow, IsVisible);
         }

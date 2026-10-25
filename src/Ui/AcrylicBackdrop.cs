@@ -69,6 +69,9 @@ namespace MirrorpondHUD.Ui
         const uint WdaNone = 0;
         const uint WdaExcludeFromCapture = 0x11;
 
+        /// <summary>GetWindow 的 GW_OWNER：找「owner 是这张卡片的窗口」（视频窗）。</summary>
+        const int GwOwner = 4;
+
         const uint Srccopy = 0x00CC0020;
         const int Halftone = 4;
 
@@ -297,7 +300,11 @@ namespace MirrorpondHUD.Ui
             _visible = false;
         }
 
-        /// <summary>卡片窗口也要排除在截屏之外：否则卡片自己会被拍进底板的取样图。</summary>
+        /// <summary>
+        /// 卡片窗口也要排除在截屏之外：否则卡片自己会被拍进底板的取样图。
+        /// 卡片名下的其它顶层窗口（owner 是卡片的视频窗）一起排除 —— 否则截图里会剩下
+        /// 一块单独的视频，而卡片框已经不见了。
+        /// </summary>
         public static void ExcludeFromCapture(Window card, bool exclude)
         {
             if (card == null) return;
@@ -309,6 +316,34 @@ namespace MirrorpondHUD.Ui
 
             try { SetWindowDisplayAffinity(hwnd, exclude ? WdaExcludeFromCapture : WdaNone); }
             catch (Exception ex) { Log.Warn("设置截屏排除失败: " + ex.Message); }
+
+            ExcludeOwnedWindows(hwnd, exclude);
+        }
+
+        /// <summary>把 owner 是这个窗口的顶层窗口一并排除 / 放回（视频窗就是这么挂的）。</summary>
+        static void ExcludeOwnedWindows(IntPtr owner, bool exclude)
+        {
+            var owned = new System.Collections.Generic.List<IntPtr>();
+
+            try
+            {
+                EnumWindows((hwnd, param) =>
+                {
+                    if (GetWindow(hwnd, GwOwner) == owner) owned.Add(hwnd);
+                    return true;
+                }, IntPtr.Zero);
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("枚举卡片子窗口失败: " + ex.Message);
+                return;
+            }
+
+            foreach (IntPtr hwnd in owned)
+            {
+                try { SetWindowDisplayAffinity(hwnd, exclude ? WdaExcludeFromCapture : WdaNone); }
+                catch { }
+            }
         }
 
         // ==================== 跟随卡片 ====================
@@ -753,6 +788,14 @@ namespace MirrorpondHUD.Ui
 
         [DllImport("user32.dll")]
         static extern int SetWindowDisplayAffinity(IntPtr hwnd, uint affinity);
+
+        delegate bool EnumWindowsDelegate(IntPtr hwnd, IntPtr param);
+
+        [DllImport("user32.dll")]
+        static extern bool EnumWindows(EnumWindowsDelegate callback, IntPtr param);
+
+        [DllImport("user32.dll")]
+        static extern IntPtr GetWindow(IntPtr hwnd, int command);
 
         [DllImport("user32.dll")]
         static extern int GetSystemMetrics(int index);
