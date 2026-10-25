@@ -118,6 +118,7 @@ namespace MirrorpondHUD.Ui
         /// </summary>
         static IntPtr _sharedDc;
         static IntPtr _sharedDib;
+        static IntPtr _sharedBits;
         static IntPtr _sharedPrevious;
         static int _sharedWidth;
         static int _sharedHeight;
@@ -620,6 +621,7 @@ namespace MirrorpondHUD.Ui
             if (!EnsureSharedSurface(surfaceWidth, surfaceHeight)) return;
 
             IntPtr screen = GetDC(IntPtr.Zero);
+            System.Diagnostics.Stopwatch clock = DiagnoseRaw ? System.Diagnostics.Stopwatch.StartNew() : null;
             try
             {
                 BitBlt(_sharedDc, 0, 0, width, height, screen, left, top, Srccopy);
@@ -629,12 +631,68 @@ namespace MirrorpondHUD.Ui
                 ReleaseDC(IntPtr.Zero, screen);
             }
 
+            if (clock != null) TraceBands(clock.Elapsed.TotalMilliseconds, width, height);
+
             foreach (AcrylicBackdrop item in snapshot) item.CaptureFrom(_sharedDc, left, top);
         }
 
         static int RoundUp(int value)
         {
             return ((value + 127) / 128) * 128;
+        }
+
+        // ==================== 诊断：原始取样图的逐带亮度 ====================
+        // MIRRORPOND_RAW_TRACE=1 时，每轮把「刚读下来的屏幕图」按水平带统计亮度写进日志，
+        // 用来判断「玻璃从上到下变深」到底是取样就带进来了，还是绘制/合成侧的。
+
+        static bool? _rawTrace;
+
+        static bool DiagnoseRaw
+        {
+            get
+            {
+                if (!_rawTrace.HasValue)
+                {
+                    string value = Environment.GetEnvironmentVariable("MIRRORPOND_RAW_TRACE");
+                    _rawTrace = value == "1" || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
+                }
+                return _rawTrace.Value;
+            }
+        }
+
+        static void TraceBands(double bitbltMs, int width, int height)
+        {
+            if (_sharedBits == IntPtr.Zero) return;
+
+            const int Bands = 8;
+            int bandHeight = height / Bands;
+            if (bandHeight < 1) return;
+
+            var bytes = new byte[width * height * 4];
+            Marshal.Copy(_sharedBits, bytes, 0, bytes.Length);
+
+            var trace = new System.Text.StringBuilder();
+            trace.Append("RAWB ").Append(DateTime.Now.ToString("HH:mm:ss.fff"))
+                 .Append(" bitblt=").Append(bitbltMs.ToString("F1"));
+
+            for (int b = 0; b < Bands; b++)
+            {
+                long total = 0;
+                int count = 0;
+                for (int y = b * bandHeight; y < (b + 1) * bandHeight; y++)
+                {
+                    int row = y * width * 4;
+                    for (int x = 0; x < width; x += 4)
+                    {
+                        int p = row + x * 4;
+                        total += bytes[p] + 2 * bytes[p + 1] + bytes[p + 2];
+                        count++;
+                    }
+                }
+                trace.Append(' ').Append(count == 0 ? "0" : (total / (4 * count)).ToString());
+            }
+
+            Log.Info(trace.ToString());
         }
 
         bool TryGetScreenRect(out int left, out int top, out int width, out int height)
@@ -667,7 +725,7 @@ namespace MirrorpondHUD.Ui
             FinishFrame(w, h);
         }
 
-        /// <summary>缩略图 → 两遍方框模糊 → 写回 DIB → 请求重画。</summary>
+        /// <summary>缩略图 → 两遍方框模糊 → 写回 DIB → 立刻贴到窗口上。</summary>
         void FinishFrame(int w, int h)
         {
             var buffer = new byte[w * h * 4];
@@ -679,9 +737,108 @@ namespace MirrorpondHUD.Ui
             if (Diagnose) LogSample(buffer, w, h);
             CheckUsable(buffer, w, h);
 
+            // 新的一帧和上一帧几乎一样就不重画。静置时背景没变，重画只会让 DWM
+            // 每 200 ms 重算一次「排除窗口背后那块干净区域」，肉眼就是玻璃闪一下；
+            // 顺便也省掉一次 2× 半分辨率放大到窗口的 StretchBlt。
+            if (SameAsLastFrame(buffer, w, h)) return;
+
             Marshal.Copy(buffer, 0, _dibBits, buffer.Length);
 
-            InvalidateRect(_handle, IntPtr.Zero, false);
+            // 同步画上去，而不是 InvalidateRect 等消息循环：底板图省下一次「无效 →
+            // 合成前还没重画」的中间状态，也就少了一次可能被看成闪烁的窗口。
+            Paint();
+            TraceFrame(buffer, w, h);
+        }
+
+        // ==================== 逐帧追踪（MIRRORPOND_GLASS_TRACE=1） ====================
+        // 每画一帧就往 %TEMP%\mirrorpond-trace.log 写一行「时间 + 尺寸 + 平均亮度」，
+        // hud-test/compare.py 靠它算「屏幕上换了窗口 → 玻璃上的画面多久跟着变」。
+
+        static bool? _trace;
+        static System.IO.StreamWriter _traceWriter;
+        static readonly object TraceLock = new object();
+
+        static bool Trace
+        {
+            get
+            {
+                if (!_trace.HasValue)
+                {
+                    string value = Environment.GetEnvironmentVariable("MIRRORPOND_GLASS_TRACE");
+                    _trace = value == "1" || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
+                }
+                return _trace.Value;
+            }
+        }
+
+        static void TraceFrame(byte[] buffer, int w, int h)
+        {
+            if (!Trace) return;
+
+            long sum = 0;
+            int count = 0;
+            for (int i = 0; i + 2 < buffer.Length; i += 16)
+            {
+                sum += (buffer[i] + 2 * buffer[i + 1] + buffer[i + 2]) / 4;
+                count++;
+            }
+
+            lock (TraceLock)
+            {
+                try
+                {
+                    if (_traceWriter == null)
+                    {
+                        string path = System.IO.Path.Combine(
+                            System.IO.Path.GetTempPath(), "mirrorpond-trace.log");
+                        _traceWriter = new System.IO.StreamWriter(path, false) { AutoFlush = true };
+                    }
+                    _traceWriter.WriteLine(DateTime.Now.ToString("HH:mm:ss.fff") + " CAP " + w + "x" + h
+                                           + " luma=" + (count == 0 ? 0 : sum / count));
+                }
+                catch (Exception ex)
+                {
+                    Log.Warn("玻璃帧追踪写入失败: " + ex.Message);
+                }
+            }
+        }
+
+        int _lastWidth;
+        int _lastHeight;
+        byte[] _lastFrame;
+
+        /// <summary>模糊图上差 2 以内看不出来 —— 低于这个就当作「没变」，不重画。</summary>
+        const int SkipTolerance = 2;
+
+        bool SameAsLastFrame(byte[] buffer, int w, int h)
+        {
+            if (_lastFrame == null || _lastWidth != w || _lastHeight != h)
+            {
+                KeepFrame(buffer, w, h);
+                return false;
+            }
+
+            // 隔 4 个像素看一次；和「上一次真正画出去的帧」比，
+            // 慢漂移会一点点累积到超过阈值，不会因为阈值永远跳过。
+            for (int i = 0; i + 3 < buffer.Length; i += 16)
+            {
+                int db = buffer[i] - _lastFrame[i];
+                if (db < -SkipTolerance || db > SkipTolerance) { KeepFrame(buffer, w, h); return false; }
+                int dg = buffer[i + 1] - _lastFrame[i + 1];
+                if (dg < -SkipTolerance || dg > SkipTolerance) { KeepFrame(buffer, w, h); return false; }
+                int dr = buffer[i + 2] - _lastFrame[i + 2];
+                if (dr < -SkipTolerance || dr > SkipTolerance) { KeepFrame(buffer, w, h); return false; }
+            }
+
+            return true;
+        }
+
+        void KeepFrame(byte[] buffer, int w, int h)
+        {
+            if (_lastFrame == null || _lastFrame.Length != buffer.Length) _lastFrame = new byte[buffer.Length];
+            Buffer.BlockCopy(buffer, 0, _lastFrame, 0, buffer.Length);
+            _lastWidth = w;
+            _lastHeight = h;
         }
 
         static bool EnsureSharedSurface(int width, int height)
@@ -705,6 +862,7 @@ namespace MirrorpondHUD.Ui
                 _sharedDc = CreateCompatibleDC(screen);
                 IntPtr bits;
                 _sharedDib = CreateDIBSection(screen, ref bmi, 0, out bits, IntPtr.Zero, 0);
+                _sharedBits = bits;
             }
             finally
             {
@@ -739,6 +897,7 @@ namespace MirrorpondHUD.Ui
 
             if (_sharedDib != IntPtr.Zero) { DeleteObject(_sharedDib); _sharedDib = IntPtr.Zero; }
             if (_sharedDc != IntPtr.Zero) { DeleteDC(_sharedDc); _sharedDc = IntPtr.Zero; }
+            _sharedBits = IntPtr.Zero;
             _sharedWidth = 0;
             _sharedHeight = 0;
         }

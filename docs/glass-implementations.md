@@ -77,7 +77,7 @@
 
 其它已知限制：
 
-- 进程侧每 200 ms 截屏 + 模糊：4 张卡 3.1% 单核（系统亚克力 1.6%，兼容实现 41%）；
+- 进程侧每 200 ms 截屏 + 模糊：4 张卡 ≈3.5% 单核（系统亚克力 1.6%，兼容实现 41%）；
   整叠卡片区域只从屏幕读一次，各底板再从内存里取自己那一块（一次屏读 ≈ 一个 vsync）；
 - 切窗口 / 最小化 / 弹窗时不只是等下一轮定时器：挂 `SetWinEventHook` 监听
   `EVENT_SYSTEM_FOREGROUND` / `MINIMIZE` / `MOVESIZEEND` / `SWITCHEND` 与 `OBJECT_SHOW` / `HIDE`，
@@ -86,6 +86,60 @@
 - 底板的圆角是 DWM 的 8px，和卡片自己的圆角（默认 10px）不完全一致，角上会多出一点玻璃；
 - 只截卡片这一块屏幕，卡片移动时要重截（已经这么做了），所以拖动时玻璃会比系统实现晚半拍；
 - 卡片名下的子窗口（视频窗是 owner 为卡片的独立窗口）也会一起排除，所以这个模式下**视频同样不进截图**。
+
+### 4.1 「玻璃每隔一会儿从上到下暗一下」
+
+用户报告过：这个模式下玻璃会**周期性地从上到下变深一下**。查了一圈，结论是**没能在本机复现、也没能定位**，
+把已经排除掉的部分记在这儿，免得下次重新踩：
+
+| 怀疑对象 | 怎么测的 | 结论 |
+| --- | --- | --- |
+| 取样图本身带进了暗带（自截或合成不完整） | `MIRRORPOND_RAW_TRACE=1`：每轮把刚读下来的屏幕图按 8 条水平带统计亮度写进日志，静置 12 秒 | 各带亮度只在 ±1–2 内抖，**没有**任何一条带出现跳变 |
+| 绘制（`StretchBlt` 2× 放大）是渐进的，DWM 合成到一半 | 单独做个复刻底板（同样的窗口标志 / DWM 属性 / 半分辨率 DIB）每 200 ms 重画，用 `GetDC(hwnd)` 以 ~2 kHz 采样自己窗口表面 | 29 次重画**每次都是整幅同时变**，没有缝 |
+| 读屏和 vsync 没对齐，读到了半帧 | 同一区域 A/B：直接 `BitBlt` vs `DwmFlush()` + `BitBlt` | `DwmFlush` 是**净损失**：读 16.6 ms → 14.3 + 19.5 ms |
+| 整幅重画本身触发了 DWM 重算 | 见下面两条缓解 | 顺手做了，静置时重画次数下降 |
+
+两条不伤行为的缓解已经进了代码：
+
+- 帧和上一帧差 ≤2（模糊图上肉眼看不出）就**不重画**，静置时底板不再每 200 ms 抖一次，
+  DWM 也就不用每 200 ms 重算一次「排除窗口背后那块干净区域」；比较是跟**上次真正画出去的那帧**比，
+  慢漂移会累积到超过阈值，不会卡死；
+- 帧改为**同步画上去**（`GetDC(hwnd)` + `StretchBlt`），不再走「`InvalidateRect` → 等消息循环 →
+  WM_PAINT」，少一个「窗口已失效但还没重画」的中间状态。
+
+改完：玻璃落后屏幕仍是 30 ms（未退化），静置 CPU 4.8% → 3.5%。如果这个暗一下还在，
+**下一刀就是把取图从 GDI 换成 DXGI 桌面复制**（下面 4.2 的验证结果），那是唯一能改掉「取图」这条路的办法。
+
+诊断开关：`MIRRORPOND_GLASS_DEBUG=1`（每 5 秒一次取样统计 + 导出 BMP）、
+`MIRRORPOND_GLASS_TRACE=1`（每画一帧往 `%TEMP%\mirrorpond-trace.log` 写一行亮度，
+`hud-test/compare.py` 靠它算延迟）、`MIRRORPOND_RAW_TRACE=1`（每轮原始取样图的逐带亮度）。
+
+### 4.2 GPU 能不能加速：能，但要换的是「取图」不是「模糊」
+
+结论先说：**把模糊搬到 GPU 毫无意义，把取图搬到 GPU 有意义**。实测（i7 + GTX 1660 SUPER，区域 400×290 → 缩略图 200×145）：
+
+| 阶段 | 现在（GDI） | DXGI 桌面复制 |
+| --- | --- | --- |
+| 从合成器拿到像素 | `BitBlt` 屏幕 **9–17 ms**，且与区域大小无关（32×32 到 1600×900 都是 ~16 ms，是同步开销不是拷贝开销） | `AcquireNextFrame` **0.09 ms**（帧已在，无需等合成） |
+| 取到自己的区域 | 含在上面 | `CopySubresourceRegion` ≈ 0.00 ms |
+| 拷回 CPU | 含在上面 | 400×290 回读 **0.39 ms** |
+| 两遍方框模糊（200×145） | CPU **0.61 ms** | 原型的两趟 compute dispatch 0.14 ms（**原型输出仍有 bug，这个数不当结论**） |
+
+也就是说：滤镜只占 0.6 ms，**给它上 GPU 最多省 0.5 ms**；而取图占 9–17 ms，换掉它整个一轮从 ~10 ms 掉到 ~1 ms，
+并且 UI 线程不再每帧被卡一个 vsync。桌面复制还有两个关键前提，都已经验证：
+
+- **它同样遵守 `WDA_EXCLUDEFROMCAPTURE`**：复制出来的帧里，卡片和底板所在区域是**卡片背后的桌面**，
+  不是卡片、也不是黑块 —— 所以它能直接替换现在的 `BitBlt`，玻璃语义不变；
+- 它给的是**整屏**纹理（1920×1080 `B8G8R8A8_UNorm`），取卡片区域用 `CopySubresourceRegion` 即可。
+
+代价 / 风险（还没进产品，是验证阶段的结论）：要引 D3D11（或手写 COM，避免加 NuGet 依赖）；
+独占全屏切换、远程桌面、混合显卡（画面由核显输出而设备建在独显上）都要**回退到 GDI**；
+桌面复制会定期把 GPU 从低功耗叫醒（电池机器上要实测）；
+另外 `AcquireNextFrame` 在「什么都没变」时会超时，直接沿用上一帧即可。
+
+原型在 `C:\Users\CRITT\Documents\deepseek-harness\coding\gpu-lab\`（`probe/` = 桌面复制 + 计时 + 帧导出，
+`glass/` = 复制 → 区域拷贝 → compute 模糊 → 回读的整条链路计时），不进仓库。
+
 
 安全网：连续 3 帧采样全黑（比如系统以后又把截屏挡掉）会**自动退回系统亚克力**，日志写明原因：
 
@@ -174,10 +228,29 @@ Ported from `C:\Coding\acrylic-multiwindow`: a **non-layered** backdrop HWND per
 **That is the defining cost:** while this mode is active, **cards do not appear in any screenshot or screen
 recording**. That is not a bug — it is inherent to capturing the screen from a window that has to sit in it.
 
-Other limits: 3.1% of one core for 4 cards (system acrylic 1.6%, compat 41%); the blur radius (9 px on the
+Other limits: ≈3.5% of one core for 4 cards (system acrylic 1.6%, compat 41%); the blur radius (9 px on the
 half-size copy) and the 200 ms interval are fixed; the backdrop's corners are DWM's 8 px, slightly tighter than
 the card's own radius, so a sliver of glass can show at the corners. If the capture goes black for three frames
 in a row, the mode **falls back to system acrylic automatically** and says why in the log.
+
+Two things worth recording from later work:
+
+- **"The glass darkens from top to bottom every so often."** Reported by a user; not reproduced and not rooted
+  out here. Ruled out with measurements: the captured image itself (per-band luma of the raw capture stayed
+  within ±2 over 12 s at rest), a progressive `StretchBlt` (a replica plate sampled at 2 kHz on its own window
+  DC updated all bands in the same sample, 29 repaints in a row), and vsync misalignment (`DwmFlush` *adds*
+  ~14 ms instead of replacing the ~16 ms read wait). Two harmless mitigations did ship: identical-ish frames
+  (≤2 luma) are not repainted at all, and frames are painted **synchronously** instead of through
+  `InvalidateRect`/`WM_PAINT`. Latency stayed at 30 ms; idle CPU went 4.8% → 3.5%.
+- **GPU acceleration: the blur is not the problem, the readback is.** Measured on a 400×290 region
+  (→ 200×145 thumbnail): GDI screen `BitBlt` **9–17 ms**, and *independent of region size* (16 ms even for
+  32×32) — it is a synchronisation with the compositor, not a copy. DXGI desktop duplication acquires the same
+  frame in **0.09 ms**, region copy ≈ 0 ms, readback 0.39 ms. The CPU box blur is only 0.61 ms, so moving the
+  filter to a compute shader saves at most 0.5 ms; replacing the *capture* with duplication takes a whole round
+  from ~10 ms to ~1 ms and stops stalling the UI thread for a vsync. Desktop duplication also **honours
+  `WDA_EXCLUDEFROMCAPTURE`** (the cards' area comes back as the desktop behind them, not as black), so it can
+  drop in where the GDI `BitBlt` is today. Cost: a D3D11 dependency (or hand-written COM), fallbacks for
+  exclusive-fullscreen / remote sessions / hybrid GPUs, and periodic GPU wake-ups.
 
 ## 5. So what should you do
 
