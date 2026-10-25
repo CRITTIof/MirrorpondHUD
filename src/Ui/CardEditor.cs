@@ -655,17 +655,74 @@ namespace MirrorpondHUD.Ui
             }
         }
 
+        string _apiKeyDraft = "";
+
+        /// <summary>
+        /// 输入框里的草稿文字。已经存过 Key 时这里永远是空字符串——不回显密钥，
+        /// 框里显示的是「已填写 API Key，重新输入以更换」那行提示。
+        /// 真要把新 Key 存下去，靠 <see cref="CommitChatApiKey"/>（失焦 / 点确定时调用）。
+        /// </summary>
         public string ChatApiKey
         {
-            get { return _config.Chat.ApiKey; }
+            get { return _apiKeyDraft; }
             set
             {
-                string text = (value ?? "").Trim();
-                if (_config.Chat.ApiKey == text) return;
-                _config.Chat.ApiKey = text;
+                string text = value ?? "";
+                if (_apiKeyDraft == text) return;
+                _apiKeyDraft = text;
                 Raise("ChatApiKey");
-                Raise("Summary");
+                Raise("ChatApiKeyPlaceholderVisibility");
             }
+        }
+
+        /// <summary>把输入框里的 Key 加密存下（失焦 / 点确定时调用）；空 = 保持原来的 Key 不动。</summary>
+        public void CommitChatApiKey()
+        {
+            string text = (_apiKeyDraft ?? "").Trim();
+            if (text.Length == 0) return;
+
+            _config.Chat.SetApiKey(text);
+            _apiKeyDraft = "";
+            Raise("ChatApiKey");
+            Raise("ChatApiKeyPlaceholder");
+            Raise("ChatApiKeyPlaceholderVisibility");
+            Raise("ChatApiKeyClearVisibility");
+            Raise("ChatHint");
+        }
+
+        /// <summary>忘记 Key。</summary>
+        public void ClearChatApiKey()
+        {
+            if (_config.Chat.ApiKey.Length == 0) return;
+
+            _config.Chat.ClearApiKey();
+            _apiKeyDraft = "";
+            Raise("ChatApiKey");
+            Raise("ChatApiKeyPlaceholder");
+            Raise("ChatApiKeyPlaceholderVisibility");
+            Raise("ChatApiKeyClearVisibility");
+            Raise("ChatHint");
+        }
+
+        /// <summary>输入框空着时压在上面的提示（不回显密钥）。</summary>
+        public string ChatApiKeyPlaceholder
+        {
+            get
+            {
+                if (_config.Chat.ApiKeyUnreadable) return "已存的 Key 解不开（换过用户 / 机器？），请重新填写";
+                if (_config.Chat.ApiKey.Length > 0) return ChatSettings.KeyPlaceholder;
+                return "还没填写（本地服务可以留空）";
+            }
+        }
+
+        public Visibility ChatApiKeyPlaceholderVisibility
+        {
+            get { return _apiKeyDraft.Length == 0 ? Visibility.Visible : Visibility.Collapsed; }
+        }
+
+        public Visibility ChatApiKeyClearVisibility
+        {
+            get { return _config.Chat.ApiKey.Length > 0 ? Visibility.Visible : Visibility.Collapsed; }
         }
 
         /// <summary>0 = 单次（每次独立），1 = 轮询（保留上下文）。</summary>
@@ -729,9 +786,13 @@ namespace MirrorpondHUD.Ui
                 if (!_config.Chat.BaseUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase))
                     return "接口地址要以 http:// 或 https:// 开头";
 
+                if (_config.Chat.ApiKeyUnreadable)
+                    return "已存的 API Key 在这台机器上解不开（换过 Windows 用户或机器），请重新填写";
+
                 return _config.Chat.ApiKey.Length == 0
                     ? "没填 Key：本地服务（LM Studio / Ollama 兼容层）可以留空；云端接口需要填"
-                    : "请求会发到 " + _config.Chat.BaseUrl + "/chat/completions，Key 明文存在 settings.json 里";
+                    : "Key 已用 Windows DPAPI 加密存在 settings.json 里（只有当前用户能解），请求发到 "
+                      + _config.Chat.BaseUrl + "/chat/completions";
             }
         }
 

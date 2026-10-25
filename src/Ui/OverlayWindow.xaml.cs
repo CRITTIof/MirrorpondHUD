@@ -24,13 +24,19 @@ namespace MirrorpondHUD.Ui
 
         /// <summary>系统亚克力底板（方案 G）：null = 没启用 / 不可用，毛玻璃走截屏取样。</summary>
         GlassBackdrop _backdrop;
-        bool _backdropActive;
+        bool _systemActive;
         bool _backdropUnavailable;
 
         /// <summary>DWM 桌面亚克力底板（自己截屏模糊）：卡片在这种模式下会被排除在截屏之外。</summary>
         AcrylicBackdrop _acrylicBackdrop;
         bool _acrylicActive;
         bool _acrylicUnavailable;
+
+        /// <summary>
+        /// 有一块底板正在卡片下面画模糊。三种实现是互斥的：谁在干活谁就是 true，
+        /// 切换实现时另一块必须收掉（否则会留下没人管的玻璃板，见 <see cref="RetireSystemBackdrop"/>）。
+        /// </summary>
+        bool BackdropActive { get { return _systemActive || _acrylicActive; } }
 
         bool _interactive;
 
@@ -350,7 +356,10 @@ namespace MirrorpondHUD.Ui
 
         /// <summary>
         /// 决定这一帧由谁提供模糊，并把底板摆到卡片内容区。
-        /// 没有底板接管时保持 <c>_backdropActive = false</c>，截屏取样照常工作。
+        /// 三种实现互斥：选中的那块接管之前，先用 <see cref="RetireSystemBackdrop"/> /
+        /// <see cref="RetireAcrylicBackdrop"/> 把另一块收掉 —— 否则切过去以后旧底板还在屏幕上
+        /// （系统亚克力会留下灰色玻璃板，DWM 底板会留下「卡片仍然不进截图」）。
+        /// 没有底板接管时 <see cref="BackdropActive"/> 为 false，截屏取样照常工作。
         /// </summary>
         void UpdateBackdrop()
         {
@@ -365,9 +374,39 @@ namespace MirrorpondHUD.Ui
                 return;
             }
 
-            if (mode == "Dwm" && !_acrylicUnavailable) UpdateAcrylicBackdrop();
-            else if (mode == "Dwm" || mode == "System") UpdateSystemBackdrop();
-            else HideBackdrops();
+            if (mode == "Dwm" && !_acrylicUnavailable)
+            {
+                RetireSystemBackdrop();
+                UpdateAcrylicBackdrop();
+            }
+            else if (mode == "Dwm" || mode == "System")
+            {
+                RetireAcrylicBackdrop();
+                UpdateSystemBackdrop();
+            }
+            else
+            {
+                HideBackdrops();
+            }
+        }
+
+        /// <summary>收起系统亚克力底板（底板窗口留着，下次切回来直接复用）。</summary>
+        void RetireSystemBackdrop()
+        {
+            if (!_systemActive) return;
+
+            _systemActive = false;
+            if (_backdrop != null) _backdrop.Follow(this, _settings.Overlay.Shadow, false);
+        }
+
+        /// <summary>收起 DWM 底板，并把卡片从「排除截屏」里放回来。</summary>
+        void RetireAcrylicBackdrop()
+        {
+            if (!_acrylicActive) return;
+
+            _acrylicActive = false;
+            AcrylicBackdrop.ExcludeFromCapture(this, false);
+            if (_acrylicBackdrop != null) _acrylicBackdrop.Follow(this, _settings.Overlay.Shadow, false);
         }
 
         /// <summary>方案 G：未文档化的 accent 亚克力底板。</summary>
@@ -393,9 +432,9 @@ namespace MirrorpondHUD.Ui
                 Log.Info("毛玻璃改用系统亚克力底板：模糊在 DWM / GPU 上完成，进程侧不再抓屏");
             }
 
-            if (!_backdropActive)
+            if (!_systemActive)
             {
-                _backdropActive = true;
+                _systemActive = true;
                 Log.Info("毛玻璃背景已启用（系统亚克力底板，模糊半径由系统决定）");
             }
 
@@ -429,7 +468,6 @@ namespace MirrorpondHUD.Ui
 
             bool first = !_acrylicActive;
             _acrylicActive = true;
-            _backdropActive = true;
 
             if (first)
             {
@@ -442,8 +480,8 @@ namespace MirrorpondHUD.Ui
         }
 
         /// <summary>
-        /// 底板取不到背景（这个模式在卡片上基本必然失败：DWM 不给非活动窗口画材质，
-        /// 而为了截屏又要排除自己，排到最后只剩黑色）。退回到系统亚克力 / 兼容实现。
+        /// 底板取不到背景（连续几帧取样全黑：截屏被安全策略挡掉，或者屏幕本来就是黑的）。
+        /// 退回系统亚克力 / 兼容实现，同时把卡片从「排除截屏」里放回来。
         /// </summary>
         void OnAcrylicBackdropUnavailable(string reason)
         {
@@ -453,18 +491,10 @@ namespace MirrorpondHUD.Ui
             Log.Warn("DWM 桌面亚克力底板不可用（" + reason + "），毛玻璃退回系统亚克力底板");
 
             // 顺序：先撤掉截屏排除，再按「系统」那条路重新决定用哪块底板
-            if (_acrylicActive)
-            {
-                AcrylicBackdrop.ExcludeFromCapture(this, false);
-                _acrylicActive = false;
-            }
+            RetireAcrylicBackdrop();
 
-            _backdropActive = false;
             if (_acrylicBackdrop != null)
-            {
-                _acrylicBackdrop.Follow(this, _settings.Overlay.Shadow, false);
                 _acrylicBackdrop.Unavailable -= OnAcrylicBackdropUnavailable;
-            }
 
             UpdateGlassCapture();
         }
@@ -472,16 +502,8 @@ namespace MirrorpondHUD.Ui
         /// <summary>关掉毛玻璃 / 切回兼容实现：两块底板和截屏排除都要撤掉。</summary>
         void HideBackdrops()
         {
-            if (_backdrop != null) _backdrop.Follow(this, _settings.Overlay.Shadow, false);
-            if (_acrylicBackdrop != null) _acrylicBackdrop.Follow(this, _settings.Overlay.Shadow, false);
-
-            if (_acrylicActive)
-            {
-                AcrylicBackdrop.ExcludeFromCapture(this, false);
-                _acrylicActive = false;
-            }
-
-            _backdropActive = false;
+            RetireSystemBackdrop();
+            RetireAcrylicBackdrop();
         }
 
         void ReleaseBackdrop()
@@ -510,7 +532,7 @@ namespace MirrorpondHUD.Ui
             UpdateBackdrop();
 
             // 系统底板已经在卡片下面画模糊了：不能再叠一张采样图，也不用跑定时器。
-            if (_backdropActive)
+            if (BackdropActive)
             {
                 if (_glassTimer != null) _glassTimer.Stop();
                 Surface.ClearGlass();
@@ -555,7 +577,7 @@ namespace MirrorpondHUD.Ui
 
         void CaptureGlass()
         {
-            if (_backdropActive) return;                     // 系统底板接管时不抓屏
+            if (BackdropActive) return;                     // 系统底板接管时不抓屏
             if (!_settings.Style.Acrylic || !_handleReady || _glassBusy) return;
             if (!IsVisible || WindowState == WindowState.Minimized) return;
 

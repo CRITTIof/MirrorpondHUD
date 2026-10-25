@@ -15,8 +15,9 @@
 | `src/Cards/CardModel.cs` | 卡片列表的创建、补全、校验、名称去重 |
 | `src/Cards/InfoTextCard.cs` | 信息与文本卡：系统信息 / 时钟 / 按键 / 文本四个预设 |
 | `src/Cards/CommandCard.cs` / `MediaCard.cs` | 命令行卡（独占键盘）、媒体卡（图片 / 动图 / 视频） |
-| `src/Cards/ChatCard.cs` | AI 对话卡：模型名 + 输入框 + 单次 / 轮询两种上下文模式 |
+| `src/Cards/ChatCard.cs` | AI 对话卡：命令行样式（模型名 + `>` 输入行 + 终端记录），单次 / 轮询走全局热键 |
 | `src/Cards/ButtonsCard.cs` | 按钮演示卡：验证 `CardButton` / `CardTextBox` 这套卡片控件 |
+| `src/Core/SecretStore.cs` | 敏感字符串加密：Windows DPAPI（当前用户），settings.json 里只落 `dpapi:…` |
 | `src/Ui/Controls/CardButton.cs` | 卡片里的按钮：三种语气 + 三态模板，颜色跟随卡片外观 |
 | `src/Ui/Controls/CardTextBox.cs` | 卡片里的输入框：底色 / 光标 / 选区跟着卡片文字色 |
 | `src/Media/MediaView.cs` | 图片 / 动图 / 视频控件：卡片内容的实际绘制者（文件名 + 进度条 + 圆角） |
@@ -252,22 +253,47 @@ ffmpeg 路线把视频解成逐帧原始像素，什么格式都能放（代价�
 
 ### AI 对话卡片
 
-`ChatCard` 是第一个「有状态」的富内容卡片：一张卡片一套接口与上下文。
+`ChatCard` 是第一个「有状态」的富内容卡片：一张卡片一套接口与上下文，样子做成**终端**。
 
-- 布局：第一行模型名 + 模式（单次 / 轮询）+ 清空，第二行输入框 + 发送，下面是问答记录（`ScrollViewer`，
-  最多 `AnswerLines` 行高）。
-- 请求：`POST {Chat.BaseUrl}/chat/completions`，`Authorization: Bearer <Chat.ApiKey>`（可空），
+![AI 对话卡片](chat-card.png)
+
+- 布局：第一行模型名（等宽字体）+ 右侧模式标记 `[单次]` / `[轮询]`，一条细横线，下面 `> ` 提示符的输入行，
+  再下面是终端风格的记录区（`ScrollViewer`，最多 `AnswerLines` 行高，底纹是前景色 5%、圆角边框）。
+  用户行是 `> 内容`（暗一点，像打过的命令），回复行是亮色正文 —— 一眼能分清谁说的。
+- 卡片上**没有按钮**：单次 / 轮询、清空上下文都在「设置 → 热键 → AI 对话卡片」里（`ICardHotkeySource`），
+  默认 `Ctrl+Alt+Shift+M` 切换模式。四键组合是故意的：三键的 `Ctrl+Alt+M` / `Ctrl+Shift+M`
+  很容易被输入法、录屏、IDE 占掉或抢走。
+- 请求：`POST {Chat.BaseUrl}/chat/completions`，`Authorization: Bearer <明文 Key>`（可空），
   响应取 `choices[0].message.content`（也兼容 `content` 是 `[{type,text}]` 数组、以及 `choices[0].text`）。
 - `ChatSettings.Mode`：`Single` 每次只发当前提问；`Context`（轮询）把最近 12 条消息一起发回去，
-  形成连续对话。卡片上的「单次 / 轮询」会写回卡片设置。
-- 上下文只在内存里：卡片隐藏 / 重建 / 重启就清空；`清空` 按钮只清这一张卡。
+  形成连续对话。热键切换会写回设置并立刻落盘，重启还是那个模式；切模式时清空这一张卡的上下文。
+- 上下文只在内存里：卡片隐藏 / 重建 / 重启就清空。回答期间输入框只读而不禁用，
+  焦点一直留在提示符后面，连着问不用重新点；点卡片任意位置都会把焦点拉回输入行。
 - 每张卡片自己的 `Chat.SystemPrompt` / `TimeoutSeconds` / `Width` 都在「设置 → 内容 → AI 接口」里。
+
+### API Key 怎么存
+
+`ChatSettings.ApiKey` 里存的是 `dpapi:<base64>`，由 `Core/SecretStore.cs` 调 `crypt32.dll` 的
+`CryptProtectData`（当前用户 + 附加熵）加密：
+
+- 同一台机器、同一个 Windows 用户：能解开；换用户 / 换机器就解不开，卡片和设置页都会提示重填；
+- 别人拿到 `settings.json`：只有一串 base64，没有明文；
+- 2.4.0 及更早版本是明文存的：`ChatSettings.Normalize` 读入时自动加密，`ConfigStore.Load` 立刻回写，
+  磁盘上不留明文；
+- 明文的解密结果只放在 `ChatSettings.PlainApiKey`（内存，不参与序列化，`Json` 只写公共字段）；
+- 设置页的 Key 输入框永远不回显：已存 Key 时框里是灰字「已填写 API Key，重新输入以更换」，
+  旁边一个「清除」；只有真的打了新内容（失焦或点「保存并应用」）才替换，空着不动原来的 Key。
 
 ## 6. 热键
 
 - 全局热键：`toggle-overlay` / `open-settings` / `toggle-lock`，被占用时退到 `Ctrl+Alt+原键`
 - 卡片热键：动作名 `card:<Id>`，关闭常驻的卡片各注册一个；同样带 `Ctrl+Alt+原键` 兜底，
   兜底成功后把实际生效的组合键写回卡片设置
+- 卡片**通用动作**热键（`ICardHotkeySource` / `ICardHotkeyTarget`）：动作名形如
+  `media.play-pause`、`chat.toggle-mode`，一个动作作用于**所有同类卡片**，设置页「热键」按卡片分组列出。
+  只在真的有这种卡片时才注册，删掉全部同类卡片就释放组合键
+- AI 对话的两个动作：`chat.toggle-mode`（切换单次 / 轮询，默认 `Ctrl+Alt+Shift+M`）、
+  `chat.clear`（清空上下文，默认留空）
 - `HotkeyManager` 支持**同一组合键挂多个动作**：两张卡片设成同一个热键，按一次同时呼出
 - 删除卡片后重新注册时会先 `UnregisterAll()`，不会留下失效热键
 
@@ -296,7 +322,7 @@ ffmpeg 路线把视频解成逐帧原始像素，什么格式都能放（代价�
 | --- | --- | --- |
 | 开关 `CardToggle` | 一个开关切换某个行为（静音、锁定、跟随） | 轻：Button 换模板 + 两态；但卡片默认穿透，仍然要 `NeedsMouseInput` |
 | 复选框 / 单选组 `CardCheck`、`CardRadio` | 多选、互斥选择（如选择要显示的数据源） | 轻：样式跟 `CardButton` 一致即可 |
-| 分段控件 `CardSegmented` | 模式切换（单次 / 轮询、日 / 周 / 月） | 中：一组按钮 + 选中态 + 键盘左右移动；AI 卡现在用两个按钮临时顶替 |
+| 分段控件 `CardSegmented` | 模式切换（单次 / 轮询、日 / 周 / 月） | 中：一组按钮 + 选中态 + 键盘左右移动；AI 卡目前用设置页下拉 + 全局热键顶替 |
 | 滑块 `CardSlider` | 连续值（音量、透明度、阈值） | 中：要一套细轨道模板 + 数值气泡，拖动时不能触发卡片拖动 |
 | 数字步进 `CardStepper` | 精确小整数（数量、间隔秒数） | 轻：输入框 + 两个小按钮，需要输入校验 |
 | 下拉框 `CardCombo` | 枚举选择（模型、来源、单位） | 中：弹出层在分层窗口里容易被裁剪，得自己画 Popup（或用 `Popup`） |
@@ -308,7 +334,7 @@ ffmpeg 路线把视频解成逐帧原始像素，什么格式都能放（代价�
 | 卡片内标签页 `CardTabs` | 一张卡里放多页内容（信息 / 设置 / 日志） | 中：内容宿主 + 选中态；和「一张卡一个内容」的现有契约冲突，得改宿主 |
 | 滚动列表 `CardList`（虚拟化） | 多行列表（进程、下载、消息） | 重：分层窗口里滚动 + 焦点 + 虚拟化都要自己接；卡片高度要固定 |
 | 多行输入 `CardTextArea` | 长文本（提示词、命令模板） | 轻：`CardTextBox` 打开 `AcceptsReturn`；难点是 Enter 提交与换行的区别 |
-| 密码框 `CardPassword` | Key / 口令输入（现在 Key 是明文输入框） | 轻：换成 `PasswordBox` 模板；注意明文仍存在 settings.json |
+| 密码框 `CardPassword` | Key / 口令输入 | 轻：换成 `PasswordBox` 模板（现在靠「不回显 + 失焦才提交」实现，磁盘上已经是 DPAPI 密文） |
 | 搜索框 `CardSearch` | 带清除按钮 + 过滤回调 | 轻：输入框 + 图标按钮 + 防抖 |
 | 自动完成 / 建议列表 | 输入命令、模型名时的候选 | 重：Popup + 键盘导航 + 定位到框下面，分层窗口里容易画到窗外 |
 | 日期时间选择 `CardDateTime` | 选一个时间点（闹钟、定时） | 重：日历控件整套样式要跟着卡片配色重做 |

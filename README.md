@@ -27,7 +27,7 @@
 
 ## ✨ 功能
 
-- **卡片化** — 信息与文本 / 命令行 / 媒体三种卡片，可随时添加、删除、上下移动；同一种卡片可以有任意多张，名称也可以重名
+- **卡片化** — 信息与文本 / 命令行 / 媒体 / AI 对话 / 按钮演示五种卡片，可随时添加、删除、上下移动；同一种卡片可以有任意多张，名称也可以重名
 - **常驻或呼出** — 每张卡片可以「常驻」在屏幕上，也可以关掉常驻、绑定一个全局热键按需呼出；两张卡片设成同一个热键时，按下会**同时**显示
 - **按顺序堆叠** — 设置页里的顺序就是叠层上的顺序；第一张对齐到锚点，其余按各自的「与上方卡片间距」向下排列，解锁后拖动任意一张会移动整叠；「对齐方式」可选自动 / 左对齐 / 右对齐，让所有卡片共线的是卡片边缘而不是文字边缘
 - **实时数据** — CPU / GPU / 磁盘 / 网络 / 内存 / 分区空间 / 时间 / 运行时长，PDH 性能计数器采样，独立线程不卡 UI
@@ -36,6 +36,8 @@
 - **按键显示** — 全局键盘钩子，最近按键、重复折叠（`A×6`）、最大字符数限制，按键以键帽字形显示
 - **快捷命令行** — 命令行是一张普通卡片，按自己的热键展开；**工具 / 工作目录 / 超时都在这张卡片自己身上**，所以可以同时放 CMD、PowerShell、WSL 三张卡片各用各的
 - **媒体卡片** — 一张卡片显示图片 / 位图 / 动图（GIF）/ 视频，可调缩放方式、宽高、透明度、循环、静音、倍速，并可选择是否按外观的圆角裁圆；卡片顶部显示文件名（过长省略），视频底部带播放进度条；系统解不开的视频会自动改用 ffmpeg
+- **AI 对话卡片** — 一张**命令行样式**的终端卡：第一行模型名、第二行 `>` 提示符输入、下面是等宽字体的问答记录。走 OpenAI 兼容接口，**每张卡自己一套**接口地址 / 模型 / Key（所以能同时挂两个模型）；单次（每次不带历史）与轮询（保留上下文连续对话）用全局热键切换，卡片上不放按钮
+- **Key 加密** — API Key 用 Windows DPAPI（当前用户）加密后再写进 `settings.json`，文件里只有 `dpapi:…` 密文；设置页也不回显，已填过就显示「已填写 API Key，重新输入以更换」
 - **毛玻璃背景** — 三种实现：**系统亚克力**（卡片下面一块独立底板，DWM / GPU 实时模糊身后的桌面与窗口，进程侧零开销）、**兼容**（按像素拼出卡片后面的画面再缩小模糊，任何 Windows 都能用、半径可调）和**桌面亚克力**（DWM 材质底板自己截屏，能糊到动态壁纸 / 视频这类 `PrintWindow` 抓不到的东西，代价是**卡片不会出现在截图里**）。**默认关闭、暂不推荐**——见 [docs/glass-implementations.md](docs/glass-implementations.md)
 - **外观可调** — 字体字号、图标倍率、描边、背景图、透明度、圆角、投影、固定宽度；尺寸只增不减，数值变化时不跳动
 - **启动动画** — 打字 / 退格动画 + 模拟光标（方块 / 竖线 / 下划线 / 空心框 / 关闭）
@@ -44,7 +46,7 @@
 
 ## 🚀 快速开始
 
-**下载即用**：到 [Releases](https://github.com/CRITTIof/MirrorpondHUD/releases) 下载最新版 `v2.4.0`。
+**下载即用**：到 [Releases](https://github.com/CRITTIof/MirrorpondHUD/releases) 下载最新版 `v2.4.1`。
 自 v2.1.0 起只提供**需要手动安装 .NET 8 桌面运行时**的版本（体积小）；先装运行时，再双击 exe：
 
 | 文件 | 适用 | 说明 |
@@ -73,6 +75,8 @@ run.bat
 | 显示 / 隐藏全部 | *未设置* | 从托盘菜单操作，或自行绑定 |
 | 每张卡片的呼出热键 | 见设置 | 在「内容」页每张卡片里设置；非「常驻」卡片必须设置，否则保存时会提示 |
 | 媒体卡片 | `F11` | 新建的媒体卡默认热键，可在卡片里改 |
+| AI 对话：切换单次 / 轮询 | `Ctrl+Alt+Shift+M` | 作用于**所有** AI 对话卡片；在「热键」页改。四键组合是为了躲开被输入法 / 录屏 / IDE 占掉的三键组合 |
+| AI 对话：清空上下文 | *未设置* | 同上，在「热键」页自行绑定 |
 
 所有热键都能在设置里改，**留空 = 不启用**；全局热键被其它程序占用时会自动退到 `Ctrl+Alt+原键` 并记入日志。
 两张卡片使用同一个组合键是允许的：按键一次，两张卡片同时呼出 / 收起。
@@ -92,13 +96,15 @@ run.bat
 - **常驻**：勾选后一直显示；取消后必须设置「呼出热键」
 - **不再有实时预览**：内容在叠层上直接看效果，设置页只做编辑
 
-三种卡片：
+五种卡片：
 
 | 卡片 | 内容 | 说明 |
 | --- | --- | --- |
 | 信息与文本 | 系统信息（CPU / 内存 / GPU / 网络 / 磁盘）、时钟、按键、任意文字 | 一张卡片，用「预设」切换：系统信息 / 时钟 / 按键 / 文本信息；四种内容都支持全部占位符 |
 | 命令行 | 提示符 / 历史 / 输入 | 独占键盘，按自己的热键展开；工具与超时是**每张卡片独立**的 |
 | 媒体 | 图片 / 位图 / 动图 / 视频 | 顶部文件名、视频进度条；文件、缩放、透明度、解码器都在卡片里 |
+| AI 对话 | 模型名 / `>` 输入行 / 终端记录 | 命令行样式；OpenAI 兼容接口，每张卡一套地址 / 模型 / Key；单次 / 轮询走全局热键，Key 用 DPAPI 加密存储 |
+| 按钮演示（实验） | 三种语气的按钮 + 输入框回显 | 验证 `CardButton` / `CardTextBox` 与「不点击穿透」的交互卡片 |
 
 ![媒体卡片](docs/media-cards.png)
 
@@ -129,6 +135,36 @@ PATH 与常见安装目录，把找到的 ffmpeg / mpv / VLC 列出来。
 
 
 输入框里的输入法被刻意关闭，保证命令按原样输入；支持方向键、`Home` / `End`、`Ctrl+V`、`Ctrl+Z`。
+
+## 🤖 AI 对话卡片
+
+「设置 → 内容 → 添加卡片 → AI 对话」，然后在卡片的「AI 接口」里填**接口地址**（OpenAI 兼容，填到 `/v1` 为止）、
+**模型名**、**API Key**。卡片是终端样式：
+
+![AI 对话卡片](docs/chat-card.png)
+
+```
+mock-chat-1                                        [轮询]
+───────────────────────────────────────────────────────────
+┌─────────────────────────────────────────────────────────┐
+│ > 介绍一下你自己                                         │
+│ 我是……（模型回答）                                       │
+│ > 再说细一点                                            │
+│ ……（这一轮把上一轮一起发了回去）                          │
+└─────────────────────────────────────────────────────────┘
+>
+● 就绪 · 回车发送 · Ctrl+Alt+Shift+M 切换单次 / 轮询
+```
+
+- **单次 / 轮询**：单次每次提问都不带历史；轮询把最近 12 条消息一起发回去。切换用全局热键
+  （默认 `Ctrl+Alt+Shift+M`，在「热键 → AI 对话卡片」里改），切模式会清空这张卡的上下文
+- **清空上下文**：同一页可以绑一个热键（默认留空）
+- 回答期间输入框变只读、焦点留在提示符后面，**连着问不用重新点**；点卡片任意位置也会把焦点拉回输入行
+- 上下文只在内存里：卡片隐藏 / 重建 / 重启就清空；每张卡片各带一套上下文，互不影响
+- API Key 用 **Windows DPAPI**（当前用户）加密后写进 `settings.json`（`dpapi:…`），文件里没有明文；
+  设置页也不回显，已填过就显示「已填写 API Key，重新输入以更换」，旁边的「清除」可以忘记它。
+  换 Windows 用户或换机器后解不开，卡片会提示重填；本地服务（LM Studio / Ollama 兼容层）Key 可以留空
+- 这张卡需要输入框，所以**不点击穿透**：点一下就能打字，代价是它会挡住身下的桌面点击（其余卡片不受影响）
 
 ## 🧩 显示内容与占位符
 
@@ -224,6 +260,10 @@ publish.bat        :: 生成 publish\ 下的四个单文件
   自动改用 ffmpeg 逐帧解码并画回卡片。系统解码路径用 `MediaElement` 自己的声音；ffmpeg 路径的
   声音由第二条 ffmpeg 进程转成 PCM、经 winmm 输出，两端都支持 0.25–4× 变速
 - 视频子窗口在跟随卡片的独立窗口里播放（分层窗口画不出 `MediaElement`），因此视频区域不支持卡片内拖动、点击
+- AI 对话卡片和按钮演示卡片需要收鼠标 / 键盘，所以**不点击穿透**：鼠标落在卡片上的点击不会传给桌面（其余卡片照旧穿透）
+- AI 对话的上下文只在内存里：卡片隐藏、重建或重启就清空；轮询模式最多带最近 12 条消息
+- API Key 用 DPAPI（当前用户）加密存储，**换 Windows 用户或换机器后解不开**，需要重新填写；`settings.json` 里只有密文
+- 模型回答目前是**非流式**（整段返回后才显示），没有打字机效果
 - **毛玻璃暂时不推荐开启（默认关闭）**。系统亚克力靠未文档化的 DWM 接口，圆角卡片会露直角补角、
   亮度只由色调决定；兼容实现每帧对身后每个窗口做 `PrintWindow`，5 张卡实测约 40% 单核，且抓不到动态壁纸 /
   独占全屏。第三条「桌面亚克力」用 DWM 材质底板 + 自截屏（4 张卡约 3% 单核，能糊到动态壁纸和视频），
@@ -276,7 +316,7 @@ assets/keycaps/          ReiconFont 与映射文档
 
 ## Features
 
-- **Card modules** — info & text, command line and media; add / delete / reorder from *Settings → Content*, duplicates allowed
+- **Card modules** — info & text, command line, media, AI chat and a button demo; add / delete / reorder from *Settings → Content*, duplicates allowed
 - **Resident or hotkey** — a card is either always visible, or hidden until its own hotkey is pressed; two cards may share one hotkey and appear together
 - **Stack layout** — list order is screen order; the first card is anchored at a monitor-relative X/Y, every following card keeps its own gap to the previous one; dragging any card moves the whole stack. *Alignment* (auto / left / right) lines up card edges, not text, and *auto* switches sides with the half of the screen the stack sits on
 - **Live metrics** — CPU / GPU / disk / network / memory / drives / uptime through PDH counters on a background thread
@@ -284,6 +324,8 @@ assets/keycaps/          ReiconFont 与映射文档
 - **Reicon icons** — embedded [ReiconFont](https://github.com/CRITTIof/reicon-font) keycaps and icons. Icons render at 1.45× the text size by default so they visually match the glyphs — no need to inflate the whole line
 - **Click-through** — the overlay never blocks the desktop unless unlocked with `F8`
 - **Command line cards** — each card owns its tool, working directory and timeout, so a CMD card, a PowerShell card and a WSL card can coexist
+- **AI chat card** — a terminal-styled card: model name on the first line, a `>` prompt input line, monospaced transcript below. Any OpenAI-compatible endpoint; each card owns its base URL, model and key, so two models can run side by side. Single shot vs. context chat is switched with a global hotkey (no buttons on the card)
+- **Encrypted key storage** — API keys are encrypted with Windows DPAPI (current user) before being written to `settings.json`, which only holds `dpapi:…` blobs; the settings field never echoes the key, it shows *API Key already set, type a new one to replace*
 - **Media cards** — one card per image / bitmap / animated GIF / video, with fit mode, size, opacity, loop, mute, speed and an optional corner-rounding toggle; the card keeps the text-card backing and adds a filename header plus a progress bar under videos; Media Foundation decodes first and ffmpeg takes over when it cannot
 - **Frosted glass** — three implementations: **system acrylic** (a separate backdrop window under each card, blurred live by DWM / the GPU at zero cost in this process), **compat** (windows behind the card are composed per pixel, downscaled and blurred; adjustable radius, works on any Windows) and **desktop acrylic** (a DWM material backdrop that captures the screen itself, so it can blur animated wallpapers and video that `PrintWindow` cannot see — at the cost of the cards never appearing in screenshots). **Off by default and not recommended yet**, see [docs/glass-implementations.md](docs/glass-implementations.md)
 - **No runtime needed** — self-contained single-file builds for x64 and ARM64
@@ -311,8 +353,20 @@ run.bat
 | Per-card summon | configured in *Content* |
 | Media card | `F11` (default for a new media card) |
 | Media playback | play/pause, forward/backward 5 s, faster/slower — set in *Hotkeys → 卡片* |
+| AI chat: toggle single / context | `Ctrl+Alt+Shift+M` (applies to every chat card; four keys on purpose, three-key combos tend to be taken) |
+| AI chat: clear context | unbound — set in *Hotkeys* |
 
 Global hotkeys fall back to `Ctrl+Alt+<key>` when occupied; card hotkeys do the same and the fallback is written back to the card. Duplicates are allowed and summon all matching cards.
+
+## AI chat cards
+
+![AI chat card](docs/chat-card.png)
+
+*Settings → Content → Add card → AI chat*, then fill in the base URL (OpenAI-compatible, up to `/v1`), the model name and the API key. The card is a terminal: the first line shows the model (and `[单次]` / `[轮询]`), the `>` line is the input, the framed area below is the transcript — your lines are dim and prefixed with `>`, answers are bright.
+
+Single shot sends only the current question; context keeps the last 12 messages. Both are switched with the global hotkey (`Ctrl+Alt+Shift+M` by default, rebindable in *Hotkeys → AI 对话卡片*); switching clears that card's history and is saved immediately. Clearing the context has its own optional hotkey.
+
+While a request is in flight the input becomes read-only instead of disabled, so the caret stays in the prompt and you can ask the next question without clicking again; clicking anywhere on the card also returns focus to the prompt. History lives in memory only, per card. API keys are DPAPI-encrypted (current user) — see the feature list above.
 
 ## Media cards
 
@@ -322,12 +376,16 @@ Images, bitmaps and animated GIFs are drawn inside the layered card window; vide
 
 ## Configuration
 
-Everything is stored in `settings.json` next to the executable (`SchemaVersion: 3`). Older configs are migrated on first launch and written back: v0/v1 single-overlay configs are split into cards, and the v2 global command settings are copied into every command card. `Cards[]` holds `Id`, `Kind`, `Name`, `Resident`, `Hotkey`, `Spacing`, `Content`, plus a per-card `Command` block (tool / template / working directory / truncation / timeout) and a per-card `Media` block (file / fit / size / opacity / loop / mute / speed). The list order is the on-screen order; appearance stays global.
+Everything is stored in `settings.json` next to the executable (`SchemaVersion: 3`). Older configs are migrated on first launch and written back: v0/v1 single-overlay configs are split into cards, and the v2 global command settings are copied into every command card. `Cards[]` holds `Id`, `Kind`, `Name`, `Resident`, `Hotkey`, `Spacing`, `Content`, plus a per-card `Command` block (tool / template / working directory / truncation / timeout), a per-card `Media` block (file / fit / size / opacity / loop / mute / speed) and a per-card `Chat` block (base URL / model / encrypted key / mode / system prompt / timeout / width). The list order is the on-screen order; appearance stays global.
 
 ## Known limitations
 
 - Only one command card can be in input mode at a time; history and settings are per card
 - Video falls back to ffmpeg when Media Foundation cannot decode it; both paths play audio and support 0.25–4× speed. Video needs the companion window, so the video area does not participate in drag or click handling
+- The AI chat card and the button demo card take mouse / keyboard input, so they are **not click-through**: clicks inside them no longer reach the desktop (other cards still are)
+- AI chat history is memory only — hiding, rebuilding or restarting clears it; context mode carries at most the last 12 messages
+- API keys are DPAPI-encrypted for the current Windows user, so they **cannot be decrypted after switching user or machine** and have to be re-entered; `settings.json` holds ciphertext only
+- Answers are **not streamed** yet (the whole reply appears at once, no typewriter effect)
 - **Frosted glass is off by default and not recommended yet.** The system-acrylic path leans on an
   undocumented DWM call, shows square corner slivers under rounded cards and takes its brightness from the
   tint only; the compat path calls `PrintWindow` for every window behind every card each frame (≈ 40% of one

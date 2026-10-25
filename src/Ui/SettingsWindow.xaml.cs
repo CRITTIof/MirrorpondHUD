@@ -727,6 +727,9 @@ namespace MirrorpondHUD.Ui
 
         Settings ReadUi()
         {
+            // 输入框里可能还有没失焦的 API Key（直接点了「确定」）：先加密收下来，别丢。
+            foreach (CardEditor editor in _editors) editor.CommitChatApiKey();
+
             Settings s = _working;
 
             FontItem font = FontCombo.SelectedItem as FontItem ?? _selectedFont;
@@ -1049,6 +1052,31 @@ namespace MirrorpondHUD.Ui
             {
                 Log.Warn("检测解码器失败: " + ex.Message);
             }
+        }
+
+        // ==================== 卡片内部：AI 对话 ====================
+
+        /// <summary>输入框失焦：把新填的 Key 加密收下来，之后框里只剩「已填写」提示。</summary>
+        void ChatApiKeyBoxLostFocus(object sender, RoutedEventArgs e)
+        {
+            CardEditor editor = EditorOf(sender);
+            if (editor == null) return;
+
+            string before = editor.Config.Chat.ApiKey;
+            editor.CommitChatApiKey();
+            if (editor.Config.Chat.ApiKey == before) return;
+
+            StatusText.Text = "卡片「" + editor.DisplayName + "」的 API Key 已加密保存（同一 Windows 用户可解）";
+            Log.Info("AI Key 已更新（dpapi 加密，长度 " + editor.Config.Chat.ApiKey.Length + "）");
+        }
+
+        void ClearChatApiKeyClick(object sender, RoutedEventArgs e)
+        {
+            CardEditor editor = EditorOf(sender);
+            if (editor == null) return;
+
+            editor.ClearChatApiKey();
+            StatusText.Text = "卡片「" + editor.DisplayName + "」的 API Key 已清除";
         }
 
         static string PickColor(string current)

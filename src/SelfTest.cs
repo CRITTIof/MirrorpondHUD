@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Runtime.InteropServices;
@@ -208,6 +208,8 @@ namespace MirrorpondHUD
             bool commandOk = false;
             bool truncateOk = false;
             bool toolLabelOk = false;
+            bool secretOk = false;
+            bool chatHotkeyOk = false;
 
             try
             {
@@ -397,12 +399,94 @@ namespace MirrorpondHUD
                 Log.Error("卡片模块自检异常", ex);
             }
 
+            try
+            {
+                const string secret = "sk-selftest-0123456789";
+
+                string stored = SecretStore.Protect(secret);
+                string plain;
+                bool roundTrip = SecretStore.IsProtected(stored)
+                              && SecretStore.TryUnprotect(stored, out plain)
+                              && plain == secret;
+
+                // 落盘的东西里不能有明文 Key
+                var chat = new ChatSettings { Model = "selftest-model" };
+                chat.SetApiKey(secret);
+
+                var settings = new Settings();
+                settings.Cards.Add(new CardSettings { Id = "chat", Kind = "chat", Name = "自检对话", Chat = chat });
+
+                string json = Json.Serialize(settings);
+                bool notPlain = json.IndexOf(secret, StringComparison.Ordinal) < 0
+                             && json.IndexOf(SecretStore.Prefix, StringComparison.Ordinal) > 0;
+
+                Settings back = Json.Deserialize<Settings>(json);
+                bool usable = back != null && back.Cards != null && back.Cards.Count == 1
+                           && back.Cards[0].Chat != null
+                           && back.Cards[0].Chat.HasApiKey
+                           && back.Cards[0].Chat.PlainApiKey == secret;
+
+                // 旧配置里的明文 Key：Normalize 之后变密文，而且还能用
+                var legacy = new ChatSettings { ApiKey = secret };
+                legacy.Normalize();
+
+                // 设置页：已存 Key 时输入框空的、只显示提示；输入新 Key 才改，提交后又收起
+                var cardSettings = new CardSettings { Id = "chat-ui", Kind = "chat", Name = "自检对话", Chat = new ChatSettings() };
+                var editor = new CardEditor(cardSettings, new ChatCard(), true);
+
+                bool uiHidden = editor.ChatApiKey.Length == 0
+                             && editor.ChatApiKeyPlaceholderVisibility == System.Windows.Visibility.Visible
+                             && editor.ChatApiKeyClearVisibility == System.Windows.Visibility.Collapsed;
+
+                cardSettings.Chat.SetApiKey(secret);
+                var withKey = new CardEditor(cardSettings, new ChatCard(), true);
+                bool uiMasked = withKey.ChatApiKey.Length == 0
+                             && withKey.ChatApiKeyPlaceholder == ChatSettings.KeyPlaceholder
+                             && withKey.ChatApiKeyPlaceholderVisibility == System.Windows.Visibility.Visible
+                             && withKey.ChatApiKeyClearVisibility == System.Windows.Visibility.Visible;
+
+                withKey.ChatApiKey = "sk-typed-123";
+                bool uiTyping = withKey.ChatApiKey == "sk-typed-123"
+                             && withKey.ChatApiKeyPlaceholderVisibility == System.Windows.Visibility.Collapsed;
+
+                withKey.CommitChatApiKey();
+                bool uiCommit = withKey.ChatApiKey.Length == 0
+                             && cardSettings.Chat.PlainApiKey == "sk-typed-123"
+                             && SecretStore.IsProtected(cardSettings.Chat.ApiKey);
+
+                secretOk = roundTrip && notPlain && usable
+                        && SecretStore.IsProtected(legacy.ApiKey)
+                        && legacy.PlainApiKey == secret
+                        && uiHidden && uiMasked && uiTyping && uiCommit;
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Key 加密自检异常", ex);
+            }
+
+            try
+            {
+                var chatCard = new ChatCard();
+                uint mods, vk;
+
+                chatHotkeyOk = HotkeyManager.TryParse(ChatCard.DefaultModeHotkey, out mods, out vk) && vk != 0
+                            && chatCard.HotkeyActions != null
+                            && chatCard.HotkeyActions.Count == 2
+                            && chatCard.HotkeyActions[0].Action == ChatCard.ActionToggleMode
+                            && chatCard is ICardHotkeyTarget
+                            && chatCard.NeedsMouseInput;
+            }
+            catch (Exception ex)
+            {
+                Log.Error("对话热键自检异常", ex);
+            }
+
             if (!(templateOk && unknownOk && collapseOk && thresholdOk && configOk && cardOk &&
                   keyNameOk && keyLimitOk && keyOverflowOk &&
-                  commandOk && truncateOk && toolLabelOk)) failures++;
+                  commandOk && truncateOk && toolLabelOk && secretOk && chatHotkeyOk)) failures++;
 
             Fix(sb, "逻辑自检", string.Format(
-                "模板={0} 未知占位符={1} 折叠={2} 阈值内展开={3} 配置读写={4} 卡片模块={11} 键名={5} 按键长度={6} 超长截断={7} 命令行={8} 行截断={9} 工具名={10}",
+                "模板={0} 未知占位符={1} 折叠={2} 阈值内展开={3} 配置读写={4} 卡片模块={11} 键名={5} 按键长度={6} 超长截断={7} 命令行={8} 行截断={9} 工具名={10} Key加密={12} 对话热键={13}",
                 templateOk ? "OK" : "FAIL",
                 unknownOk ? "OK" : "FAIL",
                 collapseOk ? "OK" : "FAIL",
@@ -414,7 +498,9 @@ namespace MirrorpondHUD
                 commandOk ? "OK" : "FAIL",
                 truncateOk ? "OK" : "FAIL",
                 toolLabelOk ? "OK" : "FAIL",
-                cardOk ? "OK" : "FAIL"));
+                cardOk ? "OK" : "FAIL",
+                secretOk ? "OK" : "FAIL",
+                chatHotkeyOk ? "OK" : "FAIL"));
         }
 
         static bool RegisterIfSet(HotkeyManager hotkeys, string action, string combination)

@@ -395,11 +395,24 @@
                                                             <Grid.ColumnDefinitions>
                                                                 <ColumnDefinition Width="88" />
                                                                 <ColumnDefinition Width="*" />
+                                                                <ColumnDefinition Width="Auto" />
                                                             </Grid.ColumnDefinitions>
                                                             <TextBlock Text="API Key" VerticalAlignment="Center" />
-                                                            <TextBox Grid.Column="1"
-                                                                     Text="{Binding ChatApiKey, UpdateSourceTrigger=PropertyChanged}"
-                                                                     ToolTip="明文保存在 settings.json 里；本地服务（LM Studio / Ollama 兼容层）可以留空" />
+                                                            <Grid Grid.Column="1">
+                                                                <TextBox Text="{Binding ChatApiKey, UpdateSourceTrigger=PropertyChanged}"
+                                                                         LostKeyboardFocus="ChatApiKeyBoxLostFocus"
+                                                                         ToolTip="按 Windows DPAPI 加密后存进 settings.json（只有当前用户能解）；这里不会回显已存的 Key&#x0a;本地服务（LM Studio / Ollama 兼容层）可以留空" />
+                                                                <TextBlock Text="{Binding ChatApiKeyPlaceholder}"
+                                                                           Visibility="{Binding ChatApiKeyPlaceholderVisibility}"
+                                                                           Margin="9,0,6,0" VerticalAlignment="Center"
+                                                                           IsHitTestVisible="False"
+                                                                           TextTrimming="CharacterEllipsis"
+                                                                           Foreground="{StaticResource TextSecondary}" />
+                                                            </Grid>
+                                                            <Button Grid.Column="2" Content="清除" Margin="6,0,0,0" Padding="10,2"
+                                                                    Tag="{Binding}" Click="ClearChatApiKeyClick"
+                                                                    Visibility="{Binding ChatApiKeyClearVisibility}"
+                                                                    ToolTip="删掉已存的 Key（settings.json 里的密文也一起清掉）" />
                                                         </Grid>
 
                                                         <Grid Margin="0,0,0,8">
@@ -412,7 +425,7 @@
                                                             <TextBlock Text="模式" VerticalAlignment="Center" />
                                                             <ComboBox Grid.Column="1" Width="150" VerticalAlignment="Center"
                                                                       SelectedIndex="{Binding ChatModeIndex}"
-                                                                      ToolTip="单次：每次提问都不带历史&#x0a;轮询：保留上下文，把之前的问答一起发回去（卡片上也能切换）">
+                                                                      ToolTip="单次：每次提问都不带历史&#x0a;轮询：保留上下文，把之前的问答一起发回去&#x0a;卡片上不再放按钮，切换走「热键」页里的「AI 对话：切换单次 / 轮询」">
                                                                 <ComboBoxItem Content="单次（不带历史）" />
                                                                 <ComboBoxItem Content="轮询（连续对话）" />
                                                             </ComboBox>
@@ -446,7 +459,7 @@
                                                                    ToolTip="{Binding ChatHint}" />
 
                                                         <TextBlock Style="{StaticResource Hint}" Margin="0,2,0,0" TextWrapping="Wrap"
-                                                                   Text="请求走 POST {接口地址}/chat/completions（OpenAI 兼容）。这张卡需要输入框，所以不点击穿透：点一下卡片就能打字，回车发送；代价是它会挡住身下的桌面点击。" />
+                                                                   Text="请求走 POST {接口地址}/chat/completions（OpenAI 兼容）。卡片是命令行样式：第一行模型名，第二行 › 之后打字，回车发送；单次 / 轮询与清空上下文都在「热键」页（默认 Ctrl+Alt+Shift+M 切换模式）。这张卡需要输入框，所以不点击穿透：点一下卡片就能打字，代价是它会挡住身下的桌面点击。" />
                                                     </StackPanel>
                                                 </StackPanel>
                                             </StackPanel>

@@ -65,12 +65,29 @@ namespace MirrorpondHUD.Core
                 TryBackupBroken();
             }
 
+            bool plainKey = HasPlainApiKey(settings);
             settings.Normalize();
             CardModel.Normalize(settings);
 
             // 旧版单窗口配置 / 初版多卡片配置：迁移后立刻落盘，避免每次启动重复迁移。
-            if (migrated) Save(settings);
+            // 旧版明文 API Key 同理：Normalize 已经把它换成 dpapi:…，这里立刻回写，磁盘上不留明文。
+            if (migrated || plainKey) Save(settings);
             return settings;
+        }
+
+        /// <summary>配置文件里还有明文的 AI Key（2.4.0 及更早的版本是明文存的）。</summary>
+        static bool HasPlainApiKey(Settings settings)
+        {
+            if (settings == null || settings.Cards == null) return false;
+
+            foreach (CardSettings card in settings.Cards)
+            {
+                if (card == null || card.Chat == null) continue;
+                if (string.IsNullOrEmpty(card.Chat.ApiKey)) continue;
+                if (!SecretStore.IsProtected(card.Chat.ApiKey)) return true;
+            }
+
+            return false;
         }
 
         public static bool Save(Settings settings)

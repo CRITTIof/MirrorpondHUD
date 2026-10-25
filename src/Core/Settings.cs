@@ -581,13 +581,20 @@ namespace MirrorpondHUD.Core
     /// </summary>
     public sealed class ChatSettings
     {
+        /// <summary>设置页里「已经存了 Key」时输入框里的提示（不回显密钥本身）。</summary>
+        public const string KeyPlaceholder = "已填写 API Key，重新输入以更换";
+
         /// <summary>接口根地址，例如 https://api.openai.com/v1（末尾的 / 会自动去掉）。</summary>
         public string BaseUrl = "https://api.openai.com/v1";
 
         /// <summary>模型名，显示在卡片第一行。</summary>
         public string Model = "";
 
-        /// <summary>API Key；本地服务可以留空。存在 settings.json 里，和别的配置一样是明文。</summary>
+        /// <summary>
+        /// API Key 的落盘形式：<c>dpapi:&lt;base64&gt;</c>，用 Windows DPAPI（当前用户）加密，
+        /// 只有同一台机器、同一个 Windows 用户能解开。空 = 没填（本地服务可以留空）。
+        /// 请求时用 <see cref="PlainApiKey"/> 取明文，明文只在内存里。
+        /// </summary>
         public string ApiKey = "";
 
         /// <summary>Single = 每次提问都不带历史；Context = 保留上下文连续对话（轮询）。</summary>
@@ -615,11 +622,80 @@ namespace MirrorpondHUD.Core
             };
         }
 
+        string _plainKeyCache;
+        string _plainKeySource;
+
+        /// <summary>
+        /// 解出来的明文 Key（只在内存里，不落盘）；空 = 没填，或者解不开（换了 Windows 用户 / 机器）。
+        /// 请求头用它，不要直接读 <see cref="ApiKey"/>。
+        /// </summary>
+        public string PlainApiKey
+        {
+            get
+            {
+                if (_plainKeyCache != null && string.Equals(_plainKeySource, ApiKey, StringComparison.Ordinal))
+                    return _plainKeyCache;
+
+                string stored = ApiKey ?? "";
+                string plain;
+                if (stored.Length == 0) plain = "";                                  // 没填
+                else if (!SecretStore.IsProtected(stored)) plain = stored;            // 旧配置里的明文
+                else if (!SecretStore.TryUnprotect(stored, out plain)) plain = "";    // 解不开
+
+                _plainKeySource = ApiKey;
+                _plainKeyCache = plain;
+                return plain;
+            }
+        }
+
+        /// <summary>有可用的 Key（能解开、非空）。</summary>
+        public bool HasApiKey
+        {
+            get { return PlainApiKey.Length > 0; }
+        }
+
+        /// <summary>settings.json 里存了 Key，但在这台机器 / 这个用户下解不开。</summary>
+        public bool ApiKeyUnreadable
+        {
+            get
+            {
+                return !string.IsNullOrEmpty(ApiKey) && SecretStore.IsProtected(ApiKey)
+                    && PlainApiKey.Length == 0;
+            }
+        }
+
+        /// <summary>填 / 换 Key：进内存前先加密，落盘就只有密文。</summary>
+        public void SetApiKey(string plain)
+        {
+            plain = (plain ?? "").Trim();
+            ApiKey = plain.Length == 0 ? "" : SecretStore.Protect(plain);
+            _plainKeySource = null;
+            _plainKeyCache = null;
+        }
+
+        /// <summary>忘记 Key（清空）。</summary>
+        public void ClearApiKey()
+        {
+            ApiKey = "";
+            _plainKeySource = null;
+            _plainKeyCache = null;
+        }
+
         public void Normalize()
         {
             BaseUrl = (BaseUrl ?? "").Trim().TrimEnd('/');
             Model = (Model ?? "").Trim();
+
             ApiKey = (ApiKey ?? "").Trim();
+            // 旧版本是明文存的：读进来就加密，下一次保存（ConfigStore.Load 会立刻回写）就只剩密文。
+            if (ApiKey.Length > 0 && !SecretStore.IsProtected(ApiKey))
+            {
+                Log.Info("检测到明文 API Key，转为 DPAPI 加密存储");
+                ApiKey = SecretStore.Protect(ApiKey);
+                _plainKeySource = null;
+                _plainKeyCache = null;
+            }
+
             Mode = NormalizeMode(Mode);
             SystemPrompt = SystemPrompt ?? "";
             TimeoutSeconds = (int)Settings.Clamp(TimeoutSeconds, 5, 300);
