@@ -622,16 +622,41 @@ namespace MirrorpondHUD.Ui
 
             IntPtr screen = GetDC(IntPtr.Zero);
             System.Diagnostics.Stopwatch clock = DiagnoseRaw ? System.Diagnostics.Stopwatch.StartNew() : null;
+            bool fromDuplication = false;
             try
             {
-                BitBlt(_sharedDc, 0, 0, width, height, screen, left, top, Srccopy);
+                // 优先走 DXGI 桌面复制：取的是合成器现成的帧，约 1 ms；GDI 读屏要等一个 vsync（9–17 ms）。
+                // 取不到（不支持的 Windows 生成号 / 独占全屏 / 远程桌面 / 设备被抢）就退回 BitBlt。
+                DesktopFrameSource source = EnsureFrameSource();
+                if (source != null)
+                {
+                    _frameSourceIdle = DateTime.UtcNow;
+                    fromDuplication = source.TryReadInto(_sharedBits, surfaceWidth * 4, left, top, width, height);
+                }
+
+                if (!fromDuplication)
+                {
+                    BitBlt(_sharedDc, 0, 0, width, height, screen, left, top, Srccopy);
+                }
             }
             finally
             {
                 ReleaseDC(IntPtr.Zero, screen);
             }
 
-            if (clock != null) TraceBands(clock.Elapsed.TotalMilliseconds, width, height);
+            if (clock != null)
+            {
+                clock.Stop();
+                TraceBands(clock.Elapsed.TotalMilliseconds, width, height, fromDuplication);
+            }
+
+            // 走桌面复制时一轮只要 1 ms 左右（GDI 读屏要等一个 vsync，18 ms），可以把刷新从 200 ms 提到 100 ms
+            // —— 玻璃落后屏幕从 46 ms 掉到 16 ms（CPU 4.8% → 7.6~9.8%，见 docs/glass-implementations.md §4.3）。
+            // GDI 路径保持 200 ms，别把 UI 线程堵得更频繁。
+            if (fromDuplication && _pump != null && _pump.Interval.TotalMilliseconds > 100)
+            {
+                _pump.Interval = TimeSpan.FromMilliseconds(100);
+            }
 
             foreach (AcrylicBackdrop item in snapshot) item.CaptureFrom(_sharedDc, left, top);
         }
@@ -639,6 +664,53 @@ namespace MirrorpondHUD.Ui
         static int RoundUp(int value)
         {
             return ((value + 127) / 128) * 128;
+        }
+
+        // ==================== 取图后端 ====================
+        // 默认优先 DXGI 桌面复制（见 DesktopFrameSource）；不可用就一直是 GDI 读屏。
+        // 桌面复制会让 GPU 保持唤醒，所以闲置超过 5 秒就释放，下次取图再建。
+
+        static DesktopFrameSource _frameSource;
+        static bool _frameSourceTried;
+
+        /// <summary>上一次真正取图的时间：超过 5 秒没人用就放掉桌面复制（别让 GPU 一直醒着）。</summary>
+        static DateTime _frameSourceIdle = DateTime.MinValue;
+
+        static DesktopFrameSource EnsureFrameSource()
+        {
+            // 卡片增删会让底板短暂全部销毁再建，别因此反复创建 D3D 设备 / 桌面复制；
+            // 真正长时间不用（默认 5 秒）才释放。
+            if (_frameSource != null && (DateTime.UtcNow - _frameSourceIdle).TotalSeconds > 5)
+            {
+                ReleaseFrameSource();
+            }
+
+            if (_frameSource != null || _frameSourceTried) return _frameSource;
+            _frameSourceTried = true;
+
+            DesktopFrameSource source;
+            string reason;
+            if (DesktopFrameSource.TryCreate(out source, out reason))
+            {
+                _frameSource = source;
+                _frameSourceIdle = DateTime.UtcNow;
+                Log.Info("玻璃取图改用 DXGI 桌面复制（不再用 GDI 读屏）");
+            }
+            else
+            {
+                Log.Info("玻璃取图用 GDI 读屏：" + reason);
+            }
+
+            return _frameSource;
+        }
+
+        static void ReleaseFrameSource()
+        {
+            if (_frameSource == null) return;
+            try { _frameSource.Dispose(); } catch { }
+            _frameSource = null;
+            _frameSourceTried = false;
+            _frameSourceIdle = DateTime.MinValue;
         }
 
         // ==================== 诊断：原始取样图的逐带亮度 ====================
@@ -660,7 +732,7 @@ namespace MirrorpondHUD.Ui
             }
         }
 
-        static void TraceBands(double bitbltMs, int width, int height)
+        static void TraceBands(double readMs, int width, int height, bool fromDuplication)
         {
             if (_sharedBits == IntPtr.Zero) return;
 
@@ -673,7 +745,8 @@ namespace MirrorpondHUD.Ui
 
             var trace = new System.Text.StringBuilder();
             trace.Append("RAWB ").Append(DateTime.Now.ToString("HH:mm:ss.fff"))
-                 .Append(" bitblt=").Append(bitbltMs.ToString("F1"));
+                 .Append(' ').Append(fromDuplication ? "src=dup" : "src=gdi")
+                 .Append(" read=").Append(readMs.ToString("F1"));
 
             for (int b = 0; b < Bands; b++)
             {
@@ -889,6 +962,7 @@ namespace MirrorpondHUD.Ui
 
         static void ReleaseSharedSurface()
         {
+
             if (_sharedPrevious != IntPtr.Zero && _sharedDc != IntPtr.Zero)
             {
                 SelectObject(_sharedDc, _sharedPrevious);

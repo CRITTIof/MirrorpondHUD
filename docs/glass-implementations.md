@@ -132,13 +132,45 @@
   不是卡片、也不是黑块 —— 所以它能直接替换现在的 `BitBlt`，玻璃语义不变；
 - 它给的是**整屏**纹理（1920×1080 `B8G8R8A8_UNorm`），取卡片区域用 `CopySubresourceRegion` 即可。
 
-代价 / 风险（还没进产品，是验证阶段的结论）：要引 D3D11（或手写 COM，避免加 NuGet 依赖）；
-独占全屏切换、远程桌面、混合显卡（画面由核显输出而设备建在独显上）都要**回退到 GDI**；
-桌面复制会定期把 GPU 从低功耗叫醒（电池机器上要实测）；
-另外 `AcquireNextFrame` 在「什么都没变」时会超时，直接沿用上一帧即可。
+### 4.3 已落地：2.4.2 起取图默认走桌面复制
 
-原型在 `C:\Users\CRITT\Documents\deepseek-harness\coding\gpu-lab\`（`probe/` = 桌面复制 + 计时 + 帧导出，
-`glass/` = 复制 → 区域拷贝 → compute 模糊 → 回读的整条链路计时），不进仓库。
+`src/Ui/DesktopFrameSource.cs`：手写 vtable 调用的 COM 互操作（**没有引入任何 NuGet 包**），只做三件事——
+`DuplicateOutput` 拿到复制对象、`CopySubresourceRegion` 把**卡片整叠区域**拷进一块区域大小的 staging
+纹理、`Map` 后逐行 `RtlMoveMemory` 进共享 DIB。GDI `BitBlt` 保留为回退路径。
+
+实测（同一台机器、同一个桌面场景，日志里的 `RAWB ... src=dup|gdi read=x` 就是这一轮取图耗时）：
+
+| | GDI 读屏 | 桌面复制 |
+| --- | --- | --- |
+| 一轮取图 | **18.3–18.6 ms**（挡住 UI 线程等 vsync） | **0.1 ms**（桌面没变化，只是问一句）/ **1–1.5 ms**（有新帧：拷区域 + Map + 搬行） |
+| 玻璃落后屏幕（翻色面板放在卡片下面，700 ms 一次） | **46 ms** 中位 / 48 p90 | 47 ms 中位（**没变**）/ 配 100 ms 刷新 **16 ms** 中位 / 52 p90 |
+| CPU（4 张卡，静置） | 4.2% | 6.8%（刷新从 200 ms 提到 100 ms） |
+| 内存 | 134 MB | 152 MB |
+
+**要诚实的一点**：换成桌面复制本身**并不会让玻璃更快** —— 一轮里「什么时候开始取图」由刷新定时器和窗口事件
+决定，取图是 1 ms 还是 18 ms 都落在同一个 40–50 ms 的窗口里。它真正换来的是两件事：
+
+1. **UI 线程不再每轮被堵 18 ms**（按 9 轮/秒算就是 17% 的墙钟时间）。拖动卡片、在对话卡里打字时不卡；
+2. 取图便宜了，**刷新可以提到 100 ms**（`fromDuplication` 时自动提），这才是把 46 ms 压到 16 ms 的原因。
+
+安全措施（都在代码里）：
+
+- **按系统生成号选 vtable 下标**：本机 26200 的 `IDXGIOutput1::DuplicateOutput` 在 **22**，而 26100 SDK 头文件写的是 19
+  （用 19 只会得到 `DXGI_ERROR_INVALID_CALL`）。低于 26200 的生成号直接走 GDI，不猜；
+- 拿到复制对象后**先用 `GetDesc` 验收**宽高是否等于屏幕，对不上就整体退回 GDI（宁可慢，不画黑屏）；
+- `DXGI_ERROR_ACCESS_LOST`（独占全屏 / 换分辨率）→ 重建复制对象，连续失败 4 次就永久退回 GDI；
+- 刚建好复制对象时的第一帧是**黑帧**，预热阶段（最多 6 次）把黑帧当「没拿到」丢掉，不触发
+  「连续 3 帧全黑 → 退回系统亚克力」的保险丝；
+- 5 秒没有取图就释放复制对象和 D3D11 设备（别让 GPU 一直醒着），下次用到再建；
+- 开关：`MIRRORPOND_GLASS_SOURCE=gdi` 强制走 GDI（做 A/B），`=dup` 在未验证的生成号上强制尝试。
+
+代价 / 风险：vtable 下标依赖系统版本，新系统要重新实测一遍（现在只在 26200 上验证过，其它生成号自动用 GDI）；
+独占全屏切换、远程桌面、混合显卡（画面由核显输出而设备建在独显上）都会退化到 GDI；
+桌面复制会定期把 GPU 从低功耗叫醒，电池机器上要实测；内存多 18 MB（D3D11 设备 + 区域 staging）。
+
+验证用的原型留在 `C:\Users\CRITT\Documents\deepseek-harness\coding\` 里，不进仓库：
+`gpu-lab/`（Vortice 版：复制 + 计时 + compute 模糊链路）、`hud-test/dxprobe/`（无依赖的 vtable 版 + GDI 亮度对照）、
+`hud-test/e2e-behind.sh` + `switch-behind.ps1`（把翻色面板放到卡片下面量端到端延迟）。
 
 
 安全网：连续 3 帧采样全黑（比如系统以后又把截屏挡掉）会**自动退回系统亚克力**，日志写明原因：
@@ -251,6 +283,15 @@ Two things worth recording from later work:
   `WDA_EXCLUDEFROMCAPTURE`** (the cards' area comes back as the desktop behind them, not as black), so it can
   drop in where the GDI `BitBlt` is today. Cost: a D3D11 dependency (or hand-written COM), fallbacks for
   exclusive-fullscreen / remote sessions / hybrid GPUs, and periodic GPU wake-ups.
+- **It shipped in 2.4.2** (`src/Ui/DesktopFrameSource.cs`, hand-written COM, no NuGet packages): one region read
+  costs **0.1 ms** when nothing changed and **1–1.5 ms** for a fresh frame, against **18.6 ms** for the GDI read
+  — and the GDI number was wall-clock spent *blocked* in the compositor, so the UI thread gets those 18 ms back.
+  End to end the glass still lagged 46–47 ms either way, because the schedule (pump + window events) dominates;
+  the win only turns into latency once the pump is allowed to run at **100 ms** instead of 200 ms, which the cheap
+  read pays for: **16 ms median / 52 ms p90** at 6.8% CPU (4.2% before) and +18 MB. Safety: the `DuplicateOutput`
+  vtable slot is picked by OS build (22 on 26200, 19 on older builds; unverified builds use GDI), the duplication is
+  validated with `GetDesc` before use, the first (black) frame is discarded during priming, `ACCESS_LOST` rebuilds
+  it, and it is released after 5 s without a capture. `MIRRORPOND_GLASS_SOURCE=gdi|dup` forces either path.
 
 ## 5. So what should you do
 
