@@ -167,6 +167,8 @@ namespace MirrorpondHUD.Ui
             slot.Rich = slot.Module as IRichCardModule;
 
             var window = new OverlayWindow(dialog);
+            // 带按钮 / 输入框的卡片（AI 对话、按钮演示）自己声明需要鼠标，宿主据此关掉这张卡的点击穿透。
+            window.Interactive = slot.Rich != null && slot.Rich.NeedsMouseInput;
             slot.Window = window;
 
             window.SettingsRequested += ShowSettings;
@@ -1154,6 +1156,7 @@ namespace MirrorpondHUD.Ui
                     slot.Config = config;
                     slot.Module = CardRegistry.Get(config.Kind);
                     slot.Rich = slot.Module as IRichCardModule;
+                    slot.Window.Interactive = slot.Rich != null && slot.Rich.NeedsMouseInput;
                     slot.Summoned = summoned.TryGetValue(config.Id, out saved) ? saved : wasSummoned;
                     slot.Dialog = BuildDialog(config);
 

@@ -36,7 +36,7 @@
 - **按键显示** — 全局键盘钩子，最近按键、重复折叠（`A×6`）、最大字符数限制，按键以键帽字形显示
 - **快捷命令行** — 命令行是一张普通卡片，按自己的热键展开；**工具 / 工作目录 / 超时都在这张卡片自己身上**，所以可以同时放 CMD、PowerShell、WSL 三张卡片各用各的
 - **媒体卡片** — 一张卡片显示图片 / 位图 / 动图（GIF）/ 视频，可调缩放方式、宽高、透明度、循环、静音、倍速，并可选择是否按外观的圆角裁圆；卡片顶部显示文件名（过长省略），视频底部带播放进度条；系统解不开的视频会自动改用 ffmpeg
-- **毛玻璃背景** — 两种实现：**系统亚克力**（卡片下面一块独立底板，DWM / GPU 实时模糊身后的桌面与窗口，进程侧零开销）与**兼容**（按像素拼出卡片后面的画面再缩小模糊，任何 Windows 都能用、半径可调）。**默认关闭、暂不推荐**——两种实现各自都有绕不过去的毛病，见 [docs/glass-implementations.md](docs/glass-implementations.md)
+- **毛玻璃背景** — 三种实现：**系统亚克力**（卡片下面一块独立底板，DWM / GPU 实时模糊身后的桌面与窗口，进程侧零开销）、**兼容**（按像素拼出卡片后面的画面再缩小模糊，任何 Windows 都能用、半径可调）和**桌面亚克力**（DWM 材质底板自己截屏，能糊到动态壁纸 / 视频这类 `PrintWindow` 抓不到的东西，代价是**卡片不会出现在截图里**）。**默认关闭、暂不推荐**——见 [docs/glass-implementations.md](docs/glass-implementations.md)
 - **外观可调** — 字体字号、图标倍率、描边、背景图、透明度、圆角、投影、固定宽度；尺寸只增不减，数值变化时不跳动
 - **启动动画** — 打字 / 退格动画 + 模拟光标（方块 / 竖线 / 下划线 / 空心框 / 关闭）
 - **托盘常驻** — 单实例唤醒、开机自启、可自定义的全局热键、鼠标穿透锁定
@@ -44,7 +44,7 @@
 
 ## 🚀 快速开始
 
-**下载即用**：到 [Releases](https://github.com/CRITTIof/MirrorpondHUD/releases) 下载最新版 `v2.3.0`。
+**下载即用**：到 [Releases](https://github.com/CRITTIof/MirrorpondHUD/releases) 下载最新版 `v2.4.0`。
 自 v2.1.0 起只提供**需要手动安装 .NET 8 桌面运行时**的版本（体积小）；先装运行时，再双击 exe：
 
 | 文件 | 适用 | 说明 |
@@ -224,9 +224,10 @@ publish.bat        :: 生成 publish\ 下的四个单文件
   自动改用 ffmpeg 逐帧解码并画回卡片。系统解码路径用 `MediaElement` 自己的声音；ffmpeg 路径的
   声音由第二条 ffmpeg 进程转成 PCM、经 winmm 输出，两端都支持 0.25–4× 变速
 - 视频子窗口在跟随卡片的独立窗口里播放（分层窗口画不出 `MediaElement`），因此视频区域不支持卡片内拖动、点击
-- **毛玻璃暂时不推荐开启（默认关闭）**。它有两套实现：系统亚克力靠未文档化的 DWM 接口，圆角卡片会露直角补角、
+- **毛玻璃暂时不推荐开启（默认关闭）**。系统亚克力靠未文档化的 DWM 接口，圆角卡片会露直角补角、
   亮度只由色调决定；兼容实现每帧对身后每个窗口做 `PrintWindow`，5 张卡实测约 40% 单核，且抓不到动态壁纸 /
-  独占全屏。两条路都说得清的优缺点、实测数据和选择建议见
+  独占全屏。第三条「桌面亚克力」用 DWM 材质底板 + 自截屏（4 张卡约 3% 单核，能糊到动态壁纸和视频），
+  代价是**开了它卡片就不会出现在截图 / 录屏里**——自截屏必须把自己排除在捕获之外。三条路的实测与选择建议见
   **[docs/glass-implementations.md](docs/glass-implementations.md)**。只想要半透明卡片的话，把「背景不透明度」
   调到 0.5–0.7 即可，没有额外开销
 - 运行期插件（`cards/*.dll`）暂未实现；加一种卡片只需在 `src/Cards` 新增一个类——文字卡继承 `CardModuleBase`，
@@ -284,7 +285,7 @@ assets/keycaps/          ReiconFont 与映射文档
 - **Click-through** — the overlay never blocks the desktop unless unlocked with `F8`
 - **Command line cards** — each card owns its tool, working directory and timeout, so a CMD card, a PowerShell card and a WSL card can coexist
 - **Media cards** — one card per image / bitmap / animated GIF / video, with fit mode, size, opacity, loop, mute, speed and an optional corner-rounding toggle; the card keeps the text-card backing and adds a filename header plus a progress bar under videos; Media Foundation decodes first and ffmpeg takes over when it cannot
-- **Frosted glass** — two implementations: **system acrylic** (a separate backdrop window under each card, blurred live by DWM / the GPU at zero cost in this process) and **compat** (windows behind the card are composed per pixel, downscaled and blurred; adjustable radius, works on any Windows). **Off by default and not recommended yet** — both have flaws this project cannot fix, see [docs/glass-implementations.md](docs/glass-implementations.md)
+- **Frosted glass** — three implementations: **system acrylic** (a separate backdrop window under each card, blurred live by DWM / the GPU at zero cost in this process), **compat** (windows behind the card are composed per pixel, downscaled and blurred; adjustable radius, works on any Windows) and **desktop acrylic** (a DWM material backdrop that captures the screen itself, so it can blur animated wallpapers and video that `PrintWindow` cannot see — at the cost of the cards never appearing in screenshots). **Off by default and not recommended yet**, see [docs/glass-implementations.md](docs/glass-implementations.md)
 - **No runtime needed** — self-contained single-file builds for x64 and ARM64
 
 ## Quick start
@@ -330,9 +331,12 @@ Everything is stored in `settings.json` next to the executable (`SchemaVersion: 
 - **Frosted glass is off by default and not recommended yet.** The system-acrylic path leans on an
   undocumented DWM call, shows square corner slivers under rounded cards and takes its brightness from the
   tint only; the compat path calls `PrintWindow` for every window behind every card each frame (≈ 40% of one
-  core with 5 cards), and cannot see animated wallpapers or exclusive-fullscreen windows. Measured numbers,
-  the full list of flaws and how to choose: **[docs/glass-implementations.md](docs/glass-implementations.md)**
-  (bilingual). If all you want is a translucent card, set *Background opacity* to 0.5–0.7 — it costs nothing
+  core with 5 cards), and cannot see animated wallpapers or exclusive-fullscreen windows. The third path,
+  *desktop acrylic*, uses a DWM material backdrop that captures the screen itself (≈ 3% of one core for 4
+  cards, and it does blur animated wallpapers and video), but **while it is active the cards do not appear in
+  screenshots or recordings** — a self-capturing window has to exclude itself. Measured numbers, the full list
+  of flaws and how to choose: **[docs/glass-implementations.md](docs/glass-implementations.md)** (bilingual).
+  If all you want is a translucent card, set *Background opacity* to 0.5–0.7 — it costs nothing
 - Runtime plugins (`cards/*.dll`) are not implemented; adding a card is one new class in `src/Cards` (text cards derive from `CardModuleBase`, rich cards from `RichCardModuleBase`)
 
 ## Build

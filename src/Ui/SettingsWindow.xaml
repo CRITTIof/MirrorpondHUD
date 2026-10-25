@@ -360,6 +360,94 @@
                                                         <TextBlock Style="{StaticResource Hint}" Margin="0,2,0,0" TextWrapping="Wrap"
                                                                    Text="自动模式下，系统解不开的视频或图片会改用 ffmpeg；ffmpeg 解码没有声音、速度固定 1×，其余格式与系统解码一致。" />
                                                     </StackPanel>
+
+                                                    <!-- AI 对话卡片：接口 / 模型 / Key 都是这张卡自己的 -->
+                                                    <StackPanel Visibility="{Binding ChatVisibility}">
+                                                        <TextBlock Text="AI 接口" Style="{StaticResource SectionTitle}" Margin="0,6,0,6" />
+
+                                                        <Grid Margin="0,0,0,8">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="88" />
+                                                                <ColumnDefinition Width="*" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock Text="接口地址" VerticalAlignment="Center" />
+                                                            <TextBox Grid.Column="1"
+                                                                     Text="{Binding ChatBaseUrl, UpdateSourceTrigger=PropertyChanged}"
+                                                                     ToolTip="OpenAI 兼容接口的根地址，末尾不用写 /chat/completions。&#x0a;例如 https://api.openai.com/v1 、https://api.deepseek.com/v1 、http://127.0.0.1:11434/v1" />
+                                                        </Grid>
+
+                                                        <Grid Margin="0,0,0,8">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="88" />
+                                                                <ColumnDefinition Width="*" />
+                                                                <ColumnDefinition Width="Auto" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock Text="模型" VerticalAlignment="Center" />
+                                                            <TextBox Grid.Column="1"
+                                                                     Text="{Binding ChatModel, UpdateSourceTrigger=PropertyChanged}"
+                                                                     ToolTip="写进请求的 model 字段，也是卡片第一行显示的名字" />
+                                                            <TextBlock Grid.Column="2" Text="显示在卡片第一行" Margin="8,0,0,0"
+                                                                       VerticalAlignment="Center" Foreground="{StaticResource TextSecondary}"
+                                                                       FontSize="12" />
+                                                        </Grid>
+
+                                                        <Grid Margin="0,0,0,8">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="88" />
+                                                                <ColumnDefinition Width="*" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock Text="API Key" VerticalAlignment="Center" />
+                                                            <TextBox Grid.Column="1"
+                                                                     Text="{Binding ChatApiKey, UpdateSourceTrigger=PropertyChanged}"
+                                                                     ToolTip="明文保存在 settings.json 里；本地服务（LM Studio / Ollama 兼容层）可以留空" />
+                                                        </Grid>
+
+                                                        <Grid Margin="0,0,0,8">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="88" />
+                                                                <ColumnDefinition Width="Auto" />
+                                                                <ColumnDefinition Width="Auto" />
+                                                                <ColumnDefinition Width="*" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock Text="模式" VerticalAlignment="Center" />
+                                                            <ComboBox Grid.Column="1" Width="150" VerticalAlignment="Center"
+                                                                      SelectedIndex="{Binding ChatModeIndex}"
+                                                                      ToolTip="单次：每次提问都不带历史&#x0a;轮询：保留上下文，把之前的问答一起发回去（卡片上也能切换）">
+                                                                <ComboBoxItem Content="单次（不带历史）" />
+                                                                <ComboBoxItem Content="轮询（连续对话）" />
+                                                            </ComboBox>
+                                                            <TextBlock Grid.Column="2" Text="超时" VerticalAlignment="Center" Margin="18,0,6,0" />
+                                                            <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
+                                                                <TextBox Width="56" VerticalAlignment="Center"
+                                                                         Text="{Binding ChatTimeoutSeconds, UpdateSourceTrigger=LostFocus}" />
+                                                                <TextBlock Text="秒" VerticalAlignment="Center" Margin="6,0,14,0" />
+                                                                <TextBlock Text="宽度" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                                                <TextBox Width="60" VerticalAlignment="Center"
+                                                                         Text="{Binding ChatWidth, UpdateSourceTrigger=LostFocus}" />
+                                                                <TextBlock Text="DIP" VerticalAlignment="Center" Margin="6,0,0,0" />
+                                                            </StackPanel>
+                                                        </Grid>
+
+                                                        <Grid Margin="0,0,0,8">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="88" />
+                                                                <ColumnDefinition Width="*" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock Text="系统提示" VerticalAlignment="Top" Margin="0,6,0,0" />
+                                                            <TextBox Grid.Column="1" Height="58" AcceptsReturn="True"
+                                                                     TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                                                                     Text="{Binding ChatSystemPrompt, UpdateSourceTrigger=PropertyChanged}"
+                                                                     ToolTip="可选：每条对话开头都发这一段，用来设定语气 / 角色" />
+                                                        </Grid>
+
+                                                        <TextBlock Text="{Binding ChatHint}" Margin="0,0,0,2"
+                                                                   FontSize="12" TextWrapping="Wrap"
+                                                                   Foreground="{StaticResource TextSecondary}"
+                                                                   ToolTip="{Binding ChatHint}" />
+
+                                                        <TextBlock Style="{StaticResource Hint}" Margin="0,2,0,0" TextWrapping="Wrap"
+                                                                   Text="请求走 POST {接口地址}/chat/completions（OpenAI 兼容）。这张卡需要输入框，所以不点击穿透：点一下卡片就能打字，回车发送；代价是它会挡住身下的桌面点击。" />
+                                                    </StackPanel>
                                                 </StackPanel>
                                             </StackPanel>
                                         </Border>
@@ -596,9 +684,10 @@
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="玻璃实现" VerticalAlignment="Center" />
-                            <ComboBox x:Name="GlassModeCombo" Grid.Column="1" Width="290" HorizontalAlignment="Left">
-                                <ComboBoxItem Content="系统亚克力（DWM 合成，进程侧不抓屏）" Tag="System" />
-                                <ComboBoxItem Content="兼容（截屏取样，CPU 模糊，参数可调）" Tag="Compat" />
+                            <ComboBox x:Name="GlassModeCombo" Grid.Column="1" Width="300" HorizontalAlignment="Left">
+                                <ComboBoxItem Content="系统亚克力（accent 底板，不抓屏）" Tag="System" />
+                                <ComboBoxItem Content="桌面亚克力（DWM 材质，自己截屏）" Tag="Dwm" />
+                                <ComboBoxItem Content="兼容（截屏取样，CPU 模糊）" Tag="Compat" />
                             </ComboBox>
                         </Grid>
 

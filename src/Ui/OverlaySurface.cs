@@ -64,6 +64,16 @@ namespace MirrorpondHUD.Ui
 
         public TextCanvas Canvas { get { return _canvas; } }
 
+        /// <summary>
+        /// 富内容里的控件能不能收到鼠标。默认 false（图片 / 视频不该挡住桌面点击）；
+        /// 交互卡片（按钮 / 输入框）由宿主设成 true，否则命中测试会停在内容层外面。
+        /// </summary>
+        public bool ContentHitTestVisible
+        {
+            get { return _contentLayer.IsHitTestVisible; }
+            set { _contentLayer.IsHitTestVisible = value; }
+        }
+
         /// <summary>富内容（图片 / 动图 / 视频）的宿主；有内容时文字层隐藏。</summary>
         public void SetContent(FrameworkElement content)
         {

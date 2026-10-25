@@ -1,19 +1,24 @@
 # 卡片模块化：现在的实现
 
 > 目标：把「桌面信息叠层」做成一组**可添加、可删除、可排序**的卡片。
-> 现在六种内置卡片（系统信息 / 时钟 / 按键 / 文本信息 / 命令行 / 媒体）已经按这个结构跑起来；
-> 以后加文件中转站、游戏账号数据、AI 对话，只需要在 `src/Cards` 里新增一个文件，宿主不用改
-> ——文字卡用 `CardModuleBase`，图片 / 视频这类富内容卡用 `RichCardModuleBase`。
+> 现在五种内置卡片（信息与文本 / 命令行 / 媒体 / AI 对话 / 按钮演示）都按这个结构跑起来；
+> 再加一种卡片只需要在 `src/Cards` 里新增一个文件，宿主不用改
+> ——文字卡用 `CardModuleBase`，图片 / 视频 / 面板这类富内容卡用 `RichCardModuleBase`。
 
 ## 1. 文件结构
 
 | 文件 | 职责 |
 | --- | --- |
 | `src/Cards/CardModule.cs` | `ICardModule` 接口、`CardRenderContext`、`CardModuleBase` 默认实现 |
-| `src/Cards/RichCard.cs` | `IRichCardModule` / `RichCardModuleBase`：返回任意 WPF 内容的卡片契约 |
+| `src/Cards/RichCard.cs` | `IRichCardModule` / `RichCardModuleBase`：返回任意 WPF 内容的卡片契约（含 `NeedsMouseInput`） |
 | `src/Cards/CardRegistry.cs` | 反射扫描本程序集里所有 `ICardModule` 实现，按 `Order` 排序 |
 | `src/Cards/CardModel.cs` | 卡片列表的创建、补全、校验、名称去重 |
-| `src/Cards/MetricsCard.cs` 等 | 六种卡片各自的元数据与渲染 |
+| `src/Cards/InfoTextCard.cs` | 信息与文本卡：系统信息 / 时钟 / 按键 / 文本四个预设 |
+| `src/Cards/CommandCard.cs` / `MediaCard.cs` | 命令行卡（独占键盘）、媒体卡（图片 / 动图 / 视频） |
+| `src/Cards/ChatCard.cs` | AI 对话卡：模型名 + 输入框 + 单次 / 轮询两种上下文模式 |
+| `src/Cards/ButtonsCard.cs` | 按钮演示卡：验证 `CardButton` / `CardTextBox` 这套卡片控件 |
+| `src/Ui/Controls/CardButton.cs` | 卡片里的按钮：三种语气 + 三态模板，颜色跟随卡片外观 |
+| `src/Ui/Controls/CardTextBox.cs` | 卡片里的输入框：底色 / 光标 / 选区跟着卡片文字色 |
 | `src/Media/MediaView.cs` | 图片 / 动图 / 视频控件：卡片内容的实际绘制者（文件名 + 进度条 + 圆角） |
 | `src/Media/GifAnimator.cs` | 动图按帧播放（GDI+ 取帧 + `DispatcherTimer`） |
 | `src/Media/VideoWindow.cs` | 视频子窗口：分层窗口画不出 `MediaElement`，视频单独开窗贴在卡片上 |
@@ -21,7 +26,7 @@
 | `src/Media/FfmpegPlayer.cs` | 外部 ffmpeg 解码：原始 BGRA 帧管道、进度、循环、变速、图片兜底 |
 | `src/Media/WaveOutPlayer.cs` | winmm waveOut 播放 ffmpeg 的 PCM 音频（暂停 / 继续 / 音量） |
 | `src/Ui/OverlayController.cs` | 每张卡片一个窗口，负责堆叠、显示 / 隐藏、热键、命令行会话、富内容生命周期 |
-| `src/Ui/CardEditor.cs` | 设置页「内容」里的一张卡片设置卡（双向绑定，含每卡命令行 / 媒体设置） |
+| `src/Ui/CardEditor.cs` | 设置页「内容」里的一张卡片设置卡（双向绑定，含每卡命令行 / 媒体 / AI 接口设置） |
 
 ## 2. 卡片接口
 
@@ -223,6 +228,41 @@ ffmpeg 路线把视频解成逐帧原始像素，什么格式都能放（代价�
 设置页「热键」在「全局」下面按卡片种类分组（组间有分割线），只需要卡片模块声明
 `ICardHotkeySource.HotkeyActions`；新增卡片类型不用改设置页或宿主代码。
 
+### 卡片里的按钮与输入框
+
+叠层默认是**点击穿透**的（`WS_EX_TRANSPARENT`），这样卡片不会挡住桌面。要让卡片里能点按钮、能打字，
+模块声明 `IRichCardModule.NeedsMouseInput = true`，宿主据此做三件事：
+
+| 位置 | 变化 |
+| --- | --- |
+| `OverlayWindow.Interactive` | 这张卡的窗口不再加 `WS_EX_TRANSPARENT` / `WS_EX_NOACTIVATE` |
+| `OverlaySurface.ContentHitTestVisible` | 内容层参与命中测试（默认 `false`，图片 / 视频不该挡住桌面） |
+| `OverlayWindow.UpdateClickThrough` | 锁定状态下也不穿透；光标改成箭头（不是移动手势） |
+
+代价写在卡片实现里：**它会挡住自己身下的桌面点击**，所以交互卡片通常尺寸克制、默认常驻。
+
+控件在 `src/Ui/Controls/`，颜色 / 字号 / 圆角都跟着卡片外观走，不依赖设置窗口那套浅色资源：
+
+- `CardButton`：`Normal` / `Primary` / `Danger` 三种语气，自定义模板画圆角底 + hover / pressed /
+  键盘焦点三态；`SetActive(bool)` 用于「多选 / 当前模式」这类选中态。
+- `CardTextBox`：单行 / 多行输入，底色是前景色的 7%，光标、选区、边框都跟着卡片文字色。
+
+`ButtonsCard`（按钮演示）就是最小验证：三种语气的按钮 + 一个禁用按钮 + 输入框回显，
+用来确认点击、键盘、禁用态和样式跟随都成立。
+
+### AI 对话卡片
+
+`ChatCard` 是第一个「有状态」的富内容卡片：一张卡片一套接口与上下文。
+
+- 布局：第一行模型名 + 模式（单次 / 轮询）+ 清空，第二行输入框 + 发送，下面是问答记录（`ScrollViewer`，
+  最多 `AnswerLines` 行高）。
+- 请求：`POST {Chat.BaseUrl}/chat/completions`，`Authorization: Bearer <Chat.ApiKey>`（可空），
+  响应取 `choices[0].message.content`（也兼容 `content` 是 `[{type,text}]` 数组、以及 `choices[0].text`）。
+- `ChatSettings.Mode`：`Single` 每次只发当前提问；`Context`（轮询）把最近 12 条消息一起发回去，
+  形成连续对话。卡片上的「单次 / 轮询」会写回卡片设置。
+- 上下文只在内存里：卡片隐藏 / 重建 / 重启就清空；`清空` 按钮只清这一张卡。
+- 每张卡片自己的 `Chat.SystemPrompt` / `TimeoutSeconds` / `Width` 都在「设置 → 内容 → AI 接口」里。
+
 ## 6. 热键
 
 - 全局热键：`toggle-overlay` / `open-settings` / `toggle-lock`，被占用时退到 `Ctrl+Alt+原键`
@@ -247,9 +287,50 @@ ffmpeg 路线把视频解成逐帧原始像素，什么格式都能放（代价�
 
 ## 8. 还没做的
 
+### 8.1 卡片控件（已实现 / 未实现）
+
+已经有 `CardButton`（三种语气）和 `CardTextBox`（单行输入），它们靠
+`IRichCardModule.NeedsMouseInput` 让宿主关掉点击穿透。下面是还没做的控件，按「加进来的代价」排：
+
+| 控件 | 用途 | 加进来的代价 / 备注 |
+| --- | --- | --- |
+| 开关 `CardToggle` | 一个开关切换某个行为（静音、锁定、跟随） | 轻：Button 换模板 + 两态；但卡片默认穿透，仍然要 `NeedsMouseInput` |
+| 复选框 / 单选组 `CardCheck`、`CardRadio` | 多选、互斥选择（如选择要显示的数据源） | 轻：样式跟 `CardButton` 一致即可 |
+| 分段控件 `CardSegmented` | 模式切换（单次 / 轮询、日 / 周 / 月） | 中：一组按钮 + 选中态 + 键盘左右移动；AI 卡现在用两个按钮临时顶替 |
+| 滑块 `CardSlider` | 连续值（音量、透明度、阈值） | 中：要一套细轨道模板 + 数值气泡，拖动时不能触发卡片拖动 |
+| 数字步进 `CardStepper` | 精确小整数（数量、间隔秒数） | 轻：输入框 + 两个小按钮，需要输入校验 |
+| 下拉框 `CardCombo` | 枚举选择（模型、来源、单位） | 中：弹出层在分层窗口里容易被裁剪，得自己画 Popup（或用 `Popup`） |
+| 进度条 `CardProgress` | 下载 / 编译 / 任务进度（确定或不确定态） | 轻：纯显示，不需要鼠标；但要有「不确定」动画 → `DispatcherTimer` |
+| 状态灯 / 徽标 `CardBadge` | 「在线 / 离线 / 有 3 条待处理」 | 轻：纯显示，配合 `NeedsMouseInput = false` 也能用 |
+| 小图表 `CardSparkline` | CPU / 网络的历史曲线、环形进度 | 中：要维护环形缓冲 + 自绘；值变化频繁时注意不要每帧重建几何 |
+| 图标按钮 `CardIconButton` | 用 Reicon 字形代替文字的紧凑按钮 | 轻：`CardButton` 多一个 ctor，字体换成 ReiconFont、字号按 `IconScale` |
+| 可折叠面板 `CardExpander` | 收起长内容（问答历史、命令历史） | 中：展开时要重算卡片高度，`SizeToContent` 会整窗跳；需要动画的话更麻烦 |
+| 卡片内标签页 `CardTabs` | 一张卡里放多页内容（信息 / 设置 / 日志） | 中：内容宿主 + 选中态；和「一张卡一个内容」的现有契约冲突，得改宿主 |
+| 滚动列表 `CardList`（虚拟化） | 多行列表（进程、下载、消息） | 重：分层窗口里滚动 + 焦点 + 虚拟化都要自己接；卡片高度要固定 |
+| 多行输入 `CardTextArea` | 长文本（提示词、命令模板） | 轻：`CardTextBox` 打开 `AcceptsReturn`；难点是 Enter 提交与换行的区别 |
+| 密码框 `CardPassword` | Key / 口令输入（现在 Key 是明文输入框） | 轻：换成 `PasswordBox` 模板；注意明文仍存在 settings.json |
+| 搜索框 `CardSearch` | 带清除按钮 + 过滤回调 | 轻：输入框 + 图标按钮 + 防抖 |
+| 自动完成 / 建议列表 | 输入命令、模型名时的候选 | 重：Popup + 键盘导航 + 定位到框下面，分层窗口里容易画到窗外 |
+| 日期时间选择 `CardDateTime` | 选一个时间点（闹钟、定时） | 重：日历控件整套样式要跟着卡片配色重做 |
+| 颜色选择 `CardColor` | 选颜色（卡片底色、描边） | 中：色板 + 十六进制输入；弹层同样受窗口裁剪限制 |
+| 工具提示 `CardToolTip` | 悬停显示解释 | 中：`ToolTip` 是独立窗口，跟随卡片坐标；卡片移动时要重算 |
+| 卡片内右键菜单 `CardContextMenu` | 对一行内容做操作（复制、删除） | 中：`ContextMenu` 也是独立窗口；要处理点击穿透与锁定态 |
+| 拖放目标 `CardDropTarget` | 把文件拖到卡片上（图片卡换图、命令行读文件） | 重：`AllowDrop` + `DragEnter/Drop`，分层窗口接收 OLE 拖放要额外验证 |
+| 拖拽排序 | 卡片内列表拖动排序 | 重：命中测试 + 插入指示线；和卡片整体拖动冲突 |
+| 通知条 `CardToast` | 卡片内短暂提示（保存成功、请求失败） | 轻：一个自动消失的 Border；要避免每帧重建 |
+| 富文本只读 + 可复制 | 答案、日志可选中复制 | 中：`TextBlock` 不支持选择，得用只读 `TextBox` 或 `RichTextBox`（那套样式很重） |
+| 键盘可达性 | Tab 顺序、焦点环、Esc 取消 | 中：一张卡一个窗口，`TabIndex` 要自己排；现在只有 `CardButton` 有焦点态 |
+| 无障碍 | `AutomationPeer`、读屏器能念出按钮 / 输入 | 中：WPF 默认有一半，自定义模板要补 `AutomationProperties` |
+| 主题跟随（深浅色） | 控件随系统深浅色切换 | 中：现在颜色来自卡片设置，系统主题切换要额外监听 |
+| 统一的间距 / 圆角 token | 控件对齐、间距一致 | 轻：把 `Style` 里的 padding / corner 抽成一组常量 |
+
+### 8.2 其它没做的
+
 | 事项 | 说明 |
 | --- | --- |
 | 运行期插件 | `cards/*.dll` + `AssemblyLoadContext` + ApiVersion 校验；先留接口 |
 | 每卡独立样式 | `Style` 目前全局共享（字体、颜色、图标倍率、毛玻璃都是全局）；需要时给 `CardSettings` 加可空的样式覆盖 |
-| 卡片内交互 | 富内容目前只显示不交互；要支持播放控制、滚动、点击，需要临时解除鼠标穿透并把命中区域限制在控件上 |
+| 卡片内滚动 | 长内容（问答历史）现在靠固定行高 + 滚动条；嵌套滚动和卡片拖动要协调 |
 | 托盘增删 | 现在只能从设置页增删卡片 |
+| 卡片尺寸约束 | 除了 `FixedWidth`，没有最小 / 最大高度；长答案会把卡片撑得很高 |
+

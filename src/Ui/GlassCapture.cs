@@ -552,7 +552,7 @@ namespace MirrorpondHUD.Ui
         /// 单方向方框模糊，滑动窗口实现：每行 / 每列只扫一遍，半径再大也是 O(像素数)。
         /// 三次 H + V 组合接近高斯，配合更细的取样图，玻璃不会糊成一块纯色。
         /// </summary>
-        static void BoxBlur(byte[] buffer, int width, int height, int radius, bool horizontal)
+        internal static void BoxBlur(byte[] buffer, int width, int height, int radius, bool horizontal)
         {
             if (radius <= 0 || width < 3 || height < 3) return;
 

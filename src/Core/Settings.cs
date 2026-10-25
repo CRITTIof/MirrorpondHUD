@@ -111,11 +111,17 @@ namespace MirrorpondHUD.Core
             }
         }
 
-        /// <summary>毛玻璃实现方式：System（系统亚克力底板） / Compat（截屏取样 + CPU 模糊）。</summary>
+        /// <summary>毛玻璃实现方式：System（accent 亚克力底板） / Dwm（DWM 桌面亚克力底板） / Compat（截屏取样）。</summary>
         public static string NormalizeGlassMode(string value)
         {
             switch ((value ?? "").Trim().ToLowerInvariant())
             {
+                case "dwm":
+                case "acrylic":
+                case "desktop":
+                case "multiwindow":
+                case "multi-window":
+                    return "Dwm";
                 case "compat":
                 case "compatible":
                 case "compatibility":
@@ -563,5 +569,77 @@ namespace MirrorpondHUD.Core
 
         /// <summary>媒体卡片自己的文件与缩放设置。</summary>
         public MediaSettings Media = new MediaSettings();
+
+        /// <summary>AI 对话卡片自己的接口 / 模型 / 密钥设置。</summary>
+        public ChatSettings Chat = new ChatSettings();
+    }
+
+    /// <summary>
+    /// 「AI 对话」卡片的设置：一张卡片一套模型与接口，所以可以同时放两个不同模型。
+    /// 走 OpenAI 兼容的 <c>POST {BaseUrl}/chat/completions</c>，
+    /// 本地 vLLM / LM Studio / Ollama 的兼容层也能用（BaseUrl 填到 /v1 为止）。
+    /// </summary>
+    public sealed class ChatSettings
+    {
+        /// <summary>接口根地址，例如 https://api.openai.com/v1（末尾的 / 会自动去掉）。</summary>
+        public string BaseUrl = "https://api.openai.com/v1";
+
+        /// <summary>模型名，显示在卡片第一行。</summary>
+        public string Model = "";
+
+        /// <summary>API Key；本地服务可以留空。存在 settings.json 里，和别的配置一样是明文。</summary>
+        public string ApiKey = "";
+
+        /// <summary>Single = 每次提问都不带历史；Context = 保留上下文连续对话（轮询）。</summary>
+        public string Mode = "Single";
+
+        /// <summary>系统提示词；空 = 不发送。</summary>
+        public string SystemPrompt = "";
+
+        /// <summary>请求超时（秒）。</summary>
+        public int TimeoutSeconds = 60;
+
+        /// <summary>卡片宽度（DIP）。</summary>
+        public double Width = 380;
+
+        /// <summary>答案区最多显示多少行（超出滚动）。</summary>
+        public int AnswerLines = 8;
+
+        public ChatSettings Clone()
+        {
+            return new ChatSettings
+            {
+                BaseUrl = BaseUrl, Model = Model, ApiKey = ApiKey, Mode = Mode,
+                SystemPrompt = SystemPrompt, TimeoutSeconds = TimeoutSeconds,
+                Width = Width, AnswerLines = AnswerLines
+            };
+        }
+
+        public void Normalize()
+        {
+            BaseUrl = (BaseUrl ?? "").Trim().TrimEnd('/');
+            Model = (Model ?? "").Trim();
+            ApiKey = (ApiKey ?? "").Trim();
+            Mode = NormalizeMode(Mode);
+            SystemPrompt = SystemPrompt ?? "";
+            TimeoutSeconds = (int)Settings.Clamp(TimeoutSeconds, 5, 300);
+            Width = Settings.Clamp(Width, 220, 1200);
+            AnswerLines = (int)Settings.Clamp(AnswerLines, 2, 40);
+        }
+
+        /// <summary>对话模式：Single（单次） / Context（轮询，保留上下文）。</summary>
+        public static string NormalizeMode(string value)
+        {
+            switch ((value ?? "").Trim().ToLowerInvariant())
+            {
+                case "context":
+                case "continuous":
+                case "poll":
+                case "polling":
+                    return "Context";
+                default:
+                    return "Single";
+            }
+        }
     }
 }

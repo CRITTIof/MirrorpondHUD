@@ -247,11 +247,12 @@ namespace MirrorpondHUD.Ui
                 FilterFonts("");
                 FontCombo.SelectedItem = _selectedFont;
 
-                // 毛玻璃有两条实现：系统亚克力底板（方案 G）/ 截屏取样（兼容）。
+                // 毛玻璃有三条实现：accent 底板（系统）/ DWM 桌面亚克力底板 / 截屏取样（兼容）。
                 string align = Settings.NormalizeCardAlign(s.Style.CardAlign);
                 CardAlignCombo.SelectedIndex = align == "Left" ? 1 : align == "Right" ? 2 : 0;
 
-                GlassModeCombo.SelectedIndex = Settings.NormalizeGlassMode(s.Style.GlassMode) == "Compat" ? 1 : 0;
+                string glassMode = Settings.NormalizeGlassMode(s.Style.GlassMode);
+                GlassModeCombo.SelectedIndex = glassMode == "Compat" ? 2 : glassMode == "Dwm" ? 1 : 0;
                 AcrylicCheck.IsEnabled = true;
                 AcrylicCheck.IsChecked = s.Style.Acrylic;
                 AcrylicBlurSlider.Value = s.Style.AcrylicBlur;
@@ -357,27 +358,42 @@ namespace MirrorpondHUD.Ui
         }
 
         /// <summary>
-        /// 系统亚克力接管时，模糊强度 / 刷新帧率由 DWM 决定，界面上禁用并说明原因；
+        /// 底板实现的模糊强度 / 刷新帧率由系统或底板自己决定，界面上禁用并说明原因；
         /// 兼容实现则恢复成可调的截屏取样参数。
         /// </summary>
         void UpdateGlassUiState()
         {
             if (AcrylicHint == null) return;
 
-            bool system = GlassModeTag() == "System";
+            string mode = GlassModeTag();
+            bool system = mode == "System";
+            bool dwm = mode == "Dwm";
+            bool fixedParams = system || dwm;
 
-            AcrylicBlurSlider.IsEnabled = !system;
-            AcrylicBlurValue.IsEnabled = !system;
-            AcrylicFpsSlider.IsEnabled = !system;
-            AcrylicFpsValue.IsEnabled = !system;
+            AcrylicBlurSlider.IsEnabled = !fixedParams;
+            AcrylicBlurValue.IsEnabled = !fixedParams;
+            AcrylicFpsSlider.IsEnabled = !fixedParams;
+            AcrylicFpsValue.IsEnabled = !fixedParams;
             if (AcrylicFpsHint != null)
-                AcrylicFpsHint.Visibility = system ? Visibility.Collapsed : Visibility.Visible;
+                AcrylicFpsHint.Visibility = fixedParams ? Visibility.Collapsed : Visibility.Visible;
 
-            AcrylicHint.Text = system
-                ? "由 DWM 在卡片下面的独立底板上画实时亚克力：模糊在 GPU 上完成、进程侧不抓屏，"
-                  + "「模糊强度 / 刷新帧率」由系统决定（这里不可调）。关闭系统透明效果、远程桌面或高对比度时会自动退回兼容实现。"
-                : "抓取卡片后面的画面并模糊，当作卡片底色；压在桌面上时直接用壁纸取样（图标不参与）。"
-                  + "把「背景不透明度」调到 0.5 左右更容易看出效果。";
+            if (dwm)
+            {
+                AcrylicHint.Text = "卡片下面放一块 DWM 桌面亚克力底板（DWMWA_SYSTEMBACKDROP_TYPE）。"
+                    + "DWM 只给活动窗口画这层材质，而卡片不会成为活动窗口，所以底板改为自己截屏 + 模糊；"
+                    + "为了让截屏不拍到自己，底板和卡片都被排除在截屏之外 —— " 
+                    + "这个模式下截图 / 录屏里看不到卡片。系统早于 Windows 11 22H2 时会自动退回兼容实现。";
+            }
+            else if (system)
+            {
+                AcrylicHint.Text = "由 DWM 在卡片下面的独立底板上画实时亚克力：模糊在 GPU 上完成、进程侧不抓屏，"
+                    + "「模糊强度 / 刷新帧率」由系统决定（这里不可调）。关闭系统透明效果、远程桌面或高对比度时会自动退回兼容实现。";
+            }
+            else
+            {
+                AcrylicHint.Text = "抓取卡片后面的画面并模糊，当作卡片底色；压在桌面上时直接用壁纸取样（图标不参与）。"
+                    + "把「背景不透明度」调到 0.5 左右更容易看出效果。";
+            }
         }
 
         static int CursorIndex(string value)

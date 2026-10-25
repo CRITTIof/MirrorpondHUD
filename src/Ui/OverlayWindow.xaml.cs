@@ -27,6 +27,26 @@ namespace MirrorpondHUD.Ui
         bool _backdropActive;
         bool _backdropUnavailable;
 
+        /// <summary>DWM 桌面亚克力底板（自己截屏模糊）：卡片在这种模式下会被排除在截屏之外。</summary>
+        AcrylicBackdrop _acrylicBackdrop;
+        bool _acrylicActive;
+        bool _acrylicUnavailable;
+
+        bool _interactive;
+
+        /// <summary>卡片内容需要鼠标 / 键盘（见 IRichCardModule.NeedsMouseInput）：这张卡不穿透。</summary>
+        public bool Interactive
+        {
+            get { return _interactive; }
+            set
+            {
+                _interactive = value;
+                // 内容层默认不参与命中测试（图片 / 视频不该挡住桌面）；交互卡片要打开它，
+                // 否则按钮永远收不到鼠标事件。
+                Surface.ContentHitTestVisible = value;
+            }
+        }
+
         bool _dragging;
         Point _dragStartScreen;
         Point _dragStartWindow;
@@ -91,7 +111,8 @@ namespace MirrorpondHUD.Ui
         public void Apply(Settings settings, string text)
         {
             _settings = settings;
-            _backdropUnavailable = false;   // 设置变了就再给系统底板一次机会
+            _backdropUnavailable = false;   // 设置变了就再给两块底板一次机会
+            _acrylicUnavailable = false;
             Surface.ClearContent();
             Surface.Apply(settings, text, false);
             if (_handleReady) UpdateGlassCapture();
@@ -105,6 +126,7 @@ namespace MirrorpondHUD.Ui
         {
             _settings = settings;
             _backdropUnavailable = false;
+            _acrylicUnavailable = false;
             Surface.Apply(settings, "");
             Surface.SetContent(content);
             if (_handleReady) UpdateGlassCapture();
@@ -284,7 +306,9 @@ namespace MirrorpondHUD.Ui
             if (hwnd == IntPtr.Zero) return;
 
             int ex = Native.GetExStyle(hwnd);
-            bool clickThrough = _settings.Overlay.Locked && !_commandMode;
+            // 交互卡片（按钮 / 输入框）即使在锁定状态下也不开 WS_EX_TRANSPARENT，
+            // 否则鼠标事件永远到不了卡片里的控件；代价是它会挡住身下的桌面点击。
+            bool clickThrough = _settings.Overlay.Locked && !_commandMode && !_interactive;
             if (clickThrough)
                 ex |= Native.WsExTransparent | Native.WsExNoActivate | Native.WsExToolWindow;
             else
@@ -292,7 +316,8 @@ namespace MirrorpondHUD.Ui
 
             Native.SetExStyle(hwnd, ex);
 
-            Cursor = _commandMode ? Cursors.IBeam : (clickThrough ? Cursors.Arrow : Cursors.SizeAll);
+            Cursor = _commandMode ? Cursors.IBeam
+                   : (clickThrough || _interactive) ? Cursors.Arrow : Cursors.SizeAll;
         }
 
         public void EnsureTopmost()
@@ -313,30 +338,44 @@ namespace MirrorpondHUD.Ui
         }
 
         // ==================== 毛玻璃 ====================
-        // 两种实现：
-        // 1) 系统（默认）：卡片下面一个独立的亚克力底板窗口，DWM / GPU 负责实时模糊，
-        //    进程侧零逐帧工作，模糊半径由系统决定；
-        // 2) 兼容：把卡片后面的画面拼出来（枚举窗口 + PrintWindow + 壁纸），缩小模糊后当底色，
+        // 三种实现：
+        // 1) 系统亚克力（默认）：卡片下面一个独立的底板窗口，挂未文档化的 accent 亚克力，
+        //    DWM / GPU 负责模糊，进程侧零逐帧工作，模糊半径由系统决定；
+        // 2) DWM 桌面亚克力：底板窗口挂文档化的 DWMWA_SYSTEMBACKDROP_TYPE，但 DWM 只给活动窗口画材质，
+        //    卡片又永远不会是活动窗口，所以实际由底板自己截屏 + 模糊顶上（见 AcrylicBackdrop）。
+        //    代价：为了让截屏不拍到自己，底板和卡片都要排除在截屏之外 —— 这个模式下截图 / 录像里没有卡片；
+        // 3) 兼容：把卡片后面的画面拼出来（枚举窗口 + PrintWindow + 壁纸），缩小模糊后当底色，
         //    可调半径与帧率，任何系统都能用。
-        // 系统实现不可用（关闭透明效果 / 远程桌面 / 高对比度 / 接口失效）时自动退回兼容。
-        // 两者都只影响观感，不抓屏，所以截图 / 录像里叠层始终可见。
+        // 1 / 2 不可用（关闭透明效果 / 远程桌面 / 高对比度 / 接口失效 / 系统太旧）时自动退回 3。
 
         /// <summary>
         /// 决定这一帧由谁提供模糊，并把底板摆到卡片内容区。
-        /// 不可用时保持 <c>_backdropActive = false</c>，截屏取样照常工作。
+        /// 没有底板接管时保持 <c>_backdropActive = false</c>，截屏取样照常工作。
         /// </summary>
         void UpdateBackdrop()
         {
             if (!_handleReady) return;
 
-            bool want = _settings.Style.Acrylic
-                        && !_backdropUnavailable
-                        && Settings.NormalizeGlassMode(_settings.Style.GlassMode) == "System";
+            bool acrylic = _settings.Style.Acrylic;
+            string mode = Settings.NormalizeGlassMode(_settings.Style.GlassMode);
 
-            if (!want)
+            if (!acrylic)
             {
-                _backdropActive = false;
-                if (_backdrop != null) _backdrop.Follow(this, _settings.Overlay.Shadow, false);
+                HideBackdrops();
+                return;
+            }
+
+            if (mode == "Dwm" && !_acrylicUnavailable) UpdateAcrylicBackdrop();
+            else if (mode == "Dwm" || mode == "System") UpdateSystemBackdrop();
+            else HideBackdrops();
+        }
+
+        /// <summary>方案 G：未文档化的 accent 亚克力底板。</summary>
+        void UpdateSystemBackdrop()
+        {
+            if (_backdropUnavailable)
+            {
+                HideBackdrops();
                 return;
             }
 
@@ -346,8 +385,8 @@ namespace MirrorpondHUD.Ui
                 if (!GlassBackdrop.TryCreate(out _backdrop, out reason))
                 {
                     _backdropUnavailable = true;
-                    _backdropActive = false;
                     Log.Warn("系统亚克力底板不可用（" + reason + "），毛玻璃改用截屏取样");
+                    HideBackdrops();
                     return;
                 }
 
@@ -364,14 +403,104 @@ namespace MirrorpondHUD.Ui
             _backdrop.Follow(this, _settings.Overlay.Shadow, IsVisible);
         }
 
+        /// <summary>DWM 桌面亚克力底板：自己截屏 + 模糊，所以要把卡片排除在截屏之外。</summary>
+        void UpdateAcrylicBackdrop()
+        {
+            if (_acrylicUnavailable)
+            {
+                HideBackdrops();
+                return;
+            }
+
+            if (_acrylicBackdrop == null)
+            {
+                string reason;
+                if (!AcrylicBackdrop.TryCreate(out _acrylicBackdrop, out reason))
+                {
+                    _acrylicUnavailable = true;
+                    Log.Warn("DWM 桌面亚克力底板不可用（" + reason + "），毛玻璃改用截屏取样");
+                    HideBackdrops();
+                    return;
+                }
+
+                Log.Info("毛玻璃改用 DWM 桌面亚克力底板：底板自己截屏模糊，卡片与底板都会从截图里消失");
+                _acrylicBackdrop.Unavailable += OnAcrylicBackdropUnavailable;
+            }
+
+            bool first = !_acrylicActive;
+            _acrylicActive = true;
+            _backdropActive = true;
+
+            if (first)
+            {
+                // 底板截的是屏幕：卡片必须先排除在截屏之外，否则会被拍进玻璃里形成拖影。
+                AcrylicBackdrop.ExcludeFromCapture(this, true);
+                Log.Info("毛玻璃背景已启用（DWM 桌面亚克力底板，进程侧截屏 + 模糊）");
+            }
+
+            _acrylicBackdrop.Follow(this, _settings.Overlay.Shadow, IsVisible);
+        }
+
+        /// <summary>
+        /// 底板取不到背景（这个模式在卡片上基本必然失败：DWM 不给非活动窗口画材质，
+        /// 而为了截屏又要排除自己，排到最后只剩黑色）。退回到系统亚克力 / 兼容实现。
+        /// </summary>
+        void OnAcrylicBackdropUnavailable(string reason)
+        {
+            if (_acrylicUnavailable) return;
+
+            _acrylicUnavailable = true;
+            Log.Warn("DWM 桌面亚克力底板不可用（" + reason + "），毛玻璃退回系统亚克力底板");
+
+            // 顺序：先撤掉截屏排除，再按「系统」那条路重新决定用哪块底板
+            if (_acrylicActive)
+            {
+                AcrylicBackdrop.ExcludeFromCapture(this, false);
+                _acrylicActive = false;
+            }
+
+            _backdropActive = false;
+            if (_acrylicBackdrop != null)
+            {
+                _acrylicBackdrop.Follow(this, _settings.Overlay.Shadow, false);
+                _acrylicBackdrop.Unavailable -= OnAcrylicBackdropUnavailable;
+            }
+
+            UpdateGlassCapture();
+        }
+
+        /// <summary>关掉毛玻璃 / 切回兼容实现：两块底板和截屏排除都要撤掉。</summary>
+        void HideBackdrops()
+        {
+            if (_backdrop != null) _backdrop.Follow(this, _settings.Overlay.Shadow, false);
+            if (_acrylicBackdrop != null) _acrylicBackdrop.Follow(this, _settings.Overlay.Shadow, false);
+
+            if (_acrylicActive)
+            {
+                AcrylicBackdrop.ExcludeFromCapture(this, false);
+                _acrylicActive = false;
+            }
+
+            _backdropActive = false;
+        }
+
         void ReleaseBackdrop()
         {
-            _backdropActive = false;
-            if (_backdrop == null) return;
+            HideBackdrops();
 
-            try { _backdrop.Dispose(); }
-            catch (Exception ex) { Log.Warn("释放亚克力底板失败: " + ex.Message); }
-            _backdrop = null;
+            if (_backdrop != null)
+            {
+                try { _backdrop.Dispose(); }
+                catch (Exception ex) { Log.Warn("释放亚克力底板失败: " + ex.Message); }
+                _backdrop = null;
+            }
+
+            if (_acrylicBackdrop != null)
+            {
+                try { _acrylicBackdrop.Dispose(); }
+                catch (Exception ex) { Log.Warn("释放 DWM 底板失败: " + ex.Message); }
+                _acrylicBackdrop = null;
+            }
         }
 
         void UpdateGlassCapture()

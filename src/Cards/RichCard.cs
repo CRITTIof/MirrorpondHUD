@@ -11,6 +11,13 @@ namespace MirrorpondHUD.Cards
     /// </summary>
     public interface IRichCardModule : ICardModule
     {
+        /// <summary>
+        /// 卡片内容需要鼠标 / 键盘输入（按钮、输入框）。true 时宿主不会给这张卡的窗口打开
+        /// <c>WS_EX_TRANSPARENT</c>，所以鼠标能点到卡片里的控件；代价是卡片会挡住它下面的桌面点击。
+        /// 纯展示型卡片返回 false，保持「点击穿透」的默认行为。
+        /// </summary>
+        bool NeedsMouseInput { get; }
+
         /// <summary>为一张卡片创建内容。每次卡片配置变化时宿主会重建一次。</summary>
         FrameworkElement CreateContent(CardRenderContext context);
 
@@ -31,6 +38,8 @@ namespace MirrorpondHUD.Cards
     public abstract class RichCardModuleBase : CardModuleBase, IRichCardModule
     {
         public override bool SupportsContent { get { return false; } }
+
+        public virtual bool NeedsMouseInput { get { return false; } }
 
         public override string Render(CardRenderContext context) { return ""; }
 

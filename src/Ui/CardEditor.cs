@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Globalization;
@@ -29,6 +29,7 @@ namespace MirrorpondHUD.Ui
             _expanded = expanded;
             if (_config.Command == null) _config.Command = new CommandSettings();
             if (_config.Media == null) _config.Media = new MediaSettings();
+            if (_config.Chat == null) _config.Chat = new ChatSettings();
         }
 
         public CardSettings Config { get { return _config; } }
@@ -617,6 +618,121 @@ namespace MirrorpondHUD.Ui
             List<DecoderInfo> found = Decoders.Detect(true);
             Log.Info("手动重新检测解码器：" + Decoders.Describe(found));
             Raise("DecoderHint");
+        }
+
+        // ==================== AI 对话卡片 ====================
+
+        public Visibility ChatVisibility
+        {
+            get { return _module.Kind == "chat" ? Visibility.Visible : Visibility.Collapsed; }
+        }
+
+        public string ChatBaseUrl
+        {
+            get { return _config.Chat.BaseUrl; }
+            set
+            {
+                string text = (value ?? "").Trim();
+                if (_config.Chat.BaseUrl == text) return;
+                _config.Chat.BaseUrl = text;
+                Raise("ChatBaseUrl");
+                Raise("ChatHint");
+                Raise("Summary");
+            }
+        }
+
+        public string ChatModel
+        {
+            get { return _config.Chat.Model; }
+            set
+            {
+                string text = (value ?? "").Trim();
+                if (_config.Chat.Model == text) return;
+                _config.Chat.Model = text;
+                Raise("ChatModel");
+                Raise("ChatHint");
+                Raise("Summary");
+            }
+        }
+
+        public string ChatApiKey
+        {
+            get { return _config.Chat.ApiKey; }
+            set
+            {
+                string text = (value ?? "").Trim();
+                if (_config.Chat.ApiKey == text) return;
+                _config.Chat.ApiKey = text;
+                Raise("ChatApiKey");
+                Raise("Summary");
+            }
+        }
+
+        /// <summary>0 = 单次（每次独立），1 = 轮询（保留上下文）。</summary>
+        public int ChatModeIndex
+        {
+            get { return ChatSettings.NormalizeMode(_config.Chat.Mode) == "Context" ? 1 : 0; }
+            set
+            {
+                string mode = value == 1 ? "Context" : "Single";
+                if (ChatSettings.NormalizeMode(_config.Chat.Mode) == mode) return;
+                _config.Chat.Mode = mode;
+                Raise("ChatModeIndex");
+                Raise("ChatHint");
+                Raise("Summary");
+            }
+        }
+
+        public string ChatSystemPrompt
+        {
+            get { return _config.Chat.SystemPrompt; }
+            set
+            {
+                string text = value ?? "";
+                if (_config.Chat.SystemPrompt == text) return;
+                _config.Chat.SystemPrompt = text;
+                Raise("ChatSystemPrompt");
+            }
+        }
+
+        public int ChatTimeoutSeconds
+        {
+            get { return _config.Chat.TimeoutSeconds; }
+            set
+            {
+                int v = (int)Math.Max(5, Math.Min(300, value));
+                if (_config.Chat.TimeoutSeconds == v) return;
+                _config.Chat.TimeoutSeconds = v;
+                Raise("ChatTimeoutSeconds");
+            }
+        }
+
+        public double ChatWidth
+        {
+            get { return _config.Chat.Width; }
+            set
+            {
+                double v = Math.Round(Math.Max(220, Math.Min(1200, value)));
+                if (Math.Abs(_config.Chat.Width - v) < 0.001) return;
+                _config.Chat.Width = v;
+                Raise("ChatWidth");
+            }
+        }
+
+        /// <summary>设置页里的一行提示：还缺什么。</summary>
+        public string ChatHint
+        {
+            get
+            {
+                if (_config.Chat.BaseUrl.Length == 0) return "接口地址为空：例如 https://api.openai.com/v1（本地服务填到 /v1）";
+                if (_config.Chat.Model.Length == 0) return "模型名为空：卡片第一行就显示它，例如 gpt-4o-mini / deepseek-chat";
+                if (!_config.Chat.BaseUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+                    return "接口地址要以 http:// 或 https:// 开头";
+
+                return _config.Chat.ApiKey.Length == 0
+                    ? "没填 Key：本地服务（LM Studio / Ollama 兼容层）可以留空；云端接口需要填"
+                    : "请求会发到 " + _config.Chat.BaseUrl + "/chat/completions，Key 明文存在 settings.json 里";
+            }
         }
 
         /// <summary>卡片标题栏的摘要可能需要刷新（改完设置后调用）。</summary>
