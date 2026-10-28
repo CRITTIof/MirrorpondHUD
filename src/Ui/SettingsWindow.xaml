@@ -735,6 +735,21 @@
                         <TextBlock x:Name="AcrylicFpsHint" Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="110,0,0,0"
                                    Text="每秒抓几次桌面：15 帧几乎看不出延迟，30 帧更跟手；桌面静止时可调到 8 帧省电。" />
 
+                        <Grid Margin="0,12,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="110" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="取图方式" VerticalAlignment="Center" />
+                            <ComboBox x:Name="GlassSourceCombo" Grid.Column="1" Width="300" HorizontalAlignment="Left">
+                                <ComboBoxItem Content="自动（能拿到桌面复制就用）" Tag="Auto" />
+                                <ComboBoxItem Content="GPU 加速（DXGI 桌面复制）" Tag="Gpu" />
+                                <ComboBoxItem Content="CPU 读屏（GDI，兼容性最好）" Tag="Cpu" />
+                            </ComboBox>
+                        </Grid>
+                        <TextBlock x:Name="GlassSourceHint" Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="110,0,0,10"
+                                   Text="只有「桌面亚克力」自己抓屏，所以这一项只对它生效。" />
+
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>

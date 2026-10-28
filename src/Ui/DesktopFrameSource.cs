@@ -127,24 +127,34 @@ namespace MirrorpondHUD.Ui
         bool _primed;
         bool _dead;
 
-        public static bool TryCreate(out DesktopFrameSource source, out string reason)
+        /// <summary>
+        /// 按设置里的「取图方式」（Auto / Gpu / Cpu）创建桌面复制。
+        /// 失败只表示「这一轮用不了」，调用方照常退回 GDI 读屏，不会没画面。
+        /// </summary>
+        public static bool TryCreate(string preferred, out DesktopFrameSource source, out string reason)
         {
             source = null;
 
             int build = Environment.OSVersion.Version.Build;
-            string prefer = Environment.GetEnvironmentVariable("MIRRORPOND_GLASS_SOURCE");
-            bool force = string.Equals(prefer, "dup", StringComparison.OrdinalIgnoreCase);
+            string mode = Settings.NormalizeGlassSource(preferred);
 
-            if (string.Equals(prefer, "gdi", StringComparison.OrdinalIgnoreCase))
+            // 环境变量还是最高优先级：留着做 A/B 对比（不用改设置就能复现某一侧）。
+            string env = Environment.GetEnvironmentVariable("MIRRORPOND_GLASS_SOURCE");
+            if (string.Equals(env, "gdi", StringComparison.OrdinalIgnoreCase)) mode = "Cpu";
+            else if (string.Equals(env, "dup", StringComparison.OrdinalIgnoreCase)) mode = "Gpu";
+
+            bool force = mode == "Gpu";
+
+            if (mode == "Cpu")
             {
-                reason = "MIRRORPOND_GLASS_SOURCE=gdi（强制走 GDI 读屏）";
+                reason = "设置里选的是「CPU 读屏」（GDI BitBlt）";
                 return false;
             }
 
             if (build < 26200 && !force)
             {
                 reason = "Windows 生成号 " + build + " 的 DXGI 桌面复制 vtable 布局没实测过"
-                         + "（设 MIRRORPOND_GLASS_SOURCE=dup 可以强制尝试）";
+                         + "（取图方式选「GPU 加速」可以强制尝试）";
                 return false;
             }
 

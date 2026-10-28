@@ -200,6 +200,7 @@ namespace MirrorpondHUD.Ui
             AcrylicCheck.Checked += (s, e) => UiChanged();
             AcrylicCheck.Unchecked += (s, e) => UiChanged();
             GlassModeCombo.SelectionChanged += (s, e) => { UiChanged(); UpdateGlassUiState(); };
+            GlassSourceCombo.SelectionChanged += (s, e) => { UiChanged(); UpdateGlassUiState(); };
             AcrylicBlurSlider.ValueChanged += (s, e) => UiChanged();
             AcrylicFpsSlider.ValueChanged += (s, e) => UiChanged();
             IconScaleSlider.ValueChanged += (s, e) => UiChanged();
@@ -253,6 +254,7 @@ namespace MirrorpondHUD.Ui
 
                 string glassMode = Settings.NormalizeGlassMode(s.Style.GlassMode);
                 GlassModeCombo.SelectedIndex = glassMode == "Compat" ? 2 : glassMode == "Dwm" ? 1 : 0;
+                GlassSourceCombo.SelectedIndex = GlassSourceIndex(s.Style.GlassSource);
                 AcrylicCheck.IsEnabled = true;
                 AcrylicCheck.IsChecked = s.Style.Acrylic;
                 AcrylicBlurSlider.Value = s.Style.AcrylicBlur;
@@ -357,6 +359,22 @@ namespace MirrorpondHUD.Ui
             return Settings.NormalizeGlassMode(item == null ? null : item.Tag as string);
         }
 
+        string GlassSourceTag()
+        {
+            var item = GlassSourceCombo == null ? null : GlassSourceCombo.SelectedItem as ComboBoxItem;
+            return Settings.NormalizeGlassSource(item == null ? null : item.Tag as string);
+        }
+
+        static int GlassSourceIndex(string value)
+        {
+            switch (Settings.NormalizeGlassSource(value))
+            {
+                case "Gpu": return 1;
+                case "Cpu": return 2;
+                default: return 0;
+            }
+        }
+
         /// <summary>
         /// 底板实现的模糊强度 / 刷新帧率由系统或底板自己决定，界面上禁用并说明原因；
         /// 兼容实现则恢复成可调的截屏取样参数。
@@ -393,6 +411,27 @@ namespace MirrorpondHUD.Ui
             {
                 AcrylicHint.Text = "抓取卡片后面的画面并模糊，当作卡片底色；压在桌面上时直接用壁纸取样（图标不参与）。"
                     + "把「背景不透明度」调到 0.5 左右更容易看出效果。";
+            }
+
+            // 「取图方式」只对桌面亚克力有意义：系统亚克力不抓屏，兼容实现走的是自己的拼图路线。
+            if (GlassSourceCombo != null) GlassSourceCombo.IsEnabled = dwm;
+            if (GlassSourceHint != null)
+            {
+                GlassSourceHint.Visibility = dwm ? Visibility.Visible : Visibility.Collapsed;
+                if (dwm)
+                {
+                    string source = Settings.NormalizeGlassSource(GlassSourceTag());
+                    if (source == "Gpu")
+                        GlassSourceHint.Text = "DXGI 桌面复制：一轮取图约 1 ms（GDI 读屏要 18 ms），"
+                            + "所以刷新自动提到每秒 10 帧，玻璃更跟手；代价是 CPU 高约 3 个百分点。"
+                            + "独占全屏 / 远程桌面 / 换显卡时会自动退回 CPU 读屏，画面不会断。";
+                    else if (source == "Cpu")
+                        GlassSourceHint.Text = "GDI BitBlt 读屏：一轮约 18 ms，刷新每秒 5 帧。"
+                            + "兼容性最好 —— 桌面复制在你这台机器上出问题时选这个。";
+                    else
+                        GlassSourceHint.Text = "能拿到桌面复制就走 GPU 加速（约 1 ms/轮，刷新每秒 10 帧），"
+                            + "拿不到（系统太旧 / 独占全屏 / 远程桌面 / 设备被占）自动退回 CPU 读屏（约 18 ms/轮，每秒 5 帧）。";
+                }
             }
         }
 
@@ -742,6 +781,7 @@ namespace MirrorpondHUD.Ui
             s.Style.BackgroundOpacity = BgOpacitySlider.Value;
             s.Style.Acrylic = AcrylicCheck.IsChecked == true;
             s.Style.GlassMode = GlassModeTag();
+            s.Style.GlassSource = GlassSourceTag();
             s.Style.AcrylicBlur = Math.Round(AcrylicBlurSlider.Value);
             s.Style.AcrylicFps = (int)Math.Round(AcrylicFpsSlider.Value);
             s.Style.TextAlignment = AlignmentTag();

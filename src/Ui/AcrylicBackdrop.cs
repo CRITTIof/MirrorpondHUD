@@ -45,6 +45,7 @@ namespace MirrorpondHUD.Ui
         const uint SwpNoActivate = 0x0010;
         const uint SwpNoOwnerZorder = 0x0200;
         const uint SwpShowWindow = 0x0040;
+        const uint SwpNoRedraw = 0x0008;
 
         const uint WmPaint = 0x000F;
         const uint WmEraseBkgnd = 0x0014;
@@ -531,11 +532,17 @@ namespace MirrorpondHUD.Ui
                 return;
             }
 
-            SetWindowPos(_handle, cardHandle, left, top, pixelWidth, pixelHeight,
-                         SwpNoActivate | SwpNoOwnerZorder | SwpShowWindow);
+            bool moved = left != _left || top != _top || pixelWidth != _width || pixelHeight != _height;
+
+            // 位置没变时带 SWP_NOREDRAW：SetWindowPos 默认会把窗口标脏并发 WM_PAINT，
+            // 而卡片内容每秒都在刷新（Follow 跟着跑），等于每秒给底板塞一次重画机会。
+            // 重画本身没问题，但它会打断 DWM 的合成节奏，是「玻璃闪一下」的放大器。
+            uint flags = SwpNoActivate | SwpNoOwnerZorder | SwpShowWindow;
+            if (!moved && _visible) flags |= SwpNoRedraw;
+
+            SetWindowPos(_handle, cardHandle, left, top, pixelWidth, pixelHeight, flags);
             _visible = true;
 
-            bool moved = left != _left || top != _top || pixelWidth != _width || pixelHeight != _height;
             _left = left;
             _top = top;
             _width = pixelWidth;
@@ -673,6 +680,22 @@ namespace MirrorpondHUD.Ui
         static DesktopFrameSource _frameSource;
         static bool _frameSourceTried;
 
+        /// <summary>设置里的「取图方式」：Auto / Gpu / Cpu（见 <see cref="Settings.NormalizeGlassSource"/>）。</summary>
+        static string _preferredSource = "Auto";
+
+        /// <summary>
+        /// 同步设置里的取图方式。变了就丢掉现有的桌面复制、下一轮按新选择重新决定 ——
+        /// 否则改完设置要等闲置 5 秒才会生效。
+        /// </summary>
+        public static void ConfigureSource(string preferred)
+        {
+            string mode = Settings.NormalizeGlassSource(preferred);
+            if (string.Equals(mode, _preferredSource, StringComparison.Ordinal)) return;
+
+            _preferredSource = mode;
+            ReleaseFrameSource();
+        }
+
         /// <summary>上一次真正取图的时间：超过 5 秒没人用就放掉桌面复制（别让 GPU 一直醒着）。</summary>
         static DateTime _frameSourceIdle = DateTime.MinValue;
 
@@ -690,11 +713,11 @@ namespace MirrorpondHUD.Ui
 
             DesktopFrameSource source;
             string reason;
-            if (DesktopFrameSource.TryCreate(out source, out reason))
+            if (DesktopFrameSource.TryCreate(_preferredSource, out source, out reason))
             {
                 _frameSource = source;
                 _frameSourceIdle = DateTime.UtcNow;
-                Log.Info("玻璃取图改用 DXGI 桌面复制（不再用 GDI 读屏）");
+                Log.Info("玻璃取图改用 DXGI 桌面复制（GPU 加速，不再用 GDI 读屏）");
             }
             else
             {
@@ -810,16 +833,20 @@ namespace MirrorpondHUD.Ui
             if (Diagnose) LogSample(buffer, w, h);
             CheckUsable(buffer, w, h);
 
-            // 新的一帧和上一帧几乎一样就不重画。静置时背景没变，重画只会让 DWM
-            // 每 200 ms 重算一次「排除窗口背后那块干净区域」，肉眼就是玻璃闪一下；
-            // 顺便也省掉一次 2× 半分辨率放大到窗口的 StretchBlt。
-            if (SameAsLastFrame(buffer, w, h)) return;
-
+            // 模糊图先写回 DIB，再决定要不要贴图 —— 这两步的顺序不能反。
+            // 以前是先判同帧、判中就 return，DIB 里留着的还是 CaptureFrom 刚 StretchBlt 进去的
+            // **未模糊原始取样**：之后只要来一次 WM_PAINT（卡片内容刷新、重申置顶、遮挡变化都会触发），
+            // 玻璃就会突然变成不模糊的清晰图 —— 也就是「闪一下」，而且会一直停在这个状态，
+            // 直到背景变化把模糊图重新贴回去。
             Marshal.Copy(buffer, 0, _dibBits, buffer.Length);
+
+            // 新的一帧和上一帧几乎一样就不贴图。静置时背景没变，贴图只会让 DWM
+            // 每轮重算一次「排除窗口背后那块干净区域」，顺便也省掉一次 2× 放大到窗口的 StretchBlt。
+            if (SameAsLastFrame(buffer, w, h)) return;
 
             // 同步画上去，而不是 InvalidateRect 等消息循环：底板图省下一次「无效 →
             // 合成前还没重画」的中间状态，也就少了一次可能被看成闪烁的窗口。
-            Paint();
+            Paint("frame");
             TraceFrame(buffer, w, h);
         }
 
@@ -874,6 +901,61 @@ namespace MirrorpondHUD.Ui
                     Log.Warn("玻璃帧追踪写入失败: " + ex.Message);
                 }
             }
+        }
+
+        // ==================== 贴图诊断（MIRRORPOND_GLASS_PAINT_TRACE=1） ====================
+        // 每贴一次图记一行「谁触发的 + 这张图多清晰」。用来抓「WM_PAINT 把未模糊的原始取样贴上去」
+        // 这一类问题：模糊图 sharp 小，未模糊原图 sharp 大，两者差一个量级。
+
+        static bool? _paintTrace;
+
+        static bool PaintTrace
+        {
+            get
+            {
+                if (!_paintTrace.HasValue)
+                {
+                    string value = Environment.GetEnvironmentVariable("MIRRORPOND_GLASS_PAINT_TRACE");
+                    _paintTrace = value == "1" || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
+                }
+                return _paintTrace.Value;
+            }
+        }
+
+        /// <summary>相邻像素亮度差的平均值：模糊图远小于未模糊原图。</summary>
+        static double Sharpness(byte[] pixels, int w, int h)
+        {
+            long sum = 0;
+            int count = 0;
+            for (int y = 0; y < h; y++)
+            {
+                int row = y * w * 4;
+                int previous = 0;
+                for (int x = 0; x < w; x++)
+                {
+                    int p = row + x * 4;
+                    int luma = (pixels[p] + 2 * pixels[p + 1] + pixels[p + 2]) / 4;
+                    if (x > 0)
+                    {
+                        sum += Math.Abs(luma - previous);
+                        count++;
+                    }
+                    previous = luma;
+                }
+            }
+            return count == 0 ? 0 : (double)sum / count;
+        }
+
+        void TracePaint(string who)
+        {
+            if (_dibBits == IntPtr.Zero || _bufferWidth < 3 || _bufferHeight < 3) return;
+
+            int size = _bufferWidth * _bufferHeight * 4;
+            var bytes = new byte[size];
+            Marshal.Copy(_dibBits, bytes, 0, size);
+
+            Log.Info("PAINT who=" + who + " " + _bufferWidth + "x" + _bufferHeight
+                     + " sharp=" + Sharpness(bytes, _bufferWidth, _bufferHeight).ToString("F2"));
         }
 
         int _lastWidth;
@@ -1148,9 +1230,12 @@ namespace MirrorpondHUD.Ui
         }
 
         /// <summary>把缩略图按窗口大小画出来（StretchBlt + HALFTONE 自带平滑放大）。</summary>
-        void Paint()
+        /// <param name="who">谁触发的这次贴图：frame = 刚算完一帧，paint = 系统发来的 WM_PAINT。</param>
+        void Paint(string who)
         {
             if (_memoryDc == IntPtr.Zero) return;
+
+            if (PaintTrace) TracePaint(who);
 
             IntPtr dc = GetDC(_handle);
             if (dc == IntPtr.Zero) return;
@@ -1160,6 +1245,10 @@ namespace MirrorpondHUD.Ui
                 SetStretchBltMode(dc, Halftone);
                 StretchBlt(dc, 0, 0, _width, _height, _memoryDc, 0, 0,
                            _bufferWidth, _bufferHeight, Srccopy);
+
+                // 整块已经画满，画的也一定是刚写进 DIB 的那一帧（见 FinishFrame 的顺序），
+                // 顺手清掉脏区：否则 Windows 之后还会再发一次 WM_PAINT，同一帧被贴两遍。
+                ValidateRect(_handle, IntPtr.Zero);
             }
             finally
             {
@@ -1179,7 +1268,7 @@ namespace MirrorpondHUD.Ui
                 case WmPaint:
                 {
                     AcrylicBackdrop target = FindByHandle(hwnd);
-                    if (target != null) target.Paint();
+                    if (target != null) target.Paint("paint");
                     ValidateRect(hwnd, IntPtr.Zero);
                     return IntPtr.Zero;
                 }

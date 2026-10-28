@@ -180,6 +180,56 @@
 [WARN] DWM 桌面亚克力底板不可用（底板截屏全黑：…），毛玻璃退回系统亚克力底板
 ```
 
+### 4.4 2.4.3：取图方式变成设置项；修掉「玻璃闪一下」
+
+**设置项**：设置 → 外观 → 高级（实验性）→「取图方式」＝ 自动 / GPU 加速（DXGI 桌面复制）/ CPU 读屏（GDI）。
+只对「桌面亚克力」生效 —— 系统亚克力不抓屏、兼容实现走自己的拼图路线，所以那两种模式下这一项是灰的。
+环境变量 `MIRRORPOND_GLASS_SOURCE=gdi|dup` 仍然优先级最高，留着做 A/B。改完不用重启：
+`AcrylicBackdrop.ConfigureSource` 会把现有复制对象丢掉，下一轮按新选择重建。
+
+实测（同一台机器）：
+
+| 设置 | 启动日志 | 一轮取图 | 自动刷新间隔 |
+| --- | --- | --- | --- |
+| 自动 / GPU 加速 | `玻璃取图改用 DXGI 桌面复制（GPU 加速，不再用 GDI 读屏）` | 0.1–1.5 ms | 100 ms |
+| CPU 读屏 | `玻璃取图用 GDI 读屏：设置里选的是「CPU 读屏」（GDI BitBlt）` | ~18 ms | 200 ms |
+
+**「闪一下」的根因：`FinishFrame` 里两步的顺序反了。**
+
+```csharp
+var buffer = new byte[w * h * 4];
+Marshal.Copy(_dibBits, buffer, 0, buffer.Length);   // DIB 里是这次 StretchBlt 的「未模糊原始取样」
+GlassCapture.BoxBlur(buffer, w, h, BlurRadius, true);   // 模糊只发生在 buffer 上
+if (SameAsLastFrame(buffer, w, h)) return;          // ← 判同帧直接返回，DIB 里还是原始取样
+Marshal.Copy(buffer, 0, _dibBits, buffer.Length);   // 只有「要重画」时才把模糊图写回 DIB
+Paint();
+```
+
+桌面静置时每一轮都会判成「同帧」，于是 DIB 里**长期留着未模糊的图**；而底板的 `WM_PAINT` 会无条件
+`Paint()`（把 DIB 整块贴到窗口上）。卡片内容每秒刷新、每 2.5 秒重申置顶、遮挡变化、`SetWindowPos`
+都会发 `WM_PAINT` —— 玻璃就突然从模糊变成清晰（肉眼就是闪一下），而且**一直停在清晰状态**，
+直到背景变化把模糊图贴回去。这个坑是 2.4.1 的「同帧不重画」优化引入的。
+
+修法（`src/Ui/AcrylicBackdrop.cs`）：
+
+1. **模糊图永远先写回 DIB**，再判同帧；判同帧只跳过「贴图」这一步 —— DIB 里不可能再出现原始取样；
+2. `Follow` 在位置没变时给 `SetWindowPos` 加 `SWP_NOREDRAW`：不再每秒给底板塞一次重画；
+3. `Paint` 贴完 `ValidateRect`，同一帧不会被 `WM_PAINT` 再贴一遍。
+
+测量方式：`MIRRORPOND_GLASS_PAINT_TRACE=1` 让每次贴图记一行 `PAINT who=frame|paint ... sharp=`，
+sharp = 相邻像素亮度差的平均值（模糊图远小于原图），把一张文字底板垫在卡片下面做对照：
+
+| 底板尺寸 | 修复前 frame / WM_PAINT | 修复后 frame / WM_PAINT |
+| --- | --- | --- |
+| 204×30 | 1.26 / **27.61（22 倍）** | 1.23 / 1.23 |
+| 190×46 | 1.00 / **21.46（21 倍）** | 0.97 / 0.97 |
+| 93×30 | 0.56 / **11.02（20 倍）** | 0.56 / 0.56 |
+| 68×20 | 1.00 / **25.03（25 倍）** | 1.00 / 1.00 |
+
+同一个二进制里，`WM_PAINT` 那次贴图比「刚模糊完」那次清晰 20–25 倍 —— 那就是未模糊原图；修完两者完全一致。
+顺带 CPU 也降了（4 张卡静置 20 秒平均，占整机 / 占单核）：修复前 0.95% / 7.6%，修复后 **0.55% / 4.4%**
+—— 不再被 `WM_PAINT` 反复整块重贴。
+
 ## 5. 所以要怎么选
 
 - **先别开**。需要「卡片像玻璃」的观感，只调「背景不透明度」就能拿到 90% 的效果，CPU 为 0。
@@ -292,6 +342,14 @@ Two things worth recording from later work:
   vtable slot is picked by OS build (22 on 26200, 19 on older builds; unverified builds use GDI), the duplication is
   validated with `GetDesc` before use, the first (black) frame is discarded during priming, `ACCESS_LOST` rebuilds
   it, and it is released after 5 s without a capture. `MIRRORPOND_GLASS_SOURCE=gdi|dup` forces either path.
+- **2.4.3** exposes that choice in the UI (Appearance → Advanced → *Capture backend*: auto / GPU / CPU) and fixes a
+  **flicker** the 2.4.1 "skip identical frames" optimisation had introduced: the blurred frame was written back to the
+  DIB *after* the "same as last frame" early return, so on a static desktop the DIB kept the **unblurred** sample, and
+  any `WM_PAINT` (cards refresh every second, topmost is re-asserted every 2.5 s, occlusion changes) blitted it — the
+  glass flipped from blurred to sharp and stayed there. Writing the blurred frame to the DIB first, adding
+  `SWP_NOREDRAW` when the plate has not moved, and validating the plate after each blit removes it: paint-path
+  sharpness went from 21–28 against 0.56–1.26 for the fresh frame (**20–25×**, i.e. the raw sample) to a perfect
+  match, and idle CPU dropped from 0.95% to 0.55% (8 threads) because the plate is no longer re-blitted by the OS.
 
 ## 5. So what should you do
 

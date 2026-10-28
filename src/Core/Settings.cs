@@ -55,6 +55,7 @@ namespace MirrorpondHUD.Core
             Style.IconScale = Clamp(Style.IconScale, 0.5, 3);
             Style.CardAlign = NormalizeCardAlign(Style.CardAlign);
             Style.GlassMode = NormalizeGlassMode(Style.GlassMode);
+            Style.GlassSource = NormalizeGlassSource(Style.GlassSource);
             if (string.IsNullOrWhiteSpace(Style.BackgroundImage)) Style.BackgroundImage = "";
             Style.ImageStretch = NormalizeStretch(Style.ImageStretch);
 
@@ -129,6 +130,27 @@ namespace MirrorpondHUD.Core
                     return "Compat";
                 default:
                     return "System";
+            }
+        }
+
+        /// <summary>
+        /// 桌面亚克力的取图后端：Auto（DXGI 能用就用） / Gpu（强制 DXGI 桌面复制） / Cpu（强制 GDI 读屏）。
+        /// </summary>
+        public static string NormalizeGlassSource(string value)
+        {
+            switch ((value ?? "").Trim().ToLowerInvariant())
+            {
+                case "gpu":
+                case "dxgi":
+                case "dup":
+                case "duplication":
+                    return "Gpu";
+                case "cpu":
+                case "gdi":
+                case "bitblt":
+                    return "Cpu";
+                default:
+                    return "Auto";
             }
         }
 
@@ -285,6 +307,14 @@ namespace MirrorpondHUD.Core
         /// 系统不支持（关闭透明效果 / 远程桌面 / 高对比度 / 接口失效）时自动退回 Compat。
         /// </summary>
         public string GlassMode = "System";
+
+        /// <summary>
+        /// 桌面亚克力（<see cref="GlassMode"/> = Dwm）取屏幕像素的后端：
+        /// Auto = DXGI 桌面复制可用就用它，不可用退回 GDI 读屏；
+        /// Gpu = 强制 DXGI 桌面复制（拿不到就还是退回 GDI，不会没画面）；
+        /// Cpu = 强制 GDI BitBlt 读屏（兼容性最好，一轮约 18 ms）。
+        /// </summary>
+        public string GlassSource = "Auto";
 
     }
 

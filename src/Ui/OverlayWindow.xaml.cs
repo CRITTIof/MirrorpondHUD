@@ -368,6 +368,10 @@ namespace MirrorpondHUD.Ui
             bool acrylic = _settings.Style.Acrylic;
             string mode = Settings.NormalizeGlassMode(_settings.Style.GlassMode);
 
+            // 取图方式（自动 / GPU 加速 / CPU 读屏）随时可能被改；变了就在这里重新决定后端。
+            // 放在 acrylic 判断之前，免得「先关毛玻璃改设置、再打开」时沿用旧后端。
+            AcrylicBackdrop.ConfigureSource(_settings.Style.GlassSource);
+
             if (!acrylic)
             {
                 HideBackdrops();
