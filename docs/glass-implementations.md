@@ -230,6 +230,55 @@ sharp = 相邻像素亮度差的平均值（模糊图远小于原图），把一
 顺带 CPU 也降了（4 张卡静置 20 秒平均，占整机 / 占单核）：修复前 0.95% / 7.6%，修复后 **0.55% / 4.4%**
 —— 不再被 `WM_PAINT` 反复整块重贴。
 
+### 4.5 2.4.4：模糊图改画进卡片内部，去掉底板窗口
+
+用户报了两个毛病，根子是同一个：**模糊图原来画在一块独立的底板窗口上**，而那块窗口和卡片是
+两个被 DWM 分别合成的窗口。
+
+1. 「卡片圆角外面多出一圈更大的透明圆角」：卡片圆角是 10 px（`Overlay.CornerRadius`），底板窗口的圆角
+   由 DWM 决定，两者半径不同，卡片圆角以外就露出了底板的边；
+2. 「每张卡片顶部周期性突然变深」：底板比卡片高/偏 1–2 px 时，卡片顶边以上会露出一条底板
+   （下面是卡片、上面是底板，看起来就是顶部突然变深）。这类错位只有在两个窗口分别合成时才可能发生。
+
+改法：**不要底板窗口了**。`src/Ui/GlassFeed.cs` 取代 `src/Ui/AcrylicBackdrop.cs`（删掉约 1300 行窗口代码），
+取样循环（DXGI 桌面复制 / GDI 回退、区域一次读、缩小、方框模糊）原样保留，但最后一跳从
+「GDI `StretchBlt` 到窗口 DC」改成 **「`BitmapSource` → 卡片自己的玻璃层」**：
+
+```csharp
+BitmapSource image = BitmapSource.Create(w, h, 96, 96, PixelFormats.Bgr32, null, buffer, w * 4);
+image.Freeze();
+target.Surface.SetGlass(image);      // 卡片内部的 Border + ImageBrush，CornerRadius 与卡片一致
+```
+
+这正是兼容实现早就在用的通路（`OverlaySurface.SetGlass`），所以：
+
+- 圆角由卡片自己的 `Border.CornerRadius` 裁剪，**和卡片背景/文字在同一次合成里**，不可能错位；
+- 没有第二块窗口，就没有「顶部露出一条底板」这回事；
+- 顺带删掉了底板的 `DWMWA_SYSTEMBACKDROP_TYPE`（DWM 只给活动窗口画材质，这块材质本来就是被盖住的）、
+  DWM 圆角、以及「底板不画自己要排除在截屏之外」的一整套逻辑。
+
+**新增设置**（设置 → 外观 → 高级（实验性），只在「桌面亚克力」下出现）：
+
+| 设置项 | 默认 | 说明 |
+| --- | --- | --- |
+| 模糊强度 | 18 px | 按原始分辨率算；取样图缩 1/2 后按 1/2 半径模糊 |
+| 刷新帧率 | 10 帧/秒 | 每秒重新取一次屏幕并模糊；桌面静止时降到 5 帧能省一半 CPU |
+| 取图方式 | 自动 | GPU 加速（DXGI 桌面复制）/ CPU 读屏（GDI）/ 自动 |
+
+CPU（4 张卡，20 秒平均，占单核）：**5 帧 3.4%、10 帧约 6–8%、15 帧 7.7%**，基本随帧率线性。
+比 2.4.3 的底板方案（10 帧 4.4%）高一些 —— 差别在于现在每帧要经 WPF 重画卡片，而不是 GDI 直接贴窗口，
+换来的是圆角/暗带两个问题从结构上消失。
+
+验证（本机，`MIRRORPOND_GLASS_TRACE=1`）：
+
+```
+[INFO] 玻璃取图改用 DXGI 桌面复制（GPU 加速，不再用 GDI 读屏）
+[INFO] 桌面复制已就绪：pitch=1280，区域 1446,260 314x60
+[INFO] 玻璃画面已画进卡片：157x30（模糊半径 9px，取图后端 DXGI 桌面复制）
+```
+
+`EnumWindows` 里已经找不到 `MirrorpondHUD.AcrylicBackdrop` 类的窗口了。
+
 ## 5. 所以要怎么选
 
 - **先别开**。需要「卡片像玻璃」的观感，只调「背景不透明度」就能拿到 90% 的效果，CPU 为 0。
@@ -350,6 +399,13 @@ Two things worth recording from later work:
   `SWP_NOREDRAW` when the plate has not moved, and validating the plate after each blit removes it: paint-path
   sharpness went from 21–28 against 0.56–1.26 for the fresh frame (**20–25×**, i.e. the raw sample) to a perfect
   match, and idle CPU dropped from 0.95% to 0.55% (8 threads) because the plate is no longer re-blitted by the OS.
+- **2.4.4** drops the separate plate window entirely: the blurred frame is now handed to the card's own glass layer
+  (`OverlaySurface.SetGlass`, the same path the compat mode uses), so the rounded corners are clipped by the card's
+  `Border.CornerRadius` in the *same* composition pass. That removed both reported artefacts at the root — a DWM-rounded
+  plate corner poking out beyond the card's 10 px corner, and a periodic dark strip along the card's top edge when the
+  two windows were off by a pixel or two. The acrylic settings (blur radius 18 px, refresh rate 10 fps, capture backend)
+  are now exposed in the UI; idle CPU scales linearly with the rate (3.4% at 5 fps, ~6–8% at 10 fps, 7.7% at 15 fps on
+  one core for four cards).
 
 ## 5. So what should you do
 

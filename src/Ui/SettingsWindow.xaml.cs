@@ -63,6 +63,8 @@ namespace MirrorpondHUD.Ui
             BindNumberBox(FixedWidthValue, FixedWidthSlider, "0");
             BindNumberBox(AcrylicBlurValue, AcrylicBlurSlider, "0");
             BindNumberBox(AcrylicFpsValue, AcrylicFpsSlider, "0");
+            BindNumberBox(GlassBlurValue, GlassBlurSlider, "0");
+            BindNumberBox(GlassFpsValue, GlassFpsSlider, "0");
             BindNumberBox(IconScaleValue, IconScaleSlider, "0.00");
         }
 
@@ -203,6 +205,8 @@ namespace MirrorpondHUD.Ui
             GlassSourceCombo.SelectionChanged += (s, e) => { UiChanged(); UpdateGlassUiState(); };
             AcrylicBlurSlider.ValueChanged += (s, e) => UiChanged();
             AcrylicFpsSlider.ValueChanged += (s, e) => UiChanged();
+            GlassBlurSlider.ValueChanged += (s, e) => UiChanged();
+            GlassFpsSlider.ValueChanged += (s, e) => UiChanged();
             IconScaleSlider.ValueChanged += (s, e) => UiChanged();
             FontFilterBox.TextChanged += (s, e) => FilterFonts(FontFilterBox.Text);
             AlignCombo.SelectionChanged += (s, e) => UiChanged();
@@ -259,6 +263,8 @@ namespace MirrorpondHUD.Ui
                 AcrylicCheck.IsChecked = s.Style.Acrylic;
                 AcrylicBlurSlider.Value = s.Style.AcrylicBlur;
                 AcrylicFpsSlider.Value = s.Style.AcrylicFps;
+                GlassBlurSlider.Value = s.Style.GlassBlur;
+                GlassFpsSlider.Value = s.Style.GlassFps;
                 UpdateGlassUiState();
 
                 FontSizeSlider.Value = s.Style.FontSize;
@@ -376,8 +382,9 @@ namespace MirrorpondHUD.Ui
         }
 
         /// <summary>
-        /// 底板实现的模糊强度 / 刷新帧率由系统或底板自己决定，界面上禁用并说明原因；
-        /// 兼容实现则恢复成可调的截屏取样参数。
+        /// 三种实现各有各的参数：系统亚克力由 DWM 决定（没有可调项）；
+        /// 兼容实现用「模糊强度 / 刷新帧率」；桌面亚克力用自己那一组（取样图缩 1/2 后再模糊，
+        /// 所以同样的观感需要更大的「模糊强度」数字）。
         /// </summary>
         void UpdateGlassUiState()
         {
@@ -386,26 +393,27 @@ namespace MirrorpondHUD.Ui
             string mode = GlassModeTag();
             bool system = mode == "System";
             bool dwm = mode == "Dwm";
-            bool fixedParams = system || dwm;
 
-            AcrylicBlurSlider.IsEnabled = !fixedParams;
-            AcrylicBlurValue.IsEnabled = !fixedParams;
-            AcrylicFpsSlider.IsEnabled = !fixedParams;
-            AcrylicFpsValue.IsEnabled = !fixedParams;
-            if (AcrylicFpsHint != null)
-                AcrylicFpsHint.Visibility = fixedParams ? Visibility.Collapsed : Visibility.Visible;
+            // 兼容实现那一组
+            AcrylicBlurRow.Visibility = system || dwm ? Visibility.Collapsed : Visibility.Visible;
+            AcrylicFpsRow.Visibility = system || dwm ? Visibility.Collapsed : Visibility.Visible;
+            AcrylicFpsHint.Visibility = AcrylicFpsRow.Visibility;
+
+            // 桌面亚克力那一组
+            GlassBlurRow.Visibility = dwm ? Visibility.Visible : Visibility.Collapsed;
+            GlassFpsRow.Visibility = dwm ? Visibility.Visible : Visibility.Collapsed;
+            GlassFpsHint.Visibility = GlassFpsRow.Visibility;
+            GlassSourceRow.Visibility = GlassFpsRow.Visibility;
 
             if (dwm)
             {
-                AcrylicHint.Text = "卡片下面放一块 DWM 桌面亚克力底板（DWMWA_SYSTEMBACKDROP_TYPE）。"
-                    + "DWM 只给活动窗口画这层材质，而卡片不会成为活动窗口，所以底板改为自己截屏 + 模糊；"
-                    + "为了让截屏不拍到自己，底板和卡片都被排除在截屏之外 —— " 
-                    + "这个模式下截图 / 录屏里看不到卡片。系统早于 Windows 11 22H2 时会自动退回兼容实现。";
+                AcrylicHint.Text = "抓取卡片后面的画面、模糊后画进卡片自己的内容层（圆角和卡片一致）。"
+                    + "为了让截屏不拍到自己，卡片会被排除在截屏之外 —— 这个模式下截图 / 录屏里看不到卡片。";
             }
             else if (system)
             {
                 AcrylicHint.Text = "由 DWM 在卡片下面的独立底板上画实时亚克力：模糊在 GPU 上完成、进程侧不抓屏，"
-                    + "「模糊强度 / 刷新帧率」由系统决定（这里不可调）。关闭系统透明效果、远程桌面或高对比度时会自动退回兼容实现。";
+                    + "「模糊强度 / 刷新帧率」由系统决定（这里不可调）。关闭系统透明效果或远程桌面时会自动退回兼容实现。";
             }
             else
             {
@@ -423,14 +431,13 @@ namespace MirrorpondHUD.Ui
                     string source = Settings.NormalizeGlassSource(GlassSourceTag());
                     if (source == "Gpu")
                         GlassSourceHint.Text = "DXGI 桌面复制：一轮取图约 1 ms（GDI 读屏要 18 ms），"
-                            + "所以刷新自动提到每秒 10 帧，玻璃更跟手；代价是 CPU 高约 3 个百分点。"
-                            + "独占全屏 / 远程桌面 / 换显卡时会自动退回 CPU 读屏，画面不会断。";
+                            + "所以刷新帧率可以放心开高。独占全屏 / 远程桌面 / 换显卡时会自动退回 CPU 读屏，画面不会断。";
                     else if (source == "Cpu")
-                        GlassSourceHint.Text = "GDI BitBlt 读屏：一轮约 18 ms，刷新每秒 5 帧。"
-                            + "兼容性最好 —— 桌面复制在你这台机器上出问题时选这个。";
+                        GlassSourceHint.Text = "GDI BitBlt 读屏：一轮约 18 ms 且占着 UI 线程，"
+                            + "刷新帧率别超过 8；兼容性最好 —— 桌面复制在你这台机器上出问题时选这个。";
                     else
-                        GlassSourceHint.Text = "能拿到桌面复制就走 GPU 加速（约 1 ms/轮，刷新每秒 10 帧），"
-                            + "拿不到（系统太旧 / 独占全屏 / 远程桌面 / 设备被占）自动退回 CPU 读屏（约 18 ms/轮，每秒 5 帧）。";
+                        GlassSourceHint.Text = "能拿到桌面复制就走 GPU 加速（约 1 ms/轮），"
+                            + "拿不到（独占全屏 / 远程桌面 / 设备被占）自动退回 CPU 读屏（约 18 ms/轮）。";
                 }
             }
         }
@@ -784,6 +791,8 @@ namespace MirrorpondHUD.Ui
             s.Style.GlassSource = GlassSourceTag();
             s.Style.AcrylicBlur = Math.Round(AcrylicBlurSlider.Value);
             s.Style.AcrylicFps = (int)Math.Round(AcrylicFpsSlider.Value);
+            s.Style.GlassBlur = (int)Math.Round(GlassBlurSlider.Value);
+            s.Style.GlassFps = (int)Math.Round(GlassFpsSlider.Value);
             s.Style.TextAlignment = AlignmentTag();
             s.Style.Padding = Math.Round(PaddingSlider.Value);
             s.Style.LineHeight = Math.Round(LineHeightSlider.Value);

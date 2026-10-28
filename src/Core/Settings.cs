@@ -56,6 +56,8 @@ namespace MirrorpondHUD.Core
             Style.CardAlign = NormalizeCardAlign(Style.CardAlign);
             Style.GlassMode = NormalizeGlassMode(Style.GlassMode);
             Style.GlassSource = NormalizeGlassSource(Style.GlassSource);
+            Style.GlassBlur = (int)Clamp(Style.GlassBlur, 0, 60);
+            Style.GlassFps = (int)Clamp(Style.GlassFps, 2, 30);
             if (string.IsNullOrWhiteSpace(Style.BackgroundImage)) Style.BackgroundImage = "";
             Style.ImageStretch = NormalizeStretch(Style.ImageStretch);
 
@@ -303,8 +305,9 @@ namespace MirrorpondHUD.Core
         /// <summary>
         /// 毛玻璃实现方式：
         /// System = 卡片下面的独立亚克力底板窗口（DWM 合成，进程侧零开销，模糊半径由系统决定）；
+        /// Dwm = 截屏 + 自己模糊，画进卡片内容层（见 Ui.GlassFeed，可调半径 / 帧率 / 取图后端）；
         /// Compat = 截屏取样 + CPU 模糊（v2.1 的 PrintWindow 路线，可调半径 / 帧率）。
-        /// 系统不支持（关闭透明效果 / 远程桌面 / 高对比度 / 接口失效）时自动退回 Compat。
+        /// 系统不支持（远程桌面 / 接口失效）时自动退回 Compat。
         /// </summary>
         public string GlassMode = "System";
 
@@ -315,6 +318,12 @@ namespace MirrorpondHUD.Core
         /// Cpu = 强制 GDI BitBlt 读屏（兼容性最好，一轮约 18 ms）。
         /// </summary>
         public string GlassSource = "Auto";
+
+        /// <summary>桌面亚克力的模糊强度（像素，按原始分辨率算；取样图缩到 1/2 后再按 1/2 半径模糊）。</summary>
+        public int GlassBlur = 18;
+
+        /// <summary>桌面亚克力的刷新帧率（帧/秒）：每帧读一次屏 + 重新模糊。</summary>
+        public int GlassFps = 10;
 
     }
 

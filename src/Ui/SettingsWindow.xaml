@@ -699,7 +699,7 @@
                             <TextBlock Text="玻璃实现" VerticalAlignment="Center" />
                             <ComboBox x:Name="GlassModeCombo" Grid.Column="1" Width="300" HorizontalAlignment="Left">
                                 <ComboBoxItem Content="系统亚克力（accent 底板，不抓屏）" Tag="System" />
-                                <ComboBoxItem Content="桌面亚克力（DWM 材质，自己截屏）" Tag="Dwm" />
+                                <ComboBoxItem Content="桌面亚克力（自己截屏 + 模糊，卡片不进截图）" Tag="Dwm" />
                                 <ComboBoxItem Content="兼容（截屏取样，CPU 模糊）" Tag="Compat" />
                             </ComboBox>
                         </Grid>
@@ -708,7 +708,7 @@
                                    Text="抓取卡片后面的画面并模糊，当作卡片底色；压在桌面上时直接用壁纸取样（图标不参与）。把「背景不透明度」调到 0.5 左右更容易看出效果。"
                                    TextWrapping="Wrap" />
 
-                        <Grid Margin="0,0,0,10">
+                        <Grid x:Name="AcrylicBlurRow" Margin="0,0,0,10">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="110" />
                                 <ColumnDefinition Width="*" />
@@ -720,7 +720,7 @@
                             </StackPanel>
                         </Grid>
 
-                        <Grid Margin="0,0,0,10">
+                        <Grid x:Name="AcrylicFpsRow" Margin="0,0,0,10">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="110" />
                                 <ColumnDefinition Width="*" />
@@ -735,7 +735,35 @@
                         <TextBlock x:Name="AcrylicFpsHint" Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="110,0,0,0"
                                    Text="每秒抓几次桌面：15 帧几乎看不出延迟，30 帧更跟手；桌面静止时可调到 8 帧省电。" />
 
-                        <Grid Margin="0,12,0,10">
+                        <Grid x:Name="GlassBlurRow" Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="110" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="模糊强度" VerticalAlignment="Center" />
+                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <Slider x:Name="GlassBlurSlider" Width="260" Minimum="0" Maximum="60" />
+                                <TextBox x:Name="GlassBlurValue" Width="58" Margin="10,0,0,0" TextAlignment="Right" />
+                                <TextBlock Text="像素" VerticalAlignment="Center" Margin="8,0,0,0" />
+                            </StackPanel>
+                        </Grid>
+
+                        <Grid x:Name="GlassFpsRow" Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="110" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="刷新帧率" VerticalAlignment="Center" />
+                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <Slider x:Name="GlassFpsSlider" Width="260" Minimum="2" Maximum="30" />
+                                <TextBox x:Name="GlassFpsValue" Width="58" Margin="10,0,0,0" TextAlignment="Right" />
+                                <TextBlock Text="帧/秒" VerticalAlignment="Center" Margin="8,0,0,0" />
+                            </StackPanel>
+                        </Grid>
+                        <TextBlock x:Name="GlassFpsHint" Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="110,0,0,12"
+                                   Text="每秒重新取一次屏幕并模糊：15 帧几乎看不出延迟，桌面静止时可调到 5 帧省电。" />
+
+                        <Grid x:Name="GlassSourceRow" Margin="0,12,0,10">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="110" />
                                 <ColumnDefinition Width="*" />
