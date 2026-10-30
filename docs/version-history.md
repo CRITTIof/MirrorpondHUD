@@ -1,9 +1,10 @@
-# 版本修改记录（2.4.1 → 2.4.5）
+# 版本修改记录（2.4.1 → 2.5.0）
 
 > 范围：本文只记录**这一轮接手后我做的版本**（v2.4.1 起）。v2.4.0 及更早是既有历史，不在本文档里。
 > 数据全部取自仓库真实提交（`git diff --shortstat <上一版>..<本版>`），文件行的 `+ / -` 就是实际增删行数。
 > 版本状态：`main` 已推送到 GitHub；`v2.4.2`–`v2.4.5` 为附注标签（分别指向 `70343ef` / `aabe441` / `05857ce` / `f4b2b8b`），
 > v2.4.5 已发布 Release（附件为两个 requires-dotnet 单文件），v2.4.0 的 Release 已删除、其 tag 保留。
+> `v2.5.0` 为本次附注标签：**只在本地创建，尚未推送、也还没有 Release**。
 
 ## 0. 总览
 
@@ -14,6 +15,7 @@
 | v2.4.3 | 2026-10-28 | `aabe441` | 取图方式进设置（GPU / CPU）；修掉判同帧后 DIB 留未模糊原图导致的闪烁 | 9 文件，+269 / −22 |
 | v2.4.4 | 2026-10-28 | `05857ce` | 模糊图改画进卡片内部，删掉底板窗口（修圆角外扩 / 顶部暗带）；模糊强度 / 帧率 / 取图方式进设置 | 9 文件，+1026 / −1503 |
 | v2.4.5 | 2026-10-30 | `f4b2b8b` | AI 对话与命令行统一成 CLI 交互面板（每条记录独立小面板与滑块）；图标按墨迹居中；拖动时玻璃跟手；主题方案文档 | 23 文件，+1647 / −668 |
+| v2.5.0 | 2026-10-30 | 本次提交 | 模块化评审文档；修命令行打开时其它卡片停更、富内容每次应用设置都重建、每卡一份整份配置副本 | 5 文件，+183 / −30，另新增 2 篇文档（500 + 582 行） |
 
 ---
 
@@ -234,7 +236,51 @@ AI 对话卡还是「输入框 + 聊天记录」的普通表单样式，Key 以�
 
 ---
 
-## 6. 不在版本里的东西
+## 6. v2.5.0（本次提交，标签 `v2.5.0`）
+
+### 背景
+
+做了一轮模块化现状评审（`docs/modularity-review.md`），查出宿主 4 处可直接修的问题：
+命令行一开其它卡片停更、富内容契约 `UpdateContent` 从未接线、每次应用设置都无条件重建全部富内容、
+每张卡片各持一份整份配置的 JSON 深拷贝。本次只修这 4 条，不动架构。
+
+### 改动
+
+1. **命令行打开时其它卡片不再停更**：`RenderNow` 里的全局 `_commandMode` 栅栏删掉，
+   只靠循环里的 `IsInteractive` 跳过交互卡自己。
+2. **富内容按需重建**：新增 `ContentInputs` + `ContentSignature()`（字符串快照，存进 `CardSlot.ContentSignature`），
+   `SyncCards` 比较签名——内容相关输入没变就 `RefreshSettings` + `UpdateContent`，变了才 `ReleaseContent` + `CreateContent`。
+   签名不含 `Overlay.X/Y/Monitor/Locked`（拖动时每帧都在变），含 `Style` / `Cli` / 圆角 / 投影。
+   用字符串快照而不是比较对象，是因为设置页直接改实时 `Settings`，应用那一刻拿不到“改前值”。
+3. **`UpdateContent` 真正被调用**（原来是死契约）：`MediaCard.UpdateContent` 的同路径重绑保留用户暂停状态，
+   换解码器重开后按原状态 `Play()` / `Pause()`；`ApplyVideoSettings` 改走 `Play()` / `Pause()`，让底部状态行同步。
+4. **每卡配置不再整份深拷贝**：`BuildDialog()` 改为浅拷贝（`Style` / `Cli` / `Data` / `Behavior` / `Hotkeys` / `Cards` 共享引用），
+   只有 `Overlay` 独立复制（窗口会改自己的 X / Y / 锁定）；删掉 JSON 深拷贝的 `CloneSettings`。
+5. **新增文档**：`docs/modularity-review.md`（评审 + P0 实施记录 + 对文件中转站 / 快捷画板 / 外观重写的支撑评估）；
+   `docs/theme-motion.md`（主题动效与控件样式调研，此前已在工作区、README 已引用，随本次一并入库）。
+
+### 文件
+
+| 文件 | 行数 | 说明 |
+|---|---|---|
+| `src/Ui/OverlayController.cs` | +116 / −21 | 内容签名 + 按需重建 + 配置浅拷贝 + 去掉渲染栅栏 |
+| `src/Media/MediaView.cs` | +13 / −3 | 同路径重绑保留播放 / 暂停状态 |
+| `MirrorpondHUD.csproj` | +1 / −1 | 版本号 2.4.5 → 2.5.0 |
+| `README.md` | +2 / −0 | 设计资料索引（评审文档、主题动效调研） |
+| `docs/modularity-review.md` | 新增 500 行 | 评审 + P0 实施记录 + 三个方向的支撑评估 |
+| `docs/theme-motion.md` | 新增 582 行 | 主题动效与控件样式调研 |
+
+### 实测
+
+- `dotnet build -c Release`：**0 警告 0 错误**。
+- `--selftest`：**失败项 0**（5 个卡片模块注册、热键、键盘钩子、采样全部正常）。
+- `--smoke 6 --smoke-visible`：退出码 0，5 张卡片建出，启动动画与毛玻璃正常。
+- 未覆盖：应用设置时的签名比较与 `UpdateContent` 调用（没有 CLI 入口能驱动 `ApplySettings`），
+  手工回归清单见 `docs/modularity-review.md` §7 / §8。
+
+---
+
+## 7. 不在版本里的东西
 
 - 验收脚本、样张与测量脚本（`cmd-e2e.ps1`、`drag-glass.ps1`、`measure-*.py`、`shots/` 等）都在仓库外的 `hud-test/` 里，**没有提交**。
 - 发布：`main` 与标签已推送到 [github.com/CRITTIof/MirrorpondHUD](https://github.com/CRITTIof/MirrorpondHUD)；
@@ -243,7 +289,7 @@ AI 对话卡还是「输入框 + 聊天记录」的普通表单样式，Key 以�
   v2.4.0 的 Release 已删除（tag `v2.4.0` 保留，历史仍可检出）。
 - 仓库追踪的文件共 89 个，`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
 
-## 7. 已知代价（跨版本）
+## 8. 已知代价（跨版本）
 
 - 桌面亚克力为了不拍到自己，会把卡片排除在截屏之外 —— 这个模式下截图 / 录屏里**看不到卡片**，观感只能靠肉眼与离屏渲染验证。
 - 兼容实现每帧对身后窗口做 `PrintWindow`，拖动时最多 ~21 帧/秒；要更高只能走桌面亚克力（DXGI）。

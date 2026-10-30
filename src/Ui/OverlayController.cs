@@ -43,6 +43,12 @@ namespace MirrorpondHUD.Ui
 
             /// <summary>富内容控件的当前实例（隐藏时保留，设置变化时重建）。</summary>
             public FrameworkElement Content;
+
+            /// <summary>
+            /// 建 / 刷新这个内容时用的输入签名（种类、模板、本卡设置、共用外观）。
+            /// 应用设置时拿它和新签名比较：一样就只刷新数据，不一样才重建控件。
+            /// </summary>
+            public string ContentSignature;
         }
 
         Settings _settings;
@@ -143,12 +149,13 @@ namespace MirrorpondHUD.Ui
 
         CardSlot CreateSlot(CardSettings config)
         {
-            Settings dialog = BuildDialog(config);
+            Settings dialog = BuildDialog();
             var slot = new CardSlot
             {
                 Config = config,
                 Module = CardRegistry.Get(config.Kind),
-                Dialog = dialog
+                Dialog = dialog,
+                ContentSignature = ContentSignature(config)
             };
             slot.Rich = slot.Module as IRichCardModule;
 
@@ -173,20 +180,80 @@ namespace MirrorpondHUD.Ui
             return slot;
         }
 
-        Settings BuildDialog(CardSettings config)
+        /// <summary>
+        /// 每张卡片的窗口需要「外观 + 本卡位置」。这里浅拷贝一份 <see cref="Settings"/>：
+        /// 外观 / CLI / 热键这些大对象共享同一个实例，只有 <see cref="OverlaySettings"/> 单独复制
+        /// （窗口会改自己的 X / Y / 锁定状态，不能互相踩）。
+        ///
+        /// 旧实现在这里对整份配置做 JSON 深拷贝，卡片越多副本越多；而且克隆绕过 Normalize，
+        /// 两份配置容易再次漂移。
+        /// </summary>
+        Settings BuildDialog()
         {
-            Settings dialog = CloneSettings(_settings);
-            dialog.Overlay.X = _settings.Overlay.X;
-            dialog.Overlay.Y = _settings.Overlay.Y;
-            dialog.Overlay.Monitor = _settings.Overlay.Monitor;
-            dialog.Overlay.Locked = _settings.Overlay.Locked;
-            return dialog;
+            return new Settings
+            {
+                SchemaVersion = _settings.SchemaVersion,
+                Overlay = CopyOverlay(_settings.Overlay),
+                Style = _settings.Style,
+                Cli = _settings.Cli,
+                Data = _settings.Data,
+                Behavior = _settings.Behavior,
+                Hotkeys = _settings.Hotkeys,
+                Cards = _settings.Cards
+            };
         }
 
-        static Settings CloneSettings(Settings source)
+        static OverlaySettings CopyOverlay(OverlaySettings source)
         {
-            try { return Json.Deserialize<Settings>(Json.Serialize(source)); }
-            catch { return new Settings(); }
+            if (source == null) return new OverlaySettings();
+            return new OverlaySettings
+            {
+                X = source.X,
+                Y = source.Y,
+                Monitor = source.Monitor,
+                Locked = source.Locked,
+                Topmost = source.Topmost,
+                CornerRadius = source.CornerRadius,
+                Shadow = source.Shadow
+            };
+        }
+
+        /// <summary>
+        /// 富内容的重建依据：种类、模板、本卡自己的子设置，加上所有卡片共用的外观与 CLI 尺寸。
+        /// 序列化成字符串快照存进 <see cref="CardSlot.ContentSignature"/>；应用设置时比较快照，
+        /// 不依赖配置对象本身（设置页是直接改实时对象的，拿不到「改前」的值）。
+        /// </summary>
+        sealed class ContentInputs
+        {
+            public string Kind;
+            public string Content;
+            public CommandSettings Command;
+            public MediaSettings Media;
+            public ChatSettings Chat;
+            public StyleSettings Style;
+            public CliSettings Cli;
+            public double CornerRadius;
+            public bool Shadow;
+        }
+
+        string ContentSignature(CardSettings config)
+        {
+            if (config == null) return "";
+            var inputs = new ContentInputs
+            {
+                Kind = config.Kind,
+                Content = config.Content,
+                Command = config.Command,
+                Media = config.Media,
+                Chat = config.Chat,
+                Style = _settings.Style,
+                Cli = _settings.Cli,
+                CornerRadius = _settings.Overlay.CornerRadius,
+                Shadow = _settings.Overlay.Shadow
+            };
+
+            try { return Json.Serialize(inputs); }
+            catch { return null; }   // 序列化失败：当作「变了」，走重建，宁可贵一点也不要留下陈旧内容
         }
 
         string CardTemplate(CardSlot slot)
@@ -578,8 +645,9 @@ namespace MirrorpondHUD.Ui
         void RenderNow()
         {
             if (!_overlayVisible) return;
-            if (_commandMode) return;   // 命令行面板自己管刷新（富内容），不用逐帧重画文字
 
+            // 交互卡（命令行）自己管刷新，靠下面循环里的 IsInteractive 跳过；
+            // 这里不能再按 _commandMode 整块返回，否则命令行一开，其它常驻卡片的文字就停更了。
             foreach (CardSlot slot in _cards)
             {
                 if (!slot.Shown || slot.Module.IsInteractive) continue;
@@ -999,24 +1067,51 @@ namespace MirrorpondHUD.Ui
 
                     bool wasSummoned = slot.Summoned;
                     bool saved;
+                    string signature = ContentSignature(config);
+
                     slot.Config = config;
                     slot.Module = CardRegistry.Get(config.Kind);
                     slot.Rich = slot.Module as IRichCardModule;
                     slot.Window.Interactive = slot.Rich != null && slot.Rich.NeedsMouseInput;
                     slot.Summoned = summoned.TryGetValue(config.Id, out saved) ? saved : wasSummoned;
-                    slot.Dialog = BuildDialog(config);
+                    slot.Dialog = BuildDialog();
 
-                    // 卡片设置变了：富内容按新设置重建（图片 / 视频路径可能换了）。
-                    ReleaseContent(slot);
+                    // 内容相关输入没变（改名字 / 热键 / 间距这类）：只刷新数据，不重建控件。
+                    // 视频不重启、动图不回第一帧、AI 对话的历史也还在。
+                    bool sameContent = slot.Content != null &&
+                                       slot.Rich != null &&
+                                       signature != null &&
+                                       string.Equals(slot.ContentSignature, signature, StringComparison.Ordinal);
+                    slot.ContentSignature = signature;
 
-                    if (slot.Shown)
+                    if (sameContent)
                     {
-                        if (slot.Rich != null) ShowCard(slot, "");
-                        else slot.Window.Apply(slot.Dialog, RenderCardText(slot));
+                        slot.Window.RefreshSettings(slot.Dialog);
+
+                        try
+                        {
+                            slot.Rich.UpdateContent(slot.Content,
+                                new CardRenderContext(_settings, _last, _keys, config));
+                        }
+                        catch (Exception ex)
+                        {
+                            Log.Warn("卡片内容刷新失败(" + config.Name + "): " + ex.Message);
+                        }
                     }
                     else
                     {
-                        slot.Window.Apply(slot.Dialog, "");
+                        // 内容相关设置变了（文件 / 工具 / 模型 / 外观）：按新设置重建富内容。
+                        ReleaseContent(slot);
+
+                        if (slot.Shown)
+                        {
+                            if (slot.Rich != null) ShowCard(slot, "");
+                            else slot.Window.Apply(slot.Dialog, RenderCardText(slot));
+                        }
+                        else
+                        {
+                            slot.Window.Apply(slot.Dialog, "");
+                        }
                     }
 
                     next.Add(slot);

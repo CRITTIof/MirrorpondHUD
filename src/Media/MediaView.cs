@@ -303,10 +303,13 @@ namespace MirrorpondHUD.Media
             _footer.Visibility = video ? Visibility.Visible : Visibility.Collapsed;
             _statusHost.Visibility = video ? Visibility.Visible : Visibility.Collapsed;
             _speed = _settings.Speed > 0 ? _settings.Speed : 1;
-            _playing = _settings.Autoplay;
 
             if (samePath)
             {
+                // 同一条媒体重新套设置（改名字、调不透明度、换字号之后宿主会走 UpdateContent）：
+                // 保留用户按热键暂停 / 播放过的状态，不要退回设置里的 Autoplay。
+                bool wasPlaying = _playing;
+
                 bool decoderChanged = previous != null &&
                     (MediaSettings.NormalizeDecoder(previous.Decoder) != MediaSettings.NormalizeDecoder(_settings.Decoder) ||
                      !string.Equals(previous.DecoderPath ?? "", _settings.DecoderPath ?? "",
@@ -317,6 +320,10 @@ namespace MirrorpondHUD.Media
                     _pendingVideo = path;
                     ReleaseVideo();
                     TryStartVideo();
+
+                    // 换解码器必然重开视频（Open / StartFfmpeg 会按 Autoplay 起播），这里把状态还原回去。
+                    if (wasPlaying) Play();
+                    else Pause();
                 }
 
                 ApplyVideoSettings(previous);
@@ -326,6 +333,7 @@ namespace MirrorpondHUD.Media
                 return;
             }
 
+            _playing = _settings.Autoplay;
             _loadedPath = path;
             _message.Visibility = Visibility.Collapsed;
 
@@ -650,8 +658,10 @@ namespace MirrorpondHUD.Media
 
                 if (previous != null && previous.Autoplay != _settings.Autoplay)
                 {
-                    if (_settings.Autoplay) _videoWindow.Play();
-                    else _videoWindow.Pause();
+                    // 走 Play / Pause 而不是直接动 Video：_playing 和底部状态行要一起更新，
+                    // 否则「设置里改了自动播放」之后按钮显示的状态会和画面不一致。
+                    if (_settings.Autoplay) Play();
+                    else Pause();
                 }
             }
             catch (Exception ex)
