@@ -5,7 +5,7 @@
 > 结论一句话：**契约层够用，宿主层有 5 处可直接修的问题，真正的扩展瓶颈在「设置模型 + 设置页」**——
 > 新增一张带设置项的卡片要改 5 个代码文件，其中 3 个是 700 ~ 1500 行的巨型文件。
 > 读法：P0 是能立刻动手的小修（不改架构），P1 是需要设计的重构，P2 是可选结构优化。
-> **实施状态：P0-1 ~ P0-4 已改完并通过编译 / `--selftest` / 启动冒烟（未提交）；手工回归待做；P0-5 暂缓。**
+> **实施状态：P0-1 ~ P0-4 已提交（v2.5.0）；P1-1、P1-2 已实现、配置升到 schema 5（未提交）；手工回归待做；P0-5 暂缓。**
 
 ## 0. 评审方法
 
@@ -149,24 +149,26 @@ Input   → （无）
 
 ## 4. P1：真正的扩展性瓶颈（需要设计）
 
-### P1-1 `CardSettings` 是胖聚合，没有「模块自己的设置」
+### P1-1 `CardSettings` 是胖聚合，没有「模块自己的设置」（已实施，schema 5）
 
 `src/Core/Settings.cs:634` 的 `CardSettings` 固定塞了 `Command` / `Media` / `Chat` / `Preset` 四个具体子对象，
 都属于特定模块。后果：新模块的设置无处安放，只能继续往这个类加字段，并且同时被
 `CardModel.Normalize`（`:59-65`）、`CardEditor`、`SettingsWindow.xaml` 三处感知。
 
-**建议**：`CardSettings.Extras`（`Dictionary<string, object>` 或 `JsonElement`）+ 模块自己读写；
-先让新卡片走 Extras，再逐个把 `Command` / `Media` / `Chat` 迁进去（有 `SettingsMigration` 兜底）。
+**已做**：`CardSettings.Command` 删除，改为 `Extras`（`Dictionary<string, object>`）+ `ExtrasAs<T>` / `SetExtras<T>`；
+命令行卡的设置搬进 `Extras.command`（v4 → v5 迁移），`CardModel` 改为调用模块的 `ICardSettingsModule.InitializeCard`。
+`Media` / `Chat` 仍保留 typed 字段，按同一模式逐个迁移（有 `SettingsMigration` 兜底）。
 `Extras` 不参与 `Normalize` 的夹紧，由模块自己负责——这是「谁的设置谁管」的边界。
 
-### P1-2 设置页按 Kind 硬编码
+### P1-2 设置页按 Kind 硬编码（已实施，命令行卡试点）
 
 `src/Ui/CardEditor.cs`（775 行）的 view-model 同时装着媒体卡 20 个属性、AI 卡 10 个属性，
 XAML 用三块 `Visibility` 面板切换（`src/Ui/SettingsWindow.xaml:190` / `:264` / `:360`），
 `CardEditor.cs:111` / `:375` / `:599` 还按 `Kind == "media"` / `"chat"` 判断。
 
-**建议**：`ICardEditorSection`——模块给出自己的设置区块（控件 + 双向绑定），
-`CardEditor` 只保留通用字段（名称 / 常驻 / 热键 / 间距 / 内容）。配合 P1-1 一起做，收益才完整。
+**已做**：`ICardEditorSection`（模块自带设置区块）+ `ICardSettingsValidator`（模块自带校验）。
+命令行卡的 8 个属性与 70 行 XAML 面板删掉，改由 `src/Cards/CommandCardEditor.cs` 提供，宿主只留一个 `ContentControl`。
+`CardEditor` 现在只画通用字段；媒体 / 对话面板在它们迁移到 `Extras` 时按同一方式移出。
 
 ### P1-3 模型层认识具体模块
 
@@ -295,8 +297,10 @@ XAML 用三块 `Visibility` 面板切换（`src/Ui/SettingsWindow.xaml:190` / `:
 
 ### 阶段 2：设置扩展点（P1-1 + P1-2 + P1-3，预计 1 ~ 2 天）
 
-先做 `Extras` + `ICardEditorSection`，再让 `CardModel` 的类型判断下沉。
-验收：写一张「带两个设置项的新卡片」，**只新增 1 个模块文件 + 1 个设置区块类**，不改 `Settings.cs` / `CardEditor` / XAML。
+**P1-1 / P1-2 已完成**（`Extras` + 三个模块契约 + 命令行卡试点，见 §8.2）；剩下的 P1-3 是把 `CardModel` 里
+`module is InfoTextCard` 这类具体类型判断也下沉到模块。
+验收：新增一张「带两个设置项的新卡片」，**只新增 1 个模块文件 + 1 个设置区块类**，不改 `Settings.cs` / `CardEditor` / XAML
+（`docs/cards-architecture.md` §2 末尾给了模板）。
 
 ### 阶段 3：结构收敛（P1-10 + P2-1 + P1-7，预计 2 ~ 3 天）
 
@@ -304,30 +308,57 @@ XAML 用三块 `Visibility` 面板切换（`src/Ui/SettingsWindow.xaml:190` / `:
 
 ---
 
-## 8. 实施记录（P0-1 ~ P0-4）
+## 8. 实施记录（P0-1 ~ P0-4、P1-1、P1-2）
 
-> 状态：已实施，未提交。P0-5 暂缓。
+> 状态：P0 已提交（v2.5.0 / `c4e68e2`）；P1-1、P1-2 已实现（未提交，配置结构升到 schema 5）。P0-5 暂缓。
 
-### 改动文件
+### 8.1 P0：宿主侧四修（v2.5.0）
 
 | 文件 | 改动 |
 |---|---|
 | `src/Ui/OverlayController.cs` | P0-1 删掉 `RenderNow` 里的全局 `_commandMode` 栅栏；P0-2/P0-3 新增 `ContentInputs` + `ContentSignature()`，`CardSlot.ContentSignature` 存字符串快照，`SyncCards` 按快照决定「刷新数据」还是「重建控件」；P0-4 `BuildDialog()` 改为浅拷贝 + `CopyOverlay`，删除 `CloneSettings` |
 | `src/Media/MediaView.cs` | P0-2 同路径重绑保留 `_playing`；换解码器重开视频后按原状态 `Play()` / `Pause()`；`ApplyVideoSettings` 改走 `Play()` / `Pause()`，让 `_playing` 与底部状态行同步 |
 
-### 几个实现决定
+几个实现决定：
 
-1. **为什么签名用字符串快照**：设置页是**直接改实时 `Settings` 对象**的（`ShowSettings` 把 `_settings` 交给窗口，`ApplySettings` 收到的还是同一个对象），
-   所以“改前值”在应用那一刻已经不存在了。在**建卡 / 重建时**把输入序列化存成字符串，之后拿新算的字符串比较，才拿得到真正的“变没变”。
-2. **签名包含哪些输入**：`Kind`、`Content`、`Command`、`Media`、`Chat`，加上所有卡片共用的 `Style`、`Cli`、`Overlay.CornerRadius`、`Overlay.Shadow`。
+1. **为什么签名用字符串快照**：设置页在 `Clone` 出来的副本上改（`SettingsWindow._working`），点「应用」时副本整个替换掉 `_settings`，
+   旧的 `CardSettings` 实例随之丢弃——所以“改前值”只能靠建卡时存下的字符串快照，不能靠比较对象。
+   （早先这里写成“设置页改的是实时对象”，不准确，已更正。）
+2. **签名包含哪些输入**：`Kind`、`Content`、`Extras`（P1 起替代 `Command`）、`Media`、`Chat`，加上共用的 `Style`、`Cli`、`Overlay.CornerRadius`、`Overlay.Shadow`。
    不含 `Overlay.X/Y/Monitor/Locked`——拖动时每帧都在变，含进去会退化成“永远重建”。
 3. **边界（有意保守）**：`Style` 整体进签名，所以改字号 / 颜色 / 毛玻璃仍会重建富内容，与旧行为一致；
-   要细化成「只影响显示的视觉子集」需要给富内容加“换样式不重建”的接口，属于 P1。
+   要细化成「只影响显示的视觉子集」需要给富内容加“换样式不重建”的接口（§9.2 结论 2 的 `contentKey` / `styleKey` 拆分）。
    同理，媒体 / 对话设置变化仍走重建——`CommandView` / `ChatView` 没实现增量更新，不能假设它们能接住新值。
 4. **`BuildDialog` 共享哪些对象**：`Style` / `Cli` / `Data` / `Behavior` / `Hotkeys` / `Cards` 共享引用，只有 `Overlay` 独立复制。
    窗口只写自己的 `Overlay.X/Y/Locked`（`LayoutCards`、`SetLocked`），不会写共享对象，所以共享是安全的。
 
-### 验证状态
+### 8.2 P1-1 / P1-2：卡片自己的设置（schema 5）
+
+**契约**（`src/Cards/CardSettingsModule.cs`，三个接口各管一件事）：
+
+| 接口 | 职责 |
+|---|---|
+| `ICardSettingsModule.InitializeCard` | 数据面：补默认值、夹紧范围；`CardModel` 建卡 / 每次归一化时调用 |
+| `ICardEditorSection.CreateEditor` | 界面面：模块自己画设置区块，宿主只提供一个 `ContentControl` |
+| `ICardSettingsValidator.Validate` | 校验：返回错误文案，宿主拼上卡片名 |
+
+**配置**：`CardSettings` 去掉了 `Command` 字段，改为 `Extras`（`Dictionary<string, object>`）+ `ExtrasAs<T>` / `SetExtras<T>`。
+命令行卡用 `Extras.command`；`Json.Bind` 增加了 `Dictionary<string, object>` 分支，`SettingsMigration` 增加 v4 → v5
+（只把命令行卡的 `Command` 搬进 `Extras.command`，其它卡以前那份从没被读过的拷贝不写进新配置）。
+
+**试点**：命令行卡实现三个接口，`CommandCardEditor.cs` 用代码搭出原来的 6 行界面对（工具 / 自定义命令 / 工作目录 / 返回内容 / 提示符预览），
+`SettingsWindow.xaml` 里那 70 行命令行面板与 `CardEditor` 里 8 个属性删除，改成一行 `ContentControl`。
+媒体 / 对话卡仍用原来的 typed 字段，后续按同一模式迁移。
+
+**实测**：
+
+- `dotnet build -c Release`：0 警告 0 错误。
+- `--selftest`：失败项 0，新增的「卡片设置=OK」（Extras 读写 + 模块设置区块创建）。
+- 迁移实测：用真实的 schema 4 配置启动，日志 `设置已从 SchemaVersion 4 升级到 5`；迁移后
+  `SchemaVersion=5`、只有命令行卡获得 `Extras.command`、旧的 `Command` 键消失、卡片 Id / Style / Hotkeys 全部未变。
+- 未覆盖：设置页里**真实点击**模块区块（需要手工打开设置页确认布局）。
+
+### 8.3 P0 验证状态（v2.5.0）
 
 | 项目 | 结果 |
 |---|---|
@@ -339,7 +370,7 @@ XAML 用三块 `Visibility` 面板切换（`src/Ui/SettingsWindow.xaml:190` / `:
 > 说明：`--smoke` 覆盖的是「启动 + 建卡（浅拷贝 / 签名）」这条路径；
 > **应用设置时的签名比较与 `UpdateContent` 接线只能在手工回归里验证**（没有 CLI 入口能驱动 `ApplySettings`）。
 
-### 手工验证时的观察点
+### 8.4 手工验证时的观察点
 
 - **P0-3「不重建」的硬信号**：视频卡正在播放时，只改卡片**名字 / 热键 / 间距**再应用，
   `mirrorpond.log` 里**不应**再出现 `视频窗已创建：` 或 `ffmpeg 解码：` 这类行（它们是重建才会打的）。
@@ -347,11 +378,14 @@ XAML 用三块 `Visibility` 面板切换（`src/Ui/SettingsWindow.xaml:190` / `:
   底部状态行仍是「播放」图标，而不是自己重新播起来。
 - **P0-1「不再冻结」**：F9 打开命令行后，旁边的系统信息卡 / 时钟卡数字应继续变化（旧版会定格）。
 - **P0-4「位置/锁定不受影响」**：拖动卡片、F8 锁定、托盘「显示 / 隐藏」应和以前一致。
+- **P1-2「设置区块」**：设置 → 内容 → 命令行卡，应看到与旧版一致的工具 / 自定义命令 / 工作目录 / 返回内容 / 提示符预览；
+  改工具后卡片摘要右侧的文字应跟着变（`onChanged` → `RefreshSummary`）。
 
-### 下一步待办
+### 8.5 下一步待办
 
 1. 按 §7 阶段 1 的手工清单走一遍（运行 `run.bat` 即可用新构建）。
-2. 若验收通过，再决定是否做 P0-5（一帧一份变量表，为按卡刷新节奏铺路）。
+2. 手工打开设置页确认 P1-2 的模块区块布局。
+3. 决定后续顺序：P1-3（把 `CardModel` 里 `is InfoTextCard` 的类型判断下沉）或 P0-5（一帧一份变量表）。
 
 ---
 
@@ -379,11 +413,12 @@ XAML 用三块 `Visibility` 面板切换（`src/Ui/SettingsWindow.xaml:190` / `:
 
 ### 9.2 四个关键结论
 
-**结论 1：P1-1 + P1-2 不是“以后再说”，是三条路的共同前置。**
+**结论 1：P1-1 + P1-2 不是“以后再说”，是三条路的共同前置。**（已完成，见 §8.2）
 三个方向各自都需要“模块自带设置 + 自带设置 UI”。不做 `Extras` 与 `ICardEditorSection` 的代价是具体的：
 `CardSettings` 会再长出 `FileStation` / `Canvas` 两个胖字段，`CardEditor` 再长两套属性，
 `SettingsWindow.xaml` 再长两块 `Visibility` 面板——§1.3 的“新增一张卡要改 5 个文件、其中 3 个是 700 ~ 1500 行”
 会变成**每个新功能 6 ~ 7 个文件、3 个巨型文件**，而且两条新功能会把 `CardEditor` / XAML 推过 2000 行。
+命令行卡已经走通这条路：模块自带设置（`Extras.command`）+ 自带区块（`CommandCardEditor.cs`），宿主两处大文件都没有为它再长。
 
 **结论 2：P0-3 的保守边界会与外观重写正面冲突，需要把签名拆成两维。**
 现在 `ContentSignature()`（`OverlayController.cs:239`）把 `Style` 整体算进“内容输入”，

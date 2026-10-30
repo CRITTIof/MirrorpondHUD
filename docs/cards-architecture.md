@@ -13,8 +13,10 @@
 | `src/Cards/RichCard.cs` | `IRichCardModule` / `RichCardModuleBase`：返回任意 WPF 内容的卡片契约（含 `NeedsMouseInput`） |
 | `src/Cards/CardRegistry.cs` | 反射扫描本程序集里所有 `ICardModule` 实现，按 `Order` 排序 |
 | `src/Cards/CardModel.cs` | 卡片列表的创建、补全、校验、名称去重 |
+| `src/Cards/CardSettingsModule.cs` | 卡片自己的设置三个契约：`ICardSettingsModule`（补默认 / 归一化）、`ICardEditorSection`（自带设置区块）、`ICardSettingsValidator`（自带校验） |
 | `src/Cards/InfoTextCard.cs` | 信息与文本卡：系统信息 / 时钟 / 按键 / 文本四个预设 |
-| `src/Cards/CommandCard.cs` / `MediaCard.cs` | 命令行卡（富内容面板，见 §9）、媒体卡（图片 / 动图 / 视频） |
+| `src/Cards/CommandCard.cs` / `CommandCardEditor.cs` | 命令行卡（富内容面板，见 §9）与它自己的设置区块；设置存在 `CardSettings.Extras.command` |
+| `src/Cards/MediaCard.cs` | 媒体卡：图片 / 动图 / 视频，文件与缩放参数在每张卡自己的 `Media` 里 |
 | `src/Cards/ChatCard.cs` | AI 对话卡：和命令行卡同一套 CLI 面板（模型名 + `>` 输入行 + 每条问答一块小面板），单次 / 轮询走全局热键 |
 | `src/Ui/Controls/CliUi.cs` | CLI 面板公共件：面板骨架 `CliPanelView`、内部小面板 `CliEntryPanel`、卡片风格滑块 `CliScrollBars`、取色 `CardPalette` |
 | `src/Cards/ButtonsCard.cs` | 按钮演示卡：验证 `CardButton` / `CardTextBox` 这套卡片控件 |
@@ -94,13 +96,53 @@ public sealed class MyMediaCard : RichCardModuleBase
 `OnVisibilityChanged` / `OnZOrderChanged`（卡片显示 / 隐藏、重新置顶时通知）。
 控件自己不碰窗口，所以卡片模块依旧是「新增一个类即可」。
 
+新增一张**带自己设置的卡片**（`Extras` + 自带设置区块，v2.6.0 起）：
+
+```csharp
+public sealed class DropStationCard : RichCardModuleBase,
+    ICardSettingsModule, ICardEditorSection, ICardSettingsValidator
+{
+    public const string SettingsKey = "dropstation";
+
+    public override string Kind { get { return "dropstation"; } }
+    public override string DisplayName { get { return "文件中转站"; } }
+    public override string Icon { get { return Icons.Folder; } }
+    public override int Order { get { return 60; } }
+
+    // 数据面：补默认值 / 夹紧，宿主每次归一化都会调用，不能覆盖用户填的值
+    public void InitializeCard(CardSettings config)
+    {
+        StationSettings station = config.ExtrasAs<StationSettings>(SettingsKey);
+        station.Normalize();
+        config.SetExtras(SettingsKey, station);
+    }
+
+    // 界面面：设置页里这张卡片的设置区块由模块自己画
+    public FrameworkElement CreateEditor(CardSettings config, Settings settings, Action onChanged)
+    {
+        return new DropStationEditor(config, onChanged);
+    }
+
+    // 校验：返回给用户看的错误说明，null = 通过
+    public string Validate(CardSettings config)
+    {
+        return config.ExtrasAs<StationSettings>(SettingsKey).Directory.Length > 0
+            ? null : "还没选接收目录。";
+    }
+}
+```
+
+三条契约各自只做一件事：**设置归模块**（住在 `CardSettings.Extras`）、**界面归模块**（设置区块是模块给的控件）、
+**校验归模块**（`SettingsWindow` 只负责把错误拼上卡片名）。宿主不再认识具体卡片的设置字段，
+所以 `CardSettings` / `CardModel` / `CardEditor` / `SettingsWindow.xaml` 都不用再改。
+
 把文件放进 `src/Cards/` 即可：工程默认包含全部 `.cs`，`CardRegistry` 启动时反射发现，
 「添加卡片」菜单、设置页编辑、默认内容、热键校验全部自动生效。
 
 ## 3. 配置模型
 
 ```json
-"SchemaVersion": 3,
+"SchemaVersion": 5,
 "Cards": [
   {
     "Id": "3f6c...",
@@ -110,8 +152,8 @@ public sealed class MyMediaCard : RichCardModuleBase
     "Hotkey": "",
     "Spacing": 0,
     "Content": "{cpu_icon} CPU {cpu:0.0}%",
-    "Command": { "Shell": "cmd", "CustomShell": "cmd.exe /c {cmd}", "WorkingDirectory": "",
-                 "Truncate": true, "MaxLineChars": 120, "MaxLines": 30, "TimeoutSeconds": 20 },
+    "Extras": { "command": { "Shell": "cmd", "CustomShell": "cmd.exe /c {cmd}", "WorkingDirectory": "",
+                             "Truncate": true, "MaxLineChars": 120, "MaxLines": 30, "TimeoutSeconds": 20 } },
     "Media": { "Path": "", "Fit": "Contain", "Width": 320, "Height": 0, "Opacity": 1,
                "Loop": true, "Autoplay": true, "Muted": true, "Speed": 1, "Rounded": true,
                "Decoder": "Auto", "DecoderPath": "" }
@@ -125,15 +167,19 @@ public sealed class MyMediaCard : RichCardModuleBase
 - `Resident`：常驻；`false` 时必须给 `Hotkey`，否则保存时提示
 - `Spacing`：与上一张**可见**卡片的间距
 - `Content`：内容模板；空 = 用卡片默认内容
-- `Command`：**每张命令行卡片自己的**工具 / 模板 / 工作目录 / 输出上限（`MaxLines`）/ 超时。
-  v2 里这些是全局设置，v3 起拆到卡片上，于是 cmd、pwsh、WSL 可以各放一张卡片同时待命
+- `Extras`：**卡片模块自己的设置**，键由模块自己定，宿主不解释内容。
+  命令行卡是 `Extras.command`（工具 / 模板 / 工作目录 / 输出上限 `MaxLines` / 超时），
+  模块用 `CardSettings.ExtrasAs<T>("command")` 读、`SetExtras("command", value)` 写。
+  v2 里命令行设置是全局的，v3 拆到卡片上，v5 起统一搬进 `Extras`——cmd、pwsh、WSL 仍可各放一张卡同时待命
 - `Media`：**每张媒体卡片自己的**文件、缩放方式、宽高、不透明度、循环 / 自动播放 / 静音 / 倍速、
   圆角开关、解码器（`Auto` / `BuiltIn` / `FFmpeg`）与自定义 `ffmpeg.exe` 路径
 - 命令行的**外观与尺寸**不在这里：两块 CLI 面板共用 `Settings.Cli`（最大宽度 / 最大高度 / 内部小面板最大高度 / 最多保留条数）
 - 命令行卡强制 `Resident=false`、无内容模板
 
 旧配置由 `Core/SettingsMigration.cs` 一次性迁移：v0/v1（单窗口，全局 `Content` + `X/Y/Visible`）
-走 `LegacySettings`；v2 把全局 `Command` 复制进每张命令行卡片。迁移后立刻写回。
+走 `LegacySettings`；v2 把全局 `Command` 复制进每张命令行卡片；
+v4 → v5 把每张命令行卡片的 `Command` 子对象搬进 `Extras.command`（只搬命令行卡，其它卡以前那份拷贝从没被读过）。
+迁移后立刻写回。
 
 ## 4. 布局：一条垂直堆叠
 

@@ -210,6 +210,7 @@ namespace MirrorpondHUD
             bool toolLabelOk = false;
             bool secretOk = false;
             bool chatHotkeyOk = false;
+            bool settingsEditorOk = false;
 
             try
             {
@@ -326,11 +327,15 @@ namespace MirrorpondHUD
                 {
                     Id = "self", Kind = "text", Name = "自检", Content = "x{cpu}", Resident = true, Spacing = 16
                 });
-                settings.Cards.Add(new CardSettings
+                var commandCard = new CardSettings
                 {
-                    Id = "cmd", Kind = "command", Name = "自检命令行", Resident = false, Hotkey = "F9",
-                    Command = { Shell = "pwsh", MaxLineChars = 77, Truncate = false, WorkingDirectory = "C:\\Temp" }
+                    Id = "cmd", Kind = "command", Name = "自检命令行", Resident = false, Hotkey = "F9"
+                };
+                commandCard.SetExtras(CommandCard.SettingsKey, new CommandSettings
+                {
+                    Shell = "pwsh", MaxLineChars = 77, Truncate = false, WorkingDirectory = "C:\\Temp"
                 });
+                settings.Cards.Add(commandCard);
                 settings.Cards.Add(new CardSettings
                 {
                     Id = "media", Kind = "media", Name = "自检媒体", Resident = false, Hotkey = "F11",
@@ -342,6 +347,10 @@ namespace MirrorpondHUD
                 });
 
                 Settings back = Json.Deserialize<Settings>(Json.Serialize(settings));
+                CommandSettings backCommand = back == null || back.Cards == null || back.Cards.Count < 2
+                    ? new CommandSettings()
+                    : back.Cards[1].ExtrasAs<CommandSettings>(CommandCard.SettingsKey);
+
                 configOk = back != null
                            && back.Cards != null && back.Cards.Count == 3
                            && back.Cards[0].Content == "x{cpu}"
@@ -351,10 +360,10 @@ namespace MirrorpondHUD
                            && Math.Abs(back.Overlay.X - 123.5) < 0.001
                            && back.Overlay.Locked == false
                            && back.Data.DiskDrives.Count == 1
-                           && back.Cards[1].Command.Shell == "pwsh"
-                           && back.Cards[1].Command.MaxLineChars == 77
-                           && back.Cards[1].Command.Truncate == false
-                           && back.Cards[1].Command.WorkingDirectory == "C:\\Temp"
+                           && backCommand.Shell == "pwsh"
+                           && backCommand.MaxLineChars == 77
+                           && backCommand.Truncate == false
+                           && backCommand.WorkingDirectory == "C:\\Temp"
                            && back.Cards[2].Media.Path == "C:\\demo.png"
                            && back.Cards[2].Media.Fit == "Cover"
                            && Math.Abs(back.Cards[2].Media.Width - 480) < 0.001
@@ -432,14 +441,14 @@ namespace MirrorpondHUD
 
                 // 设置页：已存 Key 时输入框空的、只显示提示；输入新 Key 才改，提交后又收起
                 var cardSettings = new CardSettings { Id = "chat-ui", Kind = "chat", Name = "自检对话", Chat = new ChatSettings() };
-                var editor = new CardEditor(cardSettings, new ChatCard(), true);
+                var editor = new CardEditor(cardSettings, new ChatCard(), settings, true);
 
                 bool uiHidden = editor.ChatApiKey.Length == 0
                              && editor.ChatApiKeyPlaceholderVisibility == System.Windows.Visibility.Visible
                              && editor.ChatApiKeyClearVisibility == System.Windows.Visibility.Collapsed;
 
                 cardSettings.Chat.SetApiKey(secret);
-                var withKey = new CardEditor(cardSettings, new ChatCard(), true);
+                var withKey = new CardEditor(cardSettings, new ChatCard(), settings, true);
                 bool uiMasked = withKey.ChatApiKey.Length == 0
                              && withKey.ChatApiKeyPlaceholder == ChatSettings.KeyPlaceholder
                              && withKey.ChatApiKeyPlaceholderVisibility == System.Windows.Visibility.Visible
@@ -481,12 +490,28 @@ namespace MirrorpondHUD
                 Log.Error("对话热键自检异常", ex);
             }
 
+            try
+            {
+                // 模块自己的设置（P1-1 / P1-2）：命令行卡把设置写进 Extras，并给出自己的设置区块。
+                var editorCard = new CardSettings { Id = "cmd-ui", Kind = "command", Name = "自检命令行" };
+                var commandEditor = new CardEditor(editorCard, new CommandCard(), new Settings(), true);
+
+                settingsEditorOk = commandEditor.SettingsSection != null
+                                && commandEditor.SettingsSectionVisibility == System.Windows.Visibility.Visible
+                                && editorCard.Extras.ContainsKey(CommandCard.SettingsKey)
+                                && editorCard.ExtrasAs<CommandSettings>(CommandCard.SettingsKey).Shell == "cmd";
+            }
+            catch (Exception ex)
+            {
+                Log.Error("卡片设置区块自检异常", ex);
+            }
+
             if (!(templateOk && unknownOk && collapseOk && thresholdOk && configOk && cardOk &&
                   keyNameOk && keyLimitOk && keyOverflowOk &&
-                  commandOk && truncateOk && toolLabelOk && secretOk && chatHotkeyOk)) failures++;
+                  commandOk && truncateOk && toolLabelOk && secretOk && chatHotkeyOk && settingsEditorOk)) failures++;
 
             Fix(sb, "逻辑自检", string.Format(
-                "模板={0} 未知占位符={1} 折叠={2} 阈值内展开={3} 配置读写={4} 卡片模块={11} 键名={5} 按键长度={6} 超长截断={7} 命令行={8} 行截断={9} 工具名={10} Key加密={12} 对话热键={13}",
+                "模板={0} 未知占位符={1} 折叠={2} 阈值内展开={3} 配置读写={4} 卡片模块={11} 键名={5} 按键长度={6} 超长截断={7} 命令行={8} 行截断={9} 工具名={10} Key加密={12} 对话热键={13} 卡片设置={14}",
                 templateOk ? "OK" : "FAIL",
                 unknownOk ? "OK" : "FAIL",
                 collapseOk ? "OK" : "FAIL",
@@ -500,7 +525,8 @@ namespace MirrorpondHUD
                 toolLabelOk ? "OK" : "FAIL",
                 cardOk ? "OK" : "FAIL",
                 secretOk ? "OK" : "FAIL",
-                chatHotkeyOk ? "OK" : "FAIL"));
+                chatHotkeyOk ? "OK" : "FAIL",
+                settingsEditorOk ? "OK" : "FAIL"));
         }
 
         static bool RegisterIfSet(HotkeyManager hotkeys, string action, string combination)

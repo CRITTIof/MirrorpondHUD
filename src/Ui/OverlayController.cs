@@ -219,15 +219,16 @@ namespace MirrorpondHUD.Ui
         }
 
         /// <summary>
-        /// 富内容的重建依据：种类、模板、本卡自己的子设置，加上所有卡片共用的外观与 CLI 尺寸。
-        /// 序列化成字符串快照存进 <see cref="CardSlot.ContentSignature"/>；应用设置时比较快照，
-        /// 不依赖配置对象本身（设置页是直接改实时对象的，拿不到「改前」的值）。
+        /// 富内容的重建依据：种类、模板、本卡自己的设置（Extras）与媒体 / 对话设置，
+        /// 加上所有卡片共用的外观与 CLI 尺寸。
+        /// 序列化成字符串快照存进 <see cref="CardSlot.ContentSignature"/>；应用设置时比较快照——
+        /// 设置页是在副本上改、点「应用」时才换成新对象，所以旧值只能靠这张快照记住。
         /// </summary>
         sealed class ContentInputs
         {
             public string Kind;
             public string Content;
-            public CommandSettings Command;
+            public Dictionary<string, object> Extras;
             public MediaSettings Media;
             public ChatSettings Chat;
             public StyleSettings Style;
@@ -243,7 +244,7 @@ namespace MirrorpondHUD.Ui
             {
                 Kind = config.Kind,
                 Content = config.Content,
-                Command = config.Command,
+                Extras = config.Extras,
                 Media = config.Media,
                 Chat = config.Chat,
                 Style = _settings.Style,
@@ -789,12 +790,11 @@ namespace MirrorpondHUD.Ui
             Log.Info("快捷命令行已关闭，命令与返回已清空");
         }
 
-        /// <summary>命令行卡片自己的工具 / 目录 / 超时设置。</summary>
+        /// <summary>命令行卡片自己的工具 / 目录 / 超时设置（存在卡片的 Extras 里，由模块解释）。</summary>
         static CommandSettings CommandOf(CardSlot slot)
         {
             if (slot == null || slot.Config == null) return new CommandSettings();
-            if (slot.Config.Command == null) slot.Config.Command = new CommandSettings();
-            return slot.Config.Command;
+            return CommandCard.CommandOf(slot.Config);
         }
 
         // ==================== 启动动画 ====================

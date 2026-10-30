@@ -305,6 +305,11 @@ namespace MirrorpondHUD.Core
                 return outList;
             }
 
+            // 任意 Dictionary<string, object>：卡片 Extras 这种「模块自己的设置」先原样收下，
+            // 强类型解析交给模块自己（CardSettings.ExtrasAs<T>）。
+            if (target == typeof(Dictionary<string, object>) && node is Dictionary<string, object> rawMap)
+                return new Dictionary<string, object>(rawMap, StringComparer.OrdinalIgnoreCase);
+
             // 任意 List<T>：卡片的 List<CardSettings> 等配置数组都走这里。
             if (target.IsGenericType && target.GetGenericTypeDefinition() == typeof(List<>))
             {

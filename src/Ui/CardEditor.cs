@@ -12,28 +12,65 @@ namespace MirrorpondHUD.Ui
     /// <summary>
     /// 设置页「内容」里的一张卡片设置卡。
     /// 直接包住 <see cref="CardSettings"/>，控件双向绑定；展开 / 折叠只影响显示。
-    /// 命令行卡片在这里改自己的工具 / 工作目录 / 超时，媒体卡片在这里挑文件与尺寸，
-    /// 所以同一个页面可以同时放 cmd、pwsh、两张图片、一个视频，各改各的。
+    /// 通用字段（名称 / 常驻 / 热键 / 间距 / 内容）由宿主画；卡片自己的设置
+    /// （命令行工具、以后的画板 / 中转站参数）由模块通过 <see cref="ICardEditorSection"/> 提供，
+    /// 宿主只用一个 ContentControl 摆放，所以加一种带设置的卡片不用再改这个类和 SettingsWindow.xaml。
     /// </summary>
     public sealed class CardEditor : INotifyPropertyChanged
     {
         readonly CardSettings _config;
         readonly ICardModule _module;
+        readonly Settings _settings;
         bool _expanded;
         bool _spacingEnabled;
+        FrameworkElement _section;
+        bool _sectionCreated;
 
-        public CardEditor(CardSettings config, ICardModule module, bool expanded)
+        public CardEditor(CardSettings config, ICardModule module, Settings settings, bool expanded)
         {
             _config = config;
             _module = module;
+            _settings = settings ?? new Settings();
             _expanded = expanded;
-            if (_config.Command == null) _config.Command = new CommandSettings();
             if (_config.Media == null) _config.Media = new MediaSettings();
             if (_config.Chat == null) _config.Chat = new ChatSettings();
         }
 
         public CardSettings Config { get { return _config; } }
         public ICardModule Module { get { return _module; } }
+
+        /// <summary>
+        /// 模块自己的设置区块（命令行卡的工具 / 目录 / 超时）。由模块自己创建，
+        /// 宿主只负责摆放；null = 这种卡片没有额外设置。
+        /// </summary>
+        public FrameworkElement SettingsSection
+        {
+            get
+            {
+                if (_sectionCreated) return _section;
+                _sectionCreated = true;
+
+                var source = _module as ICardEditorSection;
+                if (source == null) return null;
+
+                try
+                {
+                    _section = source.CreateEditor(_config, _settings, RefreshSummary);
+                }
+                catch (Exception ex)
+                {
+                    Log.Warn("卡片设置区块创建失败(" + _config.Name + "): " + ex.Message);
+                    _section = null;
+                }
+
+                return _section;
+            }
+        }
+
+        public Visibility SettingsSectionVisibility
+        {
+            get { return SettingsSection == null ? Visibility.Collapsed : Visibility.Visible; }
+        }
 
         public string Icon
         {
@@ -106,7 +143,11 @@ namespace MirrorpondHUD.Ui
             get
             {
                 if (_module.IsInteractive)
-                    return CommandRunner.ToolLabel(_config.Command) + " · " + FitSummary(_config.Command.WorkingDirectory);
+                {
+                    CommandSettings command = _config.ExtrasAs<CommandSettings>(CommandCard.SettingsKey);
+                    command.Normalize();
+                    return CommandRunner.ToolLabel(command) + " · " + FitSummary(command.WorkingDirectory);
+                }
 
                 if (!string.IsNullOrWhiteSpace(_module.Kind) && _module.Kind == "media")
                     return MediaSummary();
@@ -270,103 +311,8 @@ namespace MirrorpondHUD.Ui
 
         public bool SupportsContent { get { return _module.SupportsContent; } }
 
-        // ==================== 命令行卡片 ====================
-
-        public Visibility CommandVisibility
-        {
-            get { return _module.IsInteractive ? Visibility.Visible : Visibility.Collapsed; }
-        }
-
-        /// <summary>0 = cmd，1 = Windows PowerShell，2 = PowerShell 7，3 = 自定义。</summary>
-        public int ShellIndex
-        {
-            get
-            {
-                switch (Settings.NormalizeShell(_config.Command.Shell))
-                {
-                    case "powershell": return 1;
-                    case "pwsh": return 2;
-                    case "custom": return 3;
-                    default: return 0;
-                }
-            }
-            set
-            {
-                string shell = value == 1 ? "powershell" : value == 2 ? "pwsh" : value == 3 ? "custom" : "cmd";
-                if (Settings.NormalizeShell(_config.Command.Shell) == shell) return;
-                _config.Command.Shell = shell;
-                Raise("ShellIndex");
-                Raise("CustomShellEnabled");
-                Raise("PromptPreview");
-                Raise("Summary");
-            }
-        }
-
-        public bool CustomShellEnabled
-        {
-            get { return string.Equals(_config.Command.Shell, "custom", StringComparison.OrdinalIgnoreCase); }
-        }
-
-        public string CustomShell
-        {
-            get { return _config.Command.CustomShell; }
-            set
-            {
-                string text = value ?? "";
-                if (_config.Command.CustomShell == text) return;
-                _config.Command.CustomShell = text;
-                Raise("CustomShell");
-                Raise("PromptPreview");
-                Raise("Summary");
-            }
-        }
-
-        public string WorkingDirectory
-        {
-            get { return _config.Command.WorkingDirectory; }
-            set
-            {
-                string text = value ?? "";
-                if (_config.Command.WorkingDirectory == text) return;
-                _config.Command.WorkingDirectory = text;
-                Raise("WorkingDirectory");
-                Raise("PromptPreview");
-                Raise("Summary");
-            }
-        }
-
-        public int MaxLines
-        {
-            get { return _config.Command.MaxLines; }
-            set
-            {
-                int v = Math.Max(1, Math.Min(500, value));
-                if (_config.Command.MaxLines == v) return;
-                _config.Command.MaxLines = v;
-                Raise("MaxLines");
-            }
-        }
-
-        public int TimeoutSeconds
-        {
-            get { return _config.Command.TimeoutSeconds; }
-            set
-            {
-                int v = Math.Max(1, Math.Min(300, value));
-                if (_config.Command.TimeoutSeconds == v) return;
-                _config.Command.TimeoutSeconds = v;
-                Raise("TimeoutSeconds");
-            }
-        }
-
-        public string PromptPreview
-        {
-            get
-            {
-                try { return CommandRunner.BuildPrompt(_config.Command); }
-                catch (Exception ex) { return "(预览失败: " + ex.Message + ")"; }
-            }
-        }
+        // 命令行卡片的设置（工具 / 自定义命令 / 工作目录 / 返回内容 / 提示符预览）
+        // 已搬到模块自己身上：见 src/Cards/CommandCardEditor.cs 与 ICardEditorSection。
 
         // ==================== 媒体卡片 ====================
 

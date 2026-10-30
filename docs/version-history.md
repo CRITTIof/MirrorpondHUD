@@ -1,10 +1,11 @@
-# 版本修改记录（2.4.1 → 2.5.0）
+# 版本修改记录（2.4.1 → 2.6.0）
 
 > 范围：本文只记录**这一轮接手后我做的版本**（v2.4.1 起）。v2.4.0 及更早是既有历史，不在本文档里。
 > 数据全部取自仓库真实提交（`git diff --shortstat <上一版>..<本版>`），文件行的 `+ / -` 就是实际增删行数。
 > 版本状态：`main` 已推送到 GitHub；`v2.4.2`–`v2.4.5` 为附注标签（分别指向 `70343ef` / `aabe441` / `05857ce` / `f4b2b8b`），
 > v2.4.5 已发布 Release（附件为两个 requires-dotnet 单文件），v2.4.0 的 Release 已删除、其 tag 保留。
-> `v2.5.0` 为本次附注标签：**只在本地创建，尚未推送、也还没有 Release**。
+> `v2.5.0` 为附注标签：**只在本地创建，尚未推送、也还没有 Release**。
+> `v2.6.0` 目前只有提交、**没有打标签**（配置结构升到 schema 5，建议先手工回归再发版）。
 
 ## 0. 总览
 
@@ -15,7 +16,8 @@
 | v2.4.3 | 2026-10-28 | `aabe441` | 取图方式进设置（GPU / CPU）；修掉判同帧后 DIB 留未模糊原图导致的闪烁 | 9 文件，+269 / −22 |
 | v2.4.4 | 2026-10-28 | `05857ce` | 模糊图改画进卡片内部，删掉底板窗口（修圆角外扩 / 顶部暗带）；模糊强度 / 帧率 / 取图方式进设置 | 9 文件，+1026 / −1503 |
 | v2.4.5 | 2026-10-30 | `f4b2b8b` | AI 对话与命令行统一成 CLI 交互面板（每条记录独立小面板与滑块）；图标按墨迹居中；拖动时玻璃跟手；主题方案文档 | 23 文件，+1647 / −668 |
-| v2.5.0 | 2026-10-30 | 本次提交 | 模块化评审文档；修命令行打开时其它卡片停更、富内容每次应用设置都重建、每卡一份整份配置副本 | 5 文件，+183 / −30，另新增 2 篇文档（500 + 582 行） |
+| v2.5.0 | 2026-10-30 | `c4e68e2` | 模块化评审文档；修命令行打开时其它卡片停更、富内容每次应用设置都重建、每卡一份整份配置副本 | 5 文件，+183 / −30，另新增 2 篇文档（500 + 582 行） |
+| v2.6.0 | 2026-10-30 | 本次提交 | 卡片设置搬进 `CardSettings.Extras`（schema 5）；模块自带设置区块与校验；命令行卡试点 | 15 文件，+470 / −306，另新增 2 个源文件（45 + 259 行） |
 
 ---
 
@@ -280,7 +282,67 @@ AI 对话卡还是「输入框 + 聊天记录」的普通表单样式，Key 以�
 
 ---
 
-## 7. 不在版本里的东西
+## 7. v2.6.0（本次提交，未打标签）
+
+### 背景
+
+评审文档里的 P1-1 / P1-2：新增一张**带设置项**的卡片，要同时改 `Settings.cs`、`CardModel`、`CardEditor`、
+`SettingsWindow.xaml` 四处（其中三个是 700 ~ 1500 行的巨型文件），「加一个类即可」只在没有设置项的卡片上成立。
+本次把「卡片自己的设置」整体交还给模块，并用命令行卡做试点。
+
+### 改动
+
+1. **`CardSettings` 不再认识具体卡片**：删掉 `Command` 字段，改为 `Extras`（`Dictionary<string, object>`）+
+   `ExtrasAs<T>(key)` / `SetExtras(key, value)`。`Json` 增加 `Dictionary<string, object>` 绑定分支，
+   模块设置按原样落盘、由模块自己强类型解析。
+2. **配置结构 v4 → v5**：`SettingsMigration` 把每张**命令行卡片**旧的 `Command` 子对象搬进 `Extras.command`
+   （其它卡片以前也各带一份拷贝，但从没被读过，不写进新配置）。迁移后立刻回写。
+3. **三个模块契约**（`src/Cards/CardSettingsModule.cs`）：
+   `ICardSettingsModule`（补默认值 / 归一化，`CardModel` 调用）、`ICardEditorSection`（模块自带设置区块）、
+   `ICardSettingsValidator`（模块自带校验，宿主只拼卡片名）。
+4. **命令行卡试点**：设置改从 `Extras.command` 读写；`CommandCardEditor.cs` 用代码搭出原来的设置面板
+   （工具 / 自定义命令 / 工作目录 / 返回内容上限 / 提示符预览）；校验（自定义模板不能为空）也搬进模块。
+5. **设置页瘦身**：`CardEditor` 删掉命令行的 8 个属性，`SettingsWindow.xaml` 删掉 70 行面板，
+   改成一个 `ContentControl` 绑定模块区块；`SettingsWindow.xaml.cs` 删掉两个已无引用的目录选择处理器。
+6. **测试与文档**：`--selftest` 新增「卡片设置=OK」（Extras 读写 + 模块区块创建）；
+   `cards-architecture.md` 更新 JSON 示例与「带设置的卡片」模板；`modularity-review.md` §8.2 记录本轮实施。
+
+### 文件
+
+| 文件 | 行数 | 说明 |
+|---|---|---|
+| `src/Cards/CardSettingsModule.cs` | 新增 45 行 | 三个模块设置契约 |
+| `src/Cards/CommandCardEditor.cs` | 新增 259 行 | 命令行卡自己的设置区块 |
+| `src/Core/Settings.cs` | +46 / −4 | `Extras` + 读写助手，schema 5 |
+| `src/Core/Json.cs` | +5 / −0 | `Dictionary<string, object>` 绑定 |
+| `src/Core/SettingsMigration.cs` | +71 / −16 | v4 → v5 迁移（只搬命令行卡） |
+| `src/Cards/CommandCard.cs` | +50 / −8 | 实现三个契约，设置读写走 `Extras` |
+| `src/Cards/CardModel.cs` | +11 / −2 | 改为调用模块的 `InitializeCard` |
+| `src/Ui/CardEditor.cs` | +48 / −102 | 删命令行属性，加模块区块宿主 |
+| `src/Ui/SettingsWindow.xaml` | +4 / −74 | 70 行面板 → 一个 `ContentControl` |
+| `src/Ui/SettingsWindow.xaml.cs` | +10 / −44 | 传 `_working`、模块校验、删无用处理器 |
+| `src/Ui/OverlayController.cs` | +8 / −8 | 签名改用 `Extras`，`CommandOf` 走模块 |
+| `src/SelfTest.cs` | +38 / −12 | Extras 往返 + 模块区块断言 |
+| `docs/cards-architecture.md` | +53 / −7 | JSON 示例、Extras 说明、带设置卡片模板 |
+| `docs/modularity-review.md` | +57 / −22 | §8.2 实施记录与状态更新 |
+| `MirrorpondHUD.csproj` | +1 / −1 | 版本号 2.5.0 → 2.6.0 |
+
+### 实测
+
+- `dotnet build -c Release`：**0 警告 0 错误**。
+- `--selftest`：**失败项 0**，逻辑自检新增「卡片设置=OK」。
+- **迁移实测**（用真实的 schema 4 配置启动）：日志 `设置已从 SchemaVersion 4 升级到 5（卡片自己的设置搬进 Extras）`；
+  迁移后 `SchemaVersion=5`、5 张卡片 Id 全部保留、`Style` / `Hotkeys` 完全一致、
+  只有命令行卡获得 `Extras.command`（`Shell=cmd` 等旧值保留）、旧的 `Command` 键消失。
+- `--smoke 4 --smoke-visible`：退出码 0，无异常。
+- 未覆盖：设置页里**真实点击**模块区块（布局与交互需要手工确认），清单见 `docs/modularity-review.md` §8.4。
+
+> 注意：schema 5 的配置用 v2.5.0（schema 4）的旧 exe 打开会忽略 `Extras`，命令行卡的设置会显示成默认值。
+> 回退到旧版本前先把 `settings.json` 备份（迁移时也会自动留一份 `.bak`）。
+
+---
+
+## 8. 不在版本里的东西
 
 - 验收脚本、样张与测量脚本（`cmd-e2e.ps1`、`drag-glass.ps1`、`measure-*.py`、`shots/` 等）都在仓库外的 `hud-test/` 里，**没有提交**。
 - 发布：`main` 与标签已推送到 [github.com/CRITTIof/MirrorpondHUD](https://github.com/CRITTIof/MirrorpondHUD)；
@@ -289,7 +351,7 @@ AI 对话卡还是「输入框 + 聊天记录」的普通表单样式，Key 以�
   v2.4.0 的 Release 已删除（tag `v2.4.0` 保留，历史仍可检出）。
 - 仓库追踪的文件共 89 个，`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
 
-## 8. 已知代价（跨版本）
+## 9. 已知代价（跨版本）
 
 - 桌面亚克力为了不拍到自己，会把卡片排除在截屏之外 —— 这个模式下截图 / 录屏里**看不到卡片**，观感只能靠肉眼与离屏渲染验证。
 - 兼容实现每帧对身后窗口做 `PrintWindow`，拖动时最多 ~21 帧/秒；要更高只能走桌面亚克力（DXGI）。

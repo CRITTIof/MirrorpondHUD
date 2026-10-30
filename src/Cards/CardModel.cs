@@ -56,8 +56,13 @@ namespace MirrorpondHUD.Cards
 
                 card.Spacing = Math.Round(Settings.Clamp(card.Spacing, 0, 300));
 
-                if (card.Command == null) card.Command = new CommandSettings();
-                card.Command.Normalize();
+                // 卡片自己的设置（命令行工具 / 目录 / 超时……）由模块自己补默认值与夹紧，
+                // 宿主不再认识 CommandSettings 这种具体类型。
+                if (card.Extras == null)
+                    card.Extras = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+
+                var settingsModule = module as ICardSettingsModule;
+                if (settingsModule != null) settingsModule.InitializeCard(card);
 
                 if (card.Media == null) card.Media = new MediaSettings();
                 card.Media.Normalize();
@@ -122,6 +127,10 @@ namespace MirrorpondHUD.Cards
             };
 
             if (module.IsInteractive) card.Resident = false;
+
+            var settingsModule = module as ICardSettingsModule;
+            if (settingsModule != null) settingsModule.InitializeCard(card);
+
             return card;
         }
 

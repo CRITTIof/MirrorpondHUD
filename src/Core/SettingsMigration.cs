@@ -7,6 +7,7 @@ namespace MirrorpondHUD.Core
     /// 旧版配置 → 当前配置结构。
     /// · 0/1：旧的单窗口配置（全局 Content + 带 X/Y/Visible 的 Cards），走 LegacySettings。
     /// · 2：初版卡片配置（命令行工具是全局设置），把 Settings.Command 拷进每张命令行卡片。
+    /// · 4 → 5：每张命令行卡片的 Command 子对象搬进 CardSettings.Extras["command"]（以后的卡片设置也走这里）。
     /// 迁移只做一次：ConfigStore 升级后立即写回新结构。
     /// </summary>
     internal static class SettingsMigration
@@ -26,21 +27,25 @@ namespace MirrorpondHUD.Core
 
             needsSave = true;
 
-            if (version == 3)
+            if (version >= 3)
             {
-                Settings three = null;
-                try { three = Json.Deserialize<Settings>(json); }
-                catch (Exception ex) { Log.Warn("读取 v3 设置失败: " + ex.Message); }
-                three = three ?? new Settings();
+                Settings modern = null;
+                try { modern = Json.Deserialize<Settings>(json); }
+                catch (Exception ex) { Log.Warn("读取 v" + version + " 设置失败: " + ex.Message); }
+                modern = modern ?? new Settings();
 
-                // 旧默认 1.45 是「字号倍率」时代的值，图标因此比文字高 45%；
+                // v3 → v4：旧默认 1.45 是「字号倍率」时代的值，图标因此比文字高 45%；
                 // 新标定下 1.15 才是「比文字略大一圈」，只在用户没改过默认值时替换。
-                if (three.Style != null && Math.Abs(three.Style.IconScale - 1.45) < 0.005)
+                if (version == 3 && modern.Style != null && Math.Abs(modern.Style.IconScale - 1.45) < 0.005)
                 {
-                    three.Style.IconScale = 1.15;
+                    modern.Style.IconScale = 1.15;
                     Log.Info("设置升级到 SchemaVersion 4：图标倍率 1.45 → 1.15（旧默认值偏大，图标比文字高 45%）");
                 }
-                return three;
+
+                UpgradeCommandToExtras(json, modern);
+                Log.Info("设置已从 SchemaVersion " + version + " 升级到 " + Settings.CurrentSchemaVersion +
+                         "（卡片自己的设置搬进 Extras）");
+                return modern;
             }
 
             if (version == 2)
@@ -88,7 +93,56 @@ namespace MirrorpondHUD.Core
             {
                 if (card == null) continue;
                 if (!string.Equals(card.Kind, "command", StringComparison.OrdinalIgnoreCase)) continue;
-                card.Command = legacy.Clone();
+                card.SetExtras("command", legacy.Clone());
+            }
+        }
+
+        /// <summary>
+        /// v4 及更早：每张命令行卡片的 <c>Command</c> 子对象 → <c>Extras["command"]</c>。
+        /// 只搬命令行卡片，别的卡片以前也带着一份拷贝但从没被读过。
+        /// </summary>
+        static void UpgradeCommandToExtras(string json, Settings settings)
+        {
+            if (settings == null || settings.Cards == null || settings.Cards.Count == 0) return;
+
+            List<object> rawCards = null;
+            try
+            {
+                var root = Json.Parse(json) as Dictionary<string, object>;
+                object raw;
+                if (root != null && root.TryGetValue("Cards", out raw)) rawCards = raw as List<object>;
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("读取旧卡片设置失败: " + ex.Message);
+            }
+
+            if (rawCards == null) return;
+
+            int count = Math.Min(rawCards.Count, settings.Cards.Count);
+            for (int i = 0; i < count; i++)
+            {
+                CardSettings card = settings.Cards[i];
+                if (card == null) continue;
+                if (!string.Equals(card.Kind, "command", StringComparison.OrdinalIgnoreCase)) continue;
+
+                var map = rawCards[i] as Dictionary<string, object>;
+                if (map == null) continue;
+
+                object commandNode;
+                if (!map.TryGetValue("Command", out commandNode) || commandNode == null) continue;
+
+                try
+                {
+                    CommandSettings command = Json.BindNode<CommandSettings>(commandNode);
+                    if (command == null) continue;
+                    command.Normalize();
+                    card.SetExtras("command", command);
+                }
+                catch (Exception ex)
+                {
+                    Log.Warn("迁移卡片命令行设置失败: " + ex.Message);
+                }
             }
         }
 
@@ -149,9 +203,9 @@ namespace MirrorpondHUD.Core
                         Resident = resident,
                         Hotkey = kind == "command" ? commandHotkey : "",
                         Spacing = s.Cards.Count == 0 ? 0 : 16,
-                        Content = old.Content ?? "",
-                        Command = legacyCommand.Clone()
+                        Content = old.Content ?? ""
                     };
+                    if (kind == "command") card.SetExtras("command", legacyCommand.Clone());
 
                     if (kind == "metrics" && string.IsNullOrWhiteSpace(card.Content))
                         card.Content = legacy.Content ?? "";
@@ -176,14 +230,15 @@ namespace MirrorpondHUD.Core
 
             if (!hasCommand)
             {
-                s.Cards.Add(new CardSettings
+                var commandCard = new CardSettings
                 {
                     Kind = "command",
                     Resident = false,
                     Hotkey = commandHotkey,
-                    Spacing = 16,
-                    Command = legacyCommand.Clone()
-                });
+                    Spacing = 16
+                };
+                commandCard.SetExtras("command", legacyCommand.Clone());
+                s.Cards.Add(commandCard);
             }
 
             if (string.IsNullOrWhiteSpace(legacy.Content))

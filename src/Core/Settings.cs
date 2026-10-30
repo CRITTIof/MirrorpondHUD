@@ -10,8 +10,9 @@ namespace MirrorpondHUD.Core
         /// 当前配置结构版本。0/1 是旧的单窗口配置，2 是「命令行设置全局」的初版卡片配置，
         /// 都由 SettingsMigration 升级（3 起命令行工具、工作目录等属于每张命令行卡片）。
         /// 4：图标倍率按「墨迹高度 / 文字高度」重新标定，旧的 1.45 偏大（图标比文字高 45%）。
+        /// 5：卡片自己的设置搬进 <see cref="CardSettings.Extras"/>（先迁命令行卡，旧的 Command 字段不再写盘）。
         /// </summary>
-        public const int CurrentSchemaVersion = 4;
+        public const int CurrentSchemaVersion = 5;
         public int SchemaVersion = 0;
 
         /// <summary>系统信息卡的默认内容：CPU / 内存 / GPU / 网络 / 磁盘，前置 ReiconFont 图标。</summary>
@@ -90,7 +91,7 @@ namespace MirrorpondHUD.Core
             Hotkeys.ToggleLock = NormalizeHotkey(Hotkeys.ToggleLock, "F8");
             Hotkeys.NormalizeCardActions();
 
-            // 命令行工具 / 工作目录不再全局保存：它们属于每张「命令行」卡片（CardSettings.Command），
+            // 命令行工具 / 工作目录不再全局保存：它们属于每张「命令行」卡片（CardSettings.Extras 里的 command），
             // 这样同时放 cmd、pwsh、自定义工具的多张命令行卡片可以各用各的。
 
             if (!IsHexColor(Style.Foreground)) Style.Foreground = "#E6EDF3";
@@ -651,8 +652,49 @@ namespace MirrorpondHUD.Core
         /// <summary>「信息与文本」卡的预设：metrics / clock / keys / text。</summary>
         public string Preset = "metrics";
 
-        /// <summary>命令行卡片自己的工具 / 目录 / 超时设置；每张命令行卡片互不影响。</summary>
-        public CommandSettings Command = new CommandSettings();
+        /// <summary>
+        /// 卡片模块自己的设置（命令行卡是 <c>command</c>，以后媒体卡是 <c>media</c> 等）。
+        /// 键由模块自己定，宿主不解释内容，只负责原样读写 JSON。
+        ///
+        /// 为什么是字典而不是继续加字段：CardSettings 是宿主的通用模型，
+        /// 每多一种带设置的卡片就往这里长一个具体子对象，等于逼宿主认识每个模块（见评审文档 P1-1）。
+        /// </summary>
+        public Dictionary<string, object> Extras = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// 读模块自己的设置；缺省或解析失败都回落到 <typeparamref name="T"/> 的默认值，调用方不用判空。
+        /// 从磁盘读进来时值是原始 JSON 节点，这里做一次强类型绑定；返回的可能是副本，
+        /// 改完要用 <see cref="SetExtras{T}"/> 写回。
+        /// </summary>
+        public T ExtrasAs<T>(string key) where T : class, new()
+        {
+            object raw = null;
+            if (Extras != null && !string.IsNullOrEmpty(key)) Extras.TryGetValue(key, out raw);
+            if (raw == null) return new T();
+
+            var typed = raw as T;
+            if (typed != null) return typed;
+
+            try
+            {
+                T parsed = Json.BindNode<T>(raw);
+                return parsed ?? new T();
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("卡片设置 " + key + " 解析失败: " + ex.Message);
+                return new T();
+            }
+        }
+
+        /// <summary>写回模块自己的设置；传 null 等于删掉这一项，回到模块默认值。</summary>
+        public void SetExtras<T>(string key, T value) where T : class
+        {
+            if (string.IsNullOrEmpty(key)) return;
+            if (Extras == null) Extras = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+            if (value == null) Extras.Remove(key);
+            else Extras[key] = value;
+        }
 
         /// <summary>媒体卡片自己的文件与缩放设置。</summary>
         public MediaSettings Media = new MediaSettings();

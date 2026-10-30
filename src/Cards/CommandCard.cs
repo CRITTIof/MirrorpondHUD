@@ -16,8 +16,11 @@ namespace MirrorpondHUD.Cards
     /// 和 AI 对话卡一样声明 <see cref="NeedsMouseInput"/>：输入框要收键盘，
     /// 所以热键唤起它的时候宿主会把窗口提到前台、把焦点交给输入行。
     /// </summary>
-    public sealed class CommandCard : RichCardModuleBase
+    public sealed class CommandCard : RichCardModuleBase, ICardSettingsModule, ICardEditorSection, ICardSettingsValidator
     {
+        /// <summary>命令行设置存在 <see cref="CardSettings.Extras"/> 里的键名。</summary>
+        public const string SettingsKey = "command";
+
         public override string Kind { get { return "command"; } }
         public override string DisplayName { get { return "命令行"; } }
         public override string Icon { get { return Icons.Terminal; } }
@@ -32,15 +35,54 @@ namespace MirrorpondHUD.Cards
         {
             Settings settings = context == null ? null : context.Settings;
             CardSettings config = context == null ? null : context.Config;
-            CommandSettings command = config == null ? new CommandSettings() : config.Command;
-            if (command == null)
-            {
-                command = new CommandSettings();
-                if (config != null) config.Command = command;
-            }
-            command.Normalize();
 
-            return new CommandView(settings, command);
+            return new CommandView(settings, CommandOf(config));
+        }
+
+        // ==================== 模块自己的设置 ====================
+
+        /// <summary>
+        /// 这张卡片自己的命令行设置。设置住在 <see cref="CardSettings.Extras"/> 里，
+        /// 缺省 / 解析失败都回落到默认值，并立刻写回配置（保存后就有）。
+        /// </summary>
+        public static CommandSettings CommandOf(CardSettings config)
+        {
+            if (config == null) return new CommandSettings();
+
+            CommandSettings command = config.ExtrasAs<CommandSettings>(SettingsKey);
+            command.Normalize();
+            config.SetExtras(SettingsKey, command);
+            return command;
+        }
+
+        // ==================== 模块契约（P1-1 / P1-2） ====================
+
+        /// <inheritdoc />
+        public void InitializeCard(CardSettings config)
+        {
+            if (config == null) return;
+            CommandOf(config);
+        }
+
+        /// <inheritdoc />
+        public FrameworkElement CreateEditor(CardSettings config, Settings settings, Action onChanged)
+        {
+            return CommandCardEditor.Create(config, onChanged);
+        }
+
+        /// <inheritdoc />
+        public string Validate(CardSettings config)
+        {
+            // 这里读原始值，不走 CommandOf：它会 Normalize，把空的模板补成默认值，校验就永远不报了。
+            CommandSettings command = config == null
+                ? new CommandSettings()
+                : config.ExtrasAs<CommandSettings>(SettingsKey);
+
+            if (string.Equals(Settings.NormalizeShell(command.Shell), "custom", StringComparison.OrdinalIgnoreCase) &&
+                string.IsNullOrWhiteSpace(command.CustomShell))
+                return "选择了自定义命令行，但命令模板是空的。";
+
+            return null;
         }
     }
 

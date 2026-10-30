@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -610,7 +610,7 @@ namespace MirrorpondHUD.Ui
                 bool expanded;
                 if (!_expanded.TryGetValue(config.Id, out expanded)) expanded = true;
 
-                var editor = new CardEditor(config, CardRegistry.Get(config.Kind), expanded);
+                var editor = new CardEditor(config, CardRegistry.Get(config.Kind), _working, expanded);
                 string id = config.Id;
                 editor.PropertyChanged += (s, e) =>
                 {
@@ -1023,44 +1023,6 @@ namespace MirrorpondHUD.Ui
             return element.Tag as CardEditor ?? element.DataContext as CardEditor;
         }
 
-        void PickCardWorkDirClick(object sender, RoutedEventArgs e)
-        {
-            CardEditor editor = EditorOf(sender);
-            if (editor == null) return;
-
-            try
-            {
-                using (var dialog = new System.Windows.Forms.FolderBrowserDialog())
-                {
-                    dialog.Description = "选择这张命令行卡片的工作目录";
-                    dialog.ShowNewFolderButton = true;
-
-                    string current = (editor.WorkingDirectory ?? "").Trim();
-                    if (current.Length > 0 && System.IO.Directory.Exists(current))
-                        dialog.SelectedPath = current;
-
-                    if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
-                    {
-                        editor.WorkingDirectory = dialog.SelectedPath;
-                        editor.RefreshSummary();
-                        StatusText.Text = "卡片「" + editor.DisplayName + "」的工作目录已修改";
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Log.Warn("选择工作目录失败: " + ex.Message);
-            }
-        }
-
-        void ClearCardWorkDirClick(object sender, RoutedEventArgs e)
-        {
-            CardEditor editor = EditorOf(sender);
-            if (editor == null) return;
-            editor.WorkingDirectory = "";
-            editor.RefreshSummary();
-        }
-
         void PickMediaFileClick(object sender, RoutedEventArgs e)
         {
             CardEditor editor = EditorOf(sender);
@@ -1418,10 +1380,14 @@ namespace MirrorpondHUD.Ui
             {
                 if (card == null) continue;
 
-                if (card.Command != null &&
-                    string.Equals(Settings.NormalizeShell(card.Command.Shell), "custom", StringComparison.OrdinalIgnoreCase) &&
-                    string.IsNullOrWhiteSpace(card.Command.CustomShell))
-                    return "卡片「" + card.Name + "」选择了自定义命令行，但命令模板是空的。";
+                // 卡片自己的设置由模块自己校验（宿主不再认识「自定义命令行」这种具体规则）。
+                var validator = CardRegistry.Get(card.Kind) as ICardSettingsValidator;
+                if (validator != null)
+                {
+                    string cardError = validator.Validate(card);
+                    if (!string.IsNullOrEmpty(cardError))
+                        return "卡片「" + card.Name + "」" + cardError;
+                }
 
                 if (card.Media != null &&
                     !string.IsNullOrWhiteSpace(card.Media.Path) &&
