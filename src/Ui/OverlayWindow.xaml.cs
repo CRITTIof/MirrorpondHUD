@@ -10,6 +10,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using MirrorpondHUD.Core;
+using MirrorpondHUD.Ui.Controls;
 
 namespace MirrorpondHUD.Ui
 {
@@ -55,6 +56,10 @@ namespace MirrorpondHUD.Ui
         bool _dragging;
         Point _dragStartScreen;
         Point _dragStartWindow;
+        /// <summary>拖动中已经排队了一帧背景重取样（每个合成帧最多一次）。</summary>
+        bool _dragFrameQueued;
+        /// <summary>上一次重设「截屏排除」的时间：拖动时每个鼠标移动都会走到那里，不节流会卡成幻灯片。</summary>
+        DateTime _lastExclude = DateTime.MinValue;
 
         MenuItem _menuSettings;
         MenuItem _menuToggle;
@@ -70,9 +75,6 @@ namespace MirrorpondHUD.Ui
         /// <summary>拖动结束：参数是窗口相对拖动起点的位移（DIP）与所在的显示器序号。</summary>
         public event Action<double, double, int> Moved;
         public event Action CommandLineRequested;
-        public event Action<string, int> CommandTextChanged;
-        public event Action CommandSubmitted;
-        public event Action CommandCancelled;
         /// <summary>窗口重新置顶后触发，富内容（视频子窗口）需要据此重新摆正 z 序。</summary>
         public event Action RaisedTopmost;
 
@@ -177,6 +179,10 @@ namespace MirrorpondHUD.Ui
 
         // ==================== 快捷命令行 ====================
 
+        /// <summary>
+        /// 命令行面板是卡片里的富内容（和 AI 对话同一套），所以在窗口层只需要：
+        /// 允许自己被激活 → 抢到前台 → 把键盘焦点交给面板的输入行。
+        /// </summary>
         public void BeginCommandInput()
         {
             if (!_handleReady || _commandMode) return;
@@ -187,20 +193,20 @@ namespace MirrorpondHUD.Ui
             UpdateClickThrough();
             Focusable = true;
 
-            CommandInput.IsEnabled = true;
-            CommandInput.Text = "";
-            CommandInput.Visibility = Visibility.Visible;
-            InputMethod.SetIsInputMethodEnabled(CommandInput, false);
-
             Activate();
             IntPtr hwnd = new WindowInteropHelper(this).Handle;
             bool foreground = Native.ForceForeground(hwnd);
 
-            Keyboard.Focus(CommandInput);
-            CommandInput.Focus();
+            // 等这一轮布局 / 激活走完再要焦点，否则 Focus 会被随后的激活流程抢走。
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                ICliFocusTarget target = Surface.ContentElement as ICliFocusTarget;
+                if (target != null) target.FocusInput();
 
-            Log.Info("命令行模式：前台=" + foreground +
-                     "，键盘焦点=" + ReferenceEquals(Keyboard.FocusedElement, CommandInput));
+                Log.Info("命令行模式：前台=" + foreground +
+                         "，键盘焦点在面板输入行=" +
+                         (target != null && Keyboard.FocusedElement is UIElement));
+            }), DispatcherPriority.Input);
         }
 
         public void EndCommandInput()
@@ -208,8 +214,6 @@ namespace MirrorpondHUD.Ui
             if (!_commandMode) return;
 
             _commandMode = false;
-            CommandInput.IsEnabled = false;   // 失能后键盘不会再落到这个隐藏输入框
-            CommandInput.Text = "";
 
             Keyboard.ClearFocus();
             Focusable = false;
@@ -225,42 +229,6 @@ namespace MirrorpondHUD.Ui
             _previousForeground = IntPtr.Zero;
 
             Log.Info("命令行模式结束");
-        }
-
-        public void SetCommandText(string text)
-        {
-            CommandInput.Text = text ?? "";
-            CommandInput.CaretIndex = CommandInput.Text.Length;
-        }
-
-        void CommandInputTextChanged(object sender, TextChangedEventArgs e)
-        {
-            Action<string, int> handler = CommandTextChanged;
-            if (handler != null) handler(CommandInput.Text ?? "", CommandInput.CaretIndex);
-        }
-
-        void CommandInputSelectionChanged(object sender, RoutedEventArgs e)
-        {
-            Action<string, int> handler = CommandTextChanged;
-            if (handler != null) handler(CommandInput.Text ?? "", CommandInput.CaretIndex);
-        }
-
-        void CommandInputPreviewKeyDown(object sender, KeyEventArgs e)
-        {
-            if (!_commandMode) return;
-
-            if (e.Key == Key.Enter)
-            {
-                e.Handled = true;
-                Action handler = CommandSubmitted;
-                if (handler != null) handler();
-            }
-            else if (e.Key == Key.Escape || e.Key == Key.F9)
-            {
-                e.Handled = true;
-                Action handler = CommandCancelled;
-                if (handler != null) handler();
-            }
         }
 
         public bool IsCommandInputActive { get { return _commandMode; } }
@@ -408,6 +376,7 @@ namespace MirrorpondHUD.Ui
             if (!_acrylicActive) return;
 
             _acrylicActive = false;
+            _lastExclude = DateTime.MinValue;
             GlassFeed.Detach(this);
             GlassFeed.ExcludeFromCapture(this, false);
         }
@@ -470,8 +439,14 @@ namespace MirrorpondHUD.Ui
             _acrylicActive = true;
 
             // 取样的是屏幕：卡片（连同 owner 是它的子窗口，比如视频窗）必须先排除在截屏之外。
-            // 每次都塞一遍，是为了照顾之后才创建出来的子窗口。
-            GlassFeed.ExcludeFromCapture(this, true);
+            // 这活儿要 EnumWindows 全表 + 逐个 SetWindowDisplayAffinity，拖动时每个鼠标移动都会走到这里，
+            // 不节流会把 UI 线程占满、取样反而停住（表现就是"拖动时背景不刷新"）。2 秒重设一次足够覆盖新建的子窗口。
+            if (first || (DateTime.UtcNow - _lastExclude).TotalSeconds >= 2.0)
+            {
+                GlassFeed.ExcludeFromCapture(this, true);
+                _lastExclude = DateTime.UtcNow;
+            }
+
             GlassFeed.Attach(this, OnAcrylicBackdropUnavailable);
 
             if (first) Log.Info("毛玻璃背景已启用（桌面亚克力：截屏 + 模糊后画进卡片，卡片不进截图）");
@@ -563,6 +538,19 @@ namespace MirrorpondHUD.Ui
 
         bool _glassBusy;
 
+        /// <summary>
+        /// 兼容实现每画出一帧玻璃就记一条 GLAS 时间戳（MIRRORPOND_GLASS_TRACE=1）。
+        /// 卡片排除在截屏之外以后没法靠截图验收，只能靠这种时间戳量刷新节奏。
+        /// </summary>
+        bool TraceGlassFrames
+        {
+            get
+            {
+                string value = Environment.GetEnvironmentVariable("MIRRORPOND_GLASS_TRACE");
+                return value == "1" || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
+            }
+        }
+
         void CaptureGlass()
         {
             if (BackdropActive) return;                     // 系统底板接管时不抓屏
@@ -611,7 +599,12 @@ namespace MirrorpondHUD.Ui
                     Dispatcher.BeginInvoke(new Action(() =>
                     {
                         _glassBusy = false;
-                        if (image != null) Surface.SetGlass(image);
+                        if (image != null)
+                        {
+                            Surface.SetGlass(image);
+                            if (TraceGlassFrames)
+                                Log.Info("GLAS " + DateTime.Now.ToString("HH:mm:ss.fff") + " hwnd=" + hwnd.ToInt64());
+                        }
                     }));
                 }
                 catch
@@ -656,6 +649,34 @@ namespace MirrorpondHUD.Ui
 
             Left = _dragStartWindow.X + (now.X - _dragStartScreen.X) / sx;
             Top = _dragStartWindow.Y + (now.Y - _dragStartScreen.Y) / sy;
+
+            QueueDragFrame();
+        }
+
+        /// <summary>
+        /// 拖动中补一帧背景：位置变了但取样还停在设置里的刷新帧率（默认 10 帧 = 100 ms 一格），
+        /// 画面会像粘在卡片上。这里按合成帧合并成一次，渲染优先级执行（输入事件处理完之后），
+        /// 拖动期间背景跟着桌面走，松手后恢复按设置刷新。
+        /// </summary>
+        void QueueDragFrame()
+        {
+            if (_dragFrameQueued) return;
+
+            bool acrylic = _settings.Style.Acrylic;
+            string mode = Settings.NormalizeGlassMode(_settings.Style.GlassMode);
+            bool dwm = acrylic && mode == "Dwm" && !_acrylicUnavailable;
+            bool compat = acrylic && !dwm && !BackdropActive;   // 兼容实现（截屏拼接）
+
+            if (!dwm && !compat) return;
+
+            _dragFrameQueued = true;
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                _dragFrameQueued = false;
+                if (!_dragging) return;
+                if (dwm) GlassFeed.RequestFrame(false);
+                else if (compat) CaptureGlass();
+            }), DispatcherPriority.Render);
         }
 
         protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
@@ -680,6 +701,7 @@ namespace MirrorpondHUD.Ui
             int monitor = DetectMonitor();
 
             CaptureGlass();
+            GlassFeed.RequestFrame(true);
 
             Action<double, double, int> handler = Moved;
             if (handler != null) handler(dx, dy, monitor);

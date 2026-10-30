@@ -1,4 +1,4 @@
-﻿<Window x:Class="MirrorpondHUD.Ui.OverlayWindow"
+<Window x:Class="MirrorpondHUD.Ui.OverlayWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="clr-namespace:MirrorpondHUD.Ui"
@@ -19,25 +19,5 @@
     <!-- 背景 Transparent 让投影留白区域也能接住鼠标，否则贴边拖动会"没反应" -->
     <Grid Background="Transparent">
         <ui:OverlaySurface x:Name="Surface" />
-
-        <!-- 命令行输入：完全透明，只用来接收键盘（含输入法、粘贴、撤销） -->
-        <TextBox x:Name="CommandInput"
-                 Width="2" Height="2"
-                 HorizontalAlignment="Left" VerticalAlignment="Top"
-                 Opacity="0"
-                 IsEnabled="False"
-                 IsHitTestVisible="False"
-                 FocusVisualStyle="{x:Null}"
-                 Background="Transparent"
-                 BorderThickness="0"
-                 Foreground="Transparent"
-                 CaretBrush="Transparent"
-                 AcceptsReturn="False"
-                 AcceptsTab="False"
-                 MaxLines="1"
-                 InputMethod.IsInputMethodEnabled="False"
-                 TextChanged="CommandInputTextChanged"
-                 SelectionChanged="CommandInputSelectionChanged"
-                 PreviewKeyDown="CommandInputPreviewKeyDown" />
     </Grid>
 </Window>

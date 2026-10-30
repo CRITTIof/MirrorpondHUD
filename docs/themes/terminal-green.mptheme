@@ -1,0 +1,45 @@
+{
+  "schema": 1,
+  "name": "终端绿",
+  "author": "MirrorpondHUD",
+  "description": "近黑底 + 荧光绿字，复古终端；等宽字体统一到 Consolas",
+  "appearance": {
+    "colors": {
+      "foreground": "#9BFFB0",
+      "background": "#06120A",
+      "backgroundOpacity": 0.9,
+      "accent": "#37E06B",
+      "danger": "#FF6B6B",
+      "muted": 0.5,
+      "border": 0.18,
+      "panel": 0.05,
+      "scrollbar": 0.24,
+      "scrollbarHot": 0.45
+    },
+    "typography": {
+      "fontFamily": "Consolas, Microsoft YaHei UI",
+      "monoFont": "Consolas, Microsoft YaHei UI",
+      "fontSize": 15,
+      "bold": false,
+      "iconScale": 1.1,
+      "lineHeight": 0,
+      "textAlign": "Left"
+    },
+    "shape": {
+      "cornerRadius": 6,
+      "padding": 12,
+      "shadow": false
+    },
+    "outline": {
+      "enabled": false,
+      "color": "#000000",
+      "thickness": 1
+    },
+    "cliPanel": {
+      "maxWidth": 520,
+      "maxHeight": 460,
+      "entryMaxHeight": 160,
+      "maxEntries": 12
+    }
+  }
+}

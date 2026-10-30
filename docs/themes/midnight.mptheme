@@ -1,0 +1,45 @@
+{
+  "schema": 1,
+  "name": "午夜霓虹",
+  "author": "MirrorpondHUD",
+  "description": "深蓝黑底 + 冷白字，滑块淡，最接近当前默认外观",
+  "appearance": {
+    "colors": {
+      "foreground": "#E6EDF3",
+      "background": "#0D1117",
+      "backgroundOpacity": 0.86,
+      "accent": "#4C8DFF",
+      "danger": "#E57B6E",
+      "muted": 0.45,
+      "border": 0.12,
+      "panel": 0.045,
+      "scrollbar": 0.18,
+      "scrollbarHot": 0.4
+    },
+    "typography": {
+      "fontFamily": "Microsoft YaHei UI",
+      "monoFont": "Cascadia Mono, Consolas, Microsoft YaHei UI",
+      "fontSize": 15,
+      "bold": false,
+      "iconScale": 1.15,
+      "lineHeight": 0,
+      "textAlign": "Left"
+    },
+    "shape": {
+      "cornerRadius": 10,
+      "padding": 14,
+      "shadow": false
+    },
+    "outline": {
+      "enabled": false,
+      "color": "#000000",
+      "thickness": 1.2
+    },
+    "cliPanel": {
+      "maxWidth": 460,
+      "maxHeight": 420,
+      "entryMaxHeight": 140,
+      "maxEntries": 12
+    }
+  }
+}

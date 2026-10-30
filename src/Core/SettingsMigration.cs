@@ -26,6 +26,23 @@ namespace MirrorpondHUD.Core
 
             needsSave = true;
 
+            if (version == 3)
+            {
+                Settings three = null;
+                try { three = Json.Deserialize<Settings>(json); }
+                catch (Exception ex) { Log.Warn("读取 v3 设置失败: " + ex.Message); }
+                three = three ?? new Settings();
+
+                // 旧默认 1.45 是「字号倍率」时代的值，图标因此比文字高 45%；
+                // 新标定下 1.15 才是「比文字略大一圈」，只在用户没改过默认值时替换。
+                if (three.Style != null && Math.Abs(three.Style.IconScale - 1.45) < 0.005)
+                {
+                    three.Style.IconScale = 1.15;
+                    Log.Info("设置升级到 SchemaVersion 4：图标倍率 1.45 → 1.15（旧默认值偏大，图标比文字高 45%）");
+                }
+                return three;
+            }
+
             if (version == 2)
             {
                 Settings two = null;

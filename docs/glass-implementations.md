@@ -279,6 +279,33 @@ CPU（4 张卡，20 秒平均，占单核）：**5 帧 3.4%、10 帧约 6–8%�
 
 `EnumWindows` 里已经找不到 `MirrorpondHUD.AcrylicBackdrop` 类的窗口了。
 
+### 4.6 2.4.5：拖动时玻璃跟着桌面走
+
+用户报「拖动卡片时背景不刷新」，两个原因都能量化：
+
+1. 拖动时每个鼠标移动都会触发 `LocationChanged → UpdateBackdrop → ExcludeFromCapture`，
+   而它要 `EnumWindows` 全表 + 逐个 `SetWindowDisplayAffinity`（还带一次 `DwmFlush` 级别的合成同步），
+   UI 线程被这些调用占满，取样定时器反而被推迟 —— 表现就是「越拖越冻」；
+2. 取样仍按设置里的刷新帧率走（默认 10 帧/秒 = 100 ms 一格），而拖动是每帧都在动，
+   100 ms 的滞后看起来就是「背景粘在卡片上」。
+
+改法：拖动中按合成帧补帧 + 把截屏排除节流到 2 秒一次（新建的视频子窗口仍然会被覆盖到）：
+
+- `OverlayWindow.QueueDragFrame()`：拖动中每个鼠标移动只排一次队，用 `DispatcherPriority.Render`
+  合并成「这一帧只取一次」（输入事件处理完之后才取样，拿到的是移动后的窗口位置）；
+- `GlassFeed.RequestFrame(bool force)`：立刻补一帧，节流按后端给 —— 桌面复制一轮 1–2 ms，按 16 ms
+  （约 60 帧/秒）；GDI 读屏一轮 18 ms，按 55 ms，免得把拖动本身拖慢；
+- 松手时 `RequestFrame(true)` 再补一帧，保证落地就是最新画面。
+
+实测（合成鼠标拖动 1.2 秒，`MIRRORPOND_RAW_TRACE=1` 的时间戳统计）：
+
+| 模式 | 静止 | 拖动中 |
+| --- | --- | --- |
+| 桌面亚克力（DXGI 桌面复制） | 9.2 帧/秒（按设置的 10） | **34.8 帧/秒**（平均间隔 28.7 ms） |
+| 兼容实现（PrintWindow 拼接） | 5.6–6.3 帧/秒/卡 | **21.1 帧/秒**（被拖动那张卡；受 PrintWindow 单帧成本限制） |
+
+`Key` 的一点：`RequestFrame` 只在有窗口挂接时才动作，所以关掉毛玻璃后不会多跑任何东西。
+
 ## 5. 所以要怎么选
 
 - **先别开**。需要「卡片像玻璃」的观感，只调「背景不透明度」就能拿到 90% 的效果，CPU 为 0。
@@ -406,6 +433,13 @@ Two things worth recording from later work:
   two windows were off by a pixel or two. The acrylic settings (blur radius 18 px, refresh rate 10 fps, capture backend)
   are now exposed in the UI; idle CPU scales linearly with the rate (3.4% at 5 fps, ~6–8% at 10 fps, 7.7% at 15 fps on
   one core for four cards).
+- **2.4.5** keeps the glass updating while a card is dragged. Two measured causes: every `LocationChanged` re-ran the
+  capture exclusion (`EnumWindows` + `SetWindowDisplayAffinity` per window, which starved the sampling timer), and
+  sampling still ticked at the configured 10 fps while the window moved every frame. The exclusion is now throttled to
+  once every 2 s, and a drag queues one extra frame per composition pass at `DispatcherPriority.Render`
+  (`GlassFeed.RequestFrame`, throttled to 16 ms on the duplication backend and 55 ms on the GDI backend). Measured
+  frame rate: desktop acrylic 9.2 fps idle → **34.8 fps while dragging**; compat 5.6–6.3 fps per card idle → **21.1 fps**
+  for the dragged card (bounded by `PrintWindow` cost).
 
 ## 5. So what should you do
 

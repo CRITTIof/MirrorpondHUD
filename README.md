@@ -32,11 +32,12 @@
 - **按顺序堆叠** — 设置页里的顺序就是叠层上的顺序；第一张对齐到锚点，其余按各自的「与上方卡片间距」向下排列，解锁后拖动任意一张会移动整叠；「对齐方式」可选自动 / 左对齐 / 右对齐，让所有卡片共线的是卡片边缘而不是文字边缘
 - **实时数据** — CPU / GPU / 磁盘 / 网络 / 内存 / 分区空间 / 时间 / 运行时长，PDH 性能计数器采样，独立线程不卡 UI
 - **模板化内容** — `{cpu:0.0}%`、`{net_down}`、`{cpu_icon} CPU {cpu:0.0}%`，支持 .NET 格式串与对齐；每张卡片单独编辑内容
-- **Reicon 图标** — 内嵌 [ReiconFont](https://github.com/CRITTIof/reicon-font)：87 个键帽字形、软件 / 硬件 / 界面图标；CPU、GPU、RAM、ROM、网络上下行图标已接入信息显示，设置页的页签与增删移动按钮也使用它。图标字号默认放大到正文的 1.45 倍，视觉高度与文字一致，不用为了图标把整行字号调大
+- **Reicon 图标** — 内嵌 [ReiconFont](https://github.com/CRITTIof/reicon-font)：87 个键帽字形、软件 / 硬件 / 界面图标；CPU、GPU、RAM、ROM、网络上下行图标已接入信息显示，设置页的页签与增删移动按钮也使用它。图标大小按正文的 1.15 倍（1.0 = 与文字等高），垂直方向按字形墨迹自动居中，不用为了图标把整行字号调大
 - **按键显示** — 全局键盘钩子，最近按键、重复折叠（`A×6`）、最大字符数限制，按键以键帽字形显示
 - **快捷命令行** — 命令行是一张普通卡片，按自己的热键展开；**工具 / 工作目录 / 超时都在这张卡片自己身上**，所以可以同时放 CMD、PowerShell、WSL 三张卡片各用各的
+- **CLI 交互面板** — AI 对话与命令行现在是**同一套面板**（终端版式、同一套角色与滑块）：每一条命令 / 每一轮问答都是一块**内部小面板**，各带自己的滚动条，互不挤占；整块面板的宽度、高度上限、小面板高度、最多保留条数都在「外观 → CLI 交互面板」里调
 - **媒体卡片** — 一张卡片显示图片 / 位图 / 动图（GIF）/ 视频，可调缩放方式、宽高、透明度、循环、静音、倍速，并可选择是否按外观的圆角裁圆；卡片顶部显示文件名（过长省略），视频底部带播放进度条；系统解不开的视频会自动改用 ffmpeg
-- **AI 对话卡片** — 一张**命令行样式**的终端卡：第一行模型名、第二行 `>` 提示符输入、下面是等宽字体的问答记录。走 OpenAI 兼容接口，**每张卡自己一套**接口地址 / 模型 / Key（所以能同时挂两个模型）；单次（每次不带历史）与轮询（保留上下文连续对话）用全局热键切换，卡片上不放按钮
+- **AI 对话卡片** — 一张**命令行样式**的终端卡：第一行模型名、第二行 `>` 提示符输入、下面每轮问答各一块内部小面板（各自滚动）。走 OpenAI 兼容接口，**每张卡自己一套**接口地址 / 模型 / Key（所以能同时挂两个模型）；单次（每次不带历史）与轮询（保留上下文连续对话）用全局热键切换，卡片上不放按钮
 - **Key 加密** — API Key 用 Windows DPAPI（当前用户）加密后再写进 `settings.json`，文件里只有 `dpapi:…` 密文；设置页也不回显，已填过就显示「已填写 API Key，重新输入以更换」
 - **毛玻璃背景** — 三种实现：**系统亚克力**（卡片下面一块独立底板，DWM / GPU 实时模糊身后的桌面与窗口，进程侧零开销）、**兼容**（按像素拼出卡片后面的画面再缩小模糊，任何 Windows 都能用、半径可调）和**桌面亚克力**（DWM 材质底板自己截屏，能糊到动态壁纸 / 视频这类 `PrintWindow` 抓不到的东西，代价是**卡片不会出现在截图里**）。**默认关闭、暂不推荐**——见 [docs/glass-implementations.md](docs/glass-implementations.md)
 - **外观可调** — 字体字号、图标倍率、描边、背景图、透明度、圆角、投影、固定宽度；尺寸只增不减，数值变化时不跳动
@@ -46,7 +47,7 @@
 
 ## 🚀 快速开始
 
-**下载即用**：到 [Releases](https://github.com/CRITTIof/MirrorpondHUD/releases) 下载最新版 `v2.4.4`。
+**下载即用**：到 [Releases](https://github.com/CRITTIof/MirrorpondHUD/releases) 下载最新版 `v2.4.5`。
 自 v2.1.0 起只提供**需要手动安装 .NET 8 桌面运行时**的版本（体积小）；先装运行时，再双击 exe：
 
 | 文件 | 适用 | 说明 |
@@ -126,15 +127,16 @@ PATH 与常见安装目录，把找到的 ffmpeg / mpv / VLC 列出来。
 按命令行卡片的热键（默认 `F9`）展开卡片，提示符格式为 `[工具] [工作目录] >`，工具名统一大写，PowerShell 显示为 **PWSH**。
 
 - **每张命令行卡片有自己的工具设置**：CMD / Windows PowerShell / PowerShell 7 / 自定义模板（`{cmd}` 占位），
-  外加自己的工作目录、行截断、最多行数、超时。想同时用 CMD 和 WSL，就加两张命令行卡片，各配各的热键
-- 命令在后台线程执行，返回内容**原样打印**，然后给出新提示符，可连续执行多条
-- 单行过长时只保留**后面** N 个字符并加 `…`（可关闭），也可限制最多保留多少行
+  外加自己的工作目录、单条输出上限、超时。想同时用 CMD 和 WSL，就加两张命令行卡片，各配各的热键
+- 命令在后台线程执行，**每条命令一块内部小面板**：上面是提示符与命令，下面是返回内容，超出「内部小面板最大高度」后
+  这块小面板用自己的滚动条滚（不会和其他命令挤在一根滑块上）；返回内容按原文换行显示，不再截断单行
 - 默认 20 秒超时，超时强制结束；输出先按 UTF-8 解码，失败退回系统 OEM 代码页（中文不乱码）
 - **再按一次该热键（或 `Esc`）退出**，清空命令与返回，卡片收起
 - 启动动画期间会先结束动画再打开
 
 
-输入框里的输入法被刻意关闭，保证命令按原样输入；支持方向键、`Home` / `End`、`Ctrl+V`、`Ctrl+Z`。
+输入框里的输入法被刻意关闭（中文输入法开着时回车只会确认候选词，命令发不出去）；支持方向键、`Home` / `End`、`Ctrl+V`、`Ctrl+Z`。
+命令行面板的**外观与 AI 对话卡片完全一致**：同一套标题行、状态行、颜色与滚动条，尺寸统一在「设置 → 外观 → CLI 交互面板」里调。
 
 ## 🤖 AI 对话卡片
 
@@ -197,10 +199,11 @@ mock-chat-1                                        [轮询]
 
 ```json
 {
-  "SchemaVersion": 3,
-  "Overlay": { "X": 1483, "Y": 127, "Monitor": 0, "Locked": true },
+  "SchemaVersion": 4,
+  "Overlay": { "X": 1483, "Y": 127, "Monitor": 0, "Locked": true, "CornerRadius": 10 },
   "Style": { "FontFamily": "JetBrains Mono NL", "FontSize": 15, "BackgroundOpacity": 0.3,
-             "IconScale": 1.45, "Acrylic": false, "AcrylicBlur": 12, "AcrylicFps": 15 },
+             "IconScale": 1.15, "Acrylic": false, "AcrylicBlur": 12, "AcrylicFps": 15 },
+  "Cli": { "MaxWidth": 460, "MaxHeight": 420, "EntryMaxHeight": 140, "MaxEntries": 12 },
   "Cards": [
     {
       "Id": "3f6c...",
@@ -254,13 +257,16 @@ publish.bat        :: 生成 publish\ 下的四个单文件
 
 ## ⚠️ 已知限制
 
-- 多张命令行卡片各自独立：各自的历史、输入、工具与超时，但**同一时间只有一张能处于输入状态**
+- 多张命令行卡片各自独立：各自的历史、输入、工具与超时（历史在面板自己身上，收起时清空），
+  但**同一时间只有一张能处于输入状态**
+- CLI 面板（AI 对话 / 命令行）的宽度由「外观 → CLI 交互面板 → 最大宽度」决定，不再按文字长度自动量宽；
+  每条记录各带自己的滚动条，整块面板超过「最大高度」后由外层滚动条接管
 - 卡片结构（增删 / 排序 / 常驻 / 热键 / 内容）和外观都在「保存并应用」后生效
 - 媒体卡片的视频优先用系统 Media Foundation 解码；解不开（mkv / webm / av1 …）且检测到 ffmpeg 时，
   自动改用 ffmpeg 逐帧解码并画回卡片。系统解码路径用 `MediaElement` 自己的声音；ffmpeg 路径的
   声音由第二条 ffmpeg 进程转成 PCM、经 winmm 输出，两端都支持 0.25–4× 变速
 - 视频子窗口在跟随卡片的独立窗口里播放（分层窗口画不出 `MediaElement`），因此视频区域不支持卡片内拖动、点击
-- AI 对话卡片和按钮演示卡片需要收鼠标 / 键盘，所以**不点击穿透**：鼠标落在卡片上的点击不会传给桌面（其余卡片照旧穿透）
+- AI 对话卡片、命令行卡片和按钮演示卡片需要收鼠标 / 键盘，所以**不点击穿透**：鼠标落在卡片上的点击不会传给桌面（其余卡片照旧穿透）
 - AI 对话的上下文只在内存里：卡片隐藏、重建或重启就清空；轮询模式最多带最近 12 条消息
 - API Key 用 DPAPI（当前用户）加密存储，**换 Windows 用户或换机器后解不开**，需要重新填写；`settings.json` 里只有密文
 - 模型回答目前是**非流式**（整段返回后才显示），没有打字机效果
@@ -293,6 +299,7 @@ assets/keycaps/          ReiconFont 与映射文档
 
 - [docs/cards-architecture.md](docs/cards-architecture.md) — 模块化卡片架构、富内容契约与扩展方式
 - [docs/glass-implementations.md](docs/glass-implementations.md) — 毛玻璃的两种实现（系统亚克力 / 截屏取样）：各自的毛病与实测数据，中英双语
+- [docs/theme-system.md](docs/theme-system.md) — 外观主题方案：`.mptheme` 单文件格式、字段映射、导入 / 导出与回滚流程（草案 + 三份示例主题）
 - 「热键」页：全局三个热键置顶；媒体卡片单独一组（播放 / 暂停、前进、后退、加速、减速），
   由卡片模块自己声明，新增卡片类型可以注册自己的通用热键
 
@@ -322,10 +329,11 @@ assets/keycaps/          ReiconFont 与映射文档
 - **Stack layout** — list order is screen order; the first card is anchored at a monitor-relative X/Y, every following card keeps its own gap to the previous one; dragging any card moves the whole stack. *Alignment* (auto / left / right) lines up card edges, not text, and *auto* switches sides with the half of the screen the stack sits on
 - **Live metrics** — CPU / GPU / disk / network / memory / drives / uptime through PDH counters on a background thread
 - **Templated content** — `{cpu:0.0}%`, `{net_down}`, `{cpu_icon} CPU {cpu:0.0}%`; every card has its own template
-- **Reicon icons** — embedded [ReiconFont](https://github.com/CRITTIof/reicon-font) keycaps and icons. Icons render at 1.45× the text size by default so they visually match the glyphs — no need to inflate the whole line
+- **Reicon icons** — embedded [ReiconFont](https://github.com/CRITTIof/reicon-font) keycaps and icons. Icons render at 1.15× the text size (1.0 = same height as text) and are vertically centred by their ink bounds — no need to inflate the whole line
 - **Click-through** — the overlay never blocks the desktop unless unlocked with `F8`
-- **Command line cards** — each card owns its tool, working directory and timeout, so a CMD card, a PowerShell card and a WSL card can coexist
-- **AI chat card** — a terminal-styled card: model name on the first line, a `>` prompt input line, monospaced transcript below. Any OpenAI-compatible endpoint; each card owns its base URL, model and key, so two models can run side by side. Single shot vs. context chat is switched with a global hotkey (no buttons on the card)
+- **Command line cards** — each card owns its tool, working directory, output cap and timeout, so a CMD card, a PowerShell card and a WSL card can coexist
+- **CLI panels** — the AI chat and command line cards now share one panel: terminal layout, the same colours and scrollbars. Every command / every Q&A round is its own inner panel with its own scrollbar, so records never fight over one thumb; panel width, height cap, inner-panel cap and how many records to keep live under *Appearance → CLI panel*
+- **AI chat card** — a terminal-styled card: model name on the first line, a `>` prompt input line, one inner panel per Q&A round below. Any OpenAI-compatible endpoint; each card owns its base URL, model and key, so two models can run side by side. Single shot vs. context chat is switched with a global hotkey (no buttons on the card)
 - **Encrypted key storage** — API keys are encrypted with Windows DPAPI (current user) before being written to `settings.json`, which only holds `dpapi:…` blobs; the settings field never echoes the key, it shows *API Key already set, type a new one to replace*
 - **Media cards** — one card per image / bitmap / animated GIF / video, with fit mode, size, opacity, loop, mute, speed and an optional corner-rounding toggle; the card keeps the text-card backing and adds a filename header plus a progress bar under videos; Media Foundation decodes first and ffmpeg takes over when it cannot
 - **Frosted glass** — three implementations: **system acrylic** (a separate backdrop window under each card, blurred live by DWM / the GPU at zero cost in this process), **compat** (windows behind the card are composed per pixel, downscaled and blurred; adjustable radius, works on any Windows) and **desktop acrylic** (a DWM material backdrop that captures the screen itself, so it can blur animated wallpapers and video that `PrintWindow` cannot see — at the cost of the cards never appearing in screenshots). **Off by default and not recommended yet**, see [docs/glass-implementations.md](docs/glass-implementations.md)
@@ -383,7 +391,7 @@ Everything is stored in `settings.json` next to the executable (`SchemaVersion: 
 
 - Only one command card can be in input mode at a time; history and settings are per card
 - Video falls back to ffmpeg when Media Foundation cannot decode it; both paths play audio and support 0.25–4× speed. Video needs the companion window, so the video area does not participate in drag or click handling
-- The AI chat card and the button demo card take mouse / keyboard input, so they are **not click-through**: clicks inside them no longer reach the desktop (other cards still are)
+- The AI chat card, the command line card and the button demo card take mouse / keyboard input, so they are **not click-through**: clicks inside them no longer reach the desktop (other cards still are)
 - AI chat history is memory only — hiding, rebuilding or restarting clears it; context mode carries at most the last 12 messages
 - API keys are DPAPI-encrypted for the current Windows user, so they **cannot be decrypted after switching user or machine** and have to be re-entered; `settings.json` holds ciphertext only
 - Answers are **not streamed** yet (the whole reply appears at once, no typewriter effect)

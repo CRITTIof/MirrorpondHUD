@@ -97,6 +97,9 @@ namespace MirrorpondHUD.Ui
 
         public bool HasContent { get { return _contentLayer.Child != null; } }
 
+        /// <summary>当前富内容控件（宿主用它把焦点交给 CLI 面板的输入行）。</summary>
+        public FrameworkElement ContentElement { get { return _contentLayer.Child as FrameworkElement; } }
+
         public void SetText(string text, bool cursor)
         {
             SetText(text, cursor, -1);

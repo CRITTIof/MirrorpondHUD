@@ -14,8 +14,9 @@
 | `src/Cards/CardRegistry.cs` | 反射扫描本程序集里所有 `ICardModule` 实现，按 `Order` 排序 |
 | `src/Cards/CardModel.cs` | 卡片列表的创建、补全、校验、名称去重 |
 | `src/Cards/InfoTextCard.cs` | 信息与文本卡：系统信息 / 时钟 / 按键 / 文本四个预设 |
-| `src/Cards/CommandCard.cs` / `MediaCard.cs` | 命令行卡（独占键盘）、媒体卡（图片 / 动图 / 视频） |
-| `src/Cards/ChatCard.cs` | AI 对话卡：命令行样式（模型名 + `>` 输入行 + 终端记录），单次 / 轮询走全局热键 |
+| `src/Cards/CommandCard.cs` / `MediaCard.cs` | 命令行卡（富内容面板，见 §9）、媒体卡（图片 / 动图 / 视频） |
+| `src/Cards/ChatCard.cs` | AI 对话卡：和命令行卡同一套 CLI 面板（模型名 + `>` 输入行 + 每条问答一块小面板），单次 / 轮询走全局热键 |
+| `src/Ui/Controls/CliUi.cs` | CLI 面板公共件：面板骨架 `CliPanelView`、内部小面板 `CliEntryPanel`、卡片风格滑块 `CliScrollBars`、取色 `CardPalette` |
 | `src/Cards/ButtonsCard.cs` | 按钮演示卡：验证 `CardButton` / `CardTextBox` 这套卡片控件 |
 | `src/Core/SecretStore.cs` | 敏感字符串加密：Windows DPAPI（当前用户），settings.json 里只落 `dpapi:…` |
 | `src/Ui/Controls/CardButton.cs` | 卡片里的按钮：三种语气 + 三态模板，颜色跟随卡片外观 |
@@ -124,10 +125,11 @@ public sealed class MyMediaCard : RichCardModuleBase
 - `Resident`：常驻；`false` 时必须给 `Hotkey`，否则保存时提示
 - `Spacing`：与上一张**可见**卡片的间距
 - `Content`：内容模板；空 = 用卡片默认内容
-- `Command`：**每张命令行卡片自己的**工具 / 模板 / 工作目录 / 截断 / 行数 / 超时。
+- `Command`：**每张命令行卡片自己的**工具 / 模板 / 工作目录 / 输出上限（`MaxLines`）/ 超时。
   v2 里这些是全局设置，v3 起拆到卡片上，于是 cmd、pwsh、WSL 可以各放一张卡片同时待命
 - `Media`：**每张媒体卡片自己的**文件、缩放方式、宽高、不透明度、循环 / 自动播放 / 静音 / 倍速、
   圆角开关、解码器（`Auto` / `BuiltIn` / `FFmpeg`）与自定义 `ffmpeg.exe` 路径
+- 命令行的**外观与尺寸**不在这里：两块 CLI 面板共用 `Settings.Cli`（最大宽度 / 最大高度 / 内部小面板最大高度 / 最多保留条数）
 - 命令行卡强制 `Resident=false`、无内容模板
 
 旧配置由 `Core/SettingsMigration.cs` 一次性迁移：v0/v1（单窗口，全局 `Content` + `X/Y/Visible`）
@@ -300,7 +302,8 @@ ffmpeg 路线把视频解成逐帧原始像素，什么格式都能放（代价�
 ## 7. 生命周期
 
 `OverlayController` 持有 `List<CardSlot>`，每个 `CardSlot` = `CardSettings` + `ICardModule` + `OverlayWindow`
-+ 富内容控件 + 命令行状态（历史 / 输入 / 取消令牌）。
++ 富内容控件。命令行 / AI 对话面板的**记录与取消令牌都在面板自己身上**（`CliPanelView`），
+宿主只负责「唤起 / 收起」并把键盘焦点交过去。
 
 `ApplySettings` 时按 `Id` 对齐：
 
@@ -356,7 +359,43 @@ ffmpeg 路线把视频解成逐帧原始像素，什么格式都能放（代价�
 | --- | --- |
 | 运行期插件 | `cards/*.dll` + `AssemblyLoadContext` + ApiVersion 校验；先留接口 |
 | 每卡独立样式 | `Style` 目前全局共享（字体、颜色、图标倍率、毛玻璃都是全局）；需要时给 `CardSettings` 加可空的样式覆盖 |
-| 卡片内滚动 | 长内容（问答历史）现在靠固定行高 + 滚动条；嵌套滚动和卡片拖动要协调 |
+| 卡片内滚动 | 长内容现在由 CLI 面板的内部小面板各自滚动（见 §9）；文字卡仍是固定内容，没有内滚动 |
 | 托盘增删 | 现在只能从设置页增删卡片 |
-| 卡片尺寸约束 | 除了 `FixedWidth`，没有最小 / 最大高度；长答案会把卡片撑得很高 |
+| 卡片尺寸约束 | CLI 面板有「最大高度 / 内部小面板最大高度」；文字卡除了 `FixedWidth` 仍然没有高度上限，长答案会把卡片撑得很高 |
+
+## 9. CLI 交互面板（AI 对话 / 命令行）
+
+两块面板是**同一类卡片**：终端样式、同一套版式、同一套滑块与尺寸设置。
+
+```
+CliPanelView（src/Ui/Controls/CliUi.cs）
+├── 标题行     名称（模型名 / shell 工具名）+ 状态徽标（[轮询] / [就绪] / [运行中]）
+├── 分隔线
+├── 记录区     ScrollViewer（外层滑块，超过 Cli.MaxHeight 才出现）
+│   └── CliEntryPanel × N   每轮问答 / 每条命令一块
+│       ├── 自己的内边距与圆角
+│       ├── 自己的 ScrollViewer（超过 Cli.EntryMaxHeight 各自滚动）
+│       └── 自己的滑块
+├── 输入行     `>`（或命令提示符）+ CardTextBox
+└── 状态行     就绪 / 思考中 / 完成 / 出错
+```
+
+- **滑块**：`CliScrollBars.For(foreground)` 按前景色生成一次 `ScrollBar` 样式并缓存，挂到子树的
+  `Resources[typeof(ScrollBar)]` 上 —— 只影响这块面板，不是全局替换；颜色从卡片前景色派生（0.18 / 悬停 0.40）。
+- **尺寸**：`Settings.Cli` = `MaxWidth`（面板宽度，也是上限）、`MaxHeight`（整块上限）、
+  `EntryMaxHeight`（单块记录上限）、`MaxEntries`（最多保留几条）；设置页在「外观 → CLI 交互面板」。
+- **焦点**：`ICliFocusTarget.Begin / FocusInput / Cancel`。命令行是热键唤起的，宿主先让窗口抢到前台，
+  再在 `DispatcherPriority.Input` 把焦点交给面板输入行（等激活流程走完才要焦点，否则会被抢走）。
+  命令行面板**禁用输入法**——中文输入法开着时回车只会确认候选词，命令根本发不出去。
+- **两个子类只差一件事**：`SubmitInput()`。`ChatView` 发 `POST /chat/completions` 并把回答回填进这一轮的小面板；
+  `CommandView` 在后台线程跑 `CommandRunner.Run`，把输出回填进这条命令的小面板。
+- **为什么统一**：以前命令行是 `TextCanvas` 自绘文本 + 窗口里的隐藏输入框，AI 对话是 WPF 控件，两套外观、
+  两套间距；统一之后颜色、间距、滑块、圆角只有一处定义，而且每条记录能独立滚动（以前所有记录挤在一根滑块上）。
+  代价：命令行面板不再按文字长度自动量宽，宽度由 `Cli.MaxWidth` 决定。
+
+验收方式（卡片在桌面亚克力模式下不进截图，所以不能靠屏幕截图）：
+
+- `--screenshot-cards` + `MIRRORPOND_CLI_DEMO=1`：离屏渲染面板，塞两条样张记录，检查内部小面板与两层滑块；
+- F9 端到端：模拟热键唤起 → 敲 `echo hello` → 回车，再截窗口画面，确认焦点、执行、回显（脚本在验收仓库里）。
+
 

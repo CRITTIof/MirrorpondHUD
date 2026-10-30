@@ -1,0 +1,45 @@
+{
+  "schema": 1,
+  "name": "纸白",
+  "author": "MirrorpondHUD",
+  "description": "浅米底 + 墨黑字，日间 / 浅色壁纸用；滑块透明度调高一点才看得见",
+  "appearance": {
+    "colors": {
+      "foreground": "#1F2328",
+      "background": "#F6F3EA",
+      "backgroundOpacity": 0.92,
+      "accent": "#B4560F",
+      "danger": "#B4231B",
+      "muted": 0.55,
+      "border": 0.16,
+      "panel": 0.06,
+      "scrollbar": 0.3,
+      "scrollbarHot": 0.5
+    },
+    "typography": {
+      "fontFamily": "Microsoft YaHei UI",
+      "monoFont": "Consolas, Cascadia Mono, Microsoft YaHei UI",
+      "fontSize": 15,
+      "bold": false,
+      "iconScale": 1.15,
+      "lineHeight": 0,
+      "textAlign": "Left"
+    },
+    "shape": {
+      "cornerRadius": 8,
+      "padding": 14,
+      "shadow": true
+    },
+    "outline": {
+      "enabled": false,
+      "color": "#FFFFFF",
+      "thickness": 1.2
+    },
+    "cliPanel": {
+      "maxWidth": 460,
+      "maxHeight": 420,
+      "entryMaxHeight": 140,
+      "maxEntries": 12
+    }
+  }
+}

@@ -8,6 +8,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using MirrorpondHUD.Cards;
 using MirrorpondHUD.Core;
+using MirrorpondHUD.Ui.Controls;
 using MirrorpondHUD.Media;
 
 namespace MirrorpondHUD.Ui
@@ -15,6 +16,41 @@ namespace MirrorpondHUD.Ui
     /// <summary>离屏渲染成 PNG，用于自动化验收（--screenshot）。</summary>
     public static class Screenshots
     {
+        /// <summary>MIRRORPOND_SETTINGS_SCROLL=1：设置页每一页再拍一张「滚到底」的图。</summary>
+        static bool SettingsScrollDemo
+        {
+            get
+            {
+                string value = Environment.GetEnvironmentVariable("MIRRORPOND_SETTINGS_SCROLL");
+                return value == "1" || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
+            }
+        }
+
+        static ScrollViewer FindScroller(DependencyObject root)
+        {
+            if (root == null) return null;
+            var viewer = root as ScrollViewer;
+            if (viewer != null) return viewer;
+
+            int count = VisualTreeHelper.GetChildrenCount(root);
+            for (int i = 0; i < count; i++)
+            {
+                ScrollViewer found = FindScroller(VisualTreeHelper.GetChild(root, i));
+                if (found != null) return found;
+            }
+            return null;
+        }
+
+        /// <summary>MIRRORPOND_CLI_DEMO=1：给 CLI 面板塞两条样张记录（截图验收用）。</summary>
+        static bool CliDemo
+        {
+            get
+            {
+                string value = Environment.GetEnvironmentVariable("MIRRORPOND_CLI_DEMO");
+                return value == "1" || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
+            }
+        }
+
         public static MetricsSnapshot DemoSnapshot()
         {
             var snap = new MetricsSnapshot
@@ -75,7 +111,7 @@ namespace MirrorpondHUD.Ui
 
                 foreach (CardSettings card in settings.Cards)
                 {
-                    if (card == null || string.Equals(card.Kind, "command", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (card == null) continue;
 
                     ICardModule module = CardRegistry.Get(card.Kind);
                     var surface = new OverlaySurface();
@@ -98,6 +134,30 @@ namespace MirrorpondHUD.Ui
                         var mediaView = view as MediaView;
                         if (mediaView != null && card.Media != null && MediaView.IsVideoPath(card.Media.Path))
                             mediaView.ShowPoster(card.Media.Path);
+
+                        // CLI 面板（AI 对话 / 命令行）平时空着，只有提问 / 跑命令才有记录；
+                        // MIRRORPOND_CLI_DEMO=1 时塞两条样张，才能检查内部小面板和它们自己的滑块。
+                        var cli = view as CliPanelView;
+                        if (cli != null && CliDemo)
+                        {
+                            if (string.Equals(card.Kind, "command", StringComparison.OrdinalIgnoreCase))
+                            {
+                                cli.AddSampleRecord("[CMD] [C:\\Users\\CRITT] > dir /b", true);
+                                cli.AddSampleRecord(
+                                    "Desktop\nDocuments\nDownloads\nMirrorpondHUD\nMusic\nPictures\nVideos\n"
+                                    + "desktop.ini\n\n这条记录故意写得长一点，用来检查内部小面板超过高度上限之后自己的滑块。",
+                                    false);
+                            }
+                            else
+                            {
+                                cli.AddSampleRecord("> 什么是宾语从句？举一个例子，并说明它和定语从句的区别。", true);
+                                cli.AddSampleRecord(
+                                    "宾语从句在句子里充当宾语，用一句话来做宾语。它属于名词性从句的一种。\n\n"
+                                    + "例如：I know that he is right. 里的 that he is right 就是宾语从句。\n"
+                                    + "定语从句修饰名词，宾语从句充当宾语 —— 前者回答「哪一个」，后者回答「什么」。\n"
+                                    + "这条记录故意写得长一点，用来检查内部小面板超过高度上限之后自己的滑块。", false);
+                            }
+                        }
 
                         surface.Apply(settings, "");
                         surface.SetContent(view);
@@ -247,6 +307,8 @@ namespace MirrorpondHUD.Ui
                 window.ShowInTaskbar = false;
                 window.Left = -20000;
                 window.Top = -20000;
+                // 外观页很长，一张图看全：窗口拉到 1560 高再渲染（窗口在屏外，不影响桌面）。
+                window.Height = Math.Max(window.Height, 1560);
                 window.Show();
                 window.UpdateLayout();
 
@@ -283,6 +345,23 @@ namespace MirrorpondHUD.Ui
                         : Path.Combine(dir, stem + "-tab" + tab + ".png");
                     SavePng(rtb, target);
                     Log.Info("已生成设置界面截图: " + target);
+
+                    // MIRRORPOND_SETTINGS_SCROLL=1：把这一页滚到底再拍一张，长页面（外观页）的下半部分才看得到。
+                    if (SettingsScrollDemo)
+                    {
+                        ScrollViewer scroller = FindScroller(root);
+                        if (scroller != null)
+                        {
+                            scroller.ScrollToEnd();
+                            root.UpdateLayout();
+                            Dispatcher.CurrentDispatcher.Invoke(new Action(() => { }), DispatcherPriority.Background);
+
+                            var bottom = new RenderTargetBitmap((int)width, (int)height, 96, 96, PixelFormats.Pbgra32);
+                            bottom.Render(root);
+                            SavePng(bottom, Path.Combine(dir, stem + "-tab" + tab + "-bottom.png"));
+                            Log.Info("已生成设置界面截图（滚到底）: " + stem + "-tab" + tab + "-bottom.png");
+                        }
+                    }
                 }
 
                 window.CloseForReal();

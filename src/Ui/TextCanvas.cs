@@ -29,7 +29,7 @@ namespace MirrorpondHUD.Ui
 
         FontFamily _fontFamily = new FontFamily("Microsoft YaHei UI");
         double _fontSize = 15;
-        double _iconScale = 1.22;
+        double _iconScale = 1.15;
         FontWeight _fontWeight = FontWeights.Normal;
         Brush _foreground = Brushes.White;
         double _lineHeight;
@@ -158,6 +158,7 @@ namespace MirrorpondHUD.Ui
             {
                 if (value == null || value.Equals(_fontFamily)) return;
                 _fontFamily = value;
+                InvalidateMetrics();
                 InvalidateMeasure();
                 InvalidateVisual();
             }
@@ -171,15 +172,17 @@ namespace MirrorpondHUD.Ui
                 value = Math.Max(2, value);
                 if (Math.Abs(_fontSize - value) < 0.01) return;
                 _fontSize = value;
+                InvalidateMetrics();
                 InvalidateMeasure();
                 InvalidateVisual();
             }
         }
 
         /// <summary>
-        /// 图标字号倍率。Reicon 的图标字形在 1em 里画得很小（约 0.6 个汉字高），
-        /// 直接和正文同字号会显得缩水；这里按倍率把图标字形放大，再按基线微调让它和文字居中对齐，
-        /// 因此不需要为了图标把整行字号调大。
+        /// 图标大小倍率：图标字形按「正文同字号」绘制，再乘这个倍率。
+        /// 实测 Reicon 方框字形的墨迹高约 0.74 em，和数字高度（约 0.72 em）基本一致，
+        /// 所以 1.0 = 图标与文字等高；默认 1.15 让图标略大一圈，观感上才不显小。
+        /// 垂直方向不再靠倍率凑，而是逐个字形按墨迹中心对齐正文（见 TextRun.OffsetY）。
         /// </summary>
         public double IconScale
         {
@@ -201,6 +204,7 @@ namespace MirrorpondHUD.Ui
             {
                 if (value == _fontWeight) return;
                 _fontWeight = value;
+                InvalidateMetrics();
                 InvalidateMeasure();
                 InvalidateVisual();
             }
@@ -395,8 +399,13 @@ namespace MirrorpondHUD.Ui
         double LineHeightOf()
         {
             if (_lineHeight > 0) return _lineHeight;
+
             TextRun run = CreateRun("Ag", RunKind.Text);
-            return run.Text.Height > 0 ? run.Text.Height : _fontSize * 1.35;
+            double textHeight = run.Text.Height > 0 ? run.Text.Height : _fontSize * 1.35;
+
+            // 图标放大到超过行高时把行高撑开，否则会被裁掉；正常倍率下这条不生效。
+            double iconRoom = _fontSize * _iconScale * 0.78 + 1;
+            return Math.Max(textHeight, iconRoom);
         }
 
         static List<string> Split(string text)
@@ -419,9 +428,9 @@ namespace MirrorpondHUD.Ui
         {
             public FormattedText Text;
             public double Width;
-            public double Baseline;
             public RunKind Kind;
-            /// <summary>相对基线对齐的额外垂直偏移（图标按倍率放大后需要下移一点才和文字视觉居中）。</summary>
+            public string Source;
+            /// <summary>相对统一基线的额外垂直偏移：图标 / 键帽按「墨迹中心」对齐正文，而不是按字体基线。</summary>
             public double OffsetY;
         }
 
@@ -429,15 +438,27 @@ namespace MirrorpondHUD.Ui
         {
             public readonly List<TextRun> Runs = new List<TextRun>();
             public double Width;
-            public double Baseline;
 
             public void Add(TextRun run)
             {
                 Runs.Add(run);
                 Width += run.Width;
-                if (run.Baseline > Baseline) Baseline = run.Baseline;
             }
         }
+
+        /// <summary>
+        /// 字形墨迹范围缓存（键 = 字体|字号|字重|文本）。对齐图标要用真实墨迹而不是字体度量：
+        /// Reicon 的方框字形在 em 框里上下留白不对称，按 ascent / descent 算出来的中心会偏上。
+        /// </summary>
+        static readonly Dictionary<string, Rect> InkCache = new Dictionary<string, Rect>(StringComparer.Ordinal);
+
+        /// <summary>
+        /// 统一基线（正文数字「0」的基线）。整行所有 run 都排在同一条基线上，图标再按墨迹中心微调；
+        /// 这样不会因为图标放大把整行基线顶下去（之前图标把行高撑出画布、正文跟着下移就是这个原因）。
+        /// </summary>
+        double _refBaseline = double.NaN;
+        /// <summary>正文数字的墨迹中心相对基线的偏移。</summary>
+        double _refInkCenter;
 
         TextRun CreateRun(string text, RunKind kind)
         {
@@ -460,15 +481,71 @@ namespace MirrorpondHUD.Ui
             ft.TextAlignment = TextAlignment.Left;
             ft.Trimming = TextTrimming.None;
 
-            return new TextRun
+            var run = new TextRun
             {
                 Text = ft,
                 Width = ft.WidthIncludingTrailingWhitespace,
-                Baseline = ft.Baseline,
                 Kind = kind,
-                // 图标字形放大后字形中心会比文字中心高一点，按放大出来的差额往下挪 0.3 倍。
-                OffsetY = icon ? (size - _fontSize) * 0.3 : 0
+                Source = text ?? ""
             };
+
+            if (kind != RunKind.Text)
+            {
+                EnsureMetrics();
+                Rect ink = InkBoundsOf(ft, InkKey(family, size, weight, run.Source));
+                if (!ink.IsEmpty && ink.Height > 0)
+                    run.OffsetY = _refInkCenter - (ink.Y + ink.Height / 2 - ft.Baseline);
+            }
+
+            return run;
+        }
+
+        void EnsureMetrics()
+        {
+            if (!double.IsNaN(_refBaseline)) return;
+
+            // 「0」用来量正文的墨迹中心：这些卡片的内容以数字为主，图标对齐数字的视觉中心最稳。
+            TextRun probe = CreateRun("0", RunKind.Text);
+            _refBaseline = probe.Text.Baseline;
+
+            Rect ink = InkBoundsOf(probe.Text, InkKey(_fontFamily, _fontSize, _fontWeight, probe.Source));
+            _refInkCenter = ink.IsEmpty ? 0 : ink.Y + ink.Height / 2 - probe.Text.Baseline;
+        }
+
+        static string InkKey(FontFamily family, double size, FontWeight weight, string text)
+        {
+            return family.Source + "|" + size.ToString("0.###", CultureInfo.InvariantCulture)
+                 + "|" + weight + "|" + text;
+        }
+
+        Rect InkBoundsOf(FormattedText ft, string key)
+        {
+            if (string.IsNullOrEmpty(key)) return Rect.Empty;
+
+            Rect cached;
+            if (InkCache.TryGetValue(key, out cached)) return cached;
+
+            Rect bounds;
+            try
+            {
+                Geometry geometry = ft.BuildGeometry(new Point(0, 0));
+                bounds = geometry != null && !geometry.IsEmpty() ? geometry.Bounds : Rect.Empty;
+            }
+            catch
+            {
+                bounds = Rect.Empty;
+            }
+
+            if (InkCache.Count > 1024) InkCache.Clear();
+            InkCache[key] = bounds;
+            return bounds;
+        }
+
+        /// <summary>字体变了，正文基线 / 墨迹中心要重新量。</summary>
+        void InvalidateMetrics()
+        {
+            _refBaseline = double.NaN;
+            _refInkCenter = 0;
         }
 
         static RunKind KindOf(char c)
@@ -520,25 +597,42 @@ namespace MirrorpondHUD.Ui
         {
             if (ActualWidth <= 0 || ActualHeight <= 0) return;
 
+            EnsureMetrics();
+
             List<string> lines = Split(_text);
             double lineHeight = LineHeightOf();
 
+            // 先量整块：卡片宽度受「只增不减」保护，可能比当前文字宽很多，
+            // 整块按实测尺寸居中，左右留白才对称（之前extra宽度全堆在右边，看着就是"文字没居中"）。
+            var built = new List<TextLine>(lines.Count);
+            double blockWidth = 0;
             for (int i = 0; i < lines.Count; i++)
             {
                 TextLine line = BuildLine(lines[i]);
-                double x = AlignX(line.Width, ActualWidth);
-                double y = i * lineHeight;
+                built.Add(line);
+                if (line.Width > blockWidth) blockWidth = line.Width;
+            }
+
+            double blockHeight = lines.Count * lineHeight;
+            double originX = Math.Max(0, (ActualWidth - blockWidth) / 2);
+            double originY = Math.Max(0, (ActualHeight - blockHeight) / 2);
+
+            for (int i = 0; i < built.Count; i++)
+            {
+                TextLine line = built[i];
+                double x = originX + AlignX(line.Width, blockWidth);
+                double y = originY + i * lineHeight;
 
                 for (int r = 0; r < line.Runs.Count; r++)
                 {
                     TextRun run = line.Runs[r];
-                    // 用基线对齐：键帽 / 图标字体和正文字体的 ascent 不同，按顶部对齐会上下错位。
-                    DrawLine(dc, run.Text, x, y + (line.Baseline - run.Baseline) + run.OffsetY);
+                    // 统一基线 + 每个 run 自己的墨迹微调：正文按基线，键帽 / 图标按视觉中心。
+                    DrawLine(dc, run.Text, x, y + (_refBaseline - run.Text.Baseline) + run.OffsetY);
                     x += run.Width;
                 }
             }
 
-            if (_cursorVisible) DrawCursor(dc, lines, lineHeight);
+            if (_cursorVisible) DrawCursor(dc, lines, lineHeight, originX, originY, blockWidth);
         }
 
         void DrawLine(DrawingContext dc, FormattedText ft, double x, double y)
@@ -577,7 +671,8 @@ namespace MirrorpondHUD.Ui
             }
         }
 
-        void DrawCursor(DrawingContext dc, List<string> lines, double lineHeight)
+        void DrawCursor(DrawingContext dc, List<string> lines, double lineHeight,
+                        double originX, double originY, double blockWidth)
         {
             string style = _cursorStyle ?? "Block";
             if (string.Equals(style, "None", StringComparison.OrdinalIgnoreCase)) return;
@@ -617,12 +712,12 @@ namespace MirrorpondHUD.Ui
             string prefix = line.Substring(0, Math.Max(0, column));
             double lineWidth = BuildLine(line).Width;
             double prefixWidth = BuildLine(prefix).Width;
-            double x = AlignX(lineWidth, ActualWidth) + prefixWidth;
-            double y = lineIndex * lineHeight;
+            double x = originX + AlignX(lineWidth, blockWidth) + prefixWidth;
+            double y = originY + lineIndex * lineHeight;
 
-            double blockWidth = Math.Max(2, _fontSize * 0.55);
-            double blockHeight = Math.Max(3, lineHeight * 0.8);
-            double blockTop = y + (lineHeight - blockHeight) / 2;
+            double caretWidth = Math.Max(2, _fontSize * 0.55);
+            double caretHeight = Math.Max(3, lineHeight * 0.8);
+            double blockTop = y + (lineHeight - caretHeight) / 2;
 
             Brush brush = _foreground ?? Brushes.White;
 
@@ -632,17 +727,17 @@ namespace MirrorpondHUD.Ui
             }
             else if (string.Equals(style, "Underline", StringComparison.OrdinalIgnoreCase))
             {
-                dc.DrawRectangle(brush, null, new Rect(x + 0.5, y + lineHeight - 3, blockWidth, 2));
+                dc.DrawRectangle(brush, null, new Rect(x + 0.5, y + lineHeight - 3, caretWidth, 2));
             }
             else if (string.Equals(style, "Outline", StringComparison.OrdinalIgnoreCase))
             {
                 var pen = new Pen(brush, 1.3);
                 pen.Freeze();
-                dc.DrawRectangle(null, pen, new Rect(x + 1, blockTop, blockWidth, blockHeight));
+                dc.DrawRectangle(null, pen, new Rect(x + 1, blockTop, caretWidth, caretHeight));
             }
             else
             {
-                dc.DrawRectangle(brush, null, new Rect(x + 1, blockTop, blockWidth, blockHeight));
+                dc.DrawRectangle(brush, null, new Rect(x + 1, blockTop, caretWidth, caretHeight));
             }
         }
     }

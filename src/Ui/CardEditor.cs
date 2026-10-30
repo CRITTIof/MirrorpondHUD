@@ -335,32 +335,6 @@ namespace MirrorpondHUD.Ui
             }
         }
 
-        public bool Truncate
-        {
-            get { return _config.Command.Truncate; }
-            set
-            {
-                if (_config.Command.Truncate == value) return;
-                _config.Command.Truncate = value;
-                Raise("Truncate");
-                Raise("MaxLineCharsEnabled");
-            }
-        }
-
-        public bool MaxLineCharsEnabled { get { return _config.Command.Truncate; } }
-
-        public int MaxLineChars
-        {
-            get { return _config.Command.MaxLineChars; }
-            set
-            {
-                int v = Math.Max(20, Math.Min(4000, value));
-                if (_config.Command.MaxLineChars == v) return;
-                _config.Command.MaxLineChars = v;
-                Raise("MaxLineChars");
-            }
-        }
-
         public int MaxLines
         {
             get { return _config.Command.MaxLines; }
@@ -761,18 +735,6 @@ namespace MirrorpondHUD.Ui
                 if (_config.Chat.TimeoutSeconds == v) return;
                 _config.Chat.TimeoutSeconds = v;
                 Raise("ChatTimeoutSeconds");
-            }
-        }
-
-        public double ChatWidth
-        {
-            get { return _config.Chat.Width; }
-            set
-            {
-                double v = Math.Round(Math.Max(220, Math.Min(1200, value)));
-                if (Math.Abs(_config.Chat.Width - v) < 0.001) return;
-                _config.Chat.Width = v;
-                Raise("ChatWidth");
             }
         }
 

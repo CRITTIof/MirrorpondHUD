@@ -240,15 +240,10 @@
                                                             </Grid.ColumnDefinitions>
                                                             <TextBlock Text="返回内容" VerticalAlignment="Center" />
                                                             <WrapPanel Grid.Column="1" Orientation="Horizontal">
-                                                                <CheckBox Content="超长单行截断" IsChecked="{Binding Truncate}"
-                                                                          VerticalAlignment="Center" Margin="0,0,14,0" />
-                                                                <TextBlock Text="单行保留" VerticalAlignment="Center" />
-                                                                <TextBox Width="66" Margin="6,0,6,0" VerticalAlignment="Center"
-                                                                         IsEnabled="{Binding MaxLineCharsEnabled}"
-                                                                         Text="{Binding MaxLineChars, UpdateSourceTrigger=LostFocus}" />
-                                                                <TextBlock Text="字符 · 最多" VerticalAlignment="Center" />
+                                                                <TextBlock Text="输出最多保留" VerticalAlignment="Center" />
                                                                 <TextBox Width="60" Margin="6,0,6,0" VerticalAlignment="Center"
-                                                                         Text="{Binding MaxLines, UpdateSourceTrigger=LostFocus}" />
+                                                                         Text="{Binding MaxLines, UpdateSourceTrigger=LostFocus}"
+                                                                         ToolTip="单条命令的输出超过这个行数就只留最后几行；面板本身可以滚动，这个值只是兜底上限" />
                                                                 <TextBlock Text="行 · 超时" VerticalAlignment="Center" />
                                                                 <TextBox Width="56" Margin="6,0,6,0" VerticalAlignment="Center"
                                                                          Text="{Binding TimeoutSeconds, UpdateSourceTrigger=LostFocus}" />
@@ -433,11 +428,7 @@
                                                             <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
                                                                 <TextBox Width="56" VerticalAlignment="Center"
                                                                          Text="{Binding ChatTimeoutSeconds, UpdateSourceTrigger=LostFocus}" />
-                                                                <TextBlock Text="秒" VerticalAlignment="Center" Margin="6,0,14,0" />
-                                                                <TextBlock Text="宽度" VerticalAlignment="Center" Margin="0,0,6,0" />
-                                                                <TextBox Width="60" VerticalAlignment="Center"
-                                                                         Text="{Binding ChatWidth, UpdateSourceTrigger=LostFocus}" />
-                                                                <TextBlock Text="DIP" VerticalAlignment="Center" Margin="6,0,0,0" />
+                                                                <TextBlock Text="秒" VerticalAlignment="Center" Margin="6,0,0,0" />
                                                             </StackPanel>
                                                         </Grid>
 
@@ -542,7 +533,7 @@
                             <StackPanel Grid.Column="1" Orientation="Horizontal">
                                 <Slider x:Name="IconScaleSlider" Width="260" Minimum="0.6" Maximum="2.2" />
                                 <TextBox x:Name="IconScaleValue" Width="58" Margin="10,0,0,0" TextAlignment="Right" />
-                                <TextBlock Text="× 正文字号（图标字形本身偏小，1.45 ≈ 与文字视觉等高）"
+                                <TextBlock Text="× 正文字号（1.0 = 与文字等高；默认 1.15 略大一圈，按字形墨迹自动垂直居中）"
                                            Style="{StaticResource Hint}" VerticalAlignment="Center"
                                            Margin="12,0,0,0" TextWrapping="Wrap" MaxWidth="330" />
                             </StackPanel>
@@ -603,6 +594,41 @@
                                 <TextBox x:Name="OutlineValue" Width="58" Margin="8,0,0,0" TextAlignment="Right" />
                             </StackPanel>
                         </Grid>
+
+                        <TextBlock Text="CLI 交互面板（AI 对话 / 命令行）" Style="{StaticResource SectionTitle}" Margin="0,18,0,6" />
+
+                        <Grid Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="110" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="面板尺寸" VerticalAlignment="Center" />
+                            <WrapPanel Grid.Column="1" Orientation="Horizontal">
+                                <TextBlock Text="最大宽度" VerticalAlignment="Center" />
+                                <TextBox x:Name="CliWidthBox" Width="62" Margin="6,0,6,0" TextAlignment="Right" />
+                                <TextBlock Text="DIP · 最大高度" VerticalAlignment="Center" />
+                                <TextBox x:Name="CliHeightBox" Width="62" Margin="6,0,6,0" TextAlignment="Right" />
+                                <TextBlock Text="DIP" VerticalAlignment="Center" />
+                            </WrapPanel>
+                        </Grid>
+
+                        <Grid Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="110" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="内部小面板" VerticalAlignment="Center" />
+                            <WrapPanel Grid.Column="1" Orientation="Horizontal">
+                                <TextBlock Text="最大高度" VerticalAlignment="Center" />
+                                <TextBox x:Name="CliEntryBox" Width="62" Margin="6,0,6,0" TextAlignment="Right" />
+                                <TextBlock Text="DIP · 最多保留" VerticalAlignment="Center" />
+                                <TextBox x:Name="CliEntriesBox" Width="52" Margin="6,0,6,0" TextAlignment="Right" />
+                                <TextBlock Text="条记录" VerticalAlignment="Center" />
+                            </WrapPanel>
+                        </Grid>
+
+                        <TextBlock x:Name="CliHint" Style="{StaticResource Hint}" Margin="110,0,0,10"
+                                   Text="两个面板共用这套尺寸：AI 对话每一轮问答、命令行每一条命令都是一块内部小面板，各自超出「小面板最大高度」后用自己的滑块滚动；整块超过「最大高度」后再用外层滑块。" />
 
                         <TextBlock Text="背景" Style="{StaticResource SectionTitle}" Margin="0,18,0,6" />
 

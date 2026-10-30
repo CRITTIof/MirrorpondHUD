@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Threading;
 using MirrorpondHUD.Cards;
 using MirrorpondHUD.Core;
+using MirrorpondHUD.Ui.Controls;
 
 namespace MirrorpondHUD.Ui
 {
@@ -28,19 +29,11 @@ namespace MirrorpondHUD.Ui
         readonly List<string> _args;
         readonly KeyHistory _keys = new KeyHistory();
 
-        sealed class CommandEntry
-        {
-            public string Prompt;
-            public string Command;
-            public string Output;
-            public bool Done;
-        }
-
         sealed class CardSlot
         {
             public CardSettings Config;
             public ICardModule Module;
-            /// <summary>模块同时是富内容卡片时（图片 / 视频）非空。</summary>
+            /// <summary>模块同时是富内容卡片时（图片 / 视频 / CLI 面板）非空。</summary>
             public IRichCardModule Rich;
             public Settings Dialog;
             public OverlayWindow Window;
@@ -50,13 +43,6 @@ namespace MirrorpondHUD.Ui
 
             /// <summary>富内容控件的当前实例（隐藏时保留，设置变化时重建）。</summary>
             public FrameworkElement Content;
-
-            /// <summary>命令行卡片自己的历史与输入：多张命令行卡片各用各的工具和记录。</summary>
-            public readonly List<CommandEntry> Entries = new List<CommandEntry>();
-            public string Input = "";
-            public int Caret;
-            public bool Running;
-            public CancellationTokenSource Cancel;
         }
 
         Settings _settings;
@@ -177,9 +163,6 @@ namespace MirrorpondHUD.Ui
             window.ExitRequested += Exit;
             window.Moved += (dx, dy, monitor) => OnCardMoved(slot, dx, dy, monitor);
             window.CommandLineRequested += () => ToggleCommandLine();
-            window.CommandSubmitted += SubmitCommand;
-            window.CommandCancelled += ExitCommandLine;
-            window.CommandTextChanged += OnCommandInputChanged;
             window.SizeChanged += (s, e) => ScheduleLayout();
             window.RaisedTopmost += () =>
             {
@@ -595,11 +578,7 @@ namespace MirrorpondHUD.Ui
         void RenderNow()
         {
             if (!_overlayVisible) return;
-            if (_commandMode)
-            {
-                RenderCommandLine();
-                return;
-            }
+            if (_commandMode) return;   // 命令行面板自己管刷新（富内容），不用逐帧重画文字
 
             foreach (CardSlot slot in _cards)
             {
@@ -688,18 +667,23 @@ namespace MirrorpondHUD.Ui
         {
             _commandMode = true;
             _commandCard = slot;
-            slot.Entries.Clear();
-            slot.Input = "";
-            slot.Caret = 0;
 
             if (_hook != null) _hook.Suppress = true;
 
             slot.Summoned = true;
-            slot.Window.ResetStableSize();
             ShowCard(slot, "");
             slot.Window.EnsureTopmost();
+            slot.Window.ResetStableSize();
+
+            // 命令行面板是富内容（和 AI 对话同一套 CliPanelView）：开始一次新会话，再让窗口把前台和键盘焦点抢过来。
+            ICliFocusTarget target = slot.Content as ICliFocusTarget;
+            if (target != null)
+            {
+                try { target.Begin(); }
+                catch (Exception ex) { Log.Warn("命令行面板初始化失败: " + ex.Message); }
+            }
+
             slot.Window.BeginCommandInput();
-            RenderCommandLine();
 
             CommandSettings command = CommandOf(slot);
             Log.Info("快捷命令行已打开（卡片=" + slot.Config.Name + " 工具=" + CommandRunner.ToolLabel(command) +
@@ -717,14 +701,13 @@ namespace MirrorpondHUD.Ui
 
             if (slot != null)
             {
-                slot.Running = false;
-                try { slot.Cancel?.Cancel(); } catch { }
-                try { slot.Cancel?.Dispose(); } catch { }
-                slot.Cancel = null;
-
-                slot.Entries.Clear();
-                slot.Input = "";
-                slot.Caret = 0;
+                // 面板自己管着「还在跑的命令」和记录列表，收起前先让它收尾。
+                ICliFocusTarget target = slot.Content as ICliFocusTarget;
+                if (target != null)
+                {
+                    try { target.Cancel(); }
+                    catch (Exception ex) { Log.Warn("命令行收尾失败: " + ex.Message); }
+                }
 
                 slot.Window.EndCommandInput();
                 slot.Window.ResetStableSize();
@@ -744,143 +727,6 @@ namespace MirrorpondHUD.Ui
             if (slot == null || slot.Config == null) return new CommandSettings();
             if (slot.Config.Command == null) slot.Config.Command = new CommandSettings();
             return slot.Config.Command;
-        }
-
-        void OnCommandInputChanged(string text, int caret)
-        {
-            if (!_commandMode || _commandCard == null) return;
-            _commandCard.Input = text ?? "";
-            _commandCard.Caret = caret;
-            RenderCommandLine();
-        }
-
-        string CommandPrompt(CardSlot slot)
-        {
-            return CommandRunner.BuildPrompt(CommandOf(slot));
-        }
-
-        string BuildCommandDisplay(CardSlot slot)
-        {
-            string prompt = CommandPrompt(slot);
-            var sb = new System.Text.StringBuilder(512);
-
-            foreach (CommandEntry entry in slot.Entries)
-            {
-                sb.Append(entry.Prompt).Append('\n');
-                sb.Append(entry.Command).Append('\n');
-
-                if (!entry.Done) sb.Append("(运行中…)").Append('\n');
-                else if (!string.IsNullOrEmpty(entry.Output)) sb.Append(entry.Output).Append('\n');
-
-                sb.Append('\n');
-            }
-
-            sb.Append(prompt).Append('\n');
-            sb.Append(slot.Input ?? "");
-            return sb.ToString();
-        }
-
-        void RenderCommandLine()
-        {
-            CardSlot slot = _commandCard;
-            if (!_commandMode || slot == null) return;
-
-            string text = BuildCommandDisplay(slot);
-            int caret = Math.Max(0, Math.Min(slot.Caret, (slot.Input ?? "").Length));
-            int cursorIndex = text.Length - ((slot.Input ?? "").Length - caret);
-            slot.Window.SetText(text, true, cursorIndex);
-            LayoutIfNeeded();
-        }
-
-        void SubmitCommand()
-        {
-            CardSlot slot = _commandCard;
-            if (!_commandMode || slot == null) return;
-
-            string command = (slot.Input ?? "").Trim();
-            if (command.Length == 0) return;
-
-            var entry = new CommandEntry
-            {
-                Prompt = CommandPrompt(slot),
-                Command = command,
-                Done = false
-            };
-            slot.Entries.Add(entry);
-
-            slot.Input = "";
-            slot.Caret = 0;
-            slot.Window.SetCommandText("");
-            TrimCommandEntries(slot);
-            RenderCommandLine();
-
-            if (slot.Running)
-            {
-                entry.Done = true;
-                entry.Output = "(上一条命令仍在执行，请稍候)";
-                RenderCommandLine();
-                return;
-            }
-
-            slot.Running = true;
-            slot.Cancel = new CancellationTokenSource();
-            CancellationToken token = slot.Cancel.Token;
-
-            // 命令跑在后台线程，用打开这一刻的卡片设置做快照。
-            CommandSettings commandSettings = CommandOf(slot).Clone();
-
-            Task.Run(() =>
-            {
-                CommandResult result = CommandRunner.Run(commandSettings, command, token);
-
-                try
-                {
-                    Application.Current.Dispatcher.BeginInvoke(new Action(() =>
-                    {
-                        entry.Output = CommandRunner.FormatOutput(result, commandSettings);
-                        entry.Done = true;
-                        slot.Running = false;
-
-                        try { slot.Cancel?.Dispose(); } catch { }
-                        slot.Cancel = null;
-
-                        if (!_commandMode || !ReferenceEquals(_commandCard, slot)) return;
-                        TrimCommandEntries(slot);
-                        RenderCommandLine();
-                    }), DispatcherPriority.Background);
-                }
-                catch (Exception ex)
-                {
-                    Log.Warn("命令行结果刷新失败: " + ex.Message);
-                }
-            });
-        }
-
-        void TrimCommandEntries(CardSlot slot)
-        {
-            int max = Math.Max(1, CommandOf(slot).MaxLines);
-            int total = 0;
-            foreach (CommandEntry entry in slot.Entries) total += CountEntryLines(entry);
-
-            while (slot.Entries.Count > 1 && total > max)
-            {
-                CommandEntry first = slot.Entries[0];
-                if (!first.Done) break;
-                total -= CountEntryLines(first);
-                slot.Entries.RemoveAt(0);
-            }
-        }
-
-        static int CountEntryLines(CommandEntry entry)
-        {
-            int lines = 3; // 提示符 + 命令 + 空行
-            if (!entry.Done) return lines + 1;
-            if (string.IsNullOrEmpty(entry.Output)) return lines;
-
-            int count = 1;
-            for (int i = 0; i < entry.Output.Length; i++)
-                if (entry.Output[i] == '\n') count++;
-            return lines + count;
         }
 
         // ==================== 启动动画 ====================
@@ -1518,9 +1364,11 @@ namespace MirrorpondHUD.Ui
 
             foreach (CardSlot slot in _cards)
             {
-                try { slot.Cancel?.Cancel(); } catch { }
-                try { slot.Cancel?.Dispose(); } catch { }
-                slot.Cancel = null;
+                ICliFocusTarget target = slot.Content as ICliFocusTarget;
+                if (target != null)
+                {
+                    try { target.Cancel(); } catch { }
+                }
             }
 
             try { _activation?.Set(); } catch { }

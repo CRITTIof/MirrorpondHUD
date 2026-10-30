@@ -169,6 +169,28 @@ namespace MirrorpondHUD.Ui
             return TimeSpan.FromMilliseconds(1000.0 / Math.Max(2, Math.Min(30, _fps)));
         }
 
+        static DateTime _lastRequest = DateTime.MinValue;
+
+        /// <summary>
+        /// 马上补一帧（拖动、切窗口这类位置快速变化的场合用），帧率上限按取图后端算：
+        /// GPU 桌面复制一轮 1~2 ms，可以按屏幕刷新率补；GDI 读屏一轮 18 ms，补太快会拖慢拖动本身。
+        /// </summary>
+        public static bool RequestFrame(bool force)
+        {
+            lock (Live)
+            {
+                if (Live.Count == 0) return false;
+            }
+
+            DateTime now = DateTime.UtcNow;
+            double minGapMs = _frameSource != null ? 16.0 : 55.0;
+            if (!force && (now - _lastRequest).TotalMilliseconds < minGapMs) return false;
+
+            _lastRequest = now;
+            CaptureAll();
+            return true;
+        }
+
         /// <summary>
         /// 桌面亚克力能不能用。
         /// 以前这里还要检查 DWM 桌面亚克力材质（Windows 11 22H2+ / 系统透明效果），

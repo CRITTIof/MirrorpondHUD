@@ -9,8 +9,9 @@ namespace MirrorpondHUD.Core
         /// <summary>
         /// 当前配置结构版本。0/1 是旧的单窗口配置，2 是「命令行设置全局」的初版卡片配置，
         /// 都由 SettingsMigration 升级（3 起命令行工具、工作目录等属于每张命令行卡片）。
+        /// 4：图标倍率按「墨迹高度 / 文字高度」重新标定，旧的 1.45 偏大（图标比文字高 45%）。
         /// </summary>
-        public const int CurrentSchemaVersion = 3;
+        public const int CurrentSchemaVersion = 4;
         public int SchemaVersion = 0;
 
         /// <summary>系统信息卡的默认内容：CPU / 内存 / GPU / 网络 / 磁盘，前置 ReiconFont 图标。</summary>
@@ -31,6 +32,7 @@ namespace MirrorpondHUD.Core
         /// <summary>叠层锚点：所有卡片从坐标 (X, Y) 开始，按顺序向下堆叠。</summary>
         public OverlaySettings Overlay = new OverlaySettings();
         public StyleSettings Style = new StyleSettings();
+        public CliSettings Cli = new CliSettings();
         public DataSettings Data = new DataSettings();
         public BehaviorSettings Behavior = new BehaviorSettings();
         public HotkeySettings Hotkeys = new HotkeySettings();
@@ -60,6 +62,9 @@ namespace MirrorpondHUD.Core
             Style.GlassFps = (int)Clamp(Style.GlassFps, 2, 30);
             if (string.IsNullOrWhiteSpace(Style.BackgroundImage)) Style.BackgroundImage = "";
             Style.ImageStretch = NormalizeStretch(Style.ImageStretch);
+
+            if (Cli == null) Cli = new CliSettings();
+            Cli.Normalize();
 
             Overlay.Monitor = Math.Max(0, Overlay.Monitor);
             Overlay.CornerRadius = Clamp(Overlay.CornerRadius, 0, 60);
@@ -288,10 +293,11 @@ namespace MirrorpondHUD.Core
         public string CardAlign = "Auto";
 
         /// <summary>
-        /// 图标字号倍率：Reicon 图标字形的实际字形比汉字小一圈，1.0 = 与正文同字号。
-        /// 默认放大到 1.45，图标与文字的视觉高度就一致，不用把整行字号调大。
+        /// 图标大小倍率：图标字形按「正文同字号」绘制，再乘这个倍率（1.0 = 图标与文字等高）。
+        /// 实测 Reicon 方框字形墨迹约 0.74 em、数字约 0.72 em，所以 1.15 就是「图标略大一圈」；
+        /// 垂直方向按墨迹中心对齐正文，不再靠倍率去凑基线。
         /// </summary>
-        public double IconScale = 1.45;
+        public double IconScale = 1.15;
 
         /// <summary>毛玻璃背景：抓取窗口后面的桌面并模糊。背景不透明度决定玻璃厚度。</summary>
         public bool Acrylic = false;
@@ -325,6 +331,45 @@ namespace MirrorpondHUD.Core
         /// <summary>桌面亚克力的刷新帧率（帧/秒）：每帧读一次屏 + 重新模糊。</summary>
         public int GlassFps = 10;
 
+    }
+
+    /// <summary>
+    /// 「CLI 交互面板」的公共尺寸：AI 对话与命令行是同一类面板（终端样式 + 内部小面板记录），
+    /// 所以宽度、整块高度上限、单条记录的高度上限都放在一起，两个面板共用一套参数。
+    /// </summary>
+    public sealed class CliSettings
+    {
+        /// <summary>面板宽度（DIP）：也是宽度上限，卡片不会再按文字长度自己变宽。</summary>
+        public double MaxWidth = 460;
+
+        /// <summary>整块面板的最大高度（DIP）：记录多了之后整块不再长高，改由外层滑块滚动。</summary>
+        public double MaxHeight = 420;
+
+        /// <summary>单个内部小面板（一轮问答 / 一条命令）的最大高度（DIP），超出走它自己的滑块。</summary>
+        public double EntryMaxHeight = 140;
+
+        /// <summary>最多保留几条记录（轮次 / 命令数），超过就把最老的整块扔掉。</summary>
+        public int MaxEntries = 12;
+
+        public CliSettings Clone()
+        {
+            return new CliSettings
+            {
+                MaxWidth = MaxWidth,
+                MaxHeight = MaxHeight,
+                EntryMaxHeight = EntryMaxHeight,
+                MaxEntries = MaxEntries
+            };
+        }
+
+        public void Normalize()
+        {
+            MaxWidth = Settings.Clamp(MaxWidth, 240, 1600);
+            MaxHeight = Settings.Clamp(MaxHeight, 140, 3000);
+            EntryMaxHeight = Settings.Clamp(EntryMaxHeight, 60, 2000);
+            if (EntryMaxHeight > MaxHeight) EntryMaxHeight = MaxHeight;
+            MaxEntries = (int)Settings.Clamp(MaxEntries, 1, 100);
+        }
     }
 
     public sealed class DataSettings
@@ -450,11 +495,14 @@ namespace MirrorpondHUD.Core
         public string CustomShell = "cmd.exe /c {cmd}";
         /// <summary>工作目录；空 = 用户主目录。</summary>
         public string WorkingDirectory = "";
-        /// <summary>单行过长时截断前面、保留后面。</summary>
-        public bool Truncate = true;
-        /// <summary>截断后单行保留的字符数。</summary>
+        /// <summary>
+        /// 旧版「超长单行截断」开关。命令行面板改成会换行的内部小面板之后已经没有设置项了，
+        /// 默认关掉（换行比截断更可读）；字段留着只是为了旧配置能读进来。
+        /// </summary>
+        public bool Truncate = false;
+        /// <summary>截断后单行保留的字符数（只在 <see cref="Truncate"/> 为 true 时生效）。</summary>
         public int MaxLineChars = 120;
-        /// <summary>命令行区域最多保留多少行返回内容。</summary>
+        /// <summary>单条命令的输出最多保留多少行（兜底上限，防止死循环刷屏把内存吃满）。</summary>
         public int MaxLines = 30;
         public int TimeoutSeconds = 20;
 
@@ -645,10 +693,13 @@ namespace MirrorpondHUD.Core
         /// <summary>请求超时（秒）。</summary>
         public int TimeoutSeconds = 60;
 
-        /// <summary>卡片宽度（DIP）。</summary>
+        /// <summary>
+        /// 卡片宽度（DIP）。2.4.5 起由「设置 → 外观 → CLI 交互面板」的宽度统一控制，
+        /// 这个字段只为旧配置能读进来而保留。
+        /// </summary>
         public double Width = 380;
 
-        /// <summary>答案区最多显示多少行（超出滚动）。</summary>
+        /// <summary>答案区最多显示多少行。2.4.5 起由 CLI 面板的「内部小面板最大高度」控制。</summary>
         public int AnswerLines = 8;
 
         public ChatSettings Clone()

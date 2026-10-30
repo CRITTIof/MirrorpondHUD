@@ -66,6 +66,52 @@ namespace MirrorpondHUD.Ui
             BindNumberBox(GlassBlurValue, GlassBlurSlider, "0");
             BindNumberBox(GlassFpsValue, GlassFpsSlider, "0");
             BindNumberBox(IconScaleValue, IconScaleSlider, "0.00");
+            BindCliBoxes();
+        }
+
+        /// <summary>CLI 面板的三个尺寸框：失焦或回车时提交（边打字边重建预览会抖）。</summary>
+        void BindCliBoxes()
+        {
+            TextBox[] boxes = { CliWidthBox, CliHeightBox, CliEntryBox, CliEntriesBox };
+            foreach (TextBox box in boxes)
+            {
+                TextBox captured = box;
+                captured.LostFocus += (s, e) => ApplyCliBoxes();
+                captured.PreviewKeyDown += (s, e) =>
+                {
+                    if (e.Key != Key.Enter) return;
+                    e.Handled = true;
+                    ApplyCliBoxes();
+                };
+            }
+        }
+
+        void ApplyCliBoxes()
+        {
+            if (_working == null || _suppress) return;
+
+            CliSettings cli = _working.Cli ?? (_working.Cli = new CliSettings());
+            cli.MaxWidth = ParseBox(CliWidthBox, cli.MaxWidth);
+            cli.MaxHeight = ParseBox(CliHeightBox, cli.MaxHeight);
+            cli.EntryMaxHeight = ParseBox(CliEntryBox, cli.EntryMaxHeight);
+            cli.MaxEntries = (int)ParseBox(CliEntriesBox, cli.MaxEntries);
+            cli.Normalize();
+
+            CliWidthBox.Text = cli.MaxWidth.ToString("0", CultureInfo.InvariantCulture);
+            CliHeightBox.Text = cli.MaxHeight.ToString("0", CultureInfo.InvariantCulture);
+            CliEntryBox.Text = cli.EntryMaxHeight.ToString("0", CultureInfo.InvariantCulture);
+            CliEntriesBox.Text = cli.MaxEntries.ToString(CultureInfo.InvariantCulture);
+
+            UiChanged();
+        }
+
+        static double ParseBox(TextBox box, double fallback)
+        {
+            double value;
+            if (!double.TryParse((box.Text ?? "").Trim(), NumberStyles.Float,
+                    CultureInfo.CurrentCulture, out value))
+                return fallback;
+            return value;
         }
 
         void BindNumberBox(TextBox box, Slider slider, string format)
@@ -266,6 +312,11 @@ namespace MirrorpondHUD.Ui
                 GlassBlurSlider.Value = s.Style.GlassBlur;
                 GlassFpsSlider.Value = s.Style.GlassFps;
                 UpdateGlassUiState();
+
+                CliWidthBox.Text = s.Cli.MaxWidth.ToString("0", CultureInfo.InvariantCulture);
+                CliHeightBox.Text = s.Cli.MaxHeight.ToString("0", CultureInfo.InvariantCulture);
+                CliEntryBox.Text = s.Cli.EntryMaxHeight.ToString("0", CultureInfo.InvariantCulture);
+                CliEntriesBox.Text = s.Cli.MaxEntries.ToString(CultureInfo.InvariantCulture);
 
                 FontSizeSlider.Value = s.Style.FontSize;
                 IconScaleSlider.Value = s.Style.IconScale;
@@ -777,6 +828,7 @@ namespace MirrorpondHUD.Ui
             foreach (CardEditor editor in _editors) editor.CommitChatApiKey();
 
             Settings s = _working;
+            ApplyCliBoxes();   // 输入框可能还没失焦（直接点了「确定」）
 
             FontItem font = FontCombo.SelectedItem as FontItem ?? _selectedFont;
             if (font != null && !string.IsNullOrWhiteSpace(font.Family)) s.Style.FontFamily = font.Family;
