@@ -14,61 +14,83 @@ namespace MirrorpondHUD.Core
     {
         public static Settings Load(string json, out bool needsSave)
         {
-            needsSave = false;
+            bool corrupted;
+            return Load(json, out needsSave, out corrupted);
+        }
 
-            int version = ReadVersion(json);
-            if (version >= Settings.CurrentSchemaVersion)
+        /// <summary>
+        /// 读设置。<paramref name="corrupted"/> = true 表示 JSON / 绑定失败，调用方应备份损坏文件并尝试 .bak，
+        /// 不能把它当成“旧版本迁移”后静默保存默认值。
+        /// </summary>
+        public static Settings Load(string json, out bool needsSave, out bool corrupted)
+        {
+            needsSave = false;
+            corrupted = false;
+
+            int version;
+            if (!TryReadVersion(json, out version))
             {
-                Settings current = null;
-                try { current = Json.Deserialize<Settings>(json); }
-                catch (Exception ex) { Log.Warn("读取设置失败，使用默认值: " + ex.Message); }
-                return current ?? new Settings();
+                corrupted = true;
+                Log.Warn("设置文件不是合法的 JSON 对象，按损坏处理");
+                return new Settings();
             }
 
-            needsSave = true;
-
-            if (version >= 3)
+            try
             {
-                Settings modern = null;
-                try { modern = Json.Deserialize<Settings>(json); }
-                catch (Exception ex) { Log.Warn("读取 v" + version + " 设置失败: " + ex.Message); }
-                modern = modern ?? new Settings();
-
-                // v3 → v4：旧默认 1.45 是「字号倍率」时代的值，图标因此比文字高 45%；
-                // 新标定下 1.15 才是「比文字略大一圈」，只在用户没改过默认值时替换。
-                if (version == 3 && modern.Style != null && Math.Abs(modern.Style.IconScale - 1.45) < 0.005)
+                if (version >= Settings.CurrentSchemaVersion)
                 {
-                    modern.Style.IconScale = 1.15;
-                    Log.Info("设置升级到 SchemaVersion 4：图标倍率 1.45 → 1.15（旧默认值偏大，图标比文字高 45%）");
+                    Settings current = Json.Deserialize<Settings>(json);
+                    if (current == null) throw new InvalidOperationException("设置根对象为空");
+                    return current;
                 }
 
-                UpgradeCardExtras(json, modern);
-                Log.Info("设置已从 SchemaVersion " + version + " 升级到 " + Settings.CurrentSchemaVersion +
-                         "（卡片自己的设置搬进 Extras）");
-                return modern;
-            }
+                needsSave = true;
 
-            if (version == 2)
+                if (version >= 3)
+                {
+                    Settings modern = Json.Deserialize<Settings>(json);
+                    if (modern == null) throw new InvalidOperationException("设置根对象为空");
+
+                    // v3 → v4：旧默认 1.45 是「字号倍率」时代的值，图标因此比文字高 45%；
+                    // 新标定下 1.15 才是「比文字略大一圈」，只在用户没改过默认值时替换。
+                    if (version == 3 && modern.Style != null && Math.Abs(modern.Style.IconScale - 1.45) < 0.005)
+                    {
+                        modern.Style.IconScale = 1.15;
+                        Log.Info("设置升级到 SchemaVersion 4：图标倍率 1.45 → 1.15（旧默认值偏大，图标比文字高 45%）");
+                    }
+
+                    UpgradeCardExtras(json, modern);
+                    Log.Info("设置已从 SchemaVersion " + version + " 升级到 " + Settings.CurrentSchemaVersion +
+                             "（卡片自己的设置搬进 Extras）");
+                    return modern;
+                }
+
+                if (version == 2)
+                {
+                    Settings two = Json.Deserialize<Settings>(json);
+                    if (two == null) throw new InvalidOperationException("设置根对象为空");
+
+                    UpgradeV2Command(json, two);
+                    UpgradeCardExtras(json, two);
+                    Log.Info("设置已从 SchemaVersion 2 升级到 " + Settings.CurrentSchemaVersion + "（命令行设置改为每张卡片独立）");
+                    return two;
+                }
+
+                LegacySettings legacy = Json.Deserialize<LegacySettings>(json);
+                if (legacy == null) throw new InvalidOperationException("旧设置根对象为空");
+
+                Settings migrated = Migrate(legacy);
+                Log.Info("旧设置已升级到 SchemaVersion " + Settings.CurrentSchemaVersion +
+                         "（卡片 " + migrated.Cards.Count + " 张）");
+                return migrated;
+            }
+            catch (Exception ex)
             {
-                Settings two = null;
-                try { two = Json.Deserialize<Settings>(json); }
-                catch (Exception ex) { Log.Warn("读取 v2 设置失败: " + ex.Message); }
-                two = two ?? new Settings();
-
-                UpgradeV2Command(json, two);
-                UpgradeCardExtras(json, two);
-                Log.Info("设置已从 SchemaVersion 2 升级到 " + Settings.CurrentSchemaVersion + "（命令行设置改为每张卡片独立）");
-                return two;
+                corrupted = true;
+                needsSave = false;
+                Log.Warn("设置解析失败，按损坏处理: " + ex.Message);
+                return new Settings();
             }
-
-            LegacySettings legacy = null;
-            try { legacy = Json.Deserialize<LegacySettings>(json); }
-            catch (Exception ex) { Log.Warn("迁移旧设置失败，使用默认值: " + ex.Message); }
-
-            Settings migrated = Migrate(legacy ?? new LegacySettings());
-            Log.Info("旧设置已升级到 SchemaVersion " + Settings.CurrentSchemaVersion +
-                     "（卡片 " + migrated.Cards.Count + " 张）");
-            return migrated;
         }
 
         /// <summary>v2 的全局命令行设置 → 每张命令行卡片各一份。</summary>
@@ -172,20 +194,27 @@ namespace MirrorpondHUD.Core
             }
         }
 
-        static int ReadVersion(string json)
+        static bool TryReadVersion(string json, out int version)
         {
+            version = -1;
             try
             {
                 var map = Json.Parse(json) as Dictionary<string, object>;
-                if (map == null) return 0;
+                if (map == null) return false;
 
                 object raw;
-                if (!map.TryGetValue("SchemaVersion", out raw) || raw == null) return 0;
-                return (int)Math.Round(Convert.ToDouble(raw, System.Globalization.CultureInfo.InvariantCulture));
+                if (!map.TryGetValue("SchemaVersion", out raw) || raw == null)
+                {
+                    version = 0;
+                    return true;
+                }
+
+                version = (int)Math.Round(Convert.ToDouble(raw, System.Globalization.CultureInfo.InvariantCulture));
+                return true;
             }
             catch
             {
-                return 0;
+                return false;
             }
         }
 

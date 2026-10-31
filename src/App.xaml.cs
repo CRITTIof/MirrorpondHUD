@@ -104,6 +104,13 @@ namespace MirrorpondHUD
             }
 
             Settings settings = ConfigStore.Load();
+            if (!string.IsNullOrEmpty(ConfigStore.LastLoadWarning))
+            {
+                MessageBox.Show(
+                    ConfigStore.LastLoadWarning + "\n\n配置位置：" + ConfigStore.Path,
+                    "镜潭一览 · 设置文件需要处理",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
 
             string smoke = GetOption(args, "--smoke");
             if (smoke != null)

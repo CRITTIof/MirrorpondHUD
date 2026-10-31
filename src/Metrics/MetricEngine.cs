@@ -41,13 +41,19 @@ namespace MirrorpondHUD.Core
 
         readonly PdhQuery _pdh;
         readonly NvidiaSmi _nvidia = new NvidiaSmi();
-        readonly object _gate = new object();
-        readonly List<InstanceValue> _buffer = new List<InstanceValue>(64);
 
-        Settings _settings;
+        // P1-9：
+        //  · _pdhGate 保护 PDH 句柄 —— 采样线程和 UI 线程（设置变更后重新解析适配器）都可能碰；
+        //  · 不再有共享的 _buffer：每次读计数器都用局部 List，UI/采样不会并发 Clear/Add 同一个 List；
+        //  · _settings 用 volatile：UI 线程只换引用，采样线程每轮读一次；
+        //  · _adapterDirty 是 UI → 采样线程的唯一信号：UI 不碰 PDH，只置脏标志。
+        readonly object _pdhGate = new object();
+
+        volatile Settings _settings;
         Thread _thread;
         volatile bool _running;
-        string _resolvedAdapter = "";
+        volatile string _resolvedAdapter = "";
+        volatile bool _adapterDirty;
         DateTime _nextAdapterCheckUtc = DateTime.MinValue;
 
         public event Action<MetricsSnapshot> Updated;
@@ -65,20 +71,25 @@ namespace MirrorpondHUD.Core
             if (_thread != null) return true;
 
             bool any = false;
-            any |= _pdh.TryAdd(CpuPath);
-            any |= _pdh.TryAdd(GpuPath);
-            any |= _pdh.TryAdd(DiskTimePath);
-            any |= _pdh.TryAdd(DiskReadPath);
-            any |= _pdh.TryAdd(DiskWritePath);
-            any |= _pdh.TryAdd(NetRxPath);
-            any |= _pdh.TryAdd(NetTxPath);
+            // P1-9：PDH 句柄统一在 _pdhGate 里访问。
+            lock (_pdhGate)
+            {
+                any |= _pdh.TryAdd(CpuPath);
+                any |= _pdh.TryAdd(GpuPath);
+                any |= _pdh.TryAdd(DiskTimePath);
+                any |= _pdh.TryAdd(DiskReadPath);
+                any |= _pdh.TryAdd(DiskWritePath);
+                any |= _pdh.TryAdd(NetRxPath);
+                any |= _pdh.TryAdd(NetTxPath);
 
-            // 预热：第一次 collect 只是建立基线
-            _pdh.Collect();
+                // 预热：第一次 collect 只是建立基线
+                _pdh.Collect();
+            }
             Thread.Sleep(250);
-            _pdh.Collect();
+            lock (_pdhGate) { _pdh.Collect(); }
 
-            EnsureAdapter(true);
+            // UI 线程不解析适配器：只置脏标志，交给采样线程在第一轮里做（P1-9）。
+            _adapterDirty = true;
 
             _running = true;
             _thread = new Thread(Loop) { IsBackground = true, Name = "MirrorpondHUD.Metrics" };
@@ -90,8 +101,11 @@ namespace MirrorpondHUD.Core
         public void UpdateSettings(Settings settings)
         {
             _settings = settings;
-            _nextAdapterCheckUtc = DateTime.MinValue;
-            EnsureAdapter(true);
+
+            // P1-9：UI 线程（OverlayController 应用设置）只投递「配置已变」标志。
+            // 适配器解析、PDH 读取全部留在采样线程，避免 UI 与采样线程并发碰同一份
+            // PDH 状态 / 同一个 List。
+            _adapterDirty = true;
         }
 
         public void Stop()
@@ -136,12 +150,13 @@ namespace MirrorpondHUD.Core
         {
             Settings s = _settings;
             var snap = new MetricsSnapshot { Timestamp = DateTime.Now };
-            snap.Warmup = _sampleCount++ == 0;
+            snap.Warmup = Interlocked.Increment(ref _sampleCount) == 1;
 
-            bool collected = _pdh.Collect();
+            bool collected;
+            lock (_pdhGate) { collected = _pdh.Collect(); }
             if (!collected) snap.Error = "PDH 采集失败";
 
-            if (s.Data.ShowCpu) snap.CpuPercent = Clamp01(_pdh.ReadSum(CpuPath));
+            if (s.Data.ShowCpu) snap.CpuPercent = Clamp01(ReadSum(CpuPath));
             if (s.Data.ShowGpu) SampleGpu(snap, s);
             if (s.Data.ShowDisk) SampleDisk(snap);
             if (s.Data.ShowNetwork) SampleNetwork(snap);
@@ -161,15 +176,21 @@ namespace MirrorpondHUD.Core
 
         void SampleGpu(MetricsSnapshot snap, Settings s)
         {
-            if (!_pdh.TryRead(GpuPath, _buffer)) return;
+            // 局部 List：原来用共享 _buffer，UI 线程保存设置时可能和采样线程同时
+            // Clear/Add 同一个 List（P1-7..P1-9 里的 P1-9）。
+            var instances = new List<InstanceValue>(64);
+            lock (_pdhGate)
+            {
+                if (!_pdh.TryRead(GpuPath, instances)) return;
+            }
 
             var byLuid = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
             var keys = new List<string>();
             double total = 0;
 
-            for (int i = 0; i < _buffer.Count; i++)
+            for (int i = 0; i < instances.Count; i++)
             {
-                InstanceValue item = _buffer[i];
+                InstanceValue item = instances[i];
                 string luid = ExtractLuid(item.Name);
                 if (!byLuid.TryGetValue(luid, out double acc))
                 {
@@ -182,7 +203,7 @@ namespace MirrorpondHUD.Core
             }
 
             total = Clamp01(total);
-            snap.GpuAvailable = _buffer.Count > 0;
+            snap.GpuAvailable = instances.Count > 0;
 
             int index = s.Data.GpuIndex;
             if (index >= 0 && index < keys.Count)
@@ -209,24 +230,36 @@ namespace MirrorpondHUD.Core
 
         void SampleDisk(MetricsSnapshot snap)
         {
-            snap.DiskPercent = Clamp01(_pdh.ReadSum(DiskTimePath));
-            snap.DiskReadBps = Math.Max(0, _pdh.ReadSum(DiskReadPath));
-            snap.DiskWriteBps = Math.Max(0, _pdh.ReadSum(DiskWritePath));
+            snap.DiskPercent = Clamp01(ReadSum(DiskTimePath));
+            snap.DiskReadBps = Math.Max(0, ReadSum(DiskReadPath));
+            snap.DiskWriteBps = Math.Max(0, ReadSum(DiskWritePath));
+        }
+
+        /// <summary>加锁读一次计数器总和（P1-9：PDH 句柄只在 _pdhGate 里访问）。</summary>
+        double ReadSum(string path)
+        {
+            lock (_pdhGate) { return _pdh.ReadSum(path); }
         }
 
         void SampleNetwork(MetricsSnapshot snap)
         {
-            EnsureAdapter(false);
+            // UI 线程只置 _adapterDirty，适配器解析在采样线程这里做（P1-9）。
+            bool dirty = _adapterDirty;
+            if (dirty) _adapterDirty = false;
+            EnsureAdapter(dirty);
 
             string adapter = _resolvedAdapter;
             snap.NetAdapter = adapter;
             if (string.IsNullOrEmpty(adapter)) return;
 
-            if (_pdh.TryRead(NetRxPath, _buffer))
-                snap.NetDownBps = Math.Max(0, FindValue(_buffer, adapter));
+            // 每次都用局部 List，绝不共享（P1-9）。
+            var rx = new List<InstanceValue>(32);
+            lock (_pdhGate) { _pdh.TryRead(NetRxPath, rx); }
+            if (rx.Count > 0) snap.NetDownBps = Math.Max(0, FindValue(rx, adapter));
 
-            if (_pdh.TryRead(NetTxPath, _buffer))
-                snap.NetUpBps = Math.Max(0, FindValue(_buffer, adapter));
+            var tx = new List<InstanceValue>(32);
+            lock (_pdhGate) { _pdh.TryRead(NetTxPath, tx); }
+            if (tx.Count > 0) snap.NetUpBps = Math.Max(0, FindValue(tx, adapter));
         }
 
         static double FindValue(List<InstanceValue> list, string name)
@@ -251,15 +284,20 @@ namespace MirrorpondHUD.Core
                 _nextAdapterCheckUtc = DateTime.UtcNow.AddSeconds(5);
             }
 
-            string wanted = _settings.Data.NetworkAdapter;
+            Settings current = _settings;
+            string wanted = current == null ? "" : current.Data.NetworkAdapter;
 
-            if (!_pdh.TryRead(NetRxPath, _buffer) || _buffer.Count == 0)
+            // 局部 List（P1-9）：原来传共享 _buffer，UI/采样并发时会与 Clear/Add 撞车。
+            var instances = new List<InstanceValue>(32);
+            lock (_pdhGate) { _pdh.TryRead(NetRxPath, instances); }
+
+            if (instances.Count == 0)
             {
                 _resolvedAdapter = wanted ?? "";
                 return;
             }
 
-            if (!string.IsNullOrEmpty(wanted) && FindValue(_buffer, wanted) >= 0 && HasName(_buffer, wanted))
+            if (!string.IsNullOrEmpty(wanted) && HasName(instances, wanted))
             {
                 _resolvedAdapter = wanted;
                 return;
@@ -267,9 +305,9 @@ namespace MirrorpondHUD.Core
 
             string best = "";
             double bestValue = -1;
-            for (int i = 0; i < _buffer.Count; i++)
+            for (int i = 0; i < instances.Count; i++)
             {
-                InstanceValue item = _buffer[i];
+                InstanceValue item = instances[i];
                 if (!IsRealAdapter(item.Name)) continue;
                 if (item.Value > bestValue)
                 {
@@ -394,8 +432,11 @@ namespace MirrorpondHUD.Core
             }
 
             // 采样线程还在 nvidia-smi 里时关闭 PDH 句柄会抛 NullReferenceException，
-            // 交给进程退出回收即可。
-            if (stopped) _pdh.Dispose();
+            // 交给进程退出回收即可；确认线程退出后也要在锁里关（P1-9）。
+            if (stopped)
+            {
+                lock (_pdhGate) { _pdh.Dispose(); }
+            }
         }
     }
 }

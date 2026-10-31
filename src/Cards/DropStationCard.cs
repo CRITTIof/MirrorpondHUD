@@ -206,9 +206,12 @@ namespace MirrorpondHUD.Cards
     }
 
     /// <summary>中转站的内容控件：标题、列表、拖入高亮、状态行。</summary>
-    internal sealed class StationView : Grid
+    internal sealed class StationView : Grid, IDisposable
     {
         const string StateFile = "items.json";
+
+        /// <summary>写 items.json 的串行锁：新旧视图的完成回调不会交错读改写同一份文件（P1-6）。</summary>
+        static readonly object PersistSync = new object();
 
         Settings _settings;
         readonly CardSettings _config;
@@ -224,6 +227,12 @@ namespace MirrorpondHUD.Cards
         readonly CardDropOverlay _dropOverlay;
         readonly CardJobQueue _jobs = new CardJobQueue(1);
         readonly List<StationItem> _items = new List<StationItem>();
+
+        /// <summary>本视图加载 / 上次写盘时列表里的条目 Id：合并时区分「本视图删的」和「别人新加的」（P1-6）。</summary>
+        readonly HashSet<string> _loadedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>宿主是否已经销毁本视图；销毁后所有后台回调直接丢弃，不再碰控件 / 写盘。</summary>
+        volatile bool _disposed;
 
         Color _foreground = Color.FromRgb(0xE6, 0xED, 0xF3);
         int _copyTotal;
@@ -321,6 +330,32 @@ namespace MirrorpondHUD.Cards
             Rebuild();
             if (_autoRemoved > 0) SetStatus("已自动移除 " + _autoRemoved + " 个丢失项", CardStatusKind.Success);
             else SetStatus(_items.Count == 0 ? "把文件拖进来，或从资源管理器拖入。" : "就绪", CardStatusKind.Normal);
+        }
+
+        /// <summary>
+        /// 宿主销毁视图时调用（应用设置换内容 / 删卡 / 退出；<c>OverlayController.ReleaseContent</c>
+        /// 已经会对 <see cref="IDisposable"/> 调 Dispose）。P1-6：
+        /// · 复制任务比控件活得久：先取消排队和进行中的任务；
+        /// · 停掉 <see cref="CardStatus"/> 内部的 DispatcherTimer，否则旧视图一直被计时器强引用；
+        /// · 置 <see cref="_disposed"/>，让已经排进 Dispatcher 的完成回调和写盘全部作废。
+        ///
+        /// 这里刻意只 CancelAll、不 Dispose 队列本身：CardJobQueue.Dispose 与在飞任务的
+        /// Release 有竞态（评审 P2-10，不在本文件范围），取消后任务自己收尾即可。
+        /// </summary>
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+
+            try { _jobs.CancelAll(); }
+            catch (Exception ex) { Log.Warn("中转站取消复制失败: " + ex.Message); }
+
+            try
+            {
+                _status.SetBusy(false);   // CardStatus 在 Busy 时转 DispatcherTimer，这一步会 Stop
+                _status.SetProgress(null);
+            }
+            catch { }
         }
 
         public void ApplyStyle(Settings settings)
@@ -1036,6 +1071,9 @@ namespace MirrorpondHUD.Cards
 
         void EnqueueCopy(StationItem item)
         {
+            // P1-6：视图已销毁（换接收目录 / 删卡 / 退出）就不再排新任务。
+            if (_disposed) return;
+
             string source = item.Path;
             string directory = _station.Directory;
             string fileName = string.IsNullOrEmpty(item.Name) ? Path.GetFileName(source) : item.Name;
@@ -1054,7 +1092,8 @@ namespace MirrorpondHUD.Cards
 
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
-                    if (_cancelRequested || _copyDone >= _copyTotal) return;
+                    // P1-6：视图可能已销毁，排队的回调直接丢掉。
+                    if (_disposed || _cancelRequested || _copyDone >= _copyTotal) return;
                     _activeName = fileName;
                     _activePercent = 0;
                     _activeSpeed = 0;
@@ -1137,7 +1176,10 @@ namespace MirrorpondHUD.Cards
                                     : 0;
                                 double uiRatio = ratio;
                                 double uiSpeed = speed;
-                                Dispatcher.BeginInvoke(new Action(() => UpdateActiveCopy(fileName, uiRatio, uiSpeed)));
+                                Dispatcher.BeginInvoke(new Action(() =>
+                                {
+                                    if (!_disposed) UpdateActiveCopy(fileName, uiRatio, uiSpeed);
+                                }));
                             }
                         }
                     }
@@ -1164,12 +1206,22 @@ namespace MirrorpondHUD.Cards
 
             job.Task.ContinueWith(task =>
             {
-                Dispatcher.BeginInvoke(new Action(() => CompleteCopy(item, job, target)));
+                // P1-6：视图可能已经被销毁（换接收目录 / 删卡 / 退出），结果只丢弃：
+                // 不再回 UI 线程改列表，也不再整表写盘覆盖新视图。
+                if (_disposed) return;
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    if (_disposed) return;
+                    CompleteCopy(item, job, target);
+                }));
             });
         }
 
         void CompleteCopy(StationItem item, CardJob job, string target)
         {
+            // P1-6：销毁后迟到的完成回调一律忽略（被取消的复制任务也可能走到这里）。
+            if (_disposed) return;
+
             _copyDone++;
             _activeName = null;
             _activePercent = 0;
@@ -1237,7 +1289,7 @@ namespace MirrorpondHUD.Cards
 
         void UpdateActiveCopy(string name, double percent, double speed)
         {
-            if (_cancelRequested || _copyTotal == 0 || _copyDone >= _copyTotal) return;
+            if (_disposed || _cancelRequested || _copyTotal == 0 || _copyDone >= _copyTotal) return;
 
             _activeName = name;
             _activePercent = Math.Max(0, Math.Min(1, percent));
@@ -1308,17 +1360,11 @@ namespace MirrorpondHUD.Cards
 
         void Load()
         {
-            string json = _host != null
-                ? _host.ReadState(StateFile)
-                : CardStateStore.Read(_config.Id, StateFile);
-
-            if (string.IsNullOrEmpty(json)) return;
+            StationState state = ReadState();
+            if (state == null || state.Items == null) return;
 
             try
             {
-                StationState state = Json.Deserialize<StationState>(json);
-                if (state == null || state.Items == null) return;
-
                 foreach (StationItem item in state.Items)
                 {
                     if (item == null || string.IsNullOrEmpty(item.DisplayPath)) continue;
@@ -1328,6 +1374,9 @@ namespace MirrorpondHUD.Cards
                 }
 
                 Trim();
+
+                // 先记下加载基线：之后本视图删掉的条目，写盘合并时不会从磁盘「复活」（P1-6）。
+                RememberLoaded();
 
                 if (_station.AutoRemoveMissing)
                 {
@@ -1346,18 +1395,111 @@ namespace MirrorpondHUD.Cards
             }
         }
 
+        /// <summary>
+        /// 把当前列表写回 items.json。P1-6：复制完成的回调可能晚于新视图写盘，所以不能
+        /// 直接整表覆盖——在读-改-写锁里先读磁盘，按 <see cref="StationItem.Id"/> 合并：
+        /// · 本视图加载时就存在、现在没了的条目 = 本视图删掉的，不复活；
+        /// · 本次加载之后由别的视图新增的条目 = 保留，别抹掉；
+        /// · 同 Id 以本视图为准（本视图持有最新的 StoredPath / Missing）。
+        /// 写成功后把当前列表记为新的「已加载」基线，下一次删除才能正确识别。
+        /// </summary>
         void Persist()
         {
+            // 已销毁的旧视图绝不能再写盘，否则会用旧快照覆盖新视图的结果。
+            if (_disposed) return;
+
             try
             {
-                string json = Json.Serialize(new StationState { Items = _items });
-                if (_host != null) _host.WriteState(StateFile, json);
-                else CardStateStore.Write(_config.Id, StateFile, json);
+                lock (PersistSync)
+                {
+                    StationState merged = MergeWithDisk();
+
+                    string json = Json.Serialize(merged);
+                    if (_host != null) _host.WriteState(StateFile, json);
+                    else CardStateStore.Write(_config.Id, StateFile, json);
+
+                    RememberLoaded();
+                }
             }
             catch (Exception ex)
             {
                 Log.Warn("中转站状态写入失败: " + ex.Message);
             }
+        }
+
+        /// <summary>读磁盘上的状态；没有 / 读坏了返回 null。</summary>
+        StationState ReadState()
+        {
+            try
+            {
+                string json = _host != null
+                    ? _host.ReadState(StateFile)
+                    : CardStateStore.Read(_config.Id, StateFile);
+                if (string.IsNullOrEmpty(json)) return null;
+
+                return Json.Deserialize<StationState>(json);
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("中转站状态解析失败: " + ex.Message);
+                return null;
+            }
+        }
+
+        /// <summary>合并内存列表与磁盘状态（P1-6）。调用方必须持有 <see cref="PersistSync"/>。</summary>
+        StationState MergeWithDisk()
+        {
+            var merged = new List<StationItem>(_items);
+
+            StationState disk = ReadState();
+            if (disk != null && disk.Items != null)
+            {
+                var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (StationItem item in merged)
+                {
+                    if (item == null) continue;
+                    if (!string.IsNullOrEmpty(item.Id)) ids.Add(item.Id);
+                    if (!string.IsNullOrEmpty(item.DisplayPath)) paths.Add(item.DisplayPath);
+                }
+
+                foreach (StationItem item in disk.Items)
+                {
+                    if (item == null || string.IsNullOrEmpty(item.DisplayPath)) continue;
+
+                    if (!string.IsNullOrEmpty(item.Id))
+                    {
+                        if (ids.Contains(item.Id)) continue;          // 本视图有：以本视图为准
+                        if (_loadedIds.Contains(item.Id)) continue;   // 加载过、被本视图删了：不复活
+                    }
+                    else if (paths.Contains(item.DisplayPath))
+                    {
+                        continue;                                      // 旧数据没有 Id：按路径去重
+                    }
+
+                    merged.Add(item);
+                    if (!string.IsNullOrEmpty(item.Id)) ids.Add(item.Id);
+                    paths.Add(item.DisplayPath);
+                }
+            }
+
+            TrimMerged(merged);
+            return new StationState { Items = merged };
+        }
+
+        /// <summary>合并结果按「最多保留」截断最旧的条目（P1-6）。</summary>
+        void TrimMerged(List<StationItem> items)
+        {
+            int max = Math.Max(1, _station.MaxEntries);
+            while (items.Count > max) items.RemoveAt(0);
+        }
+
+        /// <summary>把当前内存列表记为「已加载 / 已写盘」基线（P1-6）。</summary>
+        void RememberLoaded()
+        {
+            _loadedIds.Clear();
+            foreach (StationItem item in _items)
+                if (item != null && !string.IsNullOrEmpty(item.Id)) _loadedIds.Add(item.Id);
         }
 
         void Trim()

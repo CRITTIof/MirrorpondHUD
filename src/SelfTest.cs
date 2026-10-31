@@ -209,6 +209,7 @@ namespace MirrorpondHUD
             bool collapseOk = false;
             bool thresholdOk = false;
             bool configOk = false;
+            bool configRepairOk = false;
             bool cardOk = false;
             bool keyNameOk = false;
             bool keyLimitOk = false;
@@ -217,6 +218,7 @@ namespace MirrorpondHUD
             bool truncateOk = false;
             bool toolLabelOk = false;
             bool secretOk = false;
+            bool chatUrlOk = false;
             bool chatHotkeyOk = false;
             bool settingsEditorOk = false;
             bool stateStoreOk = false;
@@ -414,6 +416,55 @@ namespace MirrorpondHUD
 
             try
             {
+                // P1：顶层块被写成 null 也不能 NRE；损坏 JSON 要标记 corrupted，旧 schema 才算迁移。
+                Settings nullBlocks = Json.Deserialize<Settings>(
+                    "{\"SchemaVersion\":6,\"Style\":null,\"Overlay\":null,\"Cli\":null," +
+                    "\"Data\":null,\"Behavior\":null,\"Hotkeys\":null,\"Cards\":null}");
+                nullBlocks.Normalize();
+                bool nullOk = nullBlocks.Style != null
+                           && nullBlocks.Overlay != null
+                           && nullBlocks.Cli != null
+                           && nullBlocks.Data != null
+                           && nullBlocks.Behavior != null
+                           && nullBlocks.Hotkeys != null
+                           && nullBlocks.Cards != null;
+
+                bool needsSave;
+                bool corrupted;
+                Settings broken = SettingsMigration.Load("{\"SchemaVersion\":6,", out needsSave, out corrupted);
+                bool brokenOk = corrupted && !needsSave && broken != null;
+
+                Settings old = SettingsMigration.Load("{\"SchemaVersion\":1,\"Cards\":[]}",
+                                                      out needsSave, out corrupted);
+                bool oldOk = !corrupted && needsSave && old != null;
+
+                string atomicId = "selftest-atomic-" + Guid.NewGuid().ToString("N");
+                string atomicDir = CardStateStore.DirectoryFor(atomicId);
+                bool atomicOk = false;
+                try
+                {
+                    CardStateStore.Write(atomicId, "state.json", "v1");
+                    CardStateStore.Write(atomicId, "state.json", "v2");
+                    string main = Path.Combine(atomicDir, "state.json");
+                    string current = CardStateStore.Read(atomicId, "state.json");
+                    File.Delete(main);
+                    string recovered = CardStateStore.Read(atomicId, "state.json");
+                    atomicOk = current == "v2" && recovered == "v1";
+                }
+                finally
+                {
+                    try { if (Directory.Exists(atomicDir)) Directory.Delete(atomicDir, true); } catch { }
+                }
+
+                configRepairOk = nullOk && brokenOk && oldOk && atomicOk;
+            }
+            catch (Exception ex)
+            {
+                Log.Error("配置修复自检异常", ex);
+            }
+
+            try
+            {
                 var settings = new Settings();
                 settings.Normalize();
                 CardModel.Normalize(settings);
@@ -526,6 +577,14 @@ namespace MirrorpondHUD
                         && SecretStore.IsProtected(legacy.ApiKey)
                         && legacy.PlainApiKey == secret
                         && uiHidden && uiMasked && uiTyping && uiCommit;
+
+                // P1-10：有 Key 时只允许 https / 本机回环；http 公网与非 http 协议拒绝。
+                chatUrlOk = ChatView.IsSafeEndpoint("https://api.example.com/v1", true)
+                         && !ChatView.IsSafeEndpoint("http://api.example.com/v1", true)
+                         && ChatView.IsSafeEndpoint("http://127.0.0.1:8080/v1", true)
+                         && ChatView.IsSafeEndpoint("http://localhost:11434/v1", true)
+                         && ChatView.IsSafeEndpoint("http://example.com/v1", false)
+                         && !ChatView.IsSafeEndpoint("ftp://example.com/v1", false);
             }
             catch (Exception ex)
             {
@@ -1427,9 +1486,9 @@ namespace MirrorpondHUD
                 Log.Error("文件中转站自检异常", ex);
             }
 
-            if (!(templateOk && unknownOk && collapseOk && thresholdOk && configOk && cardOk &&
+            if (!(templateOk && unknownOk && collapseOk && thresholdOk && configOk && configRepairOk && cardOk &&
                   keyNameOk && keyLimitOk && keyOverflowOk &&
-                  commandOk && truncateOk && toolLabelOk && secretOk && chatHotkeyOk && settingsEditorOk &&
+                  commandOk && truncateOk && toolLabelOk && secretOk && chatUrlOk && chatHotkeyOk && settingsEditorOk &&
                   stateStoreOk && renderOk && glassPolicyOk && themeOk && restyleOk &&
                   themeFileOk && themeRejectOk && themeCatalogOk && activationOk && cloneGuardOk &&
                   restyleHostOk && chatContextOk && singleInteractiveOk && widgetsOk && widgets2Ok &&
@@ -1458,6 +1517,10 @@ namespace MirrorpondHUD
 
             Fix(sb, "外观令牌", themeOk ? "OK（派生值 = 旧 alpha 常量，非法值回落而不是变白）" : "FAIL");
             Fix(sb, "CLI 换肤", restyleOk ? "OK（两张 CLI 卡片支持就地换肤，文字按新前景重算）" : "FAIL");
+            Fix(sb, "配置修复", configRepairOk
+                ? "OK（null 判空 / 损坏标记 / 旧 schema / 状态 .bak 回退）" : "FAIL");
+            Fix(sb, "接口安全", chatUrlOk
+                ? "OK（带 Key 强制 https；仅回环允许 http；非 http 拒绝）" : "FAIL");
             Fix(sb, "主题文件", themeFileOk ? "OK（导出 → 解析 → 套用 → 再导出一致，数字透明度按前景派生）" : "FAIL");
             Fix(sb, "主题文件校验", themeRejectOk ? "OK（高版本 / 坏颜色 / 越界 / 缺 appearance 均拒绝，坏文件不动当前设置）" : "FAIL");
             Fix(sb, "内置主题", themeCatalogOk ? "OK（已编进程序集并全部解析）" : "FAIL");

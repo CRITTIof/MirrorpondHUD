@@ -46,6 +46,15 @@ namespace MirrorpondHUD.Core
         {
             SchemaVersion = CurrentSchemaVersion;
 
+            // 手改 / 损坏的 JSON 会把整块写成 null。先补回空对象，后面的 Clamp 才不会 NRE。
+            if (Style == null) Style = new StyleSettings();
+            if (Overlay == null) Overlay = new OverlaySettings();
+            if (Cli == null) Cli = new CliSettings();
+            if (Data == null) Data = new DataSettings();
+            if (Behavior == null) Behavior = new BehaviorSettings();
+            if (Hotkeys == null) Hotkeys = new HotkeySettings();
+            if (Cards == null) Cards = new List<CardSettings>();
+
             Style.FontSize = Clamp(Style.FontSize, 6, 96);
             Style.BackgroundOpacity = Clamp(Style.BackgroundOpacity, 0, 1);
             Style.Padding = Clamp(Style.Padding, 0, 80);
@@ -65,7 +74,6 @@ namespace MirrorpondHUD.Core
             if (string.IsNullOrWhiteSpace(Style.BackgroundImage)) Style.BackgroundImage = "";
             Style.ImageStretch = NormalizeStretch(Style.ImageStretch);
 
-            if (Cli == null) Cli = new CliSettings();
             Cli.Normalize();
 
             Overlay.Monitor = Math.Max(0, Overlay.Monitor);
@@ -849,11 +857,19 @@ namespace MirrorpondHUD.Core
             }
         }
 
-        /// <summary>填 / 换 Key：进内存前先加密，落盘就只有密文。</summary>
+        /// <summary>填 / 换 Key：进内存前先加密，落盘就只有密文；加密失败则清空，绝不落明文。</summary>
         public void SetApiKey(string plain)
         {
             plain = (plain ?? "").Trim();
-            ApiKey = plain.Length == 0 ? "" : SecretStore.Protect(plain);
+            string stored;
+            if (plain.Length == 0) stored = "";
+            else if (!SecretStore.TryProtect(plain, out stored))
+            {
+                Log.Error("API Key 加密失败，已清空而不是明文保存");
+                stored = "";
+            }
+
+            ApiKey = stored;
             _plainKeySource = null;
             _plainKeyCache = null;
         }
@@ -876,7 +892,17 @@ namespace MirrorpondHUD.Core
             if (ApiKey.Length > 0 && !SecretStore.IsProtected(ApiKey))
             {
                 Log.Info("检测到明文 API Key，转为 DPAPI 加密存储");
-                ApiKey = SecretStore.Protect(ApiKey);
+                string stored;
+                if (SecretStore.TryProtect(ApiKey, out stored))
+                {
+                    ApiKey = stored;
+                }
+                else
+                {
+                    // 加密失败时清空，绝不让明文进入 settings.json / .bak。
+                    Log.Error("明文 API Key 加密失败，已清空");
+                    ApiKey = "";
+                }
                 _plainKeySource = null;
                 _plainKeyCache = null;
             }

@@ -50,6 +50,9 @@ namespace MirrorpondHUD.Media
         StyleSettings _style;
         string _loadedPath;
         string _pendingVideo;
+        // 每次开始一次「探测 + 启动」就递增；await 回来时代号变了说明用户已经换了文件 /
+        // 释放了视频，本次探测结果必须丢弃（否则会给新视频启动一个旧 player）。
+        int _videoRun;
         Size _natural = new Size(320, 180);
         double _cornerRadius = 10;
         double _padX = 14;
@@ -375,16 +378,21 @@ namespace MirrorpondHUD.Media
 
         // ==================== 图片 / 动图 ====================
 
-        void LoadImage(string path)
+        async void LoadImage(string path)
         {
             BitmapSource still = TryLoadBitmap(path);
             string ffmpeg = Decoders.FindFfmpeg(_settings);
 
             // WPF 解不开的格式（webp / avif / heic …）交给 ffmpeg 转一帧出来。
+            // P1-8：走异步 + 整体超时 + Kill(true)，ffmpeg 卡住时不再冻住 UI。
             if (still == null && ffmpeg != null)
             {
                 Log.Info("系统解不开图片，改用 ffmpeg：" + path);
-                still = FfmpegPlayer.ExtractImage(ffmpeg, path);
+                still = await FfmpegPlayer.ExtractImageAsync(ffmpeg, path);
+
+                // await 期间可能已经换了文件 / 卡片被删。
+                if (_disposed) return;
+                if (!string.Equals(_loadedPath, path, StringComparison.OrdinalIgnoreCase)) return;
             }
 
             if (still == null)
@@ -496,31 +504,52 @@ namespace MirrorpondHUD.Media
             if (ffmpeg == null) return;
 
             string captured = path;
-            System.Threading.Tasks.Task.Run(() => FfmpegPlayer.ExtractImage(ffmpeg, captured))
-                .ContinueWith(task =>
-                {
-                    if (task.Status != System.Threading.Tasks.TaskStatus.RanToCompletion) return;
-                    BitmapSource frame = task.Result;
-                    if (frame == null) return;
-
-                    Dispatcher.BeginInvoke(new Action(() =>
-                    {
-                        if (_disposed || _image.Source != null) return;
-                        if (!string.Equals(_loadedPath, captured, StringComparison.OrdinalIgnoreCase)) return;
-                        _image.Source = frame;
-                        _message.Visibility = Visibility.Collapsed;
-                    }));
-                });
+            StartPosterAsync(ffmpeg, captured);
         }
 
-        /// <summary>同步取一帧当封面（离屏截图用：视频没有窗口可渲染）。</summary>
+        /// <summary>
+        /// P1-8：解封面完全在后台完成，ffmpeg 有整体超时 + Kill(true)，
+        /// 结果再回 Dispatcher 上贴；卡住最多是封面晚到 / 不到，不影响 UI。
+        /// </summary>
+        async void StartPosterAsync(string ffmpeg, string captured)
+        {
+            BitmapSource frame = await FfmpegPlayer.ExtractImageAsync(ffmpeg, captured);
+            if (frame == null) return;
+
+            _ = Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (_disposed || _image.Source != null) return;
+                if (!string.Equals(_loadedPath, captured, StringComparison.OrdinalIgnoreCase)) return;
+                _image.Source = frame;
+                _message.Visibility = Visibility.Collapsed;
+            }));
+        }
+
+        /// <summary>
+        /// 同步取一帧当封面（离屏截图用：视频没有窗口可渲染）。
+        /// 只给截图 / 命令行这类非交互路径用；卡片内的 UI 线程路径走 StartPosterAsync ——
+        /// 这个方法的同步等待最长就是 ExtractImage 的 6s 整体超时（P1-8 已保证可超时）。
+        /// </summary>
         public void ShowPoster(string path)
         {
+            if (_disposed) return;
+
             string ffmpeg = Decoders.FindFfmpeg(_settings);
             if (ffmpeg == null) return;
 
             BitmapSource frame = FfmpegPlayer.ExtractImage(ffmpeg, path);
             if (frame == null) return;
+
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    if (_disposed) return;
+                    _image.Source = frame;
+                    _message.Visibility = Visibility.Collapsed;
+                }));
+                return;
+            }
 
             _image.Source = frame;
             _message.Visibility = Visibility.Collapsed;
@@ -532,14 +561,25 @@ namespace MirrorpondHUD.Media
             return IsVideo(path);
         }
 
-        /// <summary>用 ffmpeg 解码：帧直接画在卡片里，不需要子窗口。</summary>
-        void StartFfmpeg(string ffmpeg, string path)
+        /// <summary>
+        /// 用 ffmpeg 解码：帧直接画在卡片里，不需要子窗口。
+        /// P1-8：探测走 ProbeAsync（整体超时 + Kill(true)），原来在 UI 线程同步 Probe，
+        /// ffmpeg 卡死（损坏容器 / 杀软拦截 / 离线网络盘）时整个 HUD 一起冻住。
+        /// </summary>
+        async void StartFfmpeg(string ffmpeg, string path)
         {
             try
             {
                 ReleaseVideo();
 
-                VideoInfo info = FfmpegPlayer.Probe(ffmpeg, path);
+                // 探测代号：ReleaseVideo 会 ++，所以 await 回来时代号变了就说明
+                // 视频已经被释放 / 换了别的文件，本次结果必须丢弃。
+                int run = ++_videoRun;
+
+                VideoInfo info = await FfmpegPlayer.ProbeAsync(ffmpeg, path);
+
+                if (_disposed || run != _videoRun) return;
+
                 double aspect = info.Width > 0 && info.Height > 0 ? (double)info.Height / info.Width : 9.0 / 16;
                 _natural = new Size(info.Width > 0 ? info.Width : 1280, info.Height > 0 ? info.Height : 720);
 
@@ -1083,6 +1123,9 @@ namespace MirrorpondHUD.Media
         void ReleaseVideo()
         {
             _pendingVideo = null;
+
+            // 让正在 await 的 StartFfmpeg 探测作废（否则它回来时会重新起一个 player）。
+            _videoRun++;
 
             if (_progressTimer != null) _progressTimer.Stop();
             _footer.Visibility = Visibility.Collapsed;

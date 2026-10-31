@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
+using System.Threading.Tasks;
 using MirrorpondHUD.Core;
 
 namespace MirrorpondHUD.Media
@@ -40,10 +41,15 @@ namespace MirrorpondHUD.Media
     /// </summary>
     internal static class Decoders
     {
-        static readonly object Gate = new object();
+        static readonly object Gate = new object();        // 只保护缓存字段
+        static readonly object ProbeLock = new object();   // 串行化「真正跑进程」的探测
         static List<DecoderInfo> _cached;
         static DateTime _cachedAt = DateTime.MinValue;
+        static Task _warming;
         static readonly TimeSpan CacheFor = TimeSpan.FromMinutes(5);
+
+        // 单个版本进程的整体超时；超时由 AsyncProcess 直接 Kill(true)。
+        const int VersionTimeoutMs = 1500;
 
         static readonly string[] LookNames =
         {
@@ -66,33 +72,125 @@ namespace MirrorpondHUD.Media
             @"%LOCALAPPDATA%\Programs\mpv\mpv.exe"
         };
 
-        /// <summary>已找到的解码器列表（按 ffmpeg → ffprobe → mpv → VLC 排序）。</summary>
+        /// <summary>
+        /// 已找到的解码器列表（按 ffmpeg → ffprobe → mpv → VLC 排序）。
+        ///
+        /// force = true：设置页「检测」按钮，阻塞扫一遍；每个进程都有整体超时 +
+        /// Kill(true)，总耗时约等于最慢的一个（并行探测）。
+        /// force = false：**绝不阻塞**。缓存有效直接返回；缓存过期/为空时投递一次
+        /// 后台预热，本次先返回旧缓存（没有就返回空表）。
+        ///
+        /// 为什么要这么分：非强制路径会被 MediaCardSettingsView.DecoderHint 这个
+        /// **属性 getter** 在 UI 线程调用（P1-8 的报告点）。只要探测可能卡住，
+        /// 在 getter 里同步等就会冻住整个 HUD，所以这里改成缓存 + 后台刷新。
+        /// 这个类里所有阻塞调用都只允许出现在后台线程上。
+        /// </summary>
         public static List<DecoderInfo> Detect(bool force)
+        {
+            if (force) return DetectBlocking(true);
+
+            List<DecoderInfo> cached;
+            bool fresh;
+            lock (Gate)
+            {
+                cached = _cached;
+                fresh = cached != null && DateTime.UtcNow - _cachedAt < CacheFor;
+            }
+
+            if (fresh) return cached;
+
+            WarmUp();
+            return cached ?? new List<DecoderInfo>();
+        }
+
+        public static List<DecoderInfo> Detect() { return Detect(false); }
+
+        /// <summary>只读缓存：不在属性 getter 里启动进程；没预热过就返回空表。</summary>
+        public static List<DecoderInfo> Cached
+        {
+            get
+            {
+                lock (Gate)
+                {
+                    return _cached ?? new List<DecoderInfo>();
+                }
+            }
+        }
+
+        /// <summary>后台预热缓存，不阻塞调用方；可以安全地重复调用。</summary>
+        public static void WarmUp()
+        {
+            _ = WarmUpAsync();
+        }
+
+        /// <summary>后台预热并返回同一个任务；设置页可 await 后刷新提示。</summary>
+        public static Task WarmUpAsync()
         {
             lock (Gate)
             {
-                if (!force && _cached != null && DateTime.UtcNow - _cachedAt < CacheFor)
-                    return _cached;
+                if (_warming != null && !_warming.IsCompleted) return _warming;
+                _warming = Task.Run(() => { try { DetectBlocking(false); } catch { } });
+                return _warming;
+            }
+        }
 
-                var list = new List<DecoderInfo>();
+        /// <summary>异步探测：给以后能改成 await 的调用方用。</summary>
+        public static async Task<List<DecoderInfo>> DetectAsync(bool force)
+        {
+            return await Task.Run(() => DetectBlocking(force)).ConfigureAwait(false);
+        }
+
+        static List<DecoderInfo> DetectBlocking(bool force)
+        {
+            // 同一时刻只允许一轮探测，避免设置页连点「检测」时同时开一堆进程。
+            lock (ProbeLock)
+            {
+                lock (Gate)
+                {
+                    if (!force && _cached != null && DateTime.UtcNow - _cachedAt < CacheFor)
+                        return _cached;
+                }
+
+                var found = new List<string>();
                 var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
                 foreach (string name in LookNames)
                 {
                     string path = Find(name, null);
                     if (path == null || !seen.Add(path)) continue;
+                    found.Add(path);
+                }
 
+                // 版本号并行探测：每个进程都有自己的整体超时 + Kill(true)，
+                // 总耗时约等于最慢的那个，不会因为 4 个串行拖成好几秒。
+                var versions = new string[found.Count];
+                var tasks = new Task[found.Count];
+                for (int i = 0; i < found.Count; i++)
+                {
+                    int index = i;
+                    string exe = found[index];
+                    tasks[index] = Task.Run(() => { versions[index] = ReadVersion(exe); });
+                }
+                try { Task.WaitAll(tasks); } catch { }
+
+                var list = new List<DecoderInfo>(found.Count);
+                for (int i = 0; i < found.Count; i++)
+                {
+                    string path = found[i];
+                    string file = Path.GetFileName(path) ?? "";
                     list.Add(new DecoderInfo
                     {
-                        Kind = KindName(name),
+                        Kind = KindName(file),
                         Path = path,
-                        Version = ReadVersion(path),
-                        Frames = string.Equals(name, "ffmpeg.exe", StringComparison.OrdinalIgnoreCase)
+                        Version = versions[i] ?? "",
+                        Frames = string.Equals(file, "ffmpeg.exe", StringComparison.OrdinalIgnoreCase)
                     });
                 }
 
-                _cached = list;
-                _cachedAt = DateTime.UtcNow;
+                lock (Gate)
+                {
+                    _cached = list;
+                    _cachedAt = DateTime.UtcNow;
+                }
 
                 Log.Info("解码器探测：" + (list.Count == 0
                     ? "PATH 与常见目录里没找到 ffmpeg / mpv / VLC"
@@ -100,8 +198,6 @@ namespace MirrorpondHUD.Media
                 return list;
             }
         }
-
-        public static List<DecoderInfo> Detect() { return Detect(false); }
 
         /// <summary>一句话描述探测结果（设置页提示与日志共用）。</summary>
         public static string Describe(List<DecoderInfo> list)
@@ -130,6 +226,9 @@ namespace MirrorpondHUD.Media
                 Log.Warn("自定义解码器不存在：" + custom + "，改回自动查找");
             }
 
+            // 顺手预热解码器缓存（后台线程，不阻塞）：设置页的 DecoderHint 是属性 getter，
+            // 只要缓存已经就绪就不会出现“没找到解码器”的假提示。
+            WarmUp();
             return Find("ffmpeg.exe", null);
         }
 
@@ -202,39 +301,24 @@ namespace MirrorpondHUD.Media
             }
         }
 
-        /// <summary>问一下版本号；拿不到就返回空串（不影响能不能用）。</summary>
+        /// <summary>
+        /// 问一下版本号；拿不到就返回空串（不影响能不能用）。
+        /// 只允许在后台线程调用：AsyncProcess 有整体超时（1.5s）+ Kill(true)，
+        /// 这里的同步等待最多等这么久，绝不会像原来那样被 ReadToEnd 永久卡住。
+        /// </summary>
         static string ReadVersion(string exe)
         {
             try
             {
-                var psi = new ProcessStartInfo(exe)
-                {
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true
-                };
+                string kind = (Path.GetFileName(exe) ?? "").ToLowerInvariant();
+                string arg = kind == "vlc.exe" || kind == "mpv.exe" ? "--version" : "-version";
 
-                string kind = Path.GetFileName(exe).ToLowerInvariant();
-                psi.ArgumentList.Add(kind == "vlc.exe" || kind == "mpv.exe" ? "--version" : "-version");
+                AsyncProcess.Result result =
+                    AsyncProcess.RunAsync(exe, new[] { arg }, VersionTimeoutMs).GetAwaiter().GetResult();
 
-                using (var process = Process.Start(psi))
-                {
-                    if (process == null) return "";
-
-                    string output = process.StandardOutput.ReadToEnd();
-                    string error = process.StandardError.ReadToEnd();
-
-                    if (!process.WaitForExit(1500))
-                    {
-                        try { process.Kill(); } catch { }
-                        return "";
-                    }
-
-                    string line = FirstLine(output);
-                    if (line.Length == 0) line = FirstLine(error);
-                    return Shorten(line);
-                }
+                string line = FirstLine(result.StdOutText);
+                if (line.Length == 0) line = FirstLine(result.StdErr);
+                return Shorten(line);
             }
             catch
             {

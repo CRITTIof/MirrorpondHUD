@@ -1,11 +1,11 @@
-# 版本修改记录（2.4.1 → 2.13.2）
+# 版本修改记录（2.4.1 → 2.13.3）
 
 > 范围：本文只记录**这一轮接手后我做的版本**（v2.4.1 起）。v2.4.0 及更早是既有历史，不在本文档里。
 > 数据全部取自仓库真实提交（`git diff --shortstat <上一版>..<本版>`），文件行的 `+ / -` 就是实际增删行数。
 > 版本状态：`main` 已推送到 GitHub；`v2.4.2`–`v2.4.5` 为附注标签（分别指向 `70343ef` / `aabe441` / `05857ce` / `f4b2b8b`），
 > v2.4.5 已发布 Release（附件为两个 requires-dotnet 单文件），v2.4.0 的 Release 已删除、其 tag 保留。
 > `v2.5.0`–`v2.9.2` 均为附注标签，**已随 2.9.2 的推送同步到远端**（`v2.6.0` = `9c1bafa`、`v2.6.1` = `d3ac63d`、
-> `v2.6.2` = `1b138e7`、`v2.9.2` = `754115e`）；`v2.4.1` 也已补推。`v2.9.3`–`v2.12.2` 已于 2.12.2 推送并发布 Release；`v2.13.0`–`v2.13.2` 目前只在本地创建。
+> `v2.6.2` = `1b138e7`、`v2.9.2` = `754115e`）；`v2.4.1` 也已补推。`v2.9.3`–`v2.12.2` 已于 2.12.2 推送并发布 Release；`v2.13.0`–`v2.13.3` 目前只在本地创建。
 
 ## 0. 总览
 
@@ -44,7 +44,8 @@
 | v2.12.2 | 2026-10-31 | `78ed0a1` | 文件夹递归收纳：目录作为一条列表项，Copy / Move 保留子目录与空目录；运行时扩展卡片调研文档 | 9 文件，+757 / −106 |
 | v2.13.0 | 2026-10-31 | `4956352` | 拆分宿主上帝类第一步：`CardSlot`/`CardHost`、`CardLayoutCoordinator`、`OverlayIntro` | 9 文件，+541 / −379 |
 | v2.13.1 | 2026-10-31 | `5eb0bea` | 拆分宿主上帝类第二步：`HotkeyRouter` 独立，热键注册 / 回退 / 分发移出控制器 | 7 文件，+345 / −230 |
-| v2.13.2 | 2026-10-31 | 本次提交 | 拆分宿主上帝类第三步：`TrayController`、`CommandModeController` 独立 | 8 文件，+394 / −187 |
+| v2.13.2 | 2026-10-31 | `44670f4` | 拆分宿主上帝类第三步：`TrayController`、`CommandModeController` 独立 | 8 文件，+394 / −187 |
+| v2.13.3 | 2026-10-31 | 本次提交 | 评审报告 P1-1..P1-10：配置修复 / 原子写 / Key 备份 / 聊天卡回滚 / 中转站生命周期 / 媒体与采样线程 / URL 安全 | 21 文件，+1640 / −448 |
 
 ---
 
@@ -1275,7 +1276,7 @@ M2 时文件夹仍被拒绝；M3 把列表管理补上后，文件夹成为最�
 
 ---
 
-## 34. v2.13.2（本次提交，本地标签 `v2.13.2`）
+## 34. v2.13.2（`44670f4`，本地标签 `v2.13.2`）
 
 ### 背景
 
@@ -1304,7 +1305,45 @@ M2 时文件夹仍被拒绝；M3 把列表管理补上后，文件夹成为最�
 
 ---
 
-## 35. 不在版本里的东西
+## 35. v2.13.3（本次提交，本地标签 `v2.13.3`）
+
+### 背景
+
+`MirrorpondHUD-2.12.2-review.md` 列出 10 条 P1：配置 null / 损坏恢复 / 原子写 / 明文 Key 备份、聊天卡旧配置回滚、中转站视图生命周期、WaveOut 释放竞态、外部进程阻塞、PDH 并发、API URL 安全。2.13.2 之前只做了上帝类拆分，这些数据与线程安全项都没有动。
+
+### 改动
+
+1. **配置健壮性（P1-1/P1-2/P1-3/P1-4）**
+   - `Settings.Normalize()` 对 `Style/Overlay/Cli/Data/Behavior/Hotkeys/Cards` 判空；`ConfigStore.Load` 归一化包 `try`，失败用默认值并提示。
+   - `SettingsMigration.Load(json, out needsSave, out corrupted)`：损坏 JSON / 绑定失败标 `corrupted`，不再被当成旧版本迁移后静默保存默认值。
+   - `ConfigStore.Save` / `CardStateStore.Write` 改临时文件 + `File.Replace`（失败回退备份+覆盖）+ `Flush(true)`；读取回退 `.bak`；损坏主文件备份 `.broken-*`；从 `.bak` 恢复时保留好备份。
+   - 明文 API Key 迁移前检测，迁移保存时不生成含明文的 `.bak`，并清理历史明文备份；DPAPI 加密失败清空 Key 而不是明文落盘。
+2. **聊天卡配置回滚（P1-5）**：`ChatCard.UpdateContent` / `ApplyStyle` 刷新 `ChatView` 缓存的 `Settings` / `ChatSettings` / `ICardHost`；`Persist` 只写宿主当前卡片，旧视图不写盘。
+3. **中转站生命周期（P1-6）**：`StationView : IDisposable`，`Dispose` 取消复制队列、停 `CardStatus` 定时器、丢弃已销毁视图的后台回调；`Persist` 加锁并按 `Item.Id` 读-合并-写，避免旧视图整表覆盖新视图。
+4. **WaveOut 释放竞态（P1-7）**：`Stop` 只在 `Join` 成功后释放；超时把 buffer/header/handle 所有权交给 Feed 线程（CAS 只收尾一次）；`Feed` 在 `Read` 后、复制前、`waveOutWrite` 前复检 `_stop`。
+5. **外部进程阻塞（P1-8）**：新增 `Core.AsyncProcess`（stdout/stderr 并行异步读、整体超时、`Kill(true)`、有界收尾）；FfmpegPlayer / Decoders / NvidiaSmi 改异步或后台路径；`Decoders.Detect()` getter 只读缓存 + 后台预热；设置页「检测」改 `async`。
+6. **PDH / 共享 List 并发（P1-9）**：删除 `MetricEngine` 共享 `_buffer` 改局部 List；PDH 访问统一 `_pdhGate` / `PdhQuery._sync`；`UpdateSettings` 只置 `_adapterDirty`，适配器解析留在采样线程。
+7. **API URL 安全（P1-10）**：`Configured` 用 `Uri.TryCreate`；带 Key 只允许 https，回环允许 http；非 http 拒绝；提示区分“未配置 / 地址不安全”。
+
+完整对照与验证记录见 [review-p1-fixes.md](review-p1-fixes.md)。
+
+### 验证
+
+- `dotnet build -c Release`：0 警告 0 错误。
+- `--selftest`：失败项 0；新增「配置修复」「接口安全」，覆盖 null 块、损坏标记、旧 schema、状态 `.bak` 回退、https/回环 http/公网 http/ftp。
+- `--smoke 15 --smoke-visible`：退出码 0；媒体卡、采样、托盘、热键、启动动画正常。
+- 临时目录手工验证：损坏 `settings.json` → `.broken-*` + 从 `.bak` 恢复且保留 `.bak`；明文 API Key 迁移后主文件含 `dpapi:`、`.bak` 删除、无明文。
+
+### 剩余
+
+- 设置窗打开期间持有深拷贝，热键改 Chat 模式后再应用设置仍可能被旧快照覆盖（需设置窗协调）；
+- WaveOut 在音频管道永久阻塞时延迟释放（避免 UAF 的有意取舍）；
+- `Decoders` 首次冷启动提示可能短暂显示“没找到”，后台预热后再读恢复；
+- P2/P3 未在本轮处理。
+
+---
+
+## 36. 不在版本里的东西
 
 - 验收脚本、样张与测量脚本（`cmd-e2e.ps1`、`drag-glass.ps1`、`measure-*.py`、`shots/` 等）都在仓库外的 `hud-test/` 里，**没有提交**。
 - 发布：`main` 与标签已推送到 [github.com/CRITTIof/MirrorpondHUD](https://github.com/CRITTIof/MirrorpondHUD)；
@@ -1313,7 +1352,7 @@ M2 时文件夹仍被拒绝；M3 把列表管理补上后，文件夹成为最�
   更早的 Release 正文与附件保留原样，v2.4.0 的 Release 已删除（tag `v2.4.0` 保留，历史仍可检出）。
 - 仓库追踪的文件共 117 个，`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
 
-## 36. 已知代价（跨版本）
+## 37. 已知代价（跨版本）
 
 - 桌面亚克力为了不拍到自己，会把卡片排除在截屏之外 —— 这个模式下截图 / 录屏里**看不到卡片**，观感只能靠肉眼与离屏渲染验证。
 - 兼容实现每帧对身后窗口做 `PrintWindow`，拖动时最多 ~21 帧/秒；要更高只能走桌面亚克力（DXGI）。

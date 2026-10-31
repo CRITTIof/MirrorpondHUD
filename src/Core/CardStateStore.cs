@@ -24,13 +24,18 @@ namespace MirrorpondHUD.Core
             return Path.Combine(root, id);
         }
 
-        /// <summary>读状态文件；不存在 / 名字非法 / 读失败都返回 null。</summary>
+        /// <summary>读状态文件；主文件读不到时回退 .bak；不存在 / 名字非法 / 读失败都返回 null。</summary>
         public static string Read(string cardId, string fileName)
         {
             string path = Resolve(cardId, fileName);
             if (path == null) return null;
 
-            try { return File.Exists(path) ? File.ReadAllText(path, Encoding.UTF8) : null; }
+            try
+            {
+                if (File.Exists(path)) return File.ReadAllText(path, Encoding.UTF8);
+                string backup = path + ".bak";
+                return File.Exists(backup) ? File.ReadAllText(backup, Encoding.UTF8) : null;
+            }
             catch (Exception ex)
             {
                 Log.Warn("读取卡片状态失败(" + fileName + "): " + ex.Message);
@@ -38,31 +43,47 @@ namespace MirrorpondHUD.Core
             }
         }
 
-        /// <summary>原子写状态文件（先写 .tmp 再替换）。</summary>
+        /// <summary>原子写状态文件（临时文件 + Replace），并保留上一版 .bak。</summary>
         public static bool Write(string cardId, string fileName, string text)
         {
             string path = Resolve(cardId, fileName);
             if (path == null) return false;
 
+            string tmp = path + ".tmp";
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(path));
+                WriteDurable(tmp, text ?? "");
 
-                string tmp = path + ".tmp";
-                File.WriteAllText(tmp, text ?? "", new UTF8Encoding(false));
-
-                if (File.Exists(path)) File.Delete(path);
-                File.Move(tmp, path);
+                if (File.Exists(path))
+                {
+                    string backup = path + ".bak";
+                    try
+                    {
+                        File.Replace(tmp, path, backup, true);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Warn("卡片状态原子替换失败，回退到备份+覆盖: " + ex.Message);
+                        try { File.Copy(path, backup, true); } catch { }
+                        File.Move(tmp, path, true);
+                    }
+                }
+                else
+                {
+                    File.Move(tmp, path, true);
+                }
                 return true;
             }
             catch (Exception ex)
             {
                 Log.Warn("写入卡片状态失败(" + fileName + "): " + ex.Message);
+                try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
                 return false;
             }
         }
 
-        /// <summary>删掉一个状态文件（不存在也算成功）。</summary>
+        /// <summary>删掉一个状态文件（连同 .bak；不存在也算成功）。</summary>
         public static bool Delete(string cardId, string fileName)
         {
             string path = Resolve(cardId, fileName);
@@ -71,12 +92,27 @@ namespace MirrorpondHUD.Core
             try
             {
                 if (File.Exists(path)) File.Delete(path);
+                if (File.Exists(path + ".bak")) File.Delete(path + ".bak");
                 return true;
             }
             catch (Exception ex)
             {
                 Log.Warn("删除卡片状态失败(" + fileName + "): " + ex.Message);
                 return false;
+            }
+        }
+
+        static void WriteDurable(string path, string text)
+        {
+            using (var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None,
+                                               4096, FileOptions.WriteThrough))
+            {
+                using (var writer = new StreamWriter(stream, new UTF8Encoding(false), 4096, true))
+                {
+                    writer.Write(text);
+                    writer.Flush();
+                }
+                stream.Flush(true);
             }
         }
 

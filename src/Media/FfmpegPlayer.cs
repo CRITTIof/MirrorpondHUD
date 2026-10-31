@@ -1,9 +1,11 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Text.RegularExpressions;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using MirrorpondHUD.Core;
@@ -534,42 +536,47 @@ namespace MirrorpondHUD.Media
 
         // ==================== 探测 ====================
 
+        /// <summary>探测整体超时（从进程启动算起，到点 Kill(true)）。</summary>
+        const int ProbeTimeoutMs = 4000;
+
         /// <summary>
         /// 问 ffmpeg 要时长 / 分辨率 / 帧率：`ffmpeg -i 文件`（不带输出）会把信息打到 stderr
         /// 然后报「没有输出文件」退出，正好拿来读。
+        ///
+        /// 同步版本只为保持旧签名 / 兼容调用方存在：**只允许在后台线程调用**。
+        /// UI 线程请用 <see cref="ProbeAsync"/>，否则 ffmpeg 卡住时 UI 会一起冻住（P1-8）。
         /// </summary>
         public static VideoInfo Probe(string ffmpeg, string path)
+        {
+            return ProbeAsync(ffmpeg, path).GetAwaiter().GetResult();
+        }
+
+        /// <summary>
+        /// 异步探测。stdout / stderr 由 AsyncProcess 并行异步读，整体超时后 Kill(true)，
+        /// 所以即使 ffmpeg 卡死（离线网络盘、损坏容器、杀软拦截）也会在 timeoutMs 内返回。
+        /// </summary>
+        public static async Task<VideoInfo> ProbeAsync(string ffmpeg, string path,
+                                                      int timeoutMs = ProbeTimeoutMs)
         {
             var info = new VideoInfo { Fps = 25, Width = 0, Height = 0, Duration = 0 };
 
             try
             {
-                var psi = new ProcessStartInfo(ffmpeg)
+                AsyncProcess.Result result = await AsyncProcess.RunAsync(
+                    ffmpeg, new[] { "-hide_banner", "-i", path }, timeoutMs).ConfigureAwait(false);
+
+                if (!result.Started)
                 {
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true
-                };
-
-                psi.ArgumentList.Add("-hide_banner");
-                psi.ArgumentList.Add("-i");
-                psi.ArgumentList.Add(path);
-
-                using (var process = Process.Start(psi))
-                {
-                    if (process == null) return info;
-
-                    string error = process.StandardError.ReadToEnd();
-                    string output = process.StandardOutput.ReadToEnd();
-
-                    if (!process.WaitForExit(4000))
-                    {
-                        try { process.Kill(); } catch { }
-                    }
-
-                    info = Parse(error.Length > 0 ? error : output);
+                    Log.Warn("ffmpeg 探测失败: 无法启动 " + ffmpeg);
+                    return info;
                 }
+
+                if (result.TimedOut)
+                    Log.Warn("ffmpeg 探测超时（" + timeoutMs + "ms），已结束进程：" + path);
+
+                string error = result.StdErr;
+                string output = result.StdOutText;
+                info = Parse(error.Length > 0 ? error : output);
             }
             catch (Exception ex)
             {
@@ -630,72 +637,76 @@ namespace MirrorpondHUD.Media
             return info;
         }
 
+        /// <summary>解图整体超时（从进程启动算起，到点 Kill(true)）。</summary>
+        const int ExtractTimeoutMs = 6000;
+
         /// <summary>
         /// 用 ffmpeg 把一个「WPF 解不开」的图片（webp / avif / heic …）转成一张位图。
         /// 失败返回 null，调用方照常显示「无法解码」。
+        ///
+        /// 同步版本只为保持旧签名存在：**只允许在后台线程调用**（如离屏截图）。
+        /// UI 线程请用 <see cref="ExtractImageAsync"/>（P1-8）。
         /// </summary>
         public static BitmapSource ExtractImage(string ffmpeg, string path, double seconds = 0)
         {
+            return ExtractImageAsync(ffmpeg, path, seconds).GetAwaiter().GetResult();
+        }
+
+        /// <summary>
+        /// 异步解图：PNG 数据走 stdout，错误走 stderr，两边并行异步读（不互相卡）；
+        /// 整体超时后 Kill(true)。返回值已 Freeze，可以安全地从后台线程交给 UI。
+        /// </summary>
+        public static async Task<BitmapSource> ExtractImageAsync(string ffmpeg, string path,
+                                                                double seconds = 0,
+                                                                int timeoutMs = ExtractTimeoutMs)
+        {
             try
             {
-                var psi = new ProcessStartInfo(ffmpeg)
-                {
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true
-                };
-
-                psi.ArgumentList.Add("-hide_banner");
-                psi.ArgumentList.Add("-loglevel");
-                psi.ArgumentList.Add("error");
+                var args = new List<string> { "-hide_banner", "-loglevel", "error" };
                 if (seconds > 0.01)
                 {
-                    psi.ArgumentList.Add("-ss");
-                    psi.ArgumentList.Add(seconds.ToString("0.###", CultureInfo.InvariantCulture));
+                    args.Add("-ss");
+                    args.Add(seconds.ToString("0.###", CultureInfo.InvariantCulture));
                 }
-                psi.ArgumentList.Add("-i");
-                psi.ArgumentList.Add(path);
-                psi.ArgumentList.Add("-frames:v");
-                psi.ArgumentList.Add("1");
-                psi.ArgumentList.Add("-f");
-                psi.ArgumentList.Add("image2pipe");
-                psi.ArgumentList.Add("-vcodec");
-                psi.ArgumentList.Add("png");
-                psi.ArgumentList.Add("pipe:1");
+                args.Add("-i");
+                args.Add(path);
+                args.Add("-frames:v");
+                args.Add("1");
+                args.Add("-f");
+                args.Add("image2pipe");
+                args.Add("-vcodec");
+                args.Add("png");
+                args.Add("pipe:1");
 
-                using (var process = Process.Start(psi))
-                {
-                    if (process == null) return null;
+                AsyncProcess.Result result =
+                    await AsyncProcess.RunAsync(ffmpeg, args, timeoutMs).ConfigureAwait(false);
 
-                    using (var memory = new MemoryStream())
-                    {
-                        // 先读 stdout（PNG 可能几 MB，管道写满会把 ffmpeg 卡住），再读 stderr。
-                        process.StandardOutput.BaseStream.CopyTo(memory);
-                        process.StandardError.ReadToEnd();
+                if (result.TimedOut)
+                    Log.Warn("ffmpeg 解图超时（" + timeoutMs + "ms），已结束进程：" + path);
+                if (result.StdOut == null || result.StdOut.Length == 0) return null;
 
-                        if (!process.WaitForExit(6000))
-                        {
-                            try { process.Kill(); } catch { }
-                        }
-
-                        if (memory.Length == 0) return null;
-
-                        memory.Position = 0;
-                        var image = new BitmapImage();
-                        image.BeginInit();
-                        image.CacheOption = BitmapCacheOption.OnLoad;
-                        image.StreamSource = memory;
-                        image.EndInit();
-                        image.Freeze();
-                        return image;
-                    }
-                }
+                return DecodeImageBytes(result.StdOut);
             }
             catch (Exception ex)
             {
                 Log.Warn("ffmpeg 解图失败: " + ex.Message);
                 return null;
+            }
+        }
+
+        static BitmapSource DecodeImageBytes(byte[] data)
+        {
+            using (var memory = new MemoryStream(data))
+            {
+                // ONLOAD + Freeze：解码器把像素读进内存，之后流可以关；
+                // Freeze 之后位图不再有线程亲和性，可以从后台线程交给 UI 线程。
+                var image = new BitmapImage();
+                image.BeginInit();
+                image.CacheOption = BitmapCacheOption.OnLoad;
+                image.StreamSource = memory;
+                image.EndInit();
+                image.Freeze();
+                return image;
             }
         }
 

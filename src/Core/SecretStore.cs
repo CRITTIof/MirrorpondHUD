@@ -53,21 +53,29 @@ namespace MirrorpondHUD.Core
         }
 
         /// <summary>
-        /// 加密成 <c>dpapi:base64</c>。加不了密（极罕见）就原样返回明文，
-        /// 保证功能可用，同时往日志里写一条警告。
+        /// 加密成 <c>dpapi:base64</c>。失败时返回空串（拒绝明文落盘），由调用方决定是否清空 Key。
         /// </summary>
         public static string Protect(string plain)
         {
-            if (string.IsNullOrEmpty(plain)) return "";
+            string stored;
+            return TryProtect(plain, out stored) ? stored : "";
+        }
+
+        /// <summary>加密成功返回 true；失败不返回明文，只把原因写日志。</summary>
+        public static bool TryProtect(string plain, out string stored)
+        {
+            stored = "";
+            if (string.IsNullOrEmpty(plain)) return true;
 
             try
             {
-                return Prefix + Convert.ToBase64String(Transform(plain, true));
+                stored = Prefix + Convert.ToBase64String(Transform(plain, true));
+                return true;
             }
             catch (Exception ex)
             {
-                Log.Warn("加密失败，这一项只能明文保存: " + ex.Message);
-                return plain;
+                Log.Warn("加密失败，拒绝明文保存: " + ex.Message);
+                return false;
             }
         }
 

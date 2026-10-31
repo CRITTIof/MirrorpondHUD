@@ -73,7 +73,27 @@ namespace MirrorpondHUD.Cards
         {
             ChatSettings config = ChatOf(context == null ? null : context.Config);
 
-            return new ChatView(context == null ? null : context.Settings, config);
+            return new ChatView(context == null ? null : context.Settings, config,
+                                context == null ? null : context.Host);
+        }
+
+        /// <summary>
+        /// P1-5：宿主只在「内容签名没变」时调这里（改卡片名 / 热键 / 间距，或应用设置后换掉
+        /// 配置对象树）。视图必须跟着换成宿主当前这棵对象树，否则它会长期捏着旧的
+        /// <see cref="Settings"/> / <see cref="ChatSettings"/>；之后按热键切模式时整份
+        /// <c>ConfigStore.Save</c> 会把用户刚保存的新名字 / 新热键 / 新外观回滚成旧值。
+        ///
+        /// 宿主没有公开「保存设置」入口（<see cref="ICardHost"/> 只有状态文件与重绘；加方法会改
+        /// public 契约并牵动所有实现），所以走评审给的另一条路：刷新视图引用，让写回落在当前树上。
+        /// </summary>
+        public override void UpdateContent(FrameworkElement content, CardRenderContext context)
+        {
+            var view = content as ChatView;
+            if (view == null || context == null) return;
+
+            view.Refresh(context.Settings,
+                         context.Config ?? (context.Host == null ? null : context.Host.Config),
+                         context.Host);
         }
 
         // ==================== 模块自己的设置 ====================
@@ -108,7 +128,10 @@ namespace MirrorpondHUD.Cards
             var view = content as ChatView;
             if (view == null || context == null || context.Settings == null) return;
 
-            view.ApplyStyle(context.Settings);
+            view.ApplyStyle(context.Settings);   // 基类：换外观 / CLI 尺寸 / HostSettings
+            view.Refresh(context.Settings,       // 同时换 ChatSettings 与 ICardHost（P1-5）
+                         context.Config ?? (context.Host == null ? null : context.Host.Config),
+                         context.Host);
         }
 
         /// <inheritdoc />
@@ -137,7 +160,14 @@ namespace MirrorpondHUD.Cards
         /// <summary>「思考中」的盲文转圈。</summary>
         static readonly string[] Spin = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" };
 
-        readonly ChatSettings _config;
+        /// <summary>
+        /// 对话设置：跟着宿主的 <see cref="CardSettings.Extras"/> 走。应用设置后宿主会换新对象树，
+        /// 所以不能是 readonly —— <see cref="Refresh"/> 会把它换到当前树上（P1-5）。
+        /// </summary>
+        ChatSettings _config;
+
+        /// <summary>这张卡片的宿主服务（状态目录 / 重绘）；由 CardRenderContext 传入，刷新时一起换。</summary>
+        ICardHost _host;
 
         readonly List<Message> _messages = new List<Message>();
         /// <summary>每一轮问答那块内部小面板，和 <see cref="_messages"/> 里的助手回复一一对应。</summary>
@@ -161,9 +191,10 @@ namespace MirrorpondHUD.Cards
             public TextBlock Answer;
         }
 
-        public ChatView(Settings settings, ChatSettings config)
+        public ChatView(Settings settings, ChatSettings config, ICardHost host = null)
             : base(settings, settings == null ? new CliSettings() : settings.Cli)
         {
+            _host = host;
             _config = config ?? new ChatSettings();
             _config.Normalize();
 
@@ -180,15 +211,60 @@ namespace MirrorpondHUD.Cards
             SetStatus(IdleHint(), false);
         }
 
+        // ==================== 配置刷新（P1-5） ====================
+
+        /// <summary>
+        /// 应用设置后宿主可能换成新的 <see cref="Settings"/> / <see cref="CardSettings"/> 对象树，
+        /// 但内容签名没变时不会重建控件。这里把视图缓存的引用换到宿主当前这棵树上：
+        /// 对话历史保留，模式切换与写盘都落到当前配置，不会整份回滚。
+        /// </summary>
+        public void Refresh(Settings settings, CardSettings card, ICardHost host)
+        {
+            if (settings != null)
+            {
+                HostSettings = settings;
+                if (settings.Cli != null) Cli = settings.Cli;
+            }
+
+            if (card != null) _config = ChatCard.ChatOf(card);
+
+            _host = host;
+            RefreshHeader();
+            UpdateEnabled();
+            if (!_busy) SetStatus(IdleHint(), false);
+        }
+
         // ==================== 状态 ====================
 
+        /// <summary>
+        /// 接口地址能不能用（P1-10）：必须能解析成绝对的 http / https 地址，不再用
+        /// <c>StartsWith("http")</c> —— 那连 <c>httpx://</c> 这种拼写都会放行。
+        /// 带 API Key 时只允许 https，避免 Bearer Key 明文过网；本机回环
+        /// （127.0.0.1 / localhost / ::1，<see cref="Uri.IsLoopback"/>）例外：
+        /// 本地 vLLM / LM Studio / Ollama 的兼容层通常就是 http。
+        /// </summary>
         bool Configured
         {
             get
             {
-                return _config.BaseUrl.Length > 0 && _config.Model.Length > 0
-                    && _config.BaseUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase);
+                if (string.IsNullOrEmpty(_config.BaseUrl) || string.IsNullOrEmpty(_config.Model)) return false;
+                return IsSafeEndpoint(_config.BaseUrl, _config.PlainApiKey.Length > 0);
             }
+        }
+
+        /// <summary>
+        /// 接口地址安全闸门（P1-10）：绝对 http/https；带 Key 时只允许 https，
+        /// 本机回环（127.0.0.1 / localhost / ::1）允许 http 便于本地模型。
+        /// </summary>
+        internal static bool IsSafeEndpoint(string baseUrl, bool hasKey)
+        {
+            Uri uri;
+            if (!Uri.TryCreate((baseUrl ?? "").Trim(), UriKind.Absolute, out uri)) return false;
+
+            if (string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)) return true;
+            if (!string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)) return false;
+
+            return !hasKey || uri.IsLoopback;
         }
 
         /// <summary>切换模式的热键（没配置时显示默认值）。</summary>
@@ -208,10 +284,18 @@ namespace MirrorpondHUD.Cards
             if (_config.ApiKeyUnreadable)
                 return "! 已存的 API Key 解不开（换过 Windows 用户 / 机器？），去设置里重填";
 
-            if (!Configured)
-                return "! 还没配置：设置 → 内容 →「AI 接口」填地址、模型、Key";
+            if (!Configured) return "! " + ConfigHint();
 
             return "● 就绪 · 回车发送 · " + ModeKey + " 切换单次 / 轮询";
+        }
+
+        /// <summary>配置不可用时的原因（区分「没填」和「地址不安全」，P1-10）。</summary>
+        string ConfigHint()
+        {
+            if (string.IsNullOrEmpty(_config.BaseUrl) || string.IsNullOrEmpty(_config.Model))
+                return "还没配置：设置 → 内容 →「AI 接口」填地址、模型、Key";
+
+            return "接口地址要用 http / https；带 API Key 时必须 https（本机 127.0.0.1 / localhost 除外）";
         }
 
         void OnSpinTick(object sender, EventArgs e)
@@ -255,6 +339,10 @@ namespace MirrorpondHUD.Cards
         {
             if (_busy) return;
 
+            // P1-5：以宿主当前配置为准（应用设置后宿主会换新对象），别在旧对象上切换。
+            ChatSettings live = CurrentChatConfig();
+            if (live != null) _config = live;
+
             _config.Mode = _config.Mode == "Context" ? "Single" : "Context";
             _messages.Clear();          // 换模式就当开新对话，避免把上一轮的历史混进来
             ClearRounds();
@@ -279,12 +367,50 @@ namespace MirrorpondHUD.Cards
             ClearEntries();
         }
 
+        /// <summary>宿主当前的对话配置；拿不到（截图 / 自检没传 host）就退回视图缓存的那份。</summary>
+        ChatSettings CurrentChatConfig()
+        {
+            if (_host != null && _host.Config != null) return ChatCard.ChatOf(_host.Config);
+            return _config;
+        }
+
         /// <summary>模式改动要立刻落盘，下次启动还是这个模式。</summary>
         void Persist()
         {
-            if (HostSettings == null) return;
-            try { ConfigStore.Save(HostSettings); }
+            // P1-5：只写宿主当前这份 Settings，绝不写视图手里的旧对象树。
+            // 1) 卡片对象以宿主为准：应用设置时 ICardHost.Config 已经换成新对象；
+            // 2) 它还必须确实挂在 HostSettings.Cards 上（引用比较），否则说明这是被设置应用
+            //    替换掉的旧视图 —— 此时整份 Save 会把用户刚保存的新名字 / 新热键 / 新外观
+            //    回滚成旧值。宁可这次不落盘（设置应用会重建视图），也不允许整份回滚。
+            Settings live = HostSettings;
+            CardSettings card = FindLiveCard(live);
+            if (live == null || card == null) return;
+
+            ChatSettings chat = ChatCard.ChatOf(card);
+            chat.Mode = _config.Mode;   // 把模式写进当前树，再保存这一份
+            _config = chat;
+
+            try { ConfigStore.Save(live); }
             catch (Exception ex) { Log.Warn("保存对话模式失败: " + ex.Message); }
+        }
+
+        /// <summary>在当前 Settings 里找这张对话卡的配置；找不到返回 null（旧视图，不能写盘）。</summary>
+        CardSettings FindLiveCard(Settings live)
+        {
+            if (live == null || live.Cards == null) return null;
+
+            // 宿主服务的 Config 永远是当前对象；还要确认它在这份 Settings 的卡片列表里。
+            CardSettings hostCard = _host == null ? null : _host.Config;
+            if (hostCard != null && live.Cards.Contains(hostCard)) return hostCard;
+
+            // 没有 host（截图 / 自检）时按引用在当前树里回溯；只回退到「chat」卡，
+            // 避免 ChatOf 往别的卡片 Extras 里写一份对话设置。
+            foreach (CardSettings card in live.Cards)
+            {
+                if (card == null || !string.Equals(card.Kind, "chat", StringComparison.OrdinalIgnoreCase)) continue;
+                if (ReferenceEquals(ChatCard.ChatOf(card), _config)) return card;
+            }
+            return null;
         }
 
         void UpdateEnabled()
@@ -328,7 +454,7 @@ namespace MirrorpondHUD.Cards
 
             if (!Configured)
             {
-                SetStatus("接口地址或模型名为空，见「设置 → 内容 → AI 接口」", true);
+                SetStatus(ConfigHint(), true);
                 return;
             }
 

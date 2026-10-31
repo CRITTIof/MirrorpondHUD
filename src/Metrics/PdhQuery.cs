@@ -51,6 +51,10 @@ namespace MirrorpondHUD.Core
         IntPtr _query = IntPtr.Zero;
         readonly Dictionary<string, IntPtr> _counters = new Dictionary<string, IntPtr>(StringComparer.OrdinalIgnoreCase);
 
+        // P1-9：调用方可能来自采样线程（Sample）和 UI 线程（设置变更后需要重新解析适配器），
+        // 句柄 / 计数器字典必须串行访问。锁粒度只包住 PDH 调用本身，里面不做耗时逻辑。
+        readonly object _sync = new object();
+
         public PdhQuery()
         {
             uint rc = PdhOpenQueryW(null, IntPtr.Zero, out _query);
@@ -61,75 +65,88 @@ namespace MirrorpondHUD.Core
             }
         }
 
-        public bool IsOpen { get { return _query != IntPtr.Zero; } }
+        public bool IsOpen
+        {
+            get { lock (_sync) { return _query != IntPtr.Zero; } }
+        }
 
         public bool TryAdd(string path)
         {
-            if (!IsOpen) return false;
-            if (_counters.ContainsKey(path)) return true;
-
-            IntPtr handle;
-            uint rc = PdhAddEnglishCounterW(_query, path, IntPtr.Zero, out handle);
-            if (rc != 0)
+            lock (_sync)
             {
-                Log.Warn("添加计数器失败 0x" + rc.ToString("X8") + " : " + path);
-                return false;
+                if (_query == IntPtr.Zero) return false;
+                if (_counters.ContainsKey(path)) return true;
+
+                IntPtr handle;
+                uint rc = PdhAddEnglishCounterW(_query, path, IntPtr.Zero, out handle);
+                if (rc != 0)
+                {
+                    Log.Warn("添加计数器失败 0x" + rc.ToString("X8") + " : " + path);
+                    return false;
+                }
+                _counters[path] = handle;
+                return true;
             }
-            _counters[path] = handle;
-            return true;
         }
 
         public bool Collect()
         {
-            if (!IsOpen) return false;
-            return PdhCollectQueryData(_query) == 0;
+            lock (_sync)
+            {
+                if (_query == IntPtr.Zero) return false;
+                return PdhCollectQueryData(_query) == 0;
+            }
         }
 
         /// <summary>读取一次计数器数组（通配实例）。成功返回 true。</summary>
         public bool TryRead(string path, List<InstanceValue> output)
         {
             output.Clear();
-            if (!IsOpen) return false;
-            if (!_counters.TryGetValue(path, out IntPtr counter)) return false;
 
-            uint size = 0;
-            uint count = 0;
-            uint rc = PdhGetFormattedCounterArrayW(counter, PDH_FMT_DOUBLE, ref size, ref count, IntPtr.Zero);
-            if (rc == 0 && count == 0) return true;           // 没有实例
-            if (rc == PDH_NO_DATA) return true;               // 首轮采样还没数据，下轮再取
-            if (rc == PDH_INVALID_DATA) return true;          // 个别计数器（如无活动的 GPU）暂时无效
-            if (rc != PDH_MORE_DATA)
+            lock (_sync)
             {
-                Log.Warn("读取计数器失败 0x" + rc.ToString("X8") + " : " + path);
-                return false;
-            }
+                if (_query == IntPtr.Zero) return false;
+                if (!_counters.TryGetValue(path, out IntPtr counter)) return false;
 
-            IntPtr buffer = Marshal.AllocHGlobal((int)size);
-            try
-            {
-                rc = PdhGetFormattedCounterArrayW(counter, PDH_FMT_DOUBLE, ref size, ref count, buffer);
-                if (rc == PDH_NO_DATA || rc == PDH_INVALID_DATA) return true;
-                if (rc != 0)
+                uint size = 0;
+                uint count = 0;
+                uint rc = PdhGetFormattedCounterArrayW(counter, PDH_FMT_DOUBLE, ref size, ref count, IntPtr.Zero);
+                if (rc == 0 && count == 0) return true;           // 没有实例
+                if (rc == PDH_NO_DATA) return true;               // 首轮采样还没数据，下轮再取
+                if (rc == PDH_INVALID_DATA) return true;          // 个别计数器（如无活动的 GPU）暂时无效
+                if (rc != PDH_MORE_DATA)
                 {
-                    Log.Warn("读取计数器数据失败 0x" + rc.ToString("X8") + " : " + path);
+                    Log.Warn("读取计数器失败 0x" + rc.ToString("X8") + " : " + path);
                     return false;
                 }
 
-                int stride = Marshal.SizeOf(typeof(PdhFmtCounterValueItemW));
-                for (int i = 0; i < count; i++)
+                IntPtr buffer = Marshal.AllocHGlobal((int)size);
+                try
                 {
-                    IntPtr ptr = new IntPtr(buffer.ToInt64() + i * stride);
-                    PdhFmtCounterValueItemW item = (PdhFmtCounterValueItemW)Marshal.PtrToStructure(ptr, typeof(PdhFmtCounterValueItemW));
-                    if (item.FmtValue.CStatus != 0) continue; // 无效样本跳过
+                    rc = PdhGetFormattedCounterArrayW(counter, PDH_FMT_DOUBLE, ref size, ref count, buffer);
+                    if (rc == PDH_NO_DATA || rc == PDH_INVALID_DATA) return true;
+                    if (rc != 0)
+                    {
+                        Log.Warn("读取计数器数据失败 0x" + rc.ToString("X8") + " : " + path);
+                        return false;
+                    }
 
-                    string name = item.SzName == IntPtr.Zero ? "" : Marshal.PtrToStringUni(item.SzName);
-                    output.Add(new InstanceValue { Name = name ?? "", Value = item.FmtValue.DoubleValue });
+                    int stride = Marshal.SizeOf(typeof(PdhFmtCounterValueItemW));
+                    for (int i = 0; i < count; i++)
+                    {
+                        IntPtr ptr = new IntPtr(buffer.ToInt64() + i * stride);
+                        PdhFmtCounterValueItemW item = (PdhFmtCounterValueItemW)Marshal.PtrToStructure(ptr, typeof(PdhFmtCounterValueItemW));
+                        if (item.FmtValue.CStatus != 0) continue; // 无效样本跳过
+
+                        string name = item.SzName == IntPtr.Zero ? "" : Marshal.PtrToStringUni(item.SzName);
+                        output.Add(new InstanceValue { Name = name ?? "", Value = item.FmtValue.DoubleValue });
+                    }
+                    return true;
                 }
-                return true;
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(buffer);
+                finally
+                {
+                    Marshal.FreeHGlobal(buffer);
+                }
             }
         }
 
@@ -172,12 +189,15 @@ namespace MirrorpondHUD.Core
 
         public void Dispose()
         {
-            if (_query != IntPtr.Zero)
+            lock (_sync)
             {
-                try { PdhCloseQuery(_query); } catch { }
-                _query = IntPtr.Zero;
+                if (_query != IntPtr.Zero)
+                {
+                    try { PdhCloseQuery(_query); } catch { }
+                    _query = IntPtr.Zero;
+                }
+                _counters.Clear();
             }
-            _counters.Clear();
         }
     }
 }

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Globalization;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using MirrorpondHUD.Core;
@@ -27,6 +28,23 @@ namespace MirrorpondHUD.Cards
             _media = MediaCard.MediaOf(config);
             _onChanged = onChanged;
             DataContext = this;
+
+            // P1-8：getter 只读缓存；后台预热完成后主动刷新一次提示，不阻塞设置页。
+            WarmDecodersAsync();
+        }
+
+        async void WarmDecodersAsync()
+        {
+            try
+            {
+                await Decoders.WarmUpAsync();
+                if (Dispatcher.CheckAccess()) Raise("DecoderHint");
+                else _ = Dispatcher.BeginInvoke(new Action(() => Raise("DecoderHint")));
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("解码器预热提示刷新失败: " + ex.Message);
+            }
         }
 
         public string MediaPath
@@ -214,7 +232,7 @@ namespace MirrorpondHUD.Cards
                         : "自定义解码器不存在：" + _media.DecoderPath;
                 }
 
-                List<DecoderInfo> found = Decoders.Detect();
+                List<DecoderInfo> found = Decoders.Cached;
                 if (found.Count == 0)
                     return "没找到 ffmpeg / mpv / VLC；视频只能用 Windows 自带的 Media Foundation";
 
@@ -239,10 +257,10 @@ namespace MirrorpondHUD.Cards
             }
         }
 
-        /// <summary>重新扫一遍 PATH（设置页的「检测」按钮）。</summary>
-        public void RefreshDecoders()
+        /// <summary>重新扫一遍 PATH（设置页的「检测」按钮）；P1-8：异步探测，不冻结设置页。</summary>
+        public async void RefreshDecoders()
         {
-            List<DecoderInfo> found = Decoders.Detect(true);
+            List<DecoderInfo> found = await Decoders.DetectAsync(true);
             Log.Info("手动重新检测解码器：" + Decoders.Describe(found));
             Raise("DecoderHint");
         }
