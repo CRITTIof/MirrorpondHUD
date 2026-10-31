@@ -42,7 +42,7 @@ namespace MirrorpondHUD.Core
                     Log.Info("设置升级到 SchemaVersion 4：图标倍率 1.45 → 1.15（旧默认值偏大，图标比文字高 45%）");
                 }
 
-                UpgradeCommandToExtras(json, modern);
+                UpgradeCardExtras(json, modern);
                 Log.Info("设置已从 SchemaVersion " + version + " 升级到 " + Settings.CurrentSchemaVersion +
                          "（卡片自己的设置搬进 Extras）");
                 return modern;
@@ -56,6 +56,7 @@ namespace MirrorpondHUD.Core
                 two = two ?? new Settings();
 
                 UpgradeV2Command(json, two);
+                UpgradeCardExtras(json, two);
                 Log.Info("设置已从 SchemaVersion 2 升级到 " + Settings.CurrentSchemaVersion + "（命令行设置改为每张卡片独立）");
                 return two;
             }
@@ -98,10 +99,11 @@ namespace MirrorpondHUD.Core
         }
 
         /// <summary>
-        /// v4 及更早：每张命令行卡片的 <c>Command</c> 子对象 → <c>Extras["command"]</c>。
-        /// 只搬命令行卡片，别的卡片以前也带着一份拷贝但从没被读过。
+        /// v5 及更早：把每张卡片旧的子对象搬进 <c>Extras</c>——
+        /// <c>Command</c> → <c>command</c>（命令行卡）、<c>Media</c> → <c>media</c>（媒体卡）、
+        /// <c>Chat</c> → <c>chat</c>（对话卡）。只搬对应种类的卡片：其它卡片以前也各带一份拷贝但从没被读过。
         /// </summary>
-        static void UpgradeCommandToExtras(string json, Settings settings)
+        static void UpgradeCardExtras(string json, Settings settings)
         {
             if (settings == null || settings.Cards == null || settings.Cards.Count == 0) return;
 
@@ -123,26 +125,50 @@ namespace MirrorpondHUD.Core
             for (int i = 0; i < count; i++)
             {
                 CardSettings card = settings.Cards[i];
-                if (card == null) continue;
-                if (!string.Equals(card.Kind, "command", StringComparison.OrdinalIgnoreCase)) continue;
-
                 var map = rawCards[i] as Dictionary<string, object>;
-                if (map == null) continue;
+                if (card == null || map == null) continue;
 
-                object commandNode;
-                if (!map.TryGetValue("Command", out commandNode) || commandNode == null) continue;
+                switch ((card.Kind ?? "").Trim().ToLowerInvariant())
+                {
+                    case "command":
+                        MoveExtra<CommandSettings>(map, "Command", card, "command");
+                        break;
+                    case "media":
+                        MoveExtra<MediaSettings>(map, "Media", card, "media");
+                        break;
+                    case "chat":
+                        MoveExtra<ChatSettings>(map, "Chat", card, "chat");
+                        break;
+                }
+            }
+        }
 
-                try
-                {
-                    CommandSettings command = Json.BindNode<CommandSettings>(commandNode);
-                    if (command == null) continue;
-                    command.Normalize();
-                    card.SetExtras("command", command);
-                }
-                catch (Exception ex)
-                {
-                    Log.Warn("迁移卡片命令行设置失败: " + ex.Message);
-                }
+        /// <summary>把一个旧的子对象节点绑定成强类型，归一化后写进卡片的 Extras。</summary>
+        static void MoveExtra<T>(Dictionary<string, object> map, string jsonKey, CardSettings card, string extrasKey)
+            where T : class, new()
+        {
+            object node;
+            if (!map.TryGetValue(jsonKey, out node) || node == null) return;
+
+            try
+            {
+                T value = Json.BindNode<T>(node);
+                if (value == null) return;
+
+                var command = value as CommandSettings;
+                if (command != null) command.Normalize();
+
+                var media = value as MediaSettings;
+                if (media != null) media.Normalize();
+
+                var chat = value as ChatSettings;
+                if (chat != null) chat.Normalize();
+
+                card.SetExtras(extrasKey, value);
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("迁移卡片设置失败(" + jsonKey + "): " + ex.Message);
             }
         }
 

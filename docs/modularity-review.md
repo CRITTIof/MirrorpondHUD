@@ -5,7 +5,7 @@
 > 结论一句话：**契约层够用，宿主层有 5 处可直接修的问题，真正的扩展瓶颈在「设置模型 + 设置页」**——
 > 新增一张带设置项的卡片要改 5 个代码文件，其中 3 个是 700 ~ 1500 行的巨型文件。
 > 读法：P0 是能立刻动手的小修（不改架构），P1 是需要设计的重构，P2 是可选结构优化。
-> **实施状态：P0-1 ~ P0-4 已提交（v2.5.0）；P1-1、P1-2 已实现、配置升到 schema 5（未提交）；手工回归待做；P0-5 暂缓。**
+> **实施状态：P0-1 ~ P0-4 已提交（v2.5.0）；P1-1、P1-2、P1-3 已实现并提交（v2.6.1 / v2.6.2，配置升到 schema 6）；手工回归待做；P0-5 暂缓。**
 
 ## 0. 评审方法
 
@@ -333,31 +333,40 @@ XAML 用三块 `Visibility` 面板切换（`src/Ui/SettingsWindow.xaml:190` / `:
 4. **`BuildDialog` 共享哪些对象**：`Style` / `Cli` / `Data` / `Behavior` / `Hotkeys` / `Cards` 共享引用，只有 `Overlay` 独立复制。
    窗口只写自己的 `Overlay.X/Y/Locked`（`LayoutCards`、`SetLocked`），不会写共享对象，所以共享是安全的。
 
-### 8.2 P1-1 / P1-2：卡片自己的设置（schema 5）
+### 8.2 P1-1 / P1-2：卡片自己的设置（schema 5 → 6，v2.6.0 ~ v2.6.2）
 
-**契约**（`src/Cards/CardSettingsModule.cs`，三个接口各管一件事）：
+**契约**（`src/Cards/CardSettingsModule.cs`，每个接口各管一件事）：
 
 | 接口 | 职责 |
 |---|---|
 | `ICardSettingsModule.InitializeCard` | 数据面：补默认值、夹紧范围；`CardModel` 建卡 / 每次归一化时调用 |
 | `ICardEditorSection.CreateEditor` | 界面面：模块自己画设置区块，宿主只提供一个 `ContentControl` |
 | `ICardSettingsValidator.Validate` | 校验：返回错误文案，宿主拼上卡片名 |
+| `ICardSummary.Summary` | 摘要：设置页卡片标题右侧那行小字（不实现则用宿主的「常驻 / 呼出 F9」） |
 
-**配置**：`CardSettings` 去掉了 `Command` 字段，改为 `Extras`（`Dictionary<string, object>`）+ `ExtrasAs<T>` / `SetExtras<T>`。
-命令行卡用 `Extras.command`；`Json.Bind` 增加了 `Dictionary<string, object>` 分支，`SettingsMigration` 增加 v4 → v5
-（只把命令行卡的 `Command` 搬进 `Extras.command`，其它卡以前那份从没被读过的拷贝不写进新配置）。
+**配置**：`CardSettings` 依次去掉 `Command`（v2.6.0）、`Media` / `Chat`（v2.6.2），统一改走
+`Extras`（`Dictionary<string, object>`）+ `ExtrasAs<T>` / `SetExtras<T>`。
+`Json.Bind` 增加了 `Dictionary<string, object>` 分支；`SettingsMigration` 的 `UpgradeCardExtras`
+负责把旧子对象按卡片种类搬进 `Extras.command` / `media` / `chat`。
 
-**试点**：命令行卡实现三个接口，`CommandCardEditor.cs` 用代码搭出原来的 6 行界面对（工具 / 自定义命令 / 工作目录 / 返回内容 / 提示符预览），
-`SettingsWindow.xaml` 里那 70 行命令行面板与 `CardEditor` 里 8 个属性删除，改成一行 `ContentControl`。
-媒体 / 对话卡仍用原来的 typed 字段，后续按同一模式迁移。
+**试点与推广**：
+
+1. v2.6.0：命令行卡先走通——`CommandCardEditor.cs` 用代码搭界面，`SettingsWindow.xaml` 的 70 行面板与
+   `CardEditor` 的 8 个属性删除，改成一个 `ContentControl`。
+2. v2.6.2：媒体卡与对话卡按同一模式迁移——设置面板整块搬成 `MediaCardSettingsView.xaml` /
+   `ChatCardSettingsView.xaml`（属性名与绑定不变，视觉零差异），`SettingsWindow.xaml` 再删 190 行、
+   `SettingsWindow.xaml.cs` 删 6 个处理器；API Key 的「未失焦草稿」改由 `CardEditor.CommitPendingEdits()`
+   遍历模块区块提交。
 
 **实测**：
 
-- `dotnet build -c Release`：0 警告 0 错误。
-- `--selftest`：失败项 0，新增的「卡片设置=OK」（Extras 读写 + 模块设置区块创建）。
-- 迁移实测：用真实的 schema 4 配置启动，日志 `设置已从 SchemaVersion 4 升级到 5`；迁移后
-  `SchemaVersion=5`、只有命令行卡获得 `Extras.command`、旧的 `Command` 键消失、卡片 Id / Style / Hotkeys 全部未变。
-- 未覆盖：设置页里**真实点击**模块区块（需要手工打开设置页确认布局）。
+- `dotnet build -c Release`：0 警告 0 错误（两次）。
+- `--selftest`：失败项 0（「卡片设置=OK」覆盖 Extras 读写、模块区块创建、Key 的 UI 行为）。
+- 迁移实测：schema 4 → 5（v2.6.0）与 schema 5 → 6（v2.6.2）都用真实配置跑过；
+  对话卡的 `BaseUrl` / `Model` / `Mode` / `SystemPrompt` / `TimeoutSeconds` 与迁移前逐字段相同，
+  `ApiKey` 仍是 `dpapi:` 密文，卡片 Id / Style / Hotkeys 未变。
+- 设置页按 F10 打开无异常。
+- 未覆盖：媒体卡设置区块的**实际点击**（当前配置里没有媒体卡），需要手工加一张媒体卡确认布局与按钮。
 
 ### 8.3 P0 验证状态（v2.5.0）
 

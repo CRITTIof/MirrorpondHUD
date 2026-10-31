@@ -1,11 +1,11 @@
-# 版本修改记录（2.4.1 → 2.6.1）
+# 版本修改记录（2.4.1 → 2.6.2）
 
 > 范围：本文只记录**这一轮接手后我做的版本**（v2.4.1 起）。v2.4.0 及更早是既有历史，不在本文档里。
 > 数据全部取自仓库真实提交（`git diff --shortstat <上一版>..<本版>`），文件行的 `+ / -` 就是实际增删行数。
 > 版本状态：`main` 已推送到 GitHub；`v2.4.2`–`v2.4.5` 为附注标签（分别指向 `70343ef` / `aabe441` / `05857ce` / `f4b2b8b`），
 > v2.4.5 已发布 Release（附件为两个 requires-dotnet 单文件），v2.4.0 的 Release 已删除、其 tag 保留。
 > `v2.5.0` 为附注标签：**只在本地创建，尚未推送、也还没有 Release**。
-> `v2.6.0`（schema 5）与 `v2.6.1`（P1-3）目前只有提交、**都没有打标签**；建议手工回归后再发版。
+> `v2.6.0`（schema 5）、`v2.6.1`（P1-3）与 `v2.6.2`（schema 6）目前只有提交、**都没有打标签**；建议手工回归后再发版。
 
 ## 0. 总览
 
@@ -18,7 +18,8 @@
 | v2.4.5 | 2026-10-30 | `f4b2b8b` | AI 对话与命令行统一成 CLI 交互面板（每条记录独立小面板与滑块）；图标按墨迹居中；拖动时玻璃跟手；主题方案文档 | 23 文件，+1647 / −668 |
 | v2.5.0 | 2026-10-30 | `c4e68e2` | 模块化评审文档；修命令行打开时其它卡片停更、富内容每次应用设置都重建、每卡一份整份配置副本 | 5 文件，+183 / −30，另新增 2 篇文档（500 + 582 行） |
 | v2.6.0 | 2026-10-30 | `9c1bafa` | 卡片设置搬进 `CardSettings.Extras`（schema 5）；模块自带设置区块与校验；命令行卡试点 | 15 文件，+470 / −306，另新增 2 个源文件（45 + 259 行） |
-| v2.6.1 | 2026-10-31 | 本次提交 | P1-3：旧 Kind 别名与预设归一化下沉到模块，`CardModel` 不再认识 `InfoTextCard` | 10 文件，+146 / −22 |
+| v2.6.1 | 2026-10-31 | `d3ac63d` | P1-3：旧 Kind 别名与预设归一化下沉到模块，`CardModel` 不再认识 `InfoTextCard` | 10 文件，+146 / −22 |
+| v2.6.2 | 2026-10-31 | 本次提交 | 媒体卡 / 对话卡设置搬进 `Extras`（schema 6）；模块自带设置区块（`MediaCardSettingsView` / `ChatCardSettingsView`）与摘要 | 19 文件，+347 / −846，另新增 4 个源文件（728 行） |
 
 ---
 
@@ -386,7 +387,54 @@ AI 对话卡还是「输入框 + 聊天记录」的普通表单样式，Key 以�
 
 ---
 
-## 9. 不在版本里的东西
+## 9. v2.6.2（本次提交，未打标签）
+
+### 背景
+
+v2.6.0 只把**命令行卡**的设置搬进了 `CardSettings.Extras`，媒体卡与对话卡仍是 `CardSettings` 上的 typed 字段，
+设置页里也还留着两块手写面板。本次把这两张卡一起迁完：宿主不再认识任何一张具体卡片的设置。
+
+### 改动
+
+1. **配置结构 v5 → v6**：`SettingsMigration` 泛化成 `UpgradeCardExtras`，
+   把 `Command` / `Media` / `Chat` 分别搬进 `Extras.command` / `media` / `chat`（只搬对应种类的卡片）。
+2. **`CardSettings` 去掉 `Media` / `Chat` 字段**：`MediaCard.MediaOf` / `ChatCard.ChatOf` 负责读写 `Extras`。
+3. **设置面板整体搬进模块**：新增
+   `MediaCardSettingsView.xaml(.cs)`（约 250 行）与 `ChatCardSettingsView.xaml(.cs)`（约 200 行），
+   属性名与 XAML 绑定保持原样，视觉零差异；`SettingsWindow.xaml` 删掉两块面板（约 190 行）与 6 个处理器。
+4. **新增 `ICardSummary`**：卡片标题右侧的摘要由模块给（命令行 = 工具 + 目录、媒体 = 文件名、对话 = 模型名），
+   宿主不再按 Kind 分支算文案。
+5. **待提交草稿**：`CardEditor.CommitPendingEdits()` 在保存前遍历模块区块，把还没失焦的 API Key 草稿加密收下
+   （旧实现是 `CardEditor` 上的 view-model 方法，随属性一起搬走了）。
+6. **自检**：媒体 / 对话断言改走 `Extras`；Key 的 UI 行为改为针对 `ChatCardSettingsView` 验证。
+
+### 文件
+
+| 文件 | 行数 | 说明 |
+|---|---|---|
+| `src/Cards/MediaCardSettingsView.xaml(.cs)` | 新增 | 媒体设置区块（原 `CardEditor` 属性 + `SettingsWindow` 面板） |
+| `src/Cards/ChatCardSettingsView.xaml(.cs)` | 新增 | 对话设置区块（含 Key 草稿 / 清除逻辑） |
+| `src/Cards/MediaCard.cs` | 设置 / 区块 / 校验 / 摘要四契约，读写 `Extras.media` | |
+| `src/Cards/ChatCard.cs` | 设置 / 区块 / 摘要契约，读写 `Extras.chat` | |
+| `src/Cards/Settings.cs` 等 | `CardSettings` 去字段、schema 6 | |
+| `src/Ui/CardEditor.cs` | 删媒体 / 对话属性与面板，加 `ICardSummary` 与 `CommitPendingEdits` | |
+| `src/Ui/SettingsWindow.xaml(.cs)` | 删两块面板与 6 个处理器、媒体校验 | |
+| `src/Core/SettingsMigration.cs` | 泛化 `UpgradeCardExtras`（Command / Media / Chat） | |
+
+### 实测
+
+- `dotnet build -c Release`：**0 警告 0 错误**。
+- `--selftest`：**失败项 0**（含媒体 / 对话 `Extras` 往返、`ChatCardSettingsView` 的 Key 行为）。
+- **迁移实测**（真实 schema 5 配置）：日志 `设置已从 SchemaVersion 5 升级到 6`；迁移后
+  `SchemaVersion=6`、旧的 `Media` / `Chat` 键全部消失、对话卡出现 `Extras.chat`，
+  `BaseUrl` / `Model` / `Mode` / `SystemPrompt` / `TimeoutSeconds` 与迁移前逐字段相同，`ApiKey` 仍是 `dpapi:` 密文，
+  卡片 Id / Style / Hotkeys 全部未变。
+- 设置页按 F10 打开：`设置窗口已打开`，无 UI 异常。
+- 未覆盖：媒体卡设置区块的**实际点击**（当前配置里没有媒体卡），需要手工加一张媒体卡确认布局与「选择…/检测」按钮。
+
+---
+
+## 10. 不在版本里的东西
 
 - 验收脚本、样张与测量脚本（`cmd-e2e.ps1`、`drag-glass.ps1`、`measure-*.py`、`shots/` 等）都在仓库外的 `hud-test/` 里，**没有提交**。
 - 发布：`main` 与标签已推送到 [github.com/CRITTIof/MirrorpondHUD](https://github.com/CRITTIof/MirrorpondHUD)；
@@ -395,7 +443,7 @@ AI 对话卡还是「输入框 + 聊天记录」的普通表单样式，Key 以�
   v2.4.0 的 Release 已删除（tag `v2.4.0` 保留，历史仍可检出）。
 - 仓库追踪的文件共 89 个，`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
 
-## 10. 已知代价（跨版本）
+## 11. 已知代价（跨版本）
 
 - 桌面亚克力为了不拍到自己，会把卡片排除在截屏之外 —— 这个模式下截图 / 录屏里**看不到卡片**，观感只能靠肉眼与离屏渲染验证。
 - 兼容实现每帧对身后窗口做 `PrintWindow`，拖动时最多 ~21 帧/秒；要更高只能走桌面亚克力（DXGI）。

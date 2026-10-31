@@ -1,11 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
-using System.Globalization;
 using System.Windows;
+using System.Windows.Media;
 using MirrorpondHUD.Cards;
 using MirrorpondHUD.Core;
-using MirrorpondHUD.Media;
 
 namespace MirrorpondHUD.Ui
 {
@@ -32,8 +31,6 @@ namespace MirrorpondHUD.Ui
             _module = module;
             _settings = settings ?? new Settings();
             _expanded = expanded;
-            if (_config.Media == null) _config.Media = new MediaSettings();
-            if (_config.Chat == null) _config.Chat = new ChatSettings();
         }
 
         public CardSettings Config { get { return _config; } }
@@ -70,6 +67,32 @@ namespace MirrorpondHUD.Ui
         public Visibility SettingsSectionVisibility
         {
             get { return SettingsSection == null ? Visibility.Collapsed : Visibility.Visible; }
+        }
+
+        /// <summary>
+        /// 把模块区块里还没提交的草稿落盘（目前只有 API Key 输入框：用户打完字直接点「确定」时，
+        /// 文本框还没失焦，草稿只在控件里）。保存前由设置窗口统一调用。
+        /// </summary>
+        public void CommitPendingEdits()
+        {
+            if (!_sectionCreated || _section == null) return;
+
+            foreach (ChatCardSettingsView chat in FindChildren<ChatCardSettingsView>(_section))
+                chat.CommitChatApiKey();
+        }
+
+        static IEnumerable<T> FindChildren<T>(DependencyObject root) where T : DependencyObject
+        {
+            int count = VisualTreeHelper.GetChildrenCount(root);
+            for (int i = 0; i < count; i++)
+            {
+                DependencyObject child = VisualTreeHelper.GetChild(root, i);
+
+                var match = child as T;
+                if (match != null) yield return match;
+
+                foreach (T nested in FindChildren<T>(child)) yield return nested;
+            }
         }
 
         public string Icon
@@ -142,40 +165,18 @@ namespace MirrorpondHUD.Ui
         {
             get
             {
-                if (_module.IsInteractive)
+                // 摘要由模块自己说（命令行卡显示工具 + 目录、媒体卡显示文件名、对话卡显示模型名）；
+                // 没实现的模块用宿主的通用文案。
+                var summary = _module as ICardSummary;
+                if (summary != null)
                 {
-                    CommandSettings command = _config.ExtrasAs<CommandSettings>(CommandCard.SettingsKey);
-                    command.Normalize();
-                    return CommandRunner.ToolLabel(command) + " · " + FitSummary(command.WorkingDirectory);
+                    try { return summary.Summary(_config); }
+                    catch (Exception ex) { Log.Warn("卡片摘要失败(" + _config.Name + "): " + ex.Message); }
                 }
-
-                if (!string.IsNullOrWhiteSpace(_module.Kind) && _module.Kind == "media")
-                    return MediaSummary();
 
                 if (_config.Resident) return "常驻";
                 return string.IsNullOrWhiteSpace(_config.Hotkey) ? "未设置呼出热键" : "呼出 " + _config.Hotkey;
             }
-        }
-
-        static string FitSummary(string directory)
-        {
-            string dir = (directory ?? "").Trim();
-            if (dir.Length == 0) dir = "用户主目录";
-            if (dir.Length > 28) dir = "…" + dir.Substring(dir.Length - 27);
-            return dir;
-        }
-
-        string MediaSummary()
-        {
-            string path = (_config.Media.Path ?? "").Trim();
-            if (path.Length == 0) return "未选择文件";
-
-            string name;
-            try { name = System.IO.Path.GetFileName(path); }
-            catch { name = path; }
-
-            if (name.Length > 26) name = name.Substring(0, 25) + "…";
-            return name;
         }
 
         public bool IsExpanded
@@ -314,395 +315,8 @@ namespace MirrorpondHUD.Ui
         // 命令行卡片的设置（工具 / 自定义命令 / 工作目录 / 返回内容 / 提示符预览）
         // 已搬到模块自己身上：见 src/Cards/CommandCardEditor.cs 与 ICardEditorSection。
 
-        // ==================== 媒体卡片 ====================
-
-        public Visibility MediaVisibility
-        {
-            get { return _module.Kind == "media" ? Visibility.Visible : Visibility.Collapsed; }
-        }
-
-        public string MediaPath
-        {
-            get { return _config.Media.Path; }
-            set
-            {
-                string text = value ?? "";
-                if (_config.Media.Path == text) return;
-                _config.Media.Path = text;
-                Raise("MediaPath");
-                Raise("Summary");
-            }
-        }
-
-        /// <summary>0 = 完整显示，1 = 裁剪填满，2 = 拉伸填满，3 = 原始大小。</summary>
-        public int MediaFitIndex
-        {
-            get
-            {
-                switch (MediaSettings.NormalizeFit(_config.Media.Fit))
-                {
-                    case "Cover": return 1;
-                    case "Fill": return 2;
-                    case "None": return 3;
-                    default: return 0;
-                }
-            }
-            set
-            {
-                string fit = value == 1 ? "Cover" : value == 2 ? "Fill" : value == 3 ? "None" : "Contain";
-                if (MediaSettings.NormalizeFit(_config.Media.Fit) == fit) return;
-                _config.Media.Fit = fit;
-                Raise("MediaFitIndex");
-            }
-        }
-
-        public double MediaWidth
-        {
-            get { return _config.Media.Width; }
-            set
-            {
-                double v = Math.Round(Math.Max(0, Math.Min(3000, value)));
-                if (Math.Abs(_config.Media.Width - v) < 0.001) return;
-                _config.Media.Width = v;
-                Raise("MediaWidth");
-                Raise("MediaWidthText");
-            }
-        }
-
-        public string MediaWidthText { get { return _config.Media.Width.ToString("0", CultureInfo.InvariantCulture); } }
-
-        public double MediaHeight
-        {
-            get { return _config.Media.Height; }
-            set
-            {
-                double v = Math.Round(Math.Max(0, Math.Min(3000, value)));
-                if (Math.Abs(_config.Media.Height - v) < 0.001) return;
-                _config.Media.Height = v;
-                Raise("MediaHeight");
-                Raise("MediaHeightText");
-            }
-        }
-
-        public string MediaHeightText { get { return _config.Media.Height.ToString("0", CultureInfo.InvariantCulture); } }
-
-        public double MediaOpacity
-        {
-            get { return _config.Media.Opacity; }
-            set
-            {
-                if (Math.Abs(_config.Media.Opacity - value) < 0.001) return;
-                _config.Media.Opacity = value;
-                Raise("MediaOpacity");
-            }
-        }
-
-        public bool MediaLoop
-        {
-            get { return _config.Media.Loop; }
-            set
-            {
-                if (_config.Media.Loop == value) return;
-                _config.Media.Loop = value;
-                Raise("MediaLoop");
-            }
-        }
-
-        public bool MediaAutoplay
-        {
-            get { return _config.Media.Autoplay; }
-            set
-            {
-                if (_config.Media.Autoplay == value) return;
-                _config.Media.Autoplay = value;
-                Raise("MediaAutoplay");
-            }
-        }
-
-        public bool MediaMuted
-        {
-            get { return _config.Media.Muted; }
-            set
-            {
-                if (_config.Media.Muted == value) return;
-                _config.Media.Muted = value;
-                Raise("MediaMuted");
-            }
-        }
-
-        public bool MediaRounded
-        {
-            get { return _config.Media.Rounded; }
-            set
-            {
-                if (_config.Media.Rounded == value) return;
-                _config.Media.Rounded = value;
-                Raise("MediaRounded");
-            }
-        }
-
-        public double MediaSpeed
-        {
-            get { return _config.Media.Speed; }
-            set
-            {
-                double v = Math.Round(value, 2);
-                if (Math.Abs(_config.Media.Speed - v) < 0.001) return;
-                _config.Media.Speed = v;
-                Raise("MediaSpeed");
-                Raise("MediaSpeedText");
-            }
-        }
-
-        public string MediaSpeedText
-        {
-            get { return _config.Media.Speed.ToString("0.00", CultureInfo.InvariantCulture) + "×"; }
-        }
-
-        /// <summary>0 = 自动，1 = 只用系统 Media Foundation，2 = 只用 ffmpeg。</summary>
-        public int MediaDecoderIndex
-        {
-            get
-            {
-                switch (MediaSettings.NormalizeDecoder(_config.Media.Decoder))
-                {
-                    case "BuiltIn": return 1;
-                    case "FFmpeg": return 2;
-                    default: return 0;
-                }
-            }
-            set
-            {
-                string decoder = value == 1 ? "BuiltIn" : value == 2 ? "FFmpeg" : "Auto";
-                if (MediaSettings.NormalizeDecoder(_config.Media.Decoder) == decoder) return;
-                _config.Media.Decoder = decoder;
-                Raise("MediaDecoderIndex");
-                Raise("DecoderHint");
-            }
-        }
-
-        /// <summary>自定义 ffmpeg.exe；空 = 自动在 PATH 与常见目录里找。</summary>
-        public string MediaDecoderPath
-        {
-            get { return _config.Media.DecoderPath; }
-            set
-            {
-                string text = (value ?? "").Trim();
-                if (string.Equals(_config.Media.DecoderPath ?? "", text, StringComparison.OrdinalIgnoreCase)) return;
-                _config.Media.DecoderPath = text;
-                Raise("MediaDecoderPath");
-                Raise("DecoderHint");
-            }
-        }
-
-        /// <summary>探测结果：找到哪些解码器、ffmpeg 在哪。</summary>
-        public string DecoderHint
-        {
-            get
-            {
-                if (!string.IsNullOrWhiteSpace(_config.Media.DecoderPath))
-                {
-                    return System.IO.File.Exists(_config.Media.DecoderPath)
-                        ? "使用自定义解码器：" + _config.Media.DecoderPath
-                        : "自定义解码器不存在：" + _config.Media.DecoderPath;
-                }
-
-                List<DecoderInfo> found = Decoders.Detect();
-                if (found.Count == 0)
-                    return "没找到 ffmpeg / mpv / VLC；视频只能用 Windows 自带的 Media Foundation";
-
-                DecoderInfo ffmpeg = null;
-                var others = new System.Text.StringBuilder();
-                foreach (DecoderInfo info in found)
-                {
-                    if (info.Frames && ffmpeg == null) { ffmpeg = info; continue; }
-                    if (others.Length > 0) others.Append("、");
-                    others.Append(info.Kind);
-                }
-
-                if (ffmpeg == null)
-                    return "找到 " + others + "，但没有 ffmpeg；视频仍走系统解码（可在上面指定 ffmpeg.exe）";
-
-                string label = string.IsNullOrWhiteSpace(ffmpeg.Version)
-                    ? "FFmpeg"
-                    : "FFmpeg " + ffmpeg.Version;
-                string text = "已找到 " + label + "（" + ffmpeg.Path + "）";
-                if (others.Length > 0) text += "；另有 " + others;
-                return text;
-            }
-        }
-
-        /// <summary>重新扫一遍 PATH（设置页的「检测」按钮）。</summary>
-        public void RefreshDecoders()
-        {
-            List<DecoderInfo> found = Decoders.Detect(true);
-            Log.Info("手动重新检测解码器：" + Decoders.Describe(found));
-            Raise("DecoderHint");
-        }
-
-        // ==================== AI 对话卡片 ====================
-
-        public Visibility ChatVisibility
-        {
-            get { return _module.Kind == "chat" ? Visibility.Visible : Visibility.Collapsed; }
-        }
-
-        public string ChatBaseUrl
-        {
-            get { return _config.Chat.BaseUrl; }
-            set
-            {
-                string text = (value ?? "").Trim();
-                if (_config.Chat.BaseUrl == text) return;
-                _config.Chat.BaseUrl = text;
-                Raise("ChatBaseUrl");
-                Raise("ChatHint");
-                Raise("Summary");
-            }
-        }
-
-        public string ChatModel
-        {
-            get { return _config.Chat.Model; }
-            set
-            {
-                string text = (value ?? "").Trim();
-                if (_config.Chat.Model == text) return;
-                _config.Chat.Model = text;
-                Raise("ChatModel");
-                Raise("ChatHint");
-                Raise("Summary");
-            }
-        }
-
-        string _apiKeyDraft = "";
-
-        /// <summary>
-        /// 输入框里的草稿文字。已经存过 Key 时这里永远是空字符串——不回显密钥，
-        /// 框里显示的是「已填写 API Key，重新输入以更换」那行提示。
-        /// 真要把新 Key 存下去，靠 <see cref="CommitChatApiKey"/>（失焦 / 点确定时调用）。
-        /// </summary>
-        public string ChatApiKey
-        {
-            get { return _apiKeyDraft; }
-            set
-            {
-                string text = value ?? "";
-                if (_apiKeyDraft == text) return;
-                _apiKeyDraft = text;
-                Raise("ChatApiKey");
-                Raise("ChatApiKeyPlaceholderVisibility");
-            }
-        }
-
-        /// <summary>把输入框里的 Key 加密存下（失焦 / 点确定时调用）；空 = 保持原来的 Key 不动。</summary>
-        public void CommitChatApiKey()
-        {
-            string text = (_apiKeyDraft ?? "").Trim();
-            if (text.Length == 0) return;
-
-            _config.Chat.SetApiKey(text);
-            _apiKeyDraft = "";
-            Raise("ChatApiKey");
-            Raise("ChatApiKeyPlaceholder");
-            Raise("ChatApiKeyPlaceholderVisibility");
-            Raise("ChatApiKeyClearVisibility");
-            Raise("ChatHint");
-        }
-
-        /// <summary>忘记 Key。</summary>
-        public void ClearChatApiKey()
-        {
-            if (_config.Chat.ApiKey.Length == 0) return;
-
-            _config.Chat.ClearApiKey();
-            _apiKeyDraft = "";
-            Raise("ChatApiKey");
-            Raise("ChatApiKeyPlaceholder");
-            Raise("ChatApiKeyPlaceholderVisibility");
-            Raise("ChatApiKeyClearVisibility");
-            Raise("ChatHint");
-        }
-
-        /// <summary>输入框空着时压在上面的提示（不回显密钥）。</summary>
-        public string ChatApiKeyPlaceholder
-        {
-            get
-            {
-                if (_config.Chat.ApiKeyUnreadable) return "已存的 Key 解不开（换过用户 / 机器？），请重新填写";
-                if (_config.Chat.ApiKey.Length > 0) return ChatSettings.KeyPlaceholder;
-                return "还没填写（本地服务可以留空）";
-            }
-        }
-
-        public Visibility ChatApiKeyPlaceholderVisibility
-        {
-            get { return _apiKeyDraft.Length == 0 ? Visibility.Visible : Visibility.Collapsed; }
-        }
-
-        public Visibility ChatApiKeyClearVisibility
-        {
-            get { return _config.Chat.ApiKey.Length > 0 ? Visibility.Visible : Visibility.Collapsed; }
-        }
-
-        /// <summary>0 = 单次（每次独立），1 = 轮询（保留上下文）。</summary>
-        public int ChatModeIndex
-        {
-            get { return ChatSettings.NormalizeMode(_config.Chat.Mode) == "Context" ? 1 : 0; }
-            set
-            {
-                string mode = value == 1 ? "Context" : "Single";
-                if (ChatSettings.NormalizeMode(_config.Chat.Mode) == mode) return;
-                _config.Chat.Mode = mode;
-                Raise("ChatModeIndex");
-                Raise("ChatHint");
-                Raise("Summary");
-            }
-        }
-
-        public string ChatSystemPrompt
-        {
-            get { return _config.Chat.SystemPrompt; }
-            set
-            {
-                string text = value ?? "";
-                if (_config.Chat.SystemPrompt == text) return;
-                _config.Chat.SystemPrompt = text;
-                Raise("ChatSystemPrompt");
-            }
-        }
-
-        public int ChatTimeoutSeconds
-        {
-            get { return _config.Chat.TimeoutSeconds; }
-            set
-            {
-                int v = (int)Math.Max(5, Math.Min(300, value));
-                if (_config.Chat.TimeoutSeconds == v) return;
-                _config.Chat.TimeoutSeconds = v;
-                Raise("ChatTimeoutSeconds");
-            }
-        }
-
-        /// <summary>设置页里的一行提示：还缺什么。</summary>
-        public string ChatHint
-        {
-            get
-            {
-                if (_config.Chat.BaseUrl.Length == 0) return "接口地址为空：例如 https://api.openai.com/v1（本地服务填到 /v1）";
-                if (_config.Chat.Model.Length == 0) return "模型名为空：卡片第一行就显示它，例如 gpt-4o-mini / deepseek-chat";
-                if (!_config.Chat.BaseUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase))
-                    return "接口地址要以 http:// 或 https:// 开头";
-
-                if (_config.Chat.ApiKeyUnreadable)
-                    return "已存的 API Key 在这台机器上解不开（换过 Windows 用户或机器），请重新填写";
-
-                return _config.Chat.ApiKey.Length == 0
-                    ? "没填 Key：本地服务（LM Studio / Ollama 兼容层）可以留空；云端接口需要填"
-                    : "Key 已用 Windows DPAPI 加密存在 settings.json 里（只有当前用户能解），请求发到 "
-                      + _config.Chat.BaseUrl + "/chat/completions";
-            }
-        }
+        // 媒体卡与 AI 对话卡的设置区块已搬到模块自己身上：
+        // 见 src/Cards/MediaCardSettingsView.xaml(.cs) 与 ChatCardSettingsView.xaml(.cs)。
 
         /// <summary>卡片标题栏的摘要可能需要刷新（改完设置后调用）。</summary>
         public void RefreshSummary()

@@ -34,8 +34,11 @@ namespace MirrorpondHUD.Cards
     /// 卡片声明 <see cref="NeedsMouseInput"/>：输入框要收鼠标和键盘，所以这张卡不点击穿透，
     /// 会挡住它身下的桌面点击（其余卡片不受影响）。
     /// </summary>
-    public sealed class ChatCard : RichCardModuleBase, ICardHotkeySource, ICardHotkeyTarget
+    public sealed class ChatCard : RichCardModuleBase, ICardHotkeySource, ICardHotkeyTarget,
+                                   ICardSettingsModule, ICardEditorSection, ICardSummary
     {
+        /// <summary>对话设置存在 <see cref="CardSettings.Extras"/> 里的键名。</summary>
+        public const string SettingsKey = "chat";
         public const string ActionToggleMode = "chat.toggle-mode";
         public const string ActionClear = "chat.clear";
 
@@ -68,12 +71,43 @@ namespace MirrorpondHUD.Cards
 
         public override FrameworkElement CreateContent(CardRenderContext context)
         {
-            ChatSettings config = context != null && context.Config != null && context.Config.Chat != null
-                ? context.Config.Chat
-                : new ChatSettings();
-            config.Normalize();
+            ChatSettings config = ChatOf(context == null ? null : context.Config);
 
             return new ChatView(context == null ? null : context.Settings, config);
+        }
+
+        // ==================== 模块自己的设置 ====================
+
+        /// <summary>这张卡片自己的对话设置；缺省时回落到默认值并写回配置。</summary>
+        public static ChatSettings ChatOf(CardSettings card)
+        {
+            if (card == null) return new ChatSettings();
+
+            ChatSettings chat = card.ExtrasAs<ChatSettings>(SettingsKey);
+            chat.Normalize();
+            card.SetExtras(SettingsKey, chat);
+            return chat;
+        }
+
+        /// <inheritdoc />
+        public void InitializeCard(CardSettings config)
+        {
+            if (config == null) return;
+            ChatOf(config);
+        }
+
+        /// <inheritdoc />
+        public FrameworkElement CreateEditor(CardSettings config, Settings settings, Action onChanged)
+        {
+            return new ChatCardSettingsView(config, onChanged);
+        }
+
+        /// <inheritdoc />
+        public string Summary(CardSettings config)
+        {
+            ChatSettings chat = ChatOf(config);
+            if (string.IsNullOrWhiteSpace(chat.Model)) return "未填写模型";
+            return chat.Model;
         }
 
         public override void OnVisibilityChanged(FrameworkElement content, bool visible)

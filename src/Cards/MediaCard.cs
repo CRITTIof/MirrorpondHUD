@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Windows;
 using MirrorpondHUD.Core;
@@ -13,8 +14,12 @@ namespace MirrorpondHUD.Cards
     /// 它还向「热键」页提供一组媒体卡通用热键（播放 / 暂停、前进、后退、加速、减速），
     /// 对所有媒体卡片同时生效。
     /// </summary>
-    public sealed class MediaCard : RichCardModuleBase, ICardHotkeySource, ICardHotkeyTarget
+    public sealed class MediaCard : RichCardModuleBase, ICardHotkeySource, ICardHotkeyTarget,
+                                    ICardSettingsModule, ICardEditorSection, ICardSettingsValidator, ICardSummary
     {
+        /// <summary>媒体设置存在 <see cref="CardSettings.Extras"/> 里的键名。</summary>
+        public const string SettingsKey = "media";
+
         static readonly List<CardHotkeyAction> Actions = new List<CardHotkeyAction>
         {
             new CardHotkeyAction("media.play-pause", "播放 / 暂停", ""),
@@ -76,9 +81,53 @@ namespace MirrorpondHUD.Cards
 
         static MediaSettings Media(CardRenderContext context)
         {
-            return context != null && context.Config != null && context.Config.Media != null
-                ? context.Config.Media
-                : new MediaSettings();
+            return MediaOf(context == null ? null : context.Config);
+        }
+
+        // ==================== 模块自己的设置 ====================
+
+        /// <summary>这张卡片自己的媒体设置；缺省时回落到默认值并写回配置。</summary>
+        public static MediaSettings MediaOf(CardSettings config)
+        {
+            if (config == null) return new MediaSettings();
+
+            MediaSettings media = config.ExtrasAs<MediaSettings>(SettingsKey);
+            media.Normalize();
+            config.SetExtras(SettingsKey, media);
+            return media;
+        }
+
+        /// <inheritdoc />
+        public void InitializeCard(CardSettings config)
+        {
+            if (config == null) return;
+            MediaOf(config);
+        }
+
+        /// <inheritdoc />
+        public FrameworkElement CreateEditor(CardSettings config, Settings settings, Action onChanged)
+        {
+            return new MediaCardSettingsView(config, onChanged);
+        }
+
+        /// <inheritdoc />
+        public string Validate(CardSettings config)
+        {
+            string path = MediaOf(config).Path;
+            if (!string.IsNullOrWhiteSpace(path) && !System.IO.File.Exists(path))
+                return "的媒体文件不存在：" + path;
+            return null;
+        }
+
+        /// <inheritdoc />
+        public string Summary(CardSettings config)
+        {
+            string path = (MediaOf(config).Path ?? "").Trim();
+            if (path.Length == 0) return "未选择文件";
+
+            string name = System.IO.Path.GetFileName(path);
+            if (string.IsNullOrEmpty(name)) name = path;
+            return name.Length > 28 ? "…" + name.Substring(name.Length - 27) : name;
         }
     }
 }

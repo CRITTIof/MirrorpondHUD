@@ -336,20 +336,25 @@ namespace MirrorpondHUD
                     Shell = "pwsh", MaxLineChars = 77, Truncate = false, WorkingDirectory = "C:\\Temp"
                 });
                 settings.Cards.Add(commandCard);
-                settings.Cards.Add(new CardSettings
+
+                var mediaCard = new CardSettings
                 {
-                    Id = "media", Kind = "media", Name = "自检媒体", Resident = false, Hotkey = "F11",
-                    Media =
-                    {
-                        Path = "C:\\demo.png", Fit = "Cover", Width = 480, Muted = false,
-                        Rounded = false, Decoder = "FFmpeg", DecoderPath = "C:\\ffmpeg.exe"
-                    }
+                    Id = "media", Kind = "media", Name = "自检媒体", Resident = false, Hotkey = "F11"
+                };
+                mediaCard.SetExtras(MediaCard.SettingsKey, new MediaSettings
+                {
+                    Path = "C:\\demo.png", Fit = "Cover", Width = 480, Muted = false,
+                    Rounded = false, Decoder = "FFmpeg", DecoderPath = "C:\\ffmpeg.exe"
                 });
+                settings.Cards.Add(mediaCard);
 
                 Settings back = Json.Deserialize<Settings>(Json.Serialize(settings));
                 CommandSettings backCommand = back == null || back.Cards == null || back.Cards.Count < 2
                     ? new CommandSettings()
                     : back.Cards[1].ExtrasAs<CommandSettings>(CommandCard.SettingsKey);
+                MediaSettings backMedia = back == null || back.Cards == null || back.Cards.Count < 3
+                    ? new MediaSettings()
+                    : back.Cards[2].ExtrasAs<MediaSettings>(MediaCard.SettingsKey);
 
                 configOk = back != null
                            && back.Cards != null && back.Cards.Count == 3
@@ -364,13 +369,13 @@ namespace MirrorpondHUD
                            && backCommand.MaxLineChars == 77
                            && backCommand.Truncate == false
                            && backCommand.WorkingDirectory == "C:\\Temp"
-                           && back.Cards[2].Media.Path == "C:\\demo.png"
-                           && back.Cards[2].Media.Fit == "Cover"
-                           && Math.Abs(back.Cards[2].Media.Width - 480) < 0.001
-                           && back.Cards[2].Media.Muted == false
-                           && back.Cards[2].Media.Rounded == false
-                           && back.Cards[2].Media.Decoder == "FFmpeg"
-                           && back.Cards[2].Media.DecoderPath == "C:\\ffmpeg.exe"
+                           && backMedia.Path == "C:\\demo.png"
+                           && backMedia.Fit == "Cover"
+                           && Math.Abs(backMedia.Width - 480) < 0.001
+                           && backMedia.Muted == false
+                           && backMedia.Rounded == false
+                           && backMedia.Decoder == "FFmpeg"
+                           && backMedia.DecoderPath == "C:\\ffmpeg.exe"
                            && MediaSettings.NormalizeDecoder("mediafoundation") == "BuiltIn"
                            && MediaSettings.NormalizeDecoder("ffmpeg.exe") == "FFmpeg"
                            && MediaSettings.NormalizeDecoder("whatever") == "Auto";
@@ -442,33 +447,39 @@ namespace MirrorpondHUD
                 var chat = new ChatSettings { Model = "selftest-model" };
                 chat.SetApiKey(secret);
 
+                var chatCardSettings = new CardSettings { Id = "chat", Kind = "chat", Name = "自检对话" };
+                chatCardSettings.SetExtras(ChatCard.SettingsKey, chat);
+
                 var settings = new Settings();
-                settings.Cards.Add(new CardSettings { Id = "chat", Kind = "chat", Name = "自检对话", Chat = chat });
+                settings.Cards.Add(chatCardSettings);
 
                 string json = Json.Serialize(settings);
                 bool notPlain = json.IndexOf(secret, StringComparison.Ordinal) < 0
                              && json.IndexOf(SecretStore.Prefix, StringComparison.Ordinal) > 0;
 
                 Settings back = Json.Deserialize<Settings>(json);
+                ChatSettings backChat = back == null || back.Cards == null || back.Cards.Count < 1
+                    ? new ChatSettings()
+                    : back.Cards[0].ExtrasAs<ChatSettings>(ChatCard.SettingsKey);
+
                 bool usable = back != null && back.Cards != null && back.Cards.Count == 1
-                           && back.Cards[0].Chat != null
-                           && back.Cards[0].Chat.HasApiKey
-                           && back.Cards[0].Chat.PlainApiKey == secret;
+                           && backChat.HasApiKey
+                           && backChat.PlainApiKey == secret;
 
                 // 旧配置里的明文 Key：Normalize 之后变密文，而且还能用
                 var legacy = new ChatSettings { ApiKey = secret };
                 legacy.Normalize();
 
-                // 设置页：已存 Key 时输入框空的、只显示提示；输入新 Key 才改，提交后又收起
-                var cardSettings = new CardSettings { Id = "chat-ui", Kind = "chat", Name = "自检对话", Chat = new ChatSettings() };
-                var editor = new CardEditor(cardSettings, new ChatCard(), settings, true);
+                // 设置页区块：已存 Key 时不回显、只显示提示；输入新 Key 并提交后收起
+                var uiCard = new CardSettings { Id = "chat-ui", Kind = "chat", Name = "自检对话" };
+                var editor = new ChatCardSettingsView(uiCard, null);
 
                 bool uiHidden = editor.ChatApiKey.Length == 0
                              && editor.ChatApiKeyPlaceholderVisibility == System.Windows.Visibility.Visible
                              && editor.ChatApiKeyClearVisibility == System.Windows.Visibility.Collapsed;
 
-                cardSettings.Chat.SetApiKey(secret);
-                var withKey = new CardEditor(cardSettings, new ChatCard(), settings, true);
+                ChatCard.ChatOf(uiCard).SetApiKey(secret);
+                var withKey = new ChatCardSettingsView(uiCard, null);
                 bool uiMasked = withKey.ChatApiKey.Length == 0
                              && withKey.ChatApiKeyPlaceholder == ChatSettings.KeyPlaceholder
                              && withKey.ChatApiKeyPlaceholderVisibility == System.Windows.Visibility.Visible
@@ -479,9 +490,10 @@ namespace MirrorpondHUD
                              && withKey.ChatApiKeyPlaceholderVisibility == System.Windows.Visibility.Collapsed;
 
                 withKey.CommitChatApiKey();
+                ChatSettings committed = ChatCard.ChatOf(uiCard);
                 bool uiCommit = withKey.ChatApiKey.Length == 0
-                             && cardSettings.Chat.PlainApiKey == "sk-typed-123"
-                             && SecretStore.IsProtected(cardSettings.Chat.ApiKey);
+                             && committed.PlainApiKey == "sk-typed-123"
+                             && SecretStore.IsProtected(committed.ApiKey);
 
                 secretOk = roundTrip && notPlain && usable
                         && SecretStore.IsProtected(legacy.ApiKey)

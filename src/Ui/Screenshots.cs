@@ -132,8 +132,9 @@ namespace MirrorpondHUD.Ui
                         if (view == null) continue;
 
                         var mediaView = view as MediaView;
-                        if (mediaView != null && card.Media != null && MediaView.IsVideoPath(card.Media.Path))
-                            mediaView.ShowPoster(card.Media.Path);
+                        string mediaPath = MediaCard.MediaOf(card).Path;
+                        if (mediaView != null && MediaView.IsVideoPath(mediaPath))
+                            mediaView.ShowPoster(mediaPath);
 
                         // CLI 面板（AI 对话 / 命令行）平时空着，只有提问 / 跑命令才有记录；
                         // MIRRORPOND_CLI_DEMO=1 时塞两条样张，才能检查内部小面板和它们自己的滑块。

@@ -82,9 +82,11 @@ namespace MirrorpondHUD.Core
 
             foreach (CardSettings card in settings.Cards)
             {
-                if (card == null || card.Chat == null) continue;
-                if (string.IsNullOrEmpty(card.Chat.ApiKey)) continue;
-                if (!SecretStore.IsProtected(card.Chat.ApiKey)) return true;
+                if (card == null) continue;
+
+                ChatSettings chat = card.ExtrasAs<ChatSettings>("chat");
+                if (string.IsNullOrEmpty(chat.ApiKey)) continue;
+                if (!SecretStore.IsProtected(chat.ApiKey)) return true;
             }
 
             return false;

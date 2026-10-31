@@ -63,12 +63,6 @@ namespace MirrorpondHUD.Cards
 
                 var settingsModule = module as ICardSettingsModule;
                 if (settingsModule != null) settingsModule.InitializeCard(card);
-
-                if (card.Media == null) card.Media = new MediaSettings();
-                card.Media.Normalize();
-
-                if (card.Chat == null) card.Chat = new ChatSettings();
-                card.Chat.Normalize();
             }
 
             if (settings.Cards.Count == 0) settings.Cards = CreateDefaultCards();

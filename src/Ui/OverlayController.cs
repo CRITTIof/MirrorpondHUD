@@ -229,8 +229,6 @@ namespace MirrorpondHUD.Ui
             public string Kind;
             public string Content;
             public Dictionary<string, object> Extras;
-            public MediaSettings Media;
-            public ChatSettings Chat;
             public StyleSettings Style;
             public CliSettings Cli;
             public double CornerRadius;
@@ -245,8 +243,6 @@ namespace MirrorpondHUD.Ui
                 Kind = config.Kind,
                 Content = config.Content,
                 Extras = config.Extras,
-                Media = config.Media,
-                Chat = config.Chat,
                 Style = _settings.Style,
                 Cli = _settings.Cli,
                 CornerRadius = _settings.Overlay.CornerRadius,

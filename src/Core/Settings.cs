@@ -11,8 +11,9 @@ namespace MirrorpondHUD.Core
         /// 都由 SettingsMigration 升级（3 起命令行工具、工作目录等属于每张命令行卡片）。
         /// 4：图标倍率按「墨迹高度 / 文字高度」重新标定，旧的 1.45 偏大（图标比文字高 45%）。
         /// 5：卡片自己的设置搬进 <see cref="CardSettings.Extras"/>（先迁命令行卡，旧的 Command 字段不再写盘）。
+        /// 6：媒体卡与 AI 对话卡的设置也搬进 Extras（Media / Chat 字段不再写盘）。
         /// </summary>
-        public const int CurrentSchemaVersion = 5;
+        public const int CurrentSchemaVersion = 6;
         public int SchemaVersion = 0;
 
         /// <summary>系统信息卡的默认内容：CPU / 内存 / GPU / 网络 / 磁盘，前置 ReiconFont 图标。</summary>
@@ -695,12 +696,6 @@ namespace MirrorpondHUD.Core
             if (value == null) Extras.Remove(key);
             else Extras[key] = value;
         }
-
-        /// <summary>媒体卡片自己的文件与缩放设置。</summary>
-        public MediaSettings Media = new MediaSettings();
-
-        /// <summary>AI 对话卡片自己的接口 / 模型 / 密钥设置。</summary>
-        public ChatSettings Chat = new ChatSettings();
     }
 
     /// <summary>

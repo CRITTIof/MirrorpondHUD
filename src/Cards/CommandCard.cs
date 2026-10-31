@@ -16,7 +16,8 @@ namespace MirrorpondHUD.Cards
     /// 和 AI 对话卡一样声明 <see cref="NeedsMouseInput"/>：输入框要收键盘，
     /// 所以热键唤起它的时候宿主会把窗口提到前台、把焦点交给输入行。
     /// </summary>
-    public sealed class CommandCard : RichCardModuleBase, ICardSettingsModule, ICardEditorSection, ICardSettingsValidator
+    public sealed class CommandCard : RichCardModuleBase, ICardSettingsModule, ICardEditorSection,
+                                      ICardSettingsValidator, ICardSummary
     {
         /// <summary>命令行设置存在 <see cref="CardSettings.Extras"/> 里的键名。</summary>
         public const string SettingsKey = "command";
@@ -83,6 +84,18 @@ namespace MirrorpondHUD.Cards
                 return "选择了自定义命令行，但命令模板是空的。";
 
             return null;
+        }
+
+        /// <inheritdoc />
+        public string Summary(CardSettings config)
+        {
+            CommandSettings command = CommandOf(config);
+
+            string dir = (command.WorkingDirectory ?? "").Trim();
+            if (dir.Length == 0) dir = "用户主目录";
+            if (dir.Length > 28) dir = "…" + dir.Substring(dir.Length - 27);
+
+            return CommandRunner.ToolLabel(command) + " · " + dir;
         }
     }
 

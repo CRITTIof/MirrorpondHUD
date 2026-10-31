@@ -54,4 +54,13 @@ namespace MirrorpondHUD.Cards
     {
         string Validate(CardSettings config);
     }
+
+    /// <summary>
+    /// 模块自己算卡片摘要（设置页里卡片标题右侧那行小字）。
+    /// 不实现 = 用宿主默认文案（常驻 / 呼出热键 / 未设置）。
+    /// </summary>
+    public interface ICardSummary
+    {
+        string Summary(CardSettings config);
+    }
 }
