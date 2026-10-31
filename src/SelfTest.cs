@@ -1214,7 +1214,9 @@ namespace MirrorpondHUD
                     Directory.CreateDirectory(uniqueDir);
                     File.WriteAllText(Path.Combine(uniqueDir, "a.txt"), "x");
                     File.WriteAllText(Path.Combine(uniqueDir, "a (2).txt"), "x");
-                    uniqueOk = Path.GetFileName(StationView.UniqueTarget(uniqueDir, "a.txt")) == "a (3).txt";
+                    Directory.CreateDirectory(Path.Combine(uniqueDir, "My.Folder"));
+                    uniqueOk = Path.GetFileName(StationView.UniqueTarget(uniqueDir, "a.txt")) == "a (3).txt"
+                               && Path.GetFileName(StationView.UniqueTarget(uniqueDir, "My.Folder", true)) == "My.Folder (2)";
 
                     station.Directory = uniqueDir;
                     station.Normalize();
@@ -1264,6 +1266,68 @@ namespace MirrorpondHUD
                         try { if (File.Exists(transferSource)) File.Delete(transferSource); } catch { }
                         try { Directory.Delete(transferDir, true); } catch { }
                     }
+                }
+
+                bool folderOk = true;
+                foreach (string mode in new[] { "Copy", "Move" })
+                {
+                    string folderRoot = Path.Combine(Path.GetTempPath(), "mhud-folder-src-" + mode + "-" + Guid.NewGuid().ToString("N"));
+                    string folderReceive = Path.Combine(Path.GetTempPath(), "mhud-folder-dst-" + mode + "-" + Guid.NewGuid().ToString("N"));
+                    try
+                    {
+                        Directory.CreateDirectory(Path.Combine(folderRoot, "sub"));
+                        Directory.CreateDirectory(Path.Combine(folderRoot, "empty"));
+                        File.WriteAllText(Path.Combine(folderRoot, "root.txt"), "r");
+                        File.WriteAllText(Path.Combine(folderRoot, "sub", "child.txt"), "c");
+                        Directory.CreateDirectory(folderReceive);
+
+                        var folderConfig = new CardSettings
+                        {
+                            Id = "selftest-folder-" + mode, Kind = "dropstation", Name = "文件中转站",
+                            Extras = new Dictionary<string, object>()
+                        };
+                        StationSettings folderStation = DropStationCard.StationOf(folderConfig);
+                        folderStation.Mode = mode;
+                        folderStation.Directory = folderReceive;
+                        folderStation.Normalize();
+                        folderConfig.SetExtras(DropStationCard.SettingsKey, folderStation);
+
+                        var folderView = new StationView(new Settings(), folderConfig, new TestCardHost());
+                        folderView.HandleDrop(new[] { folderRoot });
+                        bool finished = PumpUntil(() => !folderView.CopyBusyForTest, 5000);
+                        string stored = folderView.FirstStoredPathForTest;
+
+                        bool targetOk = finished && Directory.Exists(stored)
+                                        && File.Exists(Path.Combine(stored, "root.txt"))
+                                        && File.Exists(Path.Combine(stored, "sub", "child.txt"))
+                                        && Directory.Exists(Path.Combine(stored, "empty"));
+                        bool sourceOk = mode == "Move" ? !Directory.Exists(folderRoot) : Directory.Exists(folderRoot);
+                        folderOk = folderOk && targetOk && sourceOk;
+                    }
+                    finally
+                    {
+                        try { Directory.Delete(folderRoot, true); } catch { }
+                        try { Directory.Delete(folderReceive, true); } catch { }
+                    }
+                }
+
+                string referenceFolder = Path.Combine(Path.GetTempPath(), "mhud-folder-ref-" + Guid.NewGuid().ToString("N"));
+                try
+                {
+                    Directory.CreateDirectory(referenceFolder);
+                    var referenceConfig = new CardSettings
+                    {
+                        Id = "selftest-folder-ref", Kind = "dropstation", Name = "文件中转站",
+                        Extras = new Dictionary<string, object>()
+                    };
+                    var referenceView = new StationView(new Settings(), referenceConfig, new TestCardHost());
+                    referenceView.HandleDrop(new[] { referenceFolder });
+                    folderOk = folderOk && referenceView.ItemCountForTest == 1
+                               && referenceView.FirstIsDirectoryForTest;
+                }
+                finally
+                {
+                    try { Directory.Delete(referenceFolder, true); } catch { }
                 }
 
                 string missingFile = Path.GetTempFileName();
@@ -1356,7 +1420,7 @@ namespace MirrorpondHUD
                 stationOk = normalizeOk && validateOk && dropOk && feedbackOk &&
                             editor != null && added && dedupe && missingRejected &&
                             moveNormalizeOk && moveValidateOk && moveSummaryOk &&
-                            uniqueOk && transferOk && missingCleanupOk && searchOk;
+                            uniqueOk && transferOk && folderOk && missingCleanupOk && searchOk;
             }
             catch (Exception ex)
             {
@@ -1407,7 +1471,7 @@ namespace MirrorpondHUD
             Fix(sb, "渲染上下文", contextHostOk ? "OK（富内容创建上下文透传 ICardHost）" : "FAIL");
             Fix(sb, "后台任务", jobQueueOk ? "OK（串行队列：成功 / 失败 / 取消）" : "FAIL");
             Fix(sb, "Shell / 拖出", shellOk ? "OK（图标缓存一致；缩略图不挂；拖出阈值/空输入）" : "FAIL");
-            Fix(sb, "文件中转站", stationOk ? "OK（模块能力 / 设置 / 复制移动 / 搜索 / 丢失清理）" : "FAIL");
+            Fix(sb, "文件中转站", stationOk ? "OK（模块能力 / 设置 / 复制移动 / 文件夹递归 / 搜索 / 丢失清理）" : "FAIL");
         }
 
         static bool RegisterIfSet(HotkeyManager hotkeys, string action, string combination)

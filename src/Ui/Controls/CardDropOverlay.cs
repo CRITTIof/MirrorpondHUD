@@ -7,7 +7,7 @@ using MirrorpondHUD.Core;
 namespace MirrorpondHUD.Ui.Controls
 {
     /// <summary>
-    /// 拖入卡片时的覆盖层：高亮底色 + 描边 + 一句提示（“松开以添加 N 个文件” / “这里不收这种内容”）。
+    /// 拖入卡片时的覆盖层：高亮底色 + 描边 + 一句提示（“松开以添加 N 项” / “这里不收这种内容”）。
     ///
     /// 拖放机制仍由宿主统一注册（<c>ICardDropTarget</c>）；卡片在实现 <c>ICardDropFeedback</c> 后，
     /// 收到“进入 / 离开”回调时调用 <see cref="Show(int,bool)"/> / <see cref="Hide"/> 即可。
@@ -46,7 +46,7 @@ namespace MirrorpondHUD.Ui.Controls
 
         public void Show(int count, bool accepted = true)
         {
-            Show(accepted ? "松开以添加 " + Math.Max(0, count) + " 个文件" : "这里不收这种内容", accepted);
+            Show(accepted ? "松开以添加 " + Math.Max(0, count) + " 项" : "这里不收这种内容", accepted);
         }
 
         public void Show(string text, bool accepted = true)

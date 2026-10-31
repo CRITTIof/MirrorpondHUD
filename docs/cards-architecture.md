@@ -484,7 +484,7 @@ ffmpeg 路线把视频解成逐帧原始像素，什么格式都能放（代价�
 
 | 事项 | 说明 |
 | --- | --- |
-| 运行期插件 | `cards/*.dll` + `AssemblyLoadContext` + ApiVersion 校验；先留接口 |
+| 运行期插件 | `plugins/cards/*.dll` + `AssemblyLoadContext` + ApiVersion 校验；先留接口。调研与分阶段方案见 [runtime-card-extensions.md](runtime-card-extensions.md) |
 | 每卡独立样式 | `Style` 目前全局共享（字体、颜色、图标倍率、毛玻璃都是全局）；需要时给 `CardSettings` 加可空的样式覆盖 |
 | 卡片内滚动 | 长内容现在由 CLI 面板的内部小面板各自滚动（见 §9）；文字卡仍是固定内容，没有内滚动 |
 | 托盘增删 | 现在只能从设置页增删卡片 |

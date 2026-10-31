@@ -181,10 +181,21 @@ namespace MirrorpondHUD.Cards
         public long Size = 0;
         public string AddedUtc = "";
         public bool Missing = false;
+        public bool IsDirectory = false;
 
         public string DisplayPath
         {
             get { return string.IsNullOrEmpty(StoredPath) ? Path : StoredPath; }
+        }
+
+        /// <summary>源 / 目标可能是文件也可能是文件夹；缺失检查不能只看 File.Exists。</summary>
+        public bool PathExists()
+        {
+            string path = DisplayPath;
+            if (string.IsNullOrEmpty(path)) return false;
+
+            try { return File.Exists(path) || Directory.Exists(path); }
+            catch { return false; }
         }
     }
 
@@ -343,6 +354,11 @@ namespace MirrorpondHUD.Cards
             get { return _items.Count == 0 ? null : _items[0].StoredPath; }
         }
 
+        internal bool FirstIsDirectoryForTest
+        {
+            get { return _items.Count > 0 && _items[0].IsDirectory; }
+        }
+
         /// <summary>自检用：设置搜索词，走真实的 TextChanged → 过滤 → Rebuild 链路。</summary>
         internal void SetSearchForTest(string text)
         {
@@ -408,44 +424,42 @@ namespace MirrorpondHUD.Cards
                 string source = FullPath(raw);
                 if (source == null || Contains(source)) continue;
 
-                if (Directory.Exists(source))
+                bool isDirectory = Directory.Exists(source);
+                if (!isDirectory && !File.Exists(source))
                 {
-                    SetStatus("暂不支持直接拖文件夹。", CardStatusKind.Warning);
+                    SetStatus("文件不存在：" + Path.GetFileName(source), CardStatusKind.Error);
                     continue;
                 }
 
+                if (isDirectory && FolderWouldContainReceiveDirectory(source))
+                {
+                    SetStatus("接收目录不能放在要收纳的文件夹里。", CardStatusKind.Error);
+                    continue;
+                }
+
+                string name = ItemName(source, isDirectory);
                 if (_station.Mode == "Reference")
                 {
-                    if (!File.Exists(source))
-                    {
-                        SetStatus("文件不存在：" + Path.GetFileName(source), CardStatusKind.Error);
-                        continue;
-                    }
-
                     _items.Add(new StationItem
                     {
                         Id = NewId(),
                         Path = source,
-                        Name = Path.GetFileName(source),
-                        Size = SafeSize(source),
-                        AddedUtc = UtcNow()
+                        Name = name,
+                        Size = isDirectory ? 0 : SafeSize(source),
+                        AddedUtc = UtcNow(),
+                        IsDirectory = isDirectory
                     });
                     added++;
                 }
                 else
                 {
-                    if (!File.Exists(source))
-                    {
-                        SetStatus("文件不存在：" + Path.GetFileName(source), CardStatusKind.Error);
-                        continue;
-                    }
-
                     var item = new StationItem
                     {
                         Id = NewId(),
                         Path = source,
-                        Name = Path.GetFileName(source),
-                        AddedUtc = UtcNow()
+                        Name = name,
+                        AddedUtc = UtcNow(),
+                        IsDirectory = isDirectory
                     };
                     _items.Add(item);
                     EnqueueCopy(item);
@@ -458,9 +472,37 @@ namespace MirrorpondHUD.Cards
             Trim();
             Persist();
             Rebuild();
-            if (_station.Mode == "Reference") SetStatus(added + " 个文件已加入", CardStatusKind.Success);
+            if (_station.Mode == "Reference") SetStatus(added + " 项已加入", CardStatusKind.Success);
             else RefreshCopyStatus();
             return added;
+        }
+
+        /// <summary>复制 / 移动文件夹时不能把接收目录放进源文件夹内部，否则递归会自我嵌套。</summary>
+        bool FolderWouldContainReceiveDirectory(string source)
+        {
+            if (_station.Mode == "Reference" || string.IsNullOrWhiteSpace(_station.Directory)) return false;
+
+            try
+            {
+                string sourceRoot = Path.GetFullPath(source).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                string targetRoot = Path.GetFullPath(_station.Directory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                if (string.Equals(sourceRoot, targetRoot, StringComparison.OrdinalIgnoreCase)) return true;
+                return targetRoot.StartsWith(sourceRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+                    || targetRoot.StartsWith(sourceRoot + Path.AltDirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+            }
+            catch { return false; }
+        }
+
+        static string ItemName(string path, bool isDirectory)
+        {
+            if (!isDirectory) return Path.GetFileName(path);
+            try
+            {
+                string trimmed = path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                string name = Path.GetFileName(trimmed);
+                return string.IsNullOrEmpty(name) ? path : name;
+            }
+            catch { return path; }
         }
 
         // ==================== 列表 ====================
@@ -540,7 +582,8 @@ namespace MirrorpondHUD.Cards
                 Margin = new Thickness(0, 0, 8, 0),
                 VerticalAlignment = VerticalAlignment.Center
             };
-            if (_station.ShowIcons) icon.Source = ShellIcons.GetIcon(item.Name, 16);
+            if (_station.ShowIcons)
+                icon.Source = ShellIcons.GetIcon(item.IsDirectory ? item.DisplayPath : item.Name, 16, !item.IsDirectory);
             grid.Children.Add(icon);
 
             string name = string.IsNullOrEmpty(item.Name) ? item.DisplayPath : item.Name;
@@ -556,7 +599,7 @@ namespace MirrorpondHUD.Cards
             Grid.SetColumn(title, 1);
             grid.Children.Add(title);
 
-            string meta = FormatSize(item.Size);
+            string meta = item.IsDirectory ? "文件夹" : FormatSize(item.Size);
             if (!string.IsNullOrEmpty(item.StoredPath)) meta = string.IsNullOrEmpty(meta) ? "已收纳" : meta + " · 已收纳";
 
             var detail = new TextBlock
@@ -630,7 +673,7 @@ namespace MirrorpondHUD.Cards
 
             _list.Inner.Focus();
             _dragOrigin = point;
-            _dragItem = _list.Inner.SelectedItems.Contains(row) && File.Exists(item.DisplayPath)
+            _dragItem = _list.Inner.SelectedItems.Contains(row) && item.PathExists()
                 ? item : null;
             e.Handled = true;
 
@@ -698,7 +741,7 @@ namespace MirrorpondHUD.Cards
             foreach (StationItem candidate in selected)
             {
                 string candidatePath = candidate.DisplayPath;
-                if (File.Exists(candidatePath)) paths.Add(candidatePath);
+                if (candidate.PathExists()) paths.Add(candidatePath);
             }
 
             if (paths.Count == 0)
@@ -790,7 +833,7 @@ namespace MirrorpondHUD.Cards
                 {
                     if (string.IsNullOrEmpty(candidate.StoredPath)) continue;
                     if (!IsInside(_station.Directory, candidate.StoredPath)) continue;
-                    if (File.Exists(candidate.StoredPath)) { canDelete = true; break; }
+                    if (candidate.PathExists()) { canDelete = true; break; }
                 }
 
                 delete.IsEnabled = canDelete;
@@ -800,11 +843,11 @@ namespace MirrorpondHUD.Cards
                 remove.IsEnabled = item != null;
 
                 remove.Header = selected.Count > 1 ? "从列表移除 " + selected.Count + " 项" : "从列表移除";
-                delete.Header = selected.Count > 1 ? "删除选中文件…" : "删除文件…";
+                delete.Header = selected.Count > 1 ? "删除选中项…" : "删除文件 / 文件夹…";
 
                 int missingCount = 0;
                 foreach (StationItem candidate in _items)
-                    if (candidate.Missing || !File.Exists(candidate.DisplayPath)) missingCount++;
+                    if (candidate.Missing || !candidate.PathExists()) missingCount++;
                 missing.Header = missingCount == 0 ? "移除丢失项" : "移除 " + missingCount + " 个丢失项";
                 missing.IsEnabled = missingCount > 0;
             };
@@ -820,7 +863,7 @@ namespace MirrorpondHUD.Cards
             for (int i = _items.Count - 1; i >= 0; i--)
             {
                 StationItem item = _items[i];
-                if (item.Missing || !File.Exists(item.DisplayPath)) _items.RemoveAt(i);
+                if (item.Missing || !item.PathExists()) _items.RemoveAt(i);
             }
 
             int removed = before - _items.Count;
@@ -841,7 +884,7 @@ namespace MirrorpondHUD.Cards
             if (item == null) return;
 
             string path = item.DisplayPath;
-            if (!File.Exists(path))
+            if (!item.PathExists())
             {
                 item.Missing = true;
                 Persist();
@@ -859,7 +902,7 @@ namespace MirrorpondHUD.Cards
             if (item == null) return;
 
             string path = item.DisplayPath;
-            if (!File.Exists(path)) return;
+            if (!item.PathExists()) return;
 
             try { Process.Start("explorer.exe", "/select,\"" + path + "\""); }
             catch (Exception ex) { SetStatus("定位失败：" + ex.Message, CardStatusKind.Error); }
@@ -912,7 +955,7 @@ namespace MirrorpondHUD.Cards
             {
                 if (string.IsNullOrEmpty(item.StoredPath)) continue;
                 if (!IsInside(_station.Directory, item.StoredPath)) continue;
-                if (File.Exists(item.StoredPath)) deletable.Add(item);
+                if (item.PathExists()) deletable.Add(item);
             }
 
             if (deletable.Count == 0)
@@ -923,9 +966,17 @@ namespace MirrorpondHUD.Cards
 
             MessageBoxResult answer;
             Window owner = Window.GetWindow(this);
-            string message = deletable.Count == 1
-                ? "确定删除这个文件？\n\n" + deletable[0].Name
-                : "确定删除选中的 " + deletable.Count + " 个文件？";
+            string message;
+            if (deletable.Count == 1)
+            {
+                message = deletable[0].IsDirectory
+                    ? "确定删除这个文件夹及其内容？\n\n" + deletable[0].Name
+                    : "确定删除这个文件？\n\n" + deletable[0].Name;
+            }
+            else
+            {
+                message = "确定删除选中的 " + deletable.Count + " 项？\n\n文件夹会连同内容一起删除。";
+            }
             if (owner == null)
                 answer = MessageBox.Show(message, "文件中转站", MessageBoxButton.YesNo, MessageBoxImage.Warning);
             else
@@ -939,7 +990,10 @@ namespace MirrorpondHUD.Cards
             {
                 try
                 {
-                    File.Delete(item.StoredPath);
+                    if (item.IsDirectory || Directory.Exists(item.StoredPath))
+                        Directory.Delete(item.StoredPath, true);
+                    else
+                        File.Delete(item.StoredPath);
                     _items.Remove(item);
                     deleted++;
                 }
@@ -957,9 +1011,9 @@ namespace MirrorpondHUD.Cards
             }
 
             if (failed == 0)
-                SetStatus(deleted > 1 ? "已删除 " + deleted + " 个文件" : "已删除文件", CardStatusKind.Normal);
+                SetStatus(deleted > 1 ? "已删除 " + deleted + " 项" : "已删除", CardStatusKind.Normal);
             else
-                SetStatus("已删除 " + deleted + " 个，失败 " + failed + " 个", CardStatusKind.Warning);
+                SetStatus("已删除 " + deleted + " 项，失败 " + failed + " 项", CardStatusKind.Warning);
         }
 
         void OpenDirectory()
@@ -984,7 +1038,8 @@ namespace MirrorpondHUD.Cards
         {
             string source = item.Path;
             string directory = _station.Directory;
-            string fileName = Path.GetFileName(source);
+            string fileName = string.IsNullOrEmpty(item.Name) ? Path.GetFileName(source) : item.Name;
+            bool isDirectory = item.IsDirectory;
             string target = null;
 
             _copyTotal++;
@@ -996,12 +1051,6 @@ namespace MirrorpondHUD.Cards
             CardJob job = _jobs.Enqueue(fileName, (token, progress) =>
             {
                 Directory.CreateDirectory(directory);
-                target = UniqueTarget(directory, fileName);
-
-                long total = SafeSize(source);
-                long copied = 0;
-                var watch = Stopwatch.StartNew();
-                DateTime lastReport = DateTime.MinValue;
 
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
@@ -1012,39 +1061,100 @@ namespace MirrorpondHUD.Cards
                     RefreshCopyStatus();
                 }));
 
+                var plan = new List<KeyValuePair<string, string>>();
+                long total = 0;
+
                 try
                 {
-                    using (var input = File.OpenRead(source))
-                    using (var output = File.Create(target))
+                    if (isDirectory)
                     {
-                        var buffer = new byte[1024 * 1024];
-                        int read;
-                        while ((read = input.Read(buffer, 0, buffer.Length)) > 0)
+                        if ((File.GetAttributes(source) & FileAttributes.ReparsePoint) != 0)
+                            throw new IOException("暂不支持收纳符号链接文件夹。");
+
+                        target = UniqueTarget(directory, fileName, true);
+                        Directory.CreateDirectory(target);
+
+                        var options = new EnumerationOptions
+                        {
+                            RecurseSubdirectories = true,
+                            AttributesToSkip = FileAttributes.ReparsePoint,
+                            IgnoreInaccessible = false
+                        };
+
+                        foreach (string dir in Directory.EnumerateDirectories(source, "*", options))
                         {
                             token.ThrowIfCancellationRequested();
-                            output.Write(buffer, 0, read);
-                            copied += read;
+                            string relative = Path.GetRelativePath(source, dir);
+                            Directory.CreateDirectory(Path.Combine(target, relative));
+                        }
 
-                            double ratio = total > 0 ? Math.Min(1.0, (double)copied / total) : 1.0;
-                            progress.Report(ratio);
-
-                            DateTime now = DateTime.UtcNow;
-                            if ((now - lastReport).TotalMilliseconds < 120) continue;
-                            lastReport = now;
-
-                            double speed = watch.Elapsed.TotalSeconds > 0
-                                ? copied / (1024.0 * 1024.0) / watch.Elapsed.TotalSeconds
-                                : 0;
-                            double uiRatio = ratio;
-                            double uiSpeed = speed;
-                            Dispatcher.BeginInvoke(new Action(() => UpdateActiveCopy(fileName, uiRatio, uiSpeed)));
+                        foreach (string file in Directory.EnumerateFiles(source, "*", options))
+                        {
+                            token.ThrowIfCancellationRequested();
+                            string relative = Path.GetRelativePath(source, file);
+                            plan.Add(new KeyValuePair<string, string>(file, Path.Combine(target, relative)));
+                            total += SafeSize(file);
                         }
                     }
+                    else
+                    {
+                        target = UniqueTarget(directory, fileName);
+                        plan.Add(new KeyValuePair<string, string>(source, target));
+                        total = SafeSize(source);
+                    }
+
+                    long copied = 0;
+                    var watch = Stopwatch.StartNew();
+                    DateTime lastReport = DateTime.MinValue;
+
+                    foreach (KeyValuePair<string, string> pair in plan)
+                    {
+                        token.ThrowIfCancellationRequested();
+
+                        string parent = Path.GetDirectoryName(pair.Value);
+                        if (!string.IsNullOrEmpty(parent)) Directory.CreateDirectory(parent);
+
+                        using (var input = File.OpenRead(pair.Key))
+                        using (var output = File.Create(pair.Value))
+                        {
+                            var buffer = new byte[1024 * 1024];
+                            int read;
+                            while ((read = input.Read(buffer, 0, buffer.Length)) > 0)
+                            {
+                                token.ThrowIfCancellationRequested();
+                                output.Write(buffer, 0, read);
+                                copied += read;
+
+                                double ratio = total > 0 ? Math.Min(1.0, (double)copied / total) : 1.0;
+                                progress.Report(ratio);
+
+                                DateTime now = DateTime.UtcNow;
+                                if ((now - lastReport).TotalMilliseconds < 120) continue;
+                                lastReport = now;
+
+                                double speed = watch.Elapsed.TotalSeconds > 0
+                                    ? copied / (1024.0 * 1024.0) / watch.Elapsed.TotalSeconds
+                                    : 0;
+                                double uiRatio = ratio;
+                                double uiSpeed = speed;
+                                Dispatcher.BeginInvoke(new Action(() => UpdateActiveCopy(fileName, uiRatio, uiSpeed)));
+                            }
+                        }
+                    }
+
+                    if (total == 0) progress.Report(1.0);
                 }
                 catch
                 {
-                    // 失败 / 取消：把写了一半的目标文件删掉，别留半成品。
-                    try { if (!string.IsNullOrEmpty(target) && File.Exists(target)) File.Delete(target); }
+                    // 失败 / 取消：把写了一半的目标文件 / 文件夹删掉，别留半成品。
+                    try
+                    {
+                        if (!string.IsNullOrEmpty(target))
+                        {
+                            if (Directory.Exists(target)) Directory.Delete(target, true);
+                            else if (File.Exists(target)) File.Delete(target);
+                        }
+                    }
                     catch { }
                     throw;
                 }
@@ -1069,20 +1179,21 @@ namespace MirrorpondHUD.Cards
             {
                 item.StoredPath = target;
                 item.Name = Path.GetFileName(target);
-                item.Size = SafeSize(target);
+                item.Size = item.IsDirectory ? 0 : SafeSize(target);
                 item.Missing = false;
 
                 if (_station.Mode == "Move")
                 {
                     try
                     {
-                        File.Delete(item.Path);
+                        if (item.IsDirectory) Directory.Delete(item.Path, true);
+                        else File.Delete(item.Path);
                         SetStatus("已移动 " + item.Name, CardStatusKind.Success);
                     }
                     catch (Exception ex)
                     {
-                        // 复制已经成功，目标文件保留；源文件删不掉只提示，不回滚目标。
-                        SetStatus("已收纳，但删除源文件失败：" + ex.Message, CardStatusKind.Warning);
+                        // 复制已经成功，目标文件 / 文件夹保留；源删不掉只提示，不回滚目标。
+                        SetStatus("已收纳，但删除源失败：" + ex.Message, CardStatusKind.Warning);
                     }
                 }
                 else
@@ -1178,14 +1289,14 @@ namespace MirrorpondHUD.Cards
             return (mbPerSecond * 1024).ToString("0") + " KB/s";
         }
 
-        internal static string UniqueTarget(string directory, string fileName)
+        internal static string UniqueTarget(string directory, string fileName, bool isDirectory = false)
         {
-            string baseName = Path.GetFileNameWithoutExtension(fileName);
-            string extension = Path.GetExtension(fileName);
+            string baseName = isDirectory ? fileName : Path.GetFileNameWithoutExtension(fileName);
+            string extension = isDirectory ? "" : Path.GetExtension(fileName);
             string candidate = Path.Combine(directory, fileName);
 
             int index = 2;
-            while (File.Exists(candidate) && index < 1000)
+            while ((File.Exists(candidate) || Directory.Exists(candidate)) && index < 1000)
             {
                 candidate = Path.Combine(directory, baseName + " (" + index + ")" + extension);
                 index++;
@@ -1211,7 +1322,8 @@ namespace MirrorpondHUD.Cards
                 foreach (StationItem item in state.Items)
                 {
                     if (item == null || string.IsNullOrEmpty(item.DisplayPath)) continue;
-                    item.Missing = !File.Exists(item.DisplayPath);
+                    if (!item.IsDirectory && Directory.Exists(item.DisplayPath)) item.IsDirectory = true;
+                    item.Missing = !item.PathExists();
                     _items.Add(item);
                 }
 
@@ -1260,9 +1372,14 @@ namespace MirrorpondHUD.Cards
             foreach (StationItem item in _items)
                 if (Matches(item)) visible++;
 
+            bool hasDirectory = false;
+            foreach (StationItem item in _items)
+                if (item.IsDirectory) { hasDirectory = true; break; }
+            string unit = hasDirectory ? " 项" : " 个文件";
+
             _header.Badge = _filter.Length == 0
-                ? _items.Count + " 个文件"
-                : visible + "/" + _items.Count + " 个文件";
+                ? _items.Count + unit
+                : visible + "/" + _items.Count + unit;
 
             _search.Visibility = (_items.Count > 0 || _filter.Length > 0)
                 ? Visibility.Visible : Visibility.Collapsed;
@@ -1279,10 +1396,10 @@ namespace MirrorpondHUD.Cards
 
             if (_station.Mode != "Reference" && !string.IsNullOrWhiteSpace(_station.Directory))
                 return _station.Mode == "Move"
-                    ? "把文件拖进来，移动到 " + _station.Directory
-                    : "把文件拖进来，收纳到 " + _station.Directory;
+                    ? "把文件 / 文件夹拖进来，移动到 " + _station.Directory
+                    : "把文件 / 文件夹拖进来，收纳到 " + _station.Directory;
 
-            return "把文件拖进来（只记录路径，不移动文件）";
+            return "把文件 / 文件夹拖进来（只记录路径，不移动文件）";
         }
 
         void SetStatus(string text, CardStatusKind kind)
