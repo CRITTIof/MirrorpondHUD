@@ -1,11 +1,11 @@
-# 版本修改记录（2.4.1 → 2.10.1）
+# 版本修改记录（2.4.1 → 2.10.2）
 
 > 范围：本文只记录**这一轮接手后我做的版本**（v2.4.1 起）。v2.4.0 及更早是既有历史，不在本文档里。
 > 数据全部取自仓库真实提交（`git diff --shortstat <上一版>..<本版>`），文件行的 `+ / -` 就是实际增删行数。
 > 版本状态：`main` 已推送到 GitHub；`v2.4.2`–`v2.4.5` 为附注标签（分别指向 `70343ef` / `aabe441` / `05857ce` / `f4b2b8b`），
 > v2.4.5 已发布 Release（附件为两个 requires-dotnet 单文件），v2.4.0 的 Release 已删除、其 tag 保留。
 > `v2.5.0`–`v2.9.2` 均为附注标签，**已随 2.9.2 的推送同步到远端**（`v2.6.0` = `9c1bafa`、`v2.6.1` = `d3ac63d`、
-> `v2.6.2` = `1b138e7`、`v2.9.2` = `754115e`）；`v2.4.1` 也已补推。`v2.9.3`–`v2.10.1` 目前只在本地创建，尚未推送。
+> `v2.6.2` = `1b138e7`、`v2.9.2` = `754115e`）；`v2.4.1` 也已补推。`v2.9.3`–`v2.10.2` 目前只在本地创建，尚未推送。
 
 ## 0. 总览
 
@@ -34,7 +34,8 @@
 | v2.9.6 | 2026-10-31 | `c9842a9` | 源码遗留 S3+S4：删死字段 `_live`；两个 `async void` 加顶层兜底，异常不再逸出崩进程 | 7 文件，+82 / −12 |
 | v2.9.7 | 2026-10-31 | `69cb3b4` | 源码遗留 S7+S12：对话上下文跟随 `Cli.MaxEntries`；设置页 / 校验保证最多一张交互卡 | 8 文件，+132 / −13 |
 | v2.10.0 | 2026-10-31 | `0605fee` | 共享控件第一梯队（上）：`CardList` 主题化列表（虚拟化 / 空态 / 激活）+ `CardStatus`（转圈 / 进度 / 错误态） | 8 文件，+630 / −9（含新增 `CardList.cs` 206 行、`CardStatus.cs` 218 行） |
-| v2.10.1 | 2026-10-31 | 本次提交 | 共享控件第一梯队（下）：`CardHeader`/`CardToolbar`、`CardInput`、`CardDropOverlay` + 宿主拖入/拖出反馈 | 12 文件，+543 / −26（含新增 `CardHeader.cs` 126 行、`CardInput.cs` 144 行、`CardDropOverlay.cs` 101 行） |
+| v2.10.1 | 2026-10-31 | `d994c6e` | 共享控件第一梯队（下）：`CardHeader`/`CardToolbar`、`CardInput`、`CardDropOverlay` + 宿主拖入/拖出反馈 | 12 文件，+543 / −26（含新增 `CardHeader.cs` 126 行、`CardInput.cs` 144 行、`CardDropOverlay.cs` 101 行） |
+| v2.10.2 | 2026-10-31 | 本次提交 | 第二梯队（上）：`CardRenderContext.Host` 透传 + `ClipboardService` + 串行可取消 `CardJobQueue` | 10 文件，+463 / −23（含新增 `CardJobQueue.cs` 177 行、`ClipboardService.cs` 129 行） |
 
 ---
 
@@ -988,16 +989,50 @@ v2.6.0 只把**命令行卡**的设置搬进了 `CardSettings.Extras`，媒体�
 
 ---
 
-## 25. 不在版本里的东西
+## 25. v2.10.2（本次提交，本地标签 `v2.10.2`）
+
+### 背景
+
+第一梯队控件已经就绪，但内容控件拿不到 `ICardHost`（`RequestLayout` 只能靠窗口尺寸自动触发）；
+剪贴板与“复制大文件”这类后台任务也还是每张卡各写一套。本版补三件基础设施。
+
+### 改动
+
+1. **`CardRenderContext.Host`**：新增可空 `ICardHost Host` 与三参数构造重载；
+   宿主在 `EnsureContent`、`RenderCardText`、`SyncCards` 构造上下文时传 `slot.Host`。
+   内容控件可以保存它来 `RequestLayout` / `RequestRender` / 读写状态目录；文字渲染与截图路径为 null。
+   模块本身仍然不存 host（单例约束不变）。
+2. **`src/Ui/ClipboardService.cs`**：文本 / 文件列表 / 图片的读写，统一重试
+   `CLIPBRD_E_CANT_OPEN`（被别的程序占用），图片会 Freeze。同步方法要求 UI 线程（STA）。
+3. **`src/Core/CardJobQueue.cs`**：`CardJobQueue`（默认 1 并发，串行）+ `CardJob`
+   （Pending / Running / Succeeded / Failed / Canceled、`IProgress<double>`、`Task`、取消）。
+   队列线程安全，可在任意线程 `Enqueue` / `CancelAll`。
+4. **自检**：「渲染上下文」验证 host 透传；「后台任务」验证成功 / 失败 / 取消三种结局。
+
+### 边界
+
+- 剪贴板没有写自检（不想覆盖你正在用的剪贴板内容）；失败会写日志并返回 false。
+- `CardJob` 的状态/进度线程安全，但不负责把事件切回 UI 线程；调用方用 `Task` 或自己 `Dispatcher`。
+- 图片剪贴板只读不写（`TryGetImage`），写图片等有实际需求再加。
+
+### 实测
+
+- `dotnet build -c Release`：0 警告 0 错误。
+- `--selftest`：失败项 0（「渲染上下文」「后台任务」均 OK）。
+- `--smoke 4 --smoke-visible`：退出码 0。
+
+---
+
+## 26. 不在版本里的东西
 
 - 验收脚本、样张与测量脚本（`cmd-e2e.ps1`、`drag-glass.ps1`、`measure-*.py`、`shots/` 等）都在仓库外的 `hud-test/` 里，**没有提交**。
 - 发布：`main` 与标签已推送到 [github.com/CRITTIof/MirrorpondHUD](https://github.com/CRITTIof/MirrorpondHUD)；
   [v2.9.2 Release](https://github.com/CRITTIof/MirrorpondHUD/releases/tag/v2.9.2) 只有两个附件
   （`MirrorpondHUD-x64-requires-dotnet.exe`、`MirrorpondHUD-arm64-requires-dotnet.exe`，均需 .NET 8 桌面运行时，已自签名）；
   更早的 Release 正文与附件保留原样，v2.4.0 的 Release 已删除（tag `v2.4.0` 保留，历史仍可检出）。
-- 仓库追踪的文件共 112 个，`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
+- 仓库追踪的文件共 114 个，`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
 
-## 26. 已知代价（跨版本）
+## 27. 已知代价（跨版本）
 
 - 桌面亚克力为了不拍到自己，会把卡片排除在截屏之外 —— 这个模式下截图 / 录屏里**看不到卡片**，观感只能靠肉眼与离屏渲染验证。
 - 兼容实现每帧对身后窗口做 `PrintWindow`，拖动时最多 ~21 帧/秒；要更高只能走桌面亚克力（DXGI）。

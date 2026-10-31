@@ -134,6 +134,20 @@ public void Detach(ICardHost host) { }   // 删卡 / 退出时
 宿主在**建卡与应用设置**时 Attach、**删卡与退出**时 Detach。模块是单例，
 所以**不要把 host 存进字段**——需要跨次使用的状态放进内容控件或状态文件。
 
+v2.10.2 起，富内容的 `CreateContent` / `ApplyStyle` 上下文里也带了一份同样的 host：
+`CardRenderContext.Host`（文字渲染 / 截图路径为 null）。内容控件在自己的构造函数里保存它即可：
+
+```csharp
+public override FrameworkElement CreateContent(CardRenderContext context)
+{
+    // 每个内容控件一份；模块本身仍然是无状态的单例
+    return new MyView(context.Settings, context.Config, context.Host);
+}
+```
+
+拿到 host 后可以直接 `RequestLayout()`（列表变长）、`RequestRender()`、`ReadState/WriteState`
+（状态目录与 `CardStateStore` 是同一套）。
+
 新增一张**带自己设置的卡片**（`Extras` + 自带设置区块，v2.6.0 起）：
 
 ```csharp

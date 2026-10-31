@@ -193,21 +193,22 @@ public sealed class DropStationCard : RichCardModuleBase,
 }
 ```
 
-### 6.2 一个必须先补的小缺口：内容控件拿不到 `ICardHost`
+### 6.2 内容控件拿不到 `ICardHost`（v2.10.2 已补）
 
-`CardRenderContext` 目前只有 `Settings / MetricsSnapshot / KeyHistory / CardSettings / Variables`，
-**没有 `ICardHost`**；而 `ICardHostAware.Attach(host)` 又约定「模块是单例，不要把 host 存进字段」。
-结果是：列表变长、需要 `host.RequestLayout()` 时，内容控件拿不到 host。
+原始缺口：`CardRenderContext` 只有 `Settings / MetricsSnapshot / KeyHistory / CardSettings / Variables`，
+没有 `ICardHost`；而 `ICardHostAware.Attach(host)` 又约定「模块是单例，不要把 host 存进字段」。
+结果是列表变长、需要 `host.RequestLayout()` 时，内容控件拿不到 host。
 
-两条路：
+**v2.10.2 已按方案 A 落地**：`CardRenderContext.Host`（可空），宿主在 `EnsureContent` / `RenderCardText` /
+`SyncCards` 构造上下文时传 `slot.Host`；内容控件在构造函数里保存这份 host 即可，
+模块本身仍然不存 host。文字渲染与截图路径的 `Host` 为 null（内容控件要判空）。
+
+两条路的对比保留在这里，供以后改契约时参考：
 
 | 方案 | 做法 | 评价 |
 |---|---|---|
-| A（推荐） | 给 `CardRenderContext` 加 `ICardHost Host`（可空），宿主在 `EnsureContent` / `ShowCard` 时传 `slot.Host`；内容控件自己保存 `_host` | 小改动，画板 / 中转站都受益；不违反“模块单例” |
+| A（已采用） | 给 `CardRenderContext` 加 `ICardHost Host`（可空），宿主传 `slot.Host`；内容控件自己保存 `_host` | 小改动，画板 / 中转站都受益；不违反“模块单例” |
 | B | 模块按 `Config.Id` 维护 `Dictionary<string, ICardHost>` | 违反现有契约注释，且要处理删卡 / Detach 清理，不推荐 |
-
-A 需要在 `CardRenderContext` 的构造点（`EnsureContent`、`Screenshots`）都补一个参数；
-M1 做这个改动（约 20 行），否则列表滚动高度只能靠 `RequestRender` 硬撑。
 
 ### 6.3 换肤
 
@@ -277,7 +278,7 @@ M2 如果要在 UI 上尊重 Shift / Ctrl，需要把接口扩成 `DragDropEffec
 - `items.json` 持久化 + 缺失标记 + 剪枝；
 - 空状态 / 拖入高亮 / 锁定提示；
 - `ICardSummary`：「N 个文件 · 引用 / 收纳」；
-- `CardRenderContext.Host`（§6.2）一起补；
+- `CardRenderContext.Host`（§6.2，v2.10.2 已补）；
 - 规模估计：模块 + 视图约 450–600 行，编辑器约 80 行，宿主 20 行。
 
 ### M2 体验

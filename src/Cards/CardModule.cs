@@ -62,7 +62,7 @@ namespace MirrorpondHUD.Cards
         readonly IDictionary<string, object> _sharedVariables;
 
         public CardRenderContext(Settings settings, MetricsSnapshot snapshot, KeyHistory keys, CardSettings config)
-            : this(settings, snapshot, keys, config, null)
+            : this(settings, snapshot, keys, config, null, null)
         {
         }
 
@@ -72,18 +72,33 @@ namespace MirrorpondHUD.Cards
         /// </summary>
         public CardRenderContext(Settings settings, MetricsSnapshot snapshot, KeyHistory keys,
                                  CardSettings config, IDictionary<string, object> sharedVariables)
+            : this(settings, snapshot, keys, config, sharedVariables, null)
+        {
+        }
+
+        /// <summary>
+        /// 富内容创建 / 刷新时，宿主会把这张卡片的 <see cref="ICardHost"/> 一起传进来；
+        /// 内容控件可以保存它，用来 <see cref="ICardHost.RequestLayout"/> 或读写自己的状态文件。
+        /// 文字渲染与截图路径没有 host，<see cref="Host"/> 为 null。
+        /// </summary>
+        public CardRenderContext(Settings settings, MetricsSnapshot snapshot, KeyHistory keys,
+                                 CardSettings config, IDictionary<string, object> sharedVariables, ICardHost host)
         {
             Settings = settings ?? new Settings();
             Snapshot = snapshot ?? new MetricsSnapshot();
             Keys = keys;
             Config = config;
             _sharedVariables = sharedVariables;
+            Host = host;
         }
 
         public Settings Settings { get; private set; }
         public MetricsSnapshot Snapshot { get; private set; }
         public KeyHistory Keys { get; private set; }
         public CardSettings Config { get; private set; }
+
+        /// <summary>这张卡片的宿主服务（可能为 null：文字渲染 / 截图 / 单测）。</summary>
+        public ICardHost Host { get; private set; }
 
         public IDictionary<string, object> Variables
         {

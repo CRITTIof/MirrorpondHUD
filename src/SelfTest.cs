@@ -5,6 +5,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -232,6 +233,8 @@ namespace MirrorpondHUD
             bool singleInteractiveOk = false;
             bool widgetsOk = false;
             bool widgets2Ok = false;
+            bool contextHostOk = false;
+            bool jobQueueOk = false;
 
             try
             {
@@ -1060,12 +1063,64 @@ namespace MirrorpondHUD
                 Log.Error("共享控件（交互）自检异常", ex);
             }
 
+            try
+            {
+                // 2.10.2：富内容的渲染上下文要把这张卡片的 ICardHost 透传给内容控件。
+                var host = new TestCardHost();
+                var context = new CardRenderContext(
+                    new Settings(), new MetricsSnapshot(), null,
+                    new CardSettings { Id = "host-test", Kind = "text" }, null, host);
+
+                contextHostOk = ReferenceEquals(context.Host, host);
+            }
+            catch (Exception ex)
+            {
+                Log.Error("渲染上下文 Host 自检异常", ex);
+            }
+
+            try
+            {
+                // 2.10.2：串行任务队列——成功 / 失败 / 取消三种结局都要落到正确的状态。
+                using (var queue = new CardJobQueue(1))
+                {
+                    var okJob = queue.Enqueue("ok", (ct, progress) =>
+                    {
+                        progress.Report(0.5);
+                        progress.Report(1.0);
+                        return Task.CompletedTask;
+                    });
+
+                    var failJob = queue.Enqueue("fail", (ct, progress) =>
+                    {
+                        throw new InvalidOperationException("boom");
+                    });
+
+                    var cancelJob = queue.Enqueue("cancel", (ct, progress) => Task.Delay(500, ct));
+                    cancelJob.Cancel();
+
+                    bool finished = Task.WaitAll(
+                        new[] { okJob.Task, failJob.Task, cancelJob.Task }, 3000);
+
+                    jobQueueOk = finished
+                              && okJob.State == CardJobState.Succeeded
+                              && Math.Abs(okJob.Progress - 1.0) < 0.001
+                              && failJob.State == CardJobState.Failed
+                              && failJob.Error == "boom"
+                              && cancelJob.State == CardJobState.Canceled;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error("后台任务队列自检异常", ex);
+            }
+
             if (!(templateOk && unknownOk && collapseOk && thresholdOk && configOk && cardOk &&
                   keyNameOk && keyLimitOk && keyOverflowOk &&
                   commandOk && truncateOk && toolLabelOk && secretOk && chatHotkeyOk && settingsEditorOk &&
                   stateStoreOk && renderOk && glassPolicyOk && themeOk && restyleOk &&
                   themeFileOk && themeRejectOk && themeCatalogOk && activationOk && cloneGuardOk &&
-                  restyleHostOk && chatContextOk && singleInteractiveOk && widgetsOk && widgets2Ok)) failures++;
+                  restyleHostOk && chatContextOk && singleInteractiveOk && widgetsOk && widgets2Ok &&
+                  contextHostOk && jobQueueOk)) failures++;
 
             Fix(sb, "逻辑自检", string.Format(
                 "模板={0} 未知占位符={1} 折叠={2} 阈值内展开={3} 配置读写={4} 卡片模块={11} 键名={5} 按键长度={6} 超长截断={7} 命令行={8} 行截断={9} 工具名={10} Key加密={12} 对话热键={13} 卡片设置={14} 状态存储={15} 渲染节流={16} 毛玻璃策略={17}",
@@ -1100,6 +1155,8 @@ namespace MirrorpondHUD
             Fix(sb, "交互卡唯一", singleInteractiveOk ? "OK（默认一张；第二张会被设置页 / 校验拦住）" : "FAIL");
             Fix(sb, "共享控件", widgetsOk ? "OK（CardList 空态/计数/选中；CardStatus 忙碌/进度/错误）" : "FAIL");
             Fix(sb, "共享控件（交互）", widgets2Ok ? "OK（Header 按钮可点；Input 提交；DropOverlay 显隐）" : "FAIL");
+            Fix(sb, "渲染上下文", contextHostOk ? "OK（富内容创建上下文透传 ICardHost）" : "FAIL");
+            Fix(sb, "后台任务", jobQueueOk ? "OK（串行队列：成功 / 失败 / 取消）" : "FAIL");
         }
 
         static bool RegisterIfSet(HotkeyManager hotkeys, string action, string combination)
@@ -1132,6 +1189,18 @@ namespace MirrorpondHUD
         {
             if (double.IsNaN(v)) return "n/a";
             return v.ToString("0.0", CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>自检用的假宿主：只验证透传，不读写磁盘。</summary>
+        sealed class TestCardHost : ICardHost
+        {
+            public CardSettings Config { get; set; }
+            public string StateDirectory { get { return ""; } }
+            public string ReadState(string fileName) { return null; }
+            public bool WriteState(string fileName, string text) { return true; }
+            public bool DeleteState(string fileName) { return true; }
+            public void RequestRender() { }
+            public void RequestLayout() { }
         }
     }
 }

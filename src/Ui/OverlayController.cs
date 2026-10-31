@@ -437,7 +437,7 @@ namespace MirrorpondHUD.Ui
             try
             {
                 return slot.Module.Render(
-                    new CardRenderContext(_settings, _last, _keys, slot.Config, sharedVariables));
+                    new CardRenderContext(_settings, _last, _keys, slot.Config, sharedVariables, slot.Host));
             }
             catch (Exception ex)
             {
@@ -526,7 +526,7 @@ namespace MirrorpondHUD.Ui
             try
             {
                 slot.Content = slot.Rich.CreateContent(
-                    new CardRenderContext(_settings, _last, _keys, slot.Config));
+                    new CardRenderContext(_settings, _last, _keys, slot.Config, null, slot.Host));
             }
             catch (Exception ex)
             {
@@ -1330,7 +1330,7 @@ namespace MirrorpondHUD.Ui
                     slot.ContentSignature = contentKey;
                     slot.StyleSignature = styleKey;
 
-                    var context = new CardRenderContext(_settings, _last, _keys, config);
+                    var context = new CardRenderContext(_settings, _last, _keys, config, null, slot.Host);
 
                     if (sameContent && sameStyle)
                     {

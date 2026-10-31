@@ -306,7 +306,7 @@ tools/                   开发脚本（make_logo.py 生成多尺寸 logo.ico）
 - [docs/theme-motion.md](docs/theme-motion.md) — 主题的动效与控件样式调研：启动动画参数化、出现 / 消失 / 让位动画、按钮面板滑块 token 与受控模板、设置页换肤（含分层窗口动画实测）
 - [docs/legacy-audit.md](docs/legacy-audit.md) — 源码遗留审计：与 v2.9.4 同源的检查、13 条遗留（颜色解析 / 异步 void / 静态缓存 / 死字段等）与清理顺序
 - [docs/file-transfer-station.md](docs/file-transfer-station.md) — 文件中转站调研与设计：拖入 / 列表 / 引用与复制、状态持久化、拖出与锁定语义、M1–M3 路线
-- [docs/version-history.md](docs/version-history.md) — v2.4.1 → v2.10.1 每个版本改了什么、动了哪些文件（含实测数据与提交号）
+- [docs/version-history.md](docs/version-history.md) — v2.4.1 → v2.10.2 每个版本改了什么、动了哪些文件（含实测数据与提交号）
 - 「热键」页：全局三个热键置顶；媒体卡片单独一组（播放 / 暂停、前进、后退、加速、减速），
   由卡片模块自己声明，新增卡片类型可以注册自己的通用热键
 
