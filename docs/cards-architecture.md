@@ -178,6 +178,9 @@ public sealed class DropStationCard : RichCardModuleBase,
 把文件放进 `src/Cards/` 即可：工程默认包含全部 `.cs`，`CardRegistry` 启动时反射发现，
 「添加卡片」菜单、设置页编辑、默认内容、热键校验全部自动生效。
 
+> 中转站本身的调研与设计（数据模型、引用 / 复制 / 移动、拖出、锁定语义、分阶段）见
+> [file-transfer-station.md](file-transfer-station.md)。
+
 ## 3. 配置模型
 
 ```json

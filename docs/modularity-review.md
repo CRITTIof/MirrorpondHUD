@@ -296,6 +296,7 @@ XAML 用三块 `Visibility` 面板切换（`src/Ui/SettingsWindow.xaml:190` / `:
 
 > 后续：v2.9.3 已实现 **#7**（`SettingsWindow.TryClone` 失败禁止保存、不弹窗口）与 **#4**
 > （`ICardActivation` 激活契约，宿主不再引用 `CommandCard.CommandOf`）；其余 5 条维持原判断。
+> 更细的同源遗留（颜色解析、`async void`、死字段、缓存上限等 13 条）见 [legacy-audit.md](legacy-audit.md)。
 
 ---
 
@@ -464,8 +465,8 @@ XAML 用三块 `Visibility` 面板切换（`src/Ui/SettingsWindow.xaml:190` / `:
 
 配套给富内容契约加 `ApplyStyle(content, context)`（`UpdateContent` 现在只在“完全没变”时被调用，
 还接不住“样式变了、内容没变”的场景）。这也是 P0-2 的自然延伸：先把 `UpdateContent` 接上（已做），
-再加 `ApplyStyle`（新）。**v2.8.0 已落地**：两维签名 + `ICardStyleAware` + 媒体卡就地换肤；
-`CliPanelView`（对话 / 命令行）仍回退重建，因为样式是构造期固化的。
+再加 `ApplyStyle`（新）。**v2.8.0 落地两维签名 + `ICardStyleAware` + 媒体卡就地换肤；
+v2.9.1 补齐 CLI 面板就地换肤，v2.9.4 补齐 `Settings` 对象跟随与 `monoFont`。**
 
 **结论 3：输入模型需要拆分，否则会逼出新的 `Kind == "canvas"` 特判。**
 `IsInteractive` 现在同时承担四个含义：键盘独占、单槽（`_commandCard`）、强制非常驻、抑制全局键盘钩子
@@ -497,7 +498,7 @@ XAML 用三块 `Visibility` 面板切换（`src/Ui/SettingsWindow.xaml:190` / `:
 | `P1-11` 输入能力拆分 | `NeedsMouseInput` / `HandlesOwnDrag`（`IsInteractive` 继续表示键盘独占），宿主按能力组合 | ✅ v2.6.3 已完成 |
 | `P1-8` 宿主服务 / 生命周期 | `ICardHost`（状态目录、重画 / 布局请求）+ `ICardHostAware`（Attach / Detach） | ✅ v2.7.0 已完成 |
 | `P1-12` 每卡状态存储 | 中转站的列表、画板的草稿不该塞进 `settings.json`；给模块一个每卡目录 + 原子写 | ✅ v2.7.0 已完成（`CardStateStore` + `ICardHost`） |
-| 样式热更新契约 | `ApplyStyle` + 签名拆两维 | 🟡 v2.8.0 完成签名两维 + 媒体卡就地换肤；CLI 面板仍回退重建 |
+| 样式热更新契约 | `ApplyStyle` + 签名拆两维 | ✅ v2.8.0 两维签名；v2.9.1 CLI 就地换肤；v2.9.4 `Settings` / `monoFont` 跟随 |
 | 拖放通道 | `AllowDrop` + `ICardDropTarget` + 锁定语义 | ✅ v2.6.3 已完成（宿主统一注册，模块只声明收什么） |
 | Shell 集成 | 文件图标 / 缩略图（`SHGetFileInfo` 或 `IShellItemImageFactory`），供中转站与未来的媒体卡共用 | 中 |
 
@@ -506,8 +507,8 @@ XAML 用三块 `Visibility` 面板切换（`src/Ui/SettingsWindow.xaml:190` / `:
 1. **阶段 A（前置，现在）**：P1-1 `Extras` + P1-2 `ICardEditorSection`。
    三条路共同吃这个红利，越晚做返工越多。
 2. **阶段 B（能力补齐，已完成）**：P1-8 生命周期 / 服务 + `P1-11` 输入拆分 + `P1-12` 状态存储 + 拖放通道 —— v2.6.3 / v2.7.0。
-3. **阶段 C（外观重写前，已完成）**：签名拆两维 + `ApplyStyle`（v2.8.0）；P2-1 毛玻璃抽象（v2.8.1）。
-   遗留：`CliPanelView` 的样式仍构造期固化，换外观会重建对话 / 命令行卡片（见 §8.2 边界）。
+3. **阶段 C（外观重写前，已完成）**：签名拆两维 + `ApplyStyle`（v2.8.0）；P2-1 毛玻璃抽象（v2.8.1）；
+   CLI 面板就地换肤（v2.9.1）与 `Settings` / `monoFont` 跟随（v2.9.4）。
 4. **阶段 D（功能落地）**：文件中转站（A + B）→ 快捷画板（A + B + C）→ 外观重写（A + C + P2-1）。
 
 原 §7 的阶段 2（设置扩展点）优先级**上调**：它从“可选重构”变成“两条新功能的开工条件”。
