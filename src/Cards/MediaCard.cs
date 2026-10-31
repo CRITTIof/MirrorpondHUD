@@ -15,7 +15,8 @@ namespace MirrorpondHUD.Cards
     /// 对所有媒体卡片同时生效。
     /// </summary>
     public sealed class MediaCard : RichCardModuleBase, ICardHotkeySource, ICardHotkeyTarget,
-                                    ICardSettingsModule, ICardEditorSection, ICardSettingsValidator, ICardSummary
+                                    ICardSettingsModule, ICardEditorSection, ICardSettingsValidator,
+                                    ICardSummary, ICardStyleAware
     {
         /// <summary>媒体设置存在 <see cref="CardSettings.Extras"/> 里的键名。</summary>
         public const string SettingsKey = "media";
@@ -108,6 +109,16 @@ namespace MirrorpondHUD.Cards
         public FrameworkElement CreateEditor(CardSettings config, Settings settings, Action onChanged)
         {
             return new MediaCardSettingsView(config, onChanged);
+        }
+
+        /// <summary>主题 / 字号 / 圆角变了：就地换肤，视频不重启、动图不回第一帧。</summary>
+        public void ApplyStyle(FrameworkElement content, CardRenderContext context)
+        {
+            var view = content as MediaView;
+            if (view == null || context == null) return;
+
+            view.ApplyStyle(context.Settings == null ? null : context.Settings.Style,
+                            context.Settings == null ? 10 : context.Settings.Overlay.CornerRadius);
         }
 
         /// <inheritdoc />

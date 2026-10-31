@@ -1,4 +1,4 @@
-# 版本修改记录（2.4.1 → 2.7.1）
+# 版本修改记录（2.4.1 → 2.8.0）
 
 > 范围：本文只记录**这一轮接手后我做的版本**（v2.4.1 起）。v2.4.0 及更早是既有历史，不在本文档里。
 > 数据全部取自仓库真实提交（`git diff --shortstat <上一版>..<本版>`），文件行的 `+ / -` 就是实际增删行数。
@@ -22,7 +22,8 @@
 | v2.6.2 | 2026-10-31 | `1b138e7` | 媒体卡 / 对话卡设置搬进 `Extras`（schema 6）；模块自带设置区块（`MediaCardSettingsView` / `ChatCardSettingsView`）与摘要 | 19 文件，+347 / −846，另新增 4 个源文件（728 行） |
 | v2.6.3 | 2026-10-31 | `7733b37` | 输入能力拆分（`HandlesOwnDrag`）+ 拖放通道（`ICardDropTarget`），为画板 / 中转站铺路 | 8 文件，+169 / −12 |
 | v2.7.0 | 2026-10-31 | `cba71fd` | 阶段 B 收尾：`ICardHost` 宿主服务与 `ICardHostAware` 生命周期；`CardStateStore` 每卡状态存储（原子写 + 路径校验） | 7 文件，+220 / −23，另新增 2 个源文件（165 行） |
-| v2.7.1 | 2026-10-31 | 本次提交 | P0-5：一帧一份共享变量表 + 模块声明刷新间隔（时钟 1 s / 按键 250 ms / 系统信息每帧） | 9 文件，+194 / −32 |
+| v2.7.1 | 2026-10-31 | `3ab0fd0` | P0-5：一帧一份共享变量表 + 模块声明刷新间隔（时钟 1 s / 按键 250 ms / 系统信息每帧） | 9 文件，+194 / −32 |
+| v2.8.0 | 2026-10-31 | 本次提交 | 阶段 C 第一步：内容 / 样式签名拆两维；新增 `ICardStyleAware`，媒体卡支持「只换样式不重建」 | 9 文件，+179 / −33 |
 
 ---
 
@@ -559,7 +560,48 @@ v2.6.0 只把**命令行卡**的设置搬进了 `CardSettings.Extras`，媒体�
 
 ---
 
-## 13. 不在版本里的东西
+## 13. v2.8.0（本次提交，未打标签）
+
+### 背景
+
+评审 §9 阶段 C 的第一项：`ContentSignature` 把「内容」和「样式」混在一个签名里，导致换主题 / 改字号
+也会重建全部富内容——画板笔迹、对话历史、视频进度全丢。外观重写要靠这条先修好。
+
+### 改动
+
+1. **签名拆两维**：`ContentSignature`（`Kind` / `Content` / `Extras`）与 `StyleSignature`
+   （`Style` / `Cli` / `CornerRadius` / `Shadow`）分别存进 `CardSlot`。
+2. **三分支决策**（`SyncCards`）：内容变 → 重建；只样式变 → 若模块实现 `ICardStyleAware` 就地换肤，
+   否则回退重建（CLI 面板的样式是构造期固化的）；都没变 → 只 `UpdateContent` 刷新数据。
+3. **新增 `ICardStyleAware`** 与 `MediaView.ApplyStyle(style, cornerRadius)`：
+   媒体卡换肤只重算文件名 / 进度条与圆角裁剪，视频不重启、动图不回第一帧。
+4. **自检**：媒体卡实现 `ICardStyleAware` 且 `MediaView.ApplyStyle` 可安全调用。
+
+### 边界（有意保留）
+
+`ChatView` / `CommandView` 的 `CliPanelView` 把配色、字号、圆角固化在构造期（`readonly` 字段 + 一堆子控件），
+本轮**没有**重写它，所以改外观时对话卡仍会重建——会丢历史。要彻底解决，需要把 `CliPanelView` 的样式改成
+可重新套用（或把对话历史迁到状态文件），属于后续工作。
+
+### 文件
+
+| 文件 | 行数 | 说明 |
+|---|---|---|
+| `src/Ui/OverlayController.cs` | 两种签名 + 三分支决策 |
+| `src/Cards/CardSettingsModule.cs` | `ICardStyleAware` 契约 |
+| `src/Media/MediaView.cs` | `ApplyStyle(style, cornerRadius)` |
+| `src/Cards/MediaCard.cs` | 实现 `ICardStyleAware` |
+| `src/SelfTest.cs` | 换肤断言 |
+
+### 实测
+
+- `dotnet build -c Release`：0 警告 0 错误。
+- `--selftest`：**失败项 0**。
+- 未覆盖：真实换肤的观感与「视频不重启」需要手工确认（当前配置里没有媒体卡）。
+
+---
+
+## 14. 不在版本里的东西
 
 - 验收脚本、样张与测量脚本（`cmd-e2e.ps1`、`drag-glass.ps1`、`measure-*.py`、`shots/` 等）都在仓库外的 `hud-test/` 里，**没有提交**。
 - 发布：`main` 与标签已推送到 [github.com/CRITTIof/MirrorpondHUD](https://github.com/CRITTIof/MirrorpondHUD)；
@@ -568,7 +610,7 @@ v2.6.0 只把**命令行卡**的设置搬进了 `CardSettings.Extras`，媒体�
   v2.4.0 的 Release 已删除（tag `v2.4.0` 保留，历史仍可检出）。
 - 仓库追踪的文件共 89 个，`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
 
-## 14. 已知代价（跨版本）
+## 15. 已知代价（跨版本）
 
 - 桌面亚克力为了不拍到自己，会把卡片排除在截屏之外 —— 这个模式下截图 / 录屏里**看不到卡片**，观感只能靠肉眼与离屏渲染验证。
 - 兼容实现每帧对身后窗口做 `PrintWindow`，拖动时最多 ~21 帧/秒；要更高只能走桌面亚克力（DXGI）。

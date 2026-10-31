@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -201,6 +201,17 @@ namespace MirrorpondHUD.Media
             _style = style;
             ApplyChrome();
             return this;
+        }
+
+        /// <summary>
+        /// 主题 / 字号 / 圆角变化时就地换肤：不重建控件，所以视频不会重启、动图不会回到第一帧。
+        /// 只重算 chrome（文件名 / 进度条）与圆角裁剪，代价是一次布局，而不是一次解码。
+        /// </summary>
+        public void ApplyStyle(StyleSettings style, double cornerRadius)
+        {
+            _cornerRadius = Math.Max(0, Math.Min(60, cornerRadius));
+            ApplyClip();
+            WithStyle(style);
         }
 
         void ApplyChrome()

@@ -6,6 +6,7 @@ using System.Text;
 using System.Threading;
 using MirrorpondHUD.Cards;
 using MirrorpondHUD.Core;
+using MirrorpondHUD.Media;
 using MirrorpondHUD.Ui;
 
 namespace MirrorpondHUD
@@ -587,7 +588,21 @@ namespace MirrorpondHUD
                               && infotext.RefreshIntervalMs(new CardSettings { Kind = "infotext", Preset = "keys" }) == 250
                               && infotext.RefreshIntervalMs(new CardSettings { Kind = "infotext", Preset = "metrics" }) == 0;
 
-                renderOk = sharedUsed && cadenceOk;
+                // 阶段 C：媒体卡支持就地换肤（样式变化不重建，视频不重启）
+                bool styleAwareOk = CardRegistry.Get("media") is ICardStyleAware;
+
+                try
+                {
+                    var mediaView = new MediaView();
+                    mediaView.ApplyStyle(new StyleSettings { FontSize = 20, Foreground = "#FFFFFF", Padding = 16 }, 14);
+                }
+                catch (Exception ex)
+                {
+                    styleAwareOk = false;
+                    Log.Error("媒体卡换肤自检异常", ex);
+                }
+
+                renderOk = sharedUsed && cadenceOk && styleAwareOk;
             }
             catch (Exception ex)
             {

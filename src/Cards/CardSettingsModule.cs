@@ -63,4 +63,13 @@ namespace MirrorpondHUD.Cards
     {
         string Summary(CardSettings config);
     }
+
+    /// <summary>
+    /// 富内容支持「只换样式、不重建」：主题 / 字号 / 圆角 / CLI 尺寸变化时宿主调用它，
+    /// 而不是销毁控件重新创建。不实现 = 样式变化时回退到重建（会丢运行时状态，例如对话历史）。
+    /// </summary>
+    public interface ICardStyleAware
+    {
+        void ApplyStyle(FrameworkElement content, CardRenderContext context);
+    }
 }

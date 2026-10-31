@@ -46,10 +46,13 @@ namespace MirrorpondHUD.Ui
             public FrameworkElement Content;
 
             /// <summary>
-            /// 建 / 刷新这个内容时用的输入签名（种类、模板、本卡设置、共用外观）。
+            /// 建 / 刷新这个内容时用的**内容**签名（种类、模板、本卡设置）。
             /// 应用设置时拿它和新签名比较：一样就只刷新数据，不一样才重建控件。
             /// </summary>
             public string ContentSignature;
+
+            /// <summary>**样式**签名（外观 / CLI 尺寸 / 圆角 / 投影）；只变它时优先就地换肤。</summary>
+            public string StyleSignature;
 
             /// <summary>这张卡片拿到的宿主服务（状态目录、请求重画 / 布局）。</summary>
             public CardHost Host;
@@ -212,7 +215,8 @@ namespace MirrorpondHUD.Ui
                 Config = config,
                 Module = CardRegistry.Get(config.Kind),
                 Dialog = dialog,
-                ContentSignature = ContentSignature(config)
+                ContentSignature = ContentSignature(config),
+                StyleSignature = StyleSignature()
             };
             slot.Rich = slot.Module as IRichCardModule;
             slot.Host = new CardHost(this, config);
@@ -349,16 +353,24 @@ namespace MirrorpondHUD.Ui
         }
 
         /// <summary>
-        /// 富内容的重建依据：种类、模板、本卡自己的设置（Extras）与媒体 / 对话设置，
-        /// 加上所有卡片共用的外观与 CLI 尺寸。
-        /// 序列化成字符串快照存进 <see cref="CardSlot.ContentSignature"/>；应用设置时比较快照——
-        /// 设置页是在副本上改、点「应用」时才换成新对象，所以旧值只能靠这张快照记住。
+        /// 内容维度：种类、模板、本卡自己的设置（Extras）。变了才重建控件。
+        /// 序列化成字符串快照存进 <see cref="CardSlot.ContentSignature"/>——设置页在副本上改、
+        /// 点「应用」时才换成新对象，旧值只能靠快照记住。
         /// </summary>
         sealed class ContentInputs
         {
             public string Kind;
             public string Content;
             public Dictionary<string, object> Extras;
+        }
+
+        /// <summary>
+        /// 样式维度：所有卡片共用的外观、CLI 尺寸、圆角与投影。
+        /// 只有样式变化时走 <see cref="ICardStyleAware.ApplyStyle"/>（支持就地换肤就不重建），
+        /// 不支持的模块仍回退到重建。
+        /// </summary>
+        sealed class StyleInputs
+        {
             public StyleSettings Style;
             public CliSettings Cli;
             public double CornerRadius;
@@ -368,11 +380,22 @@ namespace MirrorpondHUD.Ui
         string ContentSignature(CardSettings config)
         {
             if (config == null) return "";
+
             var inputs = new ContentInputs
             {
                 Kind = config.Kind,
                 Content = config.Content,
-                Extras = config.Extras,
+                Extras = config.Extras
+            };
+
+            try { return Json.Serialize(inputs); }
+            catch { return null; }   // 序列化失败：当作「变了」，走重建，宁可贵一点也不要留下陈旧内容
+        }
+
+        string StyleSignature()
+        {
+            var inputs = new StyleInputs
+            {
                 Style = _settings.Style,
                 Cli = _settings.Cli,
                 CornerRadius = _settings.Overlay.CornerRadius,
@@ -380,7 +403,7 @@ namespace MirrorpondHUD.Ui
             };
 
             try { return Json.Serialize(inputs); }
-            catch { return null; }   // 序列化失败：当作「变了」，走重建，宁可贵一点也不要留下陈旧内容
+            catch { return null; }
         }
 
         string CardTemplate(CardSlot slot)
@@ -1235,7 +1258,8 @@ namespace MirrorpondHUD.Ui
 
                     bool wasSummoned = slot.Summoned;
                     bool saved;
-                    string signature = ContentSignature(config);
+                    string contentKey = ContentSignature(config);
+                    string styleKey = StyleSignature();
 
                     // 换配置 = 换 host 里的配置对象；模块种类可能变，先解绑旧的再绑新的。
                     DetachHost(slot);
@@ -1257,31 +1281,64 @@ namespace MirrorpondHUD.Ui
                     // 卡片种类可能没变，但模块能力（拖动 / 拖放）要跟着重新接线。
                     WireInputCapabilities(slot);
 
-                    // 内容相关输入没变（改名字 / 热键 / 间距这类）：只刷新数据，不重建控件。
+                    // 内容没变（改名字 / 热键 / 间距 / 只改外观）：不重建控件。
                     // 视频不重启、动图不回第一帧、AI 对话的历史也还在。
                     bool sameContent = slot.Content != null &&
                                        slot.Rich != null &&
-                                       signature != null &&
-                                       string.Equals(slot.ContentSignature, signature, StringComparison.Ordinal);
-                    slot.ContentSignature = signature;
+                                       contentKey != null &&
+                                       string.Equals(slot.ContentSignature, contentKey, StringComparison.Ordinal);
 
-                    if (sameContent)
+                    bool sameStyle = styleKey != null &&
+                                     string.Equals(slot.StyleSignature, styleKey, StringComparison.Ordinal);
+
+                    slot.ContentSignature = contentKey;
+                    slot.StyleSignature = styleKey;
+
+                    var context = new CardRenderContext(_settings, _last, _keys, config);
+
+                    if (sameContent && sameStyle)
                     {
                         slot.Window.RefreshSettings(slot.Dialog);
 
-                        try
-                        {
-                            slot.Rich.UpdateContent(slot.Content,
-                                new CardRenderContext(_settings, _last, _keys, config));
-                        }
+                        try { slot.Rich.UpdateContent(slot.Content, context); }
                         catch (Exception ex)
                         {
                             Log.Warn("卡片内容刷新失败(" + config.Name + "): " + ex.Message);
                         }
                     }
+                    else if (sameContent)
+                    {
+                        // 只改了外观 / CLI 尺寸：支持就地换肤的模块直接套新样式，不销毁内容。
+                        var styleAware = slot.Module as ICardStyleAware;
+                        if (styleAware != null)
+                        {
+                            slot.Window.RefreshSettings(slot.Dialog);
+
+                            try { styleAware.ApplyStyle(slot.Content, context); }
+                            catch (Exception ex)
+                            {
+                                Log.Warn("卡片换肤失败(" + config.Name + "): " + ex.Message);
+                            }
+                        }
+                        else
+                        {
+                            // 模块没实现就地换肤（CLI 面板的样式是构造期固化的）：回退到重建。
+                            ReleaseContent(slot);
+
+                            if (slot.Shown)
+                            {
+                                if (slot.Rich != null) ShowCard(slot, "");
+                                else slot.Window.Apply(slot.Dialog, RenderCardText(slot));
+                            }
+                            else
+                            {
+                                slot.Window.Apply(slot.Dialog, "");
+                            }
+                        }
+                    }
                     else
                     {
-                        // 内容相关设置变了（文件 / 工具 / 模型 / 外观）：按新设置重建富内容。
+                        // 内容相关设置变了（文件 / 工具 / 模型）：按新设置重建富内容。
                         ReleaseContent(slot);
 
                         if (slot.Shown)

@@ -5,7 +5,7 @@
 > 结论一句话：**契约层够用，宿主层有 5 处可直接修的问题，真正的扩展瓶颈在「设置模型 + 设置页」**——
 > 新增一张带设置项的卡片要改 5 个代码文件，其中 3 个是 700 ~ 1500 行的巨型文件。
 > 读法：P0 是能立刻动手的小修（不改架构），P1 是需要设计的重构，P2 是可选结构优化。
-> **实施状态：P0 五条全部完成（v2.5.0 + v2.7.1）；P1-1、P1-2、P1-3、P1-8、P1-11、P1-12 与拖放通道已实现（v2.6.1 ~ v2.7.0）；阶段 B 收尾；手工回归待做。**
+> **实施状态：P0 五条全部完成（v2.5.0 + v2.7.1）；P1-1、P1-2、P1-3、P1-8、P1-11、P1-12 与拖放通道已实现（v2.6.1 ~ v2.7.0）；阶段 C 第一步（签名拆两维 + `ICardStyleAware`）已在 v2.8.0 落地；手工回归待做。**
 
 ## 0. 评审方法
 
@@ -445,7 +445,8 @@ XAML 用三块 `Visibility` 面板切换（`src/Ui/SettingsWindow.xaml:190` / `:
 
 配套给富内容契约加 `ApplyStyle(content, context)`（`UpdateContent` 现在只在“完全没变”时被调用，
 还接不住“样式变了、内容没变”的场景）。这也是 P0-2 的自然延伸：先把 `UpdateContent` 接上（已做），
-再加 `ApplyStyle`（新）。
+再加 `ApplyStyle`（新）。**v2.8.0 已落地**：两维签名 + `ICardStyleAware` + 媒体卡就地换肤；
+`CliPanelView`（对话 / 命令行）仍回退重建，因为样式是构造期固化的。
 
 **结论 3：输入模型需要拆分，否则会逼出新的 `Kind == "canvas"` 特判。**
 `IsInteractive` 现在同时承担四个含义：键盘独占、单槽（`_commandCard`）、强制非常驻、抑制全局键盘钩子
@@ -477,7 +478,7 @@ XAML 用三块 `Visibility` 面板切换（`src/Ui/SettingsWindow.xaml:190` / `:
 | `P1-11` 输入能力拆分 | `NeedsMouseInput` / `HandlesOwnDrag`（`IsInteractive` 继续表示键盘独占），宿主按能力组合 | ✅ v2.6.3 已完成 |
 | `P1-8` 宿主服务 / 生命周期 | `ICardHost`（状态目录、重画 / 布局请求）+ `ICardHostAware`（Attach / Detach） | ✅ v2.7.0 已完成 |
 | `P1-12` 每卡状态存储 | 中转站的列表、画板的草稿不该塞进 `settings.json`；给模块一个每卡目录 + 原子写 | ✅ v2.7.0 已完成（`CardStateStore` + `ICardHost`） |
-| 样式热更新契约 | `ApplyStyle` + 签名拆两维 | 中，建议外观重写前完成 |
+| 样式热更新契约 | `ApplyStyle` + 签名拆两维 | 🟡 v2.8.0 完成签名两维 + 媒体卡就地换肤；CLI 面板仍回退重建 |
 | 拖放通道 | `AllowDrop` + `ICardDropTarget` + 锁定语义 | ✅ v2.6.3 已完成（宿主统一注册，模块只声明收什么） |
 | Shell 集成 | 文件图标 / 缩略图（`SHGetFileInfo` 或 `IShellItemImageFactory`），供中转站与未来的媒体卡共用 | 中 |
 
@@ -486,7 +487,7 @@ XAML 用三块 `Visibility` 面板切换（`src/Ui/SettingsWindow.xaml:190` / `:
 1. **阶段 A（前置，现在）**：P1-1 `Extras` + P1-2 `ICardEditorSection`。
    三条路共同吃这个红利，越晚做返工越多。
 2. **阶段 B（能力补齐，已完成）**：P1-8 生命周期 / 服务 + `P1-11` 输入拆分 + `P1-12` 状态存储 + 拖放通道 —— v2.6.3 / v2.7.0。
-3. **阶段 C（外观重写前）**：签名拆两维 + `ApplyStyle` + P2-1 毛玻璃抽象。
+3. **阶段 C（外观重写前）**：签名拆两维 + `ApplyStyle` ✅ v2.8.0；P2-1 毛玻璃抽象 ⏳ 待做。
 4. **阶段 D（功能落地）**：文件中转站（A + B）→ 快捷画板（A + B + C）→ 外观重写（A + C + P2-1）。
 
 原 §7 的阶段 2（设置扩展点）优先级**上调**：它从“可选重构”变成“两条新功能的开工条件”。
