@@ -1,7 +1,7 @@
 # 卡片模块化：现在的实现
 
 > 目标：把「桌面信息叠层」做成一组**可添加、可删除、可排序**的卡片。
-> 现在五种内置卡片（信息与文本 / 命令行 / 媒体 / AI 对话 / 按钮演示）都按这个结构跑起来；
+> 现在六种内置卡片（信息与文本 / 命令行 / 媒体 / AI 对话 / 文件中转站 / 按钮演示）都按这个结构跑起来；
 > 再加一种卡片只需要在 `src/Cards` 里新增一个文件，宿主不用改
 > ——文字卡用 `CardModuleBase`，图片 / 视频 / 面板这类富内容卡用 `RichCardModuleBase`。
 
@@ -24,6 +24,7 @@
 | `src/Cards/ChatCard.cs` | AI 对话卡：和命令行卡同一套 CLI 面板（模型名 + `>` 输入行 + 每条问答一块小面板），单次 / 轮询走全局热键 |
 | `src/Ui/Controls/CliUi.cs` | CLI 面板公共件：面板骨架 `CliPanelView`、内部小面板 `CliEntryPanel`、卡片风格滑块 `CliScrollBars`、取色 `CardPalette` |
 | `src/Cards/ButtonsCard.cs` | 按钮演示卡：验证 `CardButton` / `CardTextBox` 这套卡片控件 |
+| `src/Cards/DropStationCard.cs` | 文件中转站：拖入列表、引用 / 复制、状态持久化、设置区块（v2.11.0） |
 | `src/Core/SecretStore.cs` | 敏感字符串加密：Windows DPAPI（当前用户），settings.json 里只落 `dpapi:…` |
 | `src/Ui/Controls/CardButton.cs` | 卡片里的按钮：三种语气 + 三态模板，颜色跟随卡片外观 |
 | `src/Ui/Controls/CardTextBox.cs` | 卡片里的输入框：底色 / 光标 / 选区跟着卡片文字色 |

@@ -194,7 +194,7 @@ namespace MirrorpondHUD.Cards
     /// </summary>
     public interface ICardDropFeedback
     {
-        void OnDropStateChanged(bool over, IDataObject data);
+        void OnDropStateChanged(FrameworkElement content, bool over, IDataObject data);
     }
 
     /// <summary>卡片模块的公共基类：只提供默认实现，子类覆盖需要的部分。</summary>

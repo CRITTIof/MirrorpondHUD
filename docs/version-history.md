@@ -1,11 +1,11 @@
-# 版本修改记录（2.4.1 → 2.10.3）
+# 版本修改记录（2.4.1 → 2.11.0）
 
 > 范围：本文只记录**这一轮接手后我做的版本**（v2.4.1 起）。v2.4.0 及更早是既有历史，不在本文档里。
 > 数据全部取自仓库真实提交（`git diff --shortstat <上一版>..<本版>`），文件行的 `+ / -` 就是实际增删行数。
 > 版本状态：`main` 已推送到 GitHub；`v2.4.2`–`v2.4.5` 为附注标签（分别指向 `70343ef` / `aabe441` / `05857ce` / `f4b2b8b`），
 > v2.4.5 已发布 Release（附件为两个 requires-dotnet 单文件），v2.4.0 的 Release 已删除、其 tag 保留。
 > `v2.5.0`–`v2.9.2` 均为附注标签，**已随 2.9.2 的推送同步到远端**（`v2.6.0` = `9c1bafa`、`v2.6.1` = `d3ac63d`、
-> `v2.6.2` = `1b138e7`、`v2.9.2` = `754115e`）；`v2.4.1` 也已补推。`v2.9.3`–`v2.10.3` 目前只在本地创建，尚未推送。
+> `v2.6.2` = `1b138e7`、`v2.9.2` = `754115e`）；`v2.4.1` 也已补推。`v2.9.3`–`v2.11.0` 目前只在本地创建，尚未推送。
 
 ## 0. 总览
 
@@ -35,8 +35,9 @@
 | v2.9.7 | 2026-10-31 | `69cb3b4` | 源码遗留 S7+S12：对话上下文跟随 `Cli.MaxEntries`；设置页 / 校验保证最多一张交互卡 | 8 文件，+132 / −13 |
 | v2.10.0 | 2026-10-31 | `0605fee` | 共享控件第一梯队（上）：`CardList` 主题化列表（虚拟化 / 空态 / 激活）+ `CardStatus`（转圈 / 进度 / 错误态） | 8 文件，+630 / −9（含新增 `CardList.cs` 206 行、`CardStatus.cs` 218 行） |
 | v2.10.1 | 2026-10-31 | `d994c6e` | 共享控件第一梯队（下）：`CardHeader`/`CardToolbar`、`CardInput`、`CardDropOverlay` + 宿主拖入/拖出反馈 | 12 文件，+543 / −26（含新增 `CardHeader.cs` 126 行、`CardInput.cs` 144 行、`CardDropOverlay.cs` 101 行） |
-| v2.10.2 | 2026-10-31 | `7d53106` | 第二梯队（上）：`CardRenderContext.Host` 透传 + `ClipboardService` + 串行可取消 `CardJobQueue` | 10 文件，+463 / −23（含新增 `CardJobQueue.cs` 177 行、`ClipboardService.cs` 129 行） |
-| v2.10.3 | 2026-10-31 | 本次提交 | 第二梯队（下）：`ShellIcons`（扩展名图标 + STA 缩略图）+ `DragSource`（拖出阈值 / 文件 / 文本） | 8 文件，+457 / −18（含新增 `ShellIcons.cs` 294 行、`DragSource.cs` 70 行） |
+| v2.10.2 | 2026-10-31 | `0dd75b6` | 第二梯队（上）：`CardRenderContext.Host` 透传 + `ClipboardService` + 串行可取消 `CardJobQueue` | 10 文件，+463 / −23（含新增 `CardJobQueue.cs` 177 行、`ClipboardService.cs` 129 行） |
+| v2.10.3 | 2026-10-31 | `ab77ad9` | 第二梯队（下）：`ShellIcons`（扩展名图标 + STA 缩略图）+ `DragSource`（拖出阈值 / 文件 / 文本） | 8 文件，+457 / −18（含新增 `ShellIcons.cs` 294 行、`DragSource.cs` 70 行） |
+| v2.11.0 | 2026-10-31 | 本次提交 | 文件中转站 M1：拖入 / 引用 / 复制、列表、持久化、后台复制队列、设置区块 | 11 文件，+1106 / −25（含新增 `src/Cards/DropStationCard.cs` 914 行） |
 
 ---
 
@@ -1058,16 +1059,52 @@ v2.6.0 只把**命令行卡**的设置搬进了 `CardSettings.Extras`，媒体�
 
 ---
 
-## 27. 不在版本里的东西
+## 27. v2.11.0（本次提交，本地标签 `v2.11.0`）
+
+### 背景
+
+`docs/file-transfer-station.md` 的 M1：把文件从资源管理器拖进卡片、暂存成列表，支持引用与复制两种收纳方式。
+前置（拖放通道、每卡状态、共享控件、Host 上下文、后台任务、Shell 图标）都已经在 v2.10.x 补齐。
+
+### 改动
+
+1. **`src/Cards/DropStationCard.cs`**（单文件）：模块 + `StationSettings` + `StationView` + `StationEditor`。
+   - 引用模式只记路径；复制模式写入接收目录，重名自动 `名字 (2).扩展名`；
+   - 列表用 `CardList`：扩展名图标、名称 / 大小、丢失标记、双击打开、右键菜单；
+   - 打开 / 在资源管理器中显示 / 复制路径 / 从列表移除 / 删除接收目录内的文件（二次确认）；
+   - 每卡 `items.json`（`ICardHost` / `CardStateStore`），重启恢复并标记丢失文件；
+   - 复制走 `CardJobQueue` 串行后台执行，失败 / 取消删除半成品；状态行走 `CardStatus` 进度；
+   - 设置区块：模式 / 接收目录（文件夹选择）/ 最多保留；`Validate` 拦住“复制但没有目录”。
+2. **`ICardDropFeedback` 增加 `content` 参数**：模块需要拿到当前卡片内容控件才能显示拖入高亮。
+3. **自检**：「文件中转站」覆盖模块能力、设置归一化 / 校验、拖放判定，以及临时文件拖入 / 去重 / 缺失拒绝。
+4. **`--screenshot-widgets`** 追加一张真实的中转站空状态卡片，用于目检布局。
+
+### 边界
+
+- 拖出、移动模式、文件夹递归、剪贴板添加、缩略图、自动清理、搜索 / 多选都还没有（M2 / M3）；
+- 复制队列不持久化：重启后未完成的复制不会续传；
+- 锁定（点击穿透）时收不到拖放，这是既有语义，卡片会保持“把文件拖进来”的提示；
+- Reference 模式默认，不产生任何文件操作；Copy 模式要求目录已存在（设置页选择文件夹会创建）。
+
+### 实测
+
+- `dotnet build -c Release`：0 警告 0 错误。
+- `--selftest`：失败项 0（「文件中转站」OK）。
+- `--smoke 4 --smoke-visible`：退出码 0。
+- `--screenshot-widgets`：中转站空状态渲染正常（标题 / 计数 / 空列表 / 状态行）。
+
+---
+
+## 28. 不在版本里的东西
 
 - 验收脚本、样张与测量脚本（`cmd-e2e.ps1`、`drag-glass.ps1`、`measure-*.py`、`shots/` 等）都在仓库外的 `hud-test/` 里，**没有提交**。
 - 发布：`main` 与标签已推送到 [github.com/CRITTIof/MirrorpondHUD](https://github.com/CRITTIof/MirrorpondHUD)；
   [v2.9.2 Release](https://github.com/CRITTIof/MirrorpondHUD/releases/tag/v2.9.2) 只有两个附件
   （`MirrorpondHUD-x64-requires-dotnet.exe`、`MirrorpondHUD-arm64-requires-dotnet.exe`，均需 .NET 8 桌面运行时，已自签名）；
   更早的 Release 正文与附件保留原样，v2.4.0 的 Release 已删除（tag `v2.4.0` 保留，历史仍可检出）。
-- 仓库追踪的文件共 116 个，`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
+- 仓库追踪的文件共 117 个，`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
 
-## 28. 已知代价（跨版本）
+## 29. 已知代价（跨版本）
 
 - 桌面亚克力为了不拍到自己，会把卡片排除在截屏之外 —— 这个模式下截图 / 录屏里**看不到卡片**，观感只能靠肉眼与离屏渲染验证。
 - 兼容实现每帧对身后窗口做 `PrintWindow`，拖动时最多 ~21 帧/秒；要更高只能走桌面亚克力（DXGI）。

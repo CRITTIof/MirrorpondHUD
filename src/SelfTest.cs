@@ -236,6 +236,7 @@ namespace MirrorpondHUD
             bool contextHostOk = false;
             bool jobQueueOk = false;
             bool shellOk = false;
+            bool stationOk = false;
 
             try
             {
@@ -1136,13 +1137,72 @@ namespace MirrorpondHUD
                 Log.Error("Shell / 拖出自检异常", ex);
             }
 
+            try
+            {
+                // 2.11.0 文件中转站：模块能力、设置归一化 / 校验、拖放判定。
+                var module = CardRegistry.Get("dropstation");
+                var config = new CardSettings
+                {
+                    Id = "selftest-station", Kind = "dropstation", Name = "文件中转站",
+                    Extras = new Dictionary<string, object>()
+                };
+
+                StationSettings station = DropStationCard.StationOf(config);
+                station.Mode = "copy";
+                station.Directory = "";
+                station.MaxEntries = 0;
+                station.Normalize();
+                config.SetExtras(DropStationCard.SettingsKey, station);
+
+                bool normalizeOk = station.Mode == "Copy" && station.MaxEntries == 1;
+
+                var validator = module as ICardSettingsValidator;
+                string emptyDirError = validator == null ? "no validator" : validator.Validate(config);
+                bool validateOk = !string.IsNullOrEmpty(emptyDirError) && emptyDirError.Contains("接收目录");
+
+                var data = new DataObject(DataFormats.FileDrop, new[] { "a.txt" });
+                bool dropOk = (module as ICardDropTarget) != null && ((ICardDropTarget)module).CanDrop(data);
+                bool feedbackOk = module is ICardDropFeedback;
+
+                var editorSource = module as ICardEditorSection;
+                FrameworkElement editor = editorSource == null
+                    ? null
+                    : editorSource.CreateEditor(config, new Settings(), () => { });
+
+                var viewHost = new TestCardHost();
+                var viewConfig = new CardSettings
+                {
+                    Id = "selftest-station-view", Kind = "dropstation", Name = "文件中转站",
+                    Extras = new Dictionary<string, object>()
+                };
+                var view = new StationView(new Settings(), viewConfig, viewHost);
+
+                string temp = Path.GetTempFileName();
+                view.HandleDrop(new[] { temp });
+                bool added = view.ItemCountForTest == 1 && !string.IsNullOrEmpty(viewHost.LastWrittenState);
+
+                view.HandleDrop(new[] { temp });
+                bool dedupe = view.ItemCountForTest == 1;
+
+                view.HandleDrop(new[] { temp + ".missing" });
+                bool missingRejected = view.ItemCountForTest == 1;
+                try { File.Delete(temp); } catch { }
+
+                stationOk = normalizeOk && validateOk && dropOk && feedbackOk &&
+                            editor != null && added && dedupe && missingRejected;
+            }
+            catch (Exception ex)
+            {
+                Log.Error("文件中转站自检异常", ex);
+            }
+
             if (!(templateOk && unknownOk && collapseOk && thresholdOk && configOk && cardOk &&
                   keyNameOk && keyLimitOk && keyOverflowOk &&
                   commandOk && truncateOk && toolLabelOk && secretOk && chatHotkeyOk && settingsEditorOk &&
                   stateStoreOk && renderOk && glassPolicyOk && themeOk && restyleOk &&
                   themeFileOk && themeRejectOk && themeCatalogOk && activationOk && cloneGuardOk &&
                   restyleHostOk && chatContextOk && singleInteractiveOk && widgetsOk && widgets2Ok &&
-                  contextHostOk && jobQueueOk && shellOk)) failures++;
+                  contextHostOk && jobQueueOk && shellOk && stationOk)) failures++;
 
             Fix(sb, "逻辑自检", string.Format(
                 "模板={0} 未知占位符={1} 折叠={2} 阈值内展开={3} 配置读写={4} 卡片模块={11} 键名={5} 按键长度={6} 超长截断={7} 命令行={8} 行截断={9} 工具名={10} Key加密={12} 对话热键={13} 卡片设置={14} 状态存储={15} 渲染节流={16} 毛玻璃策略={17}",
@@ -1180,6 +1240,7 @@ namespace MirrorpondHUD
             Fix(sb, "渲染上下文", contextHostOk ? "OK（富内容创建上下文透传 ICardHost）" : "FAIL");
             Fix(sb, "后台任务", jobQueueOk ? "OK（串行队列：成功 / 失败 / 取消）" : "FAIL");
             Fix(sb, "Shell / 拖出", shellOk ? "OK（图标缓存一致；缩略图不挂；拖出阈值/空输入）" : "FAIL");
+            Fix(sb, "文件中转站", stationOk ? "OK（模块能力 / 设置归一化 / 校验 / 拖放判定）" : "FAIL");
         }
 
         static bool RegisterIfSet(HotkeyManager hotkeys, string action, string combination)
@@ -1214,14 +1275,34 @@ namespace MirrorpondHUD
             return v.ToString("0.0", CultureInfo.InvariantCulture);
         }
 
-        /// <summary>自检用的假宿主：只验证透传，不读写磁盘。</summary>
+        /// <summary>自检用的假宿主：状态放内存，不读写磁盘。</summary>
         sealed class TestCardHost : ICardHost
         {
+            readonly Dictionary<string, string> _state = new Dictionary<string, string>();
+
             public CardSettings Config { get; set; }
             public string StateDirectory { get { return ""; } }
-            public string ReadState(string fileName) { return null; }
-            public bool WriteState(string fileName, string text) { return true; }
-            public bool DeleteState(string fileName) { return true; }
+
+            public string LastWrittenState { get; private set; }
+
+            public string ReadState(string fileName)
+            {
+                string value;
+                return _state.TryGetValue(fileName ?? "", out value) ? value : null;
+            }
+
+            public bool WriteState(string fileName, string text)
+            {
+                LastWrittenState = text;
+                _state[fileName ?? ""] = text ?? "";
+                return true;
+            }
+
+            public bool DeleteState(string fileName)
+            {
+                return _state.Remove(fileName ?? "");
+            }
+
             public void RequestRender() { }
             public void RequestLayout() { }
         }

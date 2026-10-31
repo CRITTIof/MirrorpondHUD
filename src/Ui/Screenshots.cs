@@ -365,18 +365,43 @@ namespace MirrorpondHUD.Ui
                     Child = stack
                 };
 
+                var stationConfig = new CardSettings
+                {
+                    Id = "screenshot-station",
+                    Kind = "dropstation",
+                    Name = "文件中转站",
+                    Extras = new Dictionary<string, object>()
+                };
+                var stationView = new StationView(settings, stationConfig, null);
+
+                var stationCard = new Border
+                {
+                    Width = 560,
+                    Background = CardPalette.Brush(
+                        OverlaySurface.ParseColor(style.Background, Color.FromRgb(0x0D, 0x11, 0x17)),
+                        style.BackgroundOpacity),
+                    CornerRadius = new CornerRadius(settings.Overlay.CornerRadius),
+                    Padding = new Thickness(20),
+                    Child = stationView
+                };
+
+                var column = new StackPanel { Width = 560 };
+                column.Children.Add(card);
+                column.Children.Add(new Border { Height = 14 });
+                column.Children.Add(stationCard);
+
                 var host = new Grid
                 {
                     Width = 640,
-                    Height = 560,
+                    Height = 960,
                     Background = new LinearGradientBrush(
                         Color.FromRgb(0x14, 0x1B, 0x2B),
                         Color.FromRgb(0x2A, 0x1D, 0x2A),
                         45)
                 };
-                card.HorizontalAlignment = HorizontalAlignment.Center;
-                card.VerticalAlignment = VerticalAlignment.Center;
-                host.Children.Add(card);
+                column.HorizontalAlignment = HorizontalAlignment.Center;
+                column.VerticalAlignment = VerticalAlignment.Center;
+                host.Children.Add(column);
 
                 host.Measure(new Size(host.Width, host.Height));
                 host.Arrange(new Rect(0, 0, host.Width, host.Height));

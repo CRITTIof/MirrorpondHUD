@@ -332,3 +332,25 @@ M2 如果要在 UI 上尊重 Shift / Ctrl，需要把接口扩成 `DragDropEffec
 - 状态存储：`src/Core/CardStateStore.cs`、`src/Cards/CardHost.cs`
 - 拖放接线：`OverlayController.WireInputCapabilities`、`OverlayWindow.EnableDrop`
 - 颜色 / 主题：[theme-rewrite-prerequisites.md](theme-rewrite-prerequisites.md)
+
+## 14. 实现状态（v2.11.0，M1）
+
+已落地：
+
+- `src/Cards/DropStationCard.cs`：模块 + `StationSettings` + `StationView` + `StationEditor`，单文件；
+- 两种模式：**引用**（默认，只记路径）与**复制**（写入接收目录，重名自动 `名字 (2).扩展名`）；
+- 拖入：`ICardDropTarget` + `ICardDropFeedback`，拖入时显示 `CardDropOverlay`；
+- 列表：`CardList`（图标 / 名称 / 大小、丢失标记、双击打开、右键菜单）；
+- 操作：打开 / 在资源管理器中显示 / 复制路径 / 从列表移除 / 删除接收目录内的文件（二次确认）；
+- 持久化：每卡 `items.json`（`ICardHost` / `CardStateStore`），启动时标记丢失文件，超出上限丢最旧列表项；
+- 复制：`CardJobQueue` 串行后台执行，失败 / 取消会删除写了一半的目标文件；
+- 设置：模式 / 接收目录 / 最多保留；`Validate` 拦住「复制但没有目录」；
+- 自检：模块能力、设置归一化 / 校验、拖放判定、临时文件拖入 / 去重 / 缺失拒绝；
+  `--screenshot-widgets` 会同时渲染中转站的空状态。
+
+尚未做（对应本文的 M2 / M3）：
+
+- 行内拖出（`DragSource` 已就绪，但“行拖动 vs 整卡拖动”的 spike 还没做）；
+- 移动模式（移动源文件）、文件夹递归、剪贴板添加；
+- 缩略图（目前是扩展名图标）、自动清理、搜索 / 多选、逐字节进度；
+- 崩溃恢复 / 复制队列持久化（重启后未完成的复制不会续传）。

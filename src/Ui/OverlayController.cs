@@ -261,7 +261,7 @@ namespace MirrorpondHUD.Ui
             {
                 dropState = (over, data) =>
                 {
-                    try { feedback.OnDropStateChanged(over, data); }
+                    try { feedback.OnDropStateChanged(slot.Content, over, data); }
                     catch (Exception ex) { Log.Warn("卡片拖放状态处理失败: " + ex.Message); }
                 };
             }
