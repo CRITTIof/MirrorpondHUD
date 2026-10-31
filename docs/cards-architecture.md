@@ -204,7 +204,7 @@ public sealed class DropStationCard : RichCardModuleBase,
 |---|---|---|
 | `CardList` | 主题化列表：行模板、悬停 / 选中、空状态、双击 / 回车激活 | 用 `ItemTemplate` 或直接放控件；虚拟化需要给固定 / 最大高度 |
 | `CardStatus` | 状态行：图标 + 文字 + 进度 + 转圈 + 错误态 | `SetText` / `SetBusy` / `SetProgress` |
-| `CardHeader` + `CardToolbar` | 标题 + 徽标 + 右侧动作按钮 | `Actions.Add("清空", handler, CardButtonTone.Danger)` |
+| `CardHeader` + `CardToolbar` | 标题 + 徽标 + 右侧动作按钮 | `Actions.Add("清空", handler)`；按钮是细描边幽灵样式，危险语气只染描边 / 文字 |
 | `CardInput` | 输入框：占位符、Enter / Ctrl+Enter 提交、错误描边 | 多行构造 `new CardInput(true)` |
 | `CardDropOverlay` | 拖入高亮与“松开添加 N 个”提示 | 配合 `ICardDropFeedback` 的进入 / 离开回调使用 |
 | `ShellIcons` | 文件图标 / 缩略图 | 图标默认按扩展名、不碰磁盘；缩略图在 STA 后台线程，失败返回 null |

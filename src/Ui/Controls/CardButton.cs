@@ -19,9 +19,9 @@ namespace MirrorpondHUD.Ui.Controls
     /// <summary>
     /// 卡片里的按钮：颜色、字体、圆角都跟着卡片本身走，不依赖设置窗口那套浅色资源字典。
     ///
-    /// 卡片是分层透明窗口，按钮直接用 <see cref="Button"/> 的自定义模板画出圆角背景 +
-    /// hover / pressed / 键盘焦点三态；模板里用两层半透明覆盖层做高亮，所以在深色卡片和
-    /// 浅色卡片上都成立，不需要为每种配色各写一个模板。
+    /// 视觉语言和卡片一致：默认透明底 + 1 px 细描边 + 低对比文字，悬停 / 按下才叠一层
+    /// 淡淡的色调；主操作 / 危险操作只把描边和文字染成强调色 / 拒绝色，不再用高饱和
+    /// 实心块。这样放在标题行里不会比标题还抢眼，深色卡片和浅色卡片也都成立。
     ///
     /// 用法（富内容卡片里）：
     /// <code>
@@ -42,11 +42,13 @@ namespace MirrorpondHUD.Ui.Controls
                 TextWrapping = TextWrapping.NoWrap,
                 VerticalAlignment = VerticalAlignment.Center
             };
-            Padding = new Thickness(12, 5, 12, 5);
-            MinWidth = 64;
+            Padding = new Thickness(10, 3, 10, 3);
+            MinWidth = 0;
+            MinHeight = 22;
             MaxWidth = 360;
             Cursor = System.Windows.Input.Cursors.Hand;
             Focusable = true;
+            FocusVisualStyle = null;
             SnapsToDevicePixels = true;
         }
 
@@ -77,92 +79,106 @@ namespace MirrorpondHUD.Ui.Controls
             if (style == null) return;
 
             ThemeTokens tokens = ThemeResolver.Resolve(style);
-            Color foreground = OverlaySurface.ParseColor(style.Foreground, Color.FromRgb(0xE6, 0xED, 0xF3));
-            Color accent = tokens.Accent;
+            _foreground = OverlaySurface.ParseColor(style.Foreground, Color.FromRgb(0xE6, 0xED, 0xF3));
+            _accent = tokens.Accent;
+            _danger = tokens.Danger;
 
-            Color background;
-            Color border;
-            Color text;
+            FontFamily = ResolveFont(style.FontFamily);
+            FontSize = Math.Max(9, style.FontSize - 1);
+            FontWeight = FontWeights.Normal;
+            CornerRadius = Math.Max(0, Math.Min(7, cornerRadius));
 
+            Color hover;
+            Color pressed;
             switch (Tone)
             {
                 case CardButtonTone.Primary:
-                    background = WithAlpha(accent, 0.85);
-                    border = WithAlpha(accent, 0.95);
-                    text = PickReadable(accent, foreground);
+                    hover = WithAlpha(_accent, 0.18);
+                    pressed = WithAlpha(_accent, 0.30);
                     break;
                 case CardButtonTone.Danger:
-                    Color danger = tokens.Danger;
-                    background = WithAlpha(danger, 0.85);
-                    border = WithAlpha(danger, 0.95);
-                    text = PickReadable(danger, foreground);
+                    hover = WithAlpha(_danger, 0.14);
+                    pressed = WithAlpha(_danger, 0.26);
                     break;
                 default:
-                    background = WithAlpha(foreground, 0.10);
-                    border = WithAlpha(foreground, 0.28);
-                    text = foreground;
+                    hover = WithAlpha(_foreground, 0.10);
+                    pressed = WithAlpha(_foreground, 0.18);
                     break;
             }
 
-            Background = new SolidColorBrush(background);
-            BorderBrush = new SolidColorBrush(border);
-            Foreground = new SolidColorBrush(text);
-            FontFamily = ResolveFont(style.FontFamily);
-            FontSize = Math.Max(9, style.FontSize);
-            FontWeight = FontWeights.SemiBold;
-            CornerRadius = Math.Max(2, Math.Min(cornerRadius, 18));
-            Template = BuildTemplate(CornerRadius, WithAlpha(foreground, 0.16), WithAlpha(Colors.Black, 0.22));
-
-            _accent = accent;
-            _inputForeground = foreground;
-            SetActive(_active);
+            Template = BuildTemplate(CornerRadius, hover, pressed, _accent);
+            ApplyColors();
         }
 
         Color _accent = Colors.SteelBlue;
-        Color _inputForeground = Colors.White;
+        Color _danger = Color.FromRgb(0xE5, 0x53, 0x53);
+        Color _foreground = Colors.White;
         bool _active;
 
         /// <summary>
-        /// 多选 / 已选中的按钮：换成强调色底 + 强调色边框。
-        /// 用按钮自己的字体色再算一遍，所以深色卡片和浅色卡片都读得清。
+        /// 多选 / 已选中的按钮：换成强调色淡底 + 强调色描边 + 强调色文字。
+        /// 不再用实心大色块，选中态在深色 / 浅色卡片上都只是"比旁边亮一点"。
         /// </summary>
         public void SetActive(bool active)
         {
             _active = active;
-
-            if (active)
-            {
-                Background = new SolidColorBrush(WithAlpha(_accent, 0.55));
-                BorderBrush = new SolidColorBrush(WithAlpha(_accent, 0.95));
-                Foreground = new SolidColorBrush(PickReadable(_accent, _inputForeground));
-            }
-            else if (Tone == CardButtonTone.Normal)
-            {
-                Background = new SolidColorBrush(WithAlpha(_inputForeground, 0.10));
-                BorderBrush = new SolidColorBrush(WithAlpha(_inputForeground, 0.28));
-                Foreground = new SolidColorBrush(_inputForeground);
-            }
+            ApplyColors();
         }
 
-        /// <summary>卡片自己的圆角（0 = 直角）。</summary>
+        /// <summary>卡片自己的圆角（0 = 直角）。按钮内部取一个小一点的圆角。</summary>
         public double CornerRadius { get; private set; }
+
+        /// <summary>按语气 / 选中态算底色、描边、文字色；换肤和 SetActive 共用同一套。</summary>
+        void ApplyColors()
+        {
+            Color background;
+            Color border;
+            Color text;
+
+            if (_active)
+            {
+                background = WithAlpha(_accent, 0.22);
+                border = WithAlpha(_accent, 0.72);
+                text = _accent;
+            }
+            else
+            {
+                switch (Tone)
+                {
+                    case CardButtonTone.Primary:
+                        background = WithAlpha(_accent, 0.10);
+                        border = WithAlpha(_accent, 0.42);
+                        text = _accent;
+                        break;
+
+                    case CardButtonTone.Danger:
+                        background = Colors.Transparent;
+                        border = WithAlpha(_danger, 0.38);
+                        text = _danger;
+                        break;
+
+                    default:
+                        background = Colors.Transparent;
+                        border = WithAlpha(_foreground, 0.20);
+                        text = WithAlpha(_foreground, 0.84);
+                        break;
+                }
+            }
+
+            var textBrush = new SolidColorBrush(text);
+            Background = new SolidColorBrush(background);
+            BorderBrush = new SolidColorBrush(border);
+            Foreground = textBrush;
+
+            // 内容是自己创建的 TextBlock：显式给字色，不依赖模板重建时的 Foreground 继承。
+            var block = Content as TextBlock;
+            if (block != null) block.Foreground = textBrush;
+        }
 
         static Color WithAlpha(Color color, double alpha)
         {
             byte a = (byte)Math.Round(Math.Max(0.0, Math.Min(1.0, alpha)) * 255.0);
             return Color.FromArgb(a, color.R, color.G, color.B);
-        }
-
-        /// <summary>深色底上放白字、浅色底上放深字：按底色相对亮度挑一个。</summary>
-        static Color PickReadable(Color background, Color preferred)
-        {
-            double luminance = (0.2126 * background.R + 0.7152 * background.G + 0.0722 * background.B) / 255.0;
-            if (luminance > 0.55)
-            {
-                double preferredLuminance = (0.2126 * preferred.R + 0.7152 * preferred.G + 0.0722 * preferred.B) / 255.0;
-                return preferredLuminance < 0.55 ? preferred : Color.FromRgb(0x14, 0x18, 0x1C);
-            }
-            return Color.FromRgb(0xFF, 0xFF, 0xFF);
         }
 
         static FontFamily ResolveFont(string name)
@@ -173,15 +189,15 @@ namespace MirrorpondHUD.Ui.Controls
         }
 
         /// <summary>
-        /// 按钮模板：圆角底 + 边框 + 内容；鼠标悬停时叠一层亮色，按下时叠一层暗色，
-        /// 键盘焦点时边框换成强调色，禁用时整块变淡。两层覆盖用 Opacity 控制，
-        /// 所以同一套模板在深色 / 浅色卡片上都成立。
+        /// 按钮模板：细描边底 + 内容；鼠标悬停时叠一层很淡的亮色，按下时叠一层稍深的颜色，
+        /// 键盘焦点时描边换成强调色，禁用时整块（文字 + 描边）一起变淡。
         /// </summary>
-        static ControlTemplate BuildTemplate(double radius, Color hover, Color pressed)
+        static ControlTemplate BuildTemplate(double radius, Color hover, Color pressed, Color focus)
         {
             string r = radius.ToString("0.##", CultureInfo.InvariantCulture);
             string hoverHex = ToHex(hover);
             string pressedHex = ToHex(pressed);
+            string focusHex = ToHex(focus);
 
             string xaml =
                 "<ControlTemplate TargetType=\"Button\" " +
@@ -205,10 +221,10 @@ namespace MirrorpondHUD.Ui.Controls
                 "<Setter TargetName=\"Hover\" Property=\"Opacity\" Value=\"0\"/>" +
                 "</Trigger>" +
                 "<Trigger Property=\"IsKeyboardFocused\" Value=\"True\">" +
-                "<Setter TargetName=\"Shell\" Property=\"BorderThickness\" Value=\"2\"/>" +
+                "<Setter TargetName=\"Shell\" Property=\"BorderBrush\" Value=\"" + focusHex + "\"/>" +
                 "</Trigger>" +
                 "<Trigger Property=\"IsEnabled\" Value=\"False\">" +
-                "<Setter TargetName=\"Shell\" Property=\"Opacity\" Value=\"0.45\"/>" +
+                "<Setter Property=\"Opacity\" Value=\"0.38\"/>" +
                 "<Setter Property=\"Cursor\" Value=\"Arrow\"/>" +
                 "</Trigger>" +
                 "</ControlTemplate.Triggers>" +

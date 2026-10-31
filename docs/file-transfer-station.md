@@ -333,7 +333,7 @@ M2 如果要在 UI 上尊重 Shift / Ctrl，需要把接口扩成 `DragDropEffec
 - 拖放接线：`OverlayController.WireInputCapabilities`、`OverlayWindow.EnableDrop`
 - 颜色 / 主题：[theme-rewrite-prerequisites.md](theme-rewrite-prerequisites.md)
 
-## 14. 实现状态（v2.11.0，M1）
+## 14. 实现状态（v2.11.0，M1；v2.11.1 视觉修订）
 
 已落地：
 
@@ -347,6 +347,7 @@ M2 如果要在 UI 上尊重 Shift / Ctrl，需要把接口扩成 `DragDropEffec
 - 设置：模式 / 接收目录 / 最多保留；`Validate` 拦住「复制但没有目录」；
 - 自检：模块能力、设置归一化 / 校验、拖放判定、临时文件拖入 / 去重 / 缺失拒绝；
   `--screenshot-widgets` 会同时渲染中转站的空状态。
+- v2.11.1：标题行按钮改成细描边幽灵样式；`清空` 改为普通语气，列表为空时禁用。
 
 尚未做（对应本文的 M2 / M3）：
 

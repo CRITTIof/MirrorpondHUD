@@ -311,7 +311,7 @@ namespace MirrorpondHUD.Ui
 
                 var header = new CardHeader("文件中转站") { Badge = "12 个文件", Margin = new Thickness(0, 0, 0, 10) };
                 header.Actions.Add("打开目录", null, CardButtonTone.Normal, "在资源管理器中打开接收目录");
-                header.Actions.Add("清空", null, CardButtonTone.Danger, "清空列表（不删除文件）");
+                header.Actions.Add("清空", null, CardButtonTone.Normal, "清空列表（不删除文件）");
                 header.ApplyStyle(style, settings.Overlay.CornerRadius);
                 stack.Children.Add(header);
 

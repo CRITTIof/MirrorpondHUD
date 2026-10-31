@@ -1040,6 +1040,13 @@ namespace MirrorpondHUD
                 header.ApplyStyle(style, 10);
                 button.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
 
+                // 2.11.1：按钮文字必须真的用按钮自己的前景色（幽灵描边样式，内容不再靠模板继承）。
+                var label = button.Content as TextBlock;
+                var labelForeground = label == null ? null : label.Foreground as SolidColorBrush;
+                var buttonForeground = button.Foreground as SolidColorBrush;
+                bool buttonTextOk = labelForeground != null && buttonForeground != null
+                                    && labelForeground.Color == buttonForeground.Color;
+
                 var input = new CardInput(false);
                 input.ApplyStyle(style, 10);
                 string submitted = null;
@@ -1056,6 +1063,7 @@ namespace MirrorpondHUD
                 widgets2Ok = header.Title == "文件中转站"
                           && header.Badge == "12 个文件"
                           && clicked
+                          && buttonTextOk
                           && submitted == "hello"
                           && shown
                           && overlay.Visibility == Visibility.Collapsed;

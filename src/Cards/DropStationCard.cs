@@ -194,6 +194,7 @@ namespace MirrorpondHUD.Cards
         readonly ICardHost _host;
         readonly CardHeader _header;
         readonly CardButton _openDirectory;
+        readonly CardButton _clear;
         readonly CardList _list;
         readonly CardStatus _status;
         readonly CardDropOverlay _dropOverlay;
@@ -215,9 +216,9 @@ namespace MirrorpondHUD.Cards
             RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-            _header = new CardHeader("文件中转站");
+            _header = new CardHeader("文件中转站") { Margin = new Thickness(0, 0, 0, 6) };
             _openDirectory = _header.Actions.Add("打开目录", OpenDirectory, CardButtonTone.Normal, "在资源管理器中打开接收目录");
-            _header.Actions.Add("清空", ClearAll, CardButtonTone.Danger, "清空列表（不删除文件）");
+            _clear = _header.Actions.Add("清空", ClearAll, CardButtonTone.Normal, "清空列表（不删除文件）");
             Children.Add(_header);
 
             _list = new CardList
@@ -729,6 +730,7 @@ namespace MirrorpondHUD.Cards
             bool canOpen = _station.Mode == "Copy" && !string.IsNullOrWhiteSpace(_station.Directory);
             _openDirectory.Visibility = canOpen ? Visibility.Visible : Visibility.Collapsed;
             _openDirectory.IsEnabled = canOpen;
+            _clear.IsEnabled = _items.Count > 0;
         }
 
         string EmptyText()
