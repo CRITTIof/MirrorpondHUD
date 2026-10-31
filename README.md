@@ -47,7 +47,7 @@
 
 ## 🚀 快速开始
 
-**下载即用**：到 [Releases](https://github.com/CRITTIof/MirrorpondHUD/releases) 下载最新版 `v2.4.5`。
+**下载即用**：到 [Releases](https://github.com/CRITTIof/MirrorpondHUD/releases) 下载最新版 `v2.9.2`。
 自 v2.1.0 起只提供**需要手动安装 .NET 8 桌面运行时**的版本（体积小）；先装运行时，再双击 exe：
 
 | 文件 | 适用 | 说明 |
