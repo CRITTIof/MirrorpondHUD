@@ -100,6 +100,16 @@ namespace MirrorpondHUD.Ui.Controls
             set { _list.SelectedIndex = value; }
         }
 
+        /// <summary>单选 / 扩展多选；中转站用 Extended 支持 Ctrl / Shift。</summary>
+        public SelectionMode SelectionMode
+        {
+            get { return _list.SelectionMode; }
+            set { _list.SelectionMode = value; }
+        }
+
+        /// <summary>当前选中的行（多选时可能多条）。</summary>
+        public IList SelectedItems { get { return _list.SelectedItems; } }
+
         public bool IsEmpty { get { return _list.Items.Count == 0; } }
 
         /// <summary>双击一行或按回车时触发（参数是当前选中项）。</summary>

@@ -145,6 +145,9 @@ namespace MirrorpondHUD.Cards
 
         public bool ShowIcons = true;
 
+        /// <summary>加载状态时自动移除已经不存在的列表项（只清列表，不删文件）。</summary>
+        public bool AutoRemoveMissing = false;
+
         public void Normalize()
         {
             string mode = (Mode ?? "").Trim();
@@ -163,7 +166,8 @@ namespace MirrorpondHUD.Cards
                 Mode = Mode,
                 Directory = Directory,
                 MaxEntries = MaxEntries,
-                ShowIcons = ShowIcons
+                ShowIcons = ShowIcons,
+                AutoRemoveMissing = AutoRemoveMissing
             };
         }
     }
@@ -203,6 +207,7 @@ namespace MirrorpondHUD.Cards
         readonly CardButton _openDirectory;
         readonly CardButton _clear;
         readonly CardButton _cancelCopy;
+        readonly CardInput _search;
         readonly CardList _list;
         readonly CardStatus _status;
         readonly CardDropOverlay _dropOverlay;
@@ -216,8 +221,12 @@ namespace MirrorpondHUD.Cards
         double _activePercent;
         double _activeSpeed;
         bool _cancelRequested;
+        int _autoRemoved;
+        string _filter = "";
+        bool _syncingFilter;
         StationItem _dragItem;
         Point _dragOrigin;
+        StationItem _selectionAnchor;
 
         public StationView(Settings settings, CardSettings config, ICardHost host)
         {
@@ -229,6 +238,7 @@ namespace MirrorpondHUD.Cards
             RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
             _header = new CardHeader("文件中转站") { Margin = new Thickness(0, 0, 0, 8) };
             _openDirectory = _header.Actions.Add("打开目录", OpenDirectory, CardButtonTone.Normal, "在资源管理器中打开接收目录");
@@ -236,10 +246,27 @@ namespace MirrorpondHUD.Cards
             _clear = _header.Actions.Add("清空", ClearAll, CardButtonTone.Normal, "清空列表（不删除文件）");
             Children.Add(_header);
 
+            _search = new CardInput
+            {
+                Placeholder = "搜索文件名…",
+                Margin = new Thickness(0, 0, 0, 6),
+                Visibility = Visibility.Collapsed
+            };
+            _search.TextChanged += OnSearchChanged;
+            _search.PreviewKeyDown += (s, e) =>
+            {
+                if (e.Key != Key.Escape || _filter.Length == 0) return;
+                e.Handled = true;
+                ClearSearch();
+            };
+            SetRow(_search, 1);
+            Children.Add(_search);
+
             _list = new CardList
             {
                 MinHeight = 72,
-                MaxHeight = Math.Max(140, (_settings.Cli ?? new CliSettings()).MaxHeight - 70)
+                MaxHeight = Math.Max(120, (_settings.Cli ?? new CliSettings()).MaxHeight - 104),
+                SelectionMode = SelectionMode.Extended
             };
             _list.SetEmptyText("把文件拖进来");
             _list.ItemActivated += row => OpenItem(ItemOf(row));
@@ -254,7 +281,7 @@ namespace MirrorpondHUD.Cards
             var body = new Grid();
             body.Children.Add(_list);
             body.Children.Add(_dropOverlay);
-            SetRow(body, 1);
+            SetRow(body, 2);
             Children.Add(body);
 
             _status = new CardStatus { Margin = new Thickness(0, 4, 0, 0) };
@@ -275,13 +302,14 @@ namespace MirrorpondHUD.Cards
             Grid.SetColumn(_cancelCopy, 1);
             statusRow.Children.Add(_cancelCopy);
 
-            SetRow(statusRow, 2);
+            SetRow(statusRow, 3);
             Children.Add(statusRow);
 
             ApplyStyle(_settings);
             Load();
             Rebuild();
-            SetStatus(_items.Count == 0 ? "把文件拖进来，或从资源管理器拖入。" : "就绪", CardStatusKind.Normal);
+            if (_autoRemoved > 0) SetStatus("已自动移除 " + _autoRemoved + " 个丢失项", CardStatusKind.Success);
+            else SetStatus(_items.Count == 0 ? "把文件拖进来，或从资源管理器拖入。" : "就绪", CardStatusKind.Normal);
         }
 
         public void ApplyStyle(Settings settings)
@@ -293,12 +321,13 @@ namespace MirrorpondHUD.Cards
             Width = Math.Max(240, cli.MaxWidth);
 
             _header.ApplyStyle(_settings.Style, _settings.Overlay.CornerRadius);
+            _search.ApplyStyle(_settings.Style, _settings.Overlay.CornerRadius);
             _list.ApplyStyle(_settings.Style, cli);
             _status.ApplyStyle(_settings.Style);
             _cancelCopy.ApplyStyle(_settings.Style, _settings.Overlay.CornerRadius);
             _dropOverlay.ApplyStyle(_settings.Style, _settings.Overlay.CornerRadius);
             _list.SetEmptyText(EmptyText());
-            _list.MaxHeight = Math.Max(140, cli.MaxHeight - 70);
+            _list.MaxHeight = Math.Max(120, cli.MaxHeight - 104);
             Rebuild();
         }
 
@@ -312,6 +341,24 @@ namespace MirrorpondHUD.Cards
         internal string FirstStoredPathForTest
         {
             get { return _items.Count == 0 ? null : _items[0].StoredPath; }
+        }
+
+        /// <summary>自检用：设置搜索词，走真实的 TextChanged → 过滤 → Rebuild 链路。</summary>
+        internal void SetSearchForTest(string text)
+        {
+            _search.Text = text ?? "";
+        }
+
+        internal int VisibleCountForTest { get { return _list.Items.Count; } }
+
+        internal string BadgeForTest { get { return _header.Badge; } }
+
+        internal int SelectedCountForTest { get { return _list.Inner.SelectedItems.Count; } }
+
+        internal void SelectAllForTest()
+        {
+            _list.Inner.SelectedItems.Clear();
+            foreach (object row in _list.Items) _list.Inner.SelectedItems.Add(row);
         }
 
         public void ShowDropHint(bool over, int count)
@@ -420,18 +467,63 @@ namespace MirrorpondHUD.Cards
 
         void Rebuild()
         {
-            StationItem selected = Selected();
+            if (_items.Count == 0 && _filter.Length > 0)
+            {
+                _filter = "";
+                if (!string.IsNullOrEmpty(_search.Text))
+                {
+                    _syncingFilter = true;
+                    _search.Text = "";
+                    _syncingFilter = false;
+                }
+            }
+
+            List<StationItem> selectedItems = SelectedItems();
             _list.Items.Clear();
 
             foreach (StationItem item in _items)
             {
+                if (!Matches(item)) continue;
+
                 FrameworkElement row = BuildRow(item);
                 _list.Items.Add(row);
-                if (ReferenceEquals(item, selected)) _list.SelectedItem = row;
+                if (selectedItems.Contains(item)) _list.Inner.SelectedItems.Add(row);
             }
 
+            _list.SetEmptyText(EmptyText());
             _list.RefreshEmpty();
             UpdateHeader();
+        }
+
+        bool Matches(StationItem item)
+        {
+            if (_filter.Length == 0) return true;
+
+            string name = string.IsNullOrEmpty(item.Name) ? item.DisplayPath : item.Name;
+            if (name.IndexOf(_filter, StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            return item.DisplayPath.IndexOf(_filter, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        void OnSearchChanged(string text)
+        {
+            if (_syncingFilter) return;
+
+            _filter = (text ?? "").Trim();
+            _selectionAnchor = null;
+            Rebuild();
+        }
+
+        void ClearSearch()
+        {
+            _filter = "";
+            _selectionAnchor = null;
+            if (!string.IsNullOrEmpty(_search.Text))
+            {
+                _syncingFilter = true;
+                _search.Text = "";
+                _syncingFilter = false;
+            }
+            Rebuild();
         }
 
         FrameworkElement BuildRow(StationItem item)
@@ -517,10 +609,29 @@ namespace MirrorpondHUD.Cards
             StationItem item = ItemAt(point, out row);
             if (item == null) { _dragItem = null; return; }
 
-            _list.Inner.SelectedItem = row;
+            bool ctrl = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
+            bool shift = (Keyboard.Modifiers & ModifierKeys.Shift) != 0;
+
+            if (shift && !ctrl && _selectionAnchor != null)
+            {
+                SelectRange(_selectionAnchor, item);
+            }
+            else if (ctrl)
+            {
+                if (_list.Inner.SelectedItems.Contains(row)) _list.Inner.SelectedItems.Remove(row);
+                else _list.Inner.SelectedItems.Add(row);
+                _selectionAnchor = item;
+            }
+            else
+            {
+                _list.Inner.SelectedItem = row;
+                _selectionAnchor = item;
+            }
+
             _list.Inner.Focus();
             _dragOrigin = point;
-            _dragItem = File.Exists(item.DisplayPath) ? item : null;
+            _dragItem = _list.Inner.SelectedItems.Contains(row) && File.Exists(item.DisplayPath)
+                ? item : null;
             e.Handled = true;
 
             // 行内按下已被吃掉，CardList 的 MouseDoubleClick 不会再触发；
@@ -530,6 +641,43 @@ namespace MirrorpondHUD.Cards
                 _dragItem = null;
                 OpenItem(item);
             }
+        }
+
+        /// <summary>Shift 连选：在可见（过滤后）列表里从锚点到目标整段选中。</summary>
+        void SelectRange(StationItem anchor, StationItem target)
+        {
+            var visible = new List<StationItem>();
+            foreach (StationItem item in _items)
+                if (Matches(item)) visible.Add(item);
+
+            int from = visible.IndexOf(anchor);
+            int to = visible.IndexOf(target);
+            if (from < 0 || to < 0)
+            {
+                FrameworkElement row = RowOf(target);
+                if (row != null) _list.Inner.SelectedItem = row;
+                return;
+            }
+
+            if (from > to) { int swap = from; from = to; to = swap; }
+
+            _list.Inner.SelectedItems.Clear();
+            foreach (object rowObject in _list.Items)
+            {
+                StationItem item = ItemOf(rowObject);
+                int index = visible.IndexOf(item);
+                if (index >= from && index <= to) _list.Inner.SelectedItems.Add(rowObject);
+            }
+        }
+
+        FrameworkElement RowOf(StationItem item)
+        {
+            foreach (object rowObject in _list.Items)
+            {
+                var row = rowObject as FrameworkElement;
+                if (row != null && ReferenceEquals(row.Tag, item)) return row;
+            }
+            return null;
         }
 
         /// <summary>行内移动超过阈值才拖出；只允许 Copy，拖完不移除列表项。</summary>
@@ -543,31 +691,62 @@ namespace MirrorpondHUD.Cards
             StationItem item = _dragItem;
             _dragItem = null;
 
-            string path = item.DisplayPath;
-            if (!File.Exists(path))
+            List<StationItem> selected = SelectedItems();
+            if (!selected.Contains(item)) selected = new List<StationItem> { item };
+
+            var paths = new List<string>();
+            foreach (StationItem candidate in selected)
             {
-                SetStatus("文件已不存在：" + path, CardStatusKind.Error);
+                string candidatePath = candidate.DisplayPath;
+                if (File.Exists(candidatePath)) paths.Add(candidatePath);
+            }
+
+            if (paths.Count == 0)
+            {
+                SetStatus("文件已不存在：" + item.DisplayPath, CardStatusKind.Error);
                 return;
             }
 
             e.Handled = true;
-            DragDropEffects effect = DragSource.BeginFiles(_list, new[] { path }, DragDropEffects.Copy);
+            DragDropEffects effect = DragSource.BeginFiles(_list, paths, DragDropEffects.Copy);
             if (effect == DragDropEffects.None)
                 SetStatus("拖出已取消", CardStatusKind.Normal);
-            else
-                SetStatus("已拖出：" + (string.IsNullOrEmpty(item.Name) ? Path.GetFileName(path) : item.Name),
+            else if (paths.Count == 1)
+                SetStatus("已拖出：" + (string.IsNullOrEmpty(item.Name) ? Path.GetFileName(paths[0]) : item.Name),
                           CardStatusKind.Success);
+            else
+                SetStatus("已拖出 " + paths.Count + " 个文件", CardStatusKind.Success);
         }
 
         void OnRowRightButtonDown(object sender, MouseButtonEventArgs e)
         {
             FrameworkElement row;
-            if (ItemAt(e.GetPosition(_list.Inner), out row) != null) _list.Inner.SelectedItem = row;
+            StationItem item = ItemAt(e.GetPosition(_list.Inner), out row);
+            if (item == null) return;
+
+            // 右键点在已选中的行上保留多选，批量操作才有意义；点未选中的行则只选它。
+            if (!_list.Inner.SelectedItems.Contains(row))
+            {
+                _list.Inner.SelectedItem = row;
+                _selectionAnchor = item;
+            }
+        }
+
+        List<StationItem> SelectedItems()
+        {
+            var result = new List<StationItem>();
+            foreach (object row in _list.Inner.SelectedItems)
+            {
+                StationItem item = ItemOf(row);
+                if (item != null && !result.Contains(item)) result.Add(item);
+            }
+            return result;
         }
 
         StationItem Selected()
         {
-            return ItemOf(_list.SelectedItem);
+            List<StationItem> selected = SelectedItems();
+            return selected.Count == 0 ? null : selected[0];
         }
 
         ContextMenu BuildMenu()
@@ -583,17 +762,17 @@ namespace MirrorpondHUD.Cards
             menu.Items.Add(reveal);
 
             var copy = new MenuItem { Header = "复制路径" };
-            copy.Click += (s, e) => CopyItemPath(Selected());
+            copy.Click += (s, e) => CopySelectedPaths();
             menu.Items.Add(copy);
 
             menu.Items.Add(new Separator());
 
             var remove = new MenuItem { Header = "从列表移除" };
-            remove.Click += (s, e) => RemoveItem(Selected());
+            remove.Click += (s, e) => RemoveSelected();
             menu.Items.Add(remove);
 
             var delete = new MenuItem { Header = "删除文件…" };
-            delete.Click += (s, e) => DeleteStoredFile(Selected());
+            delete.Click += (s, e) => DeleteSelectedFiles();
             menu.Items.Add(delete);
 
             menu.Items.Add(new Separator());
@@ -604,14 +783,24 @@ namespace MirrorpondHUD.Cards
 
             menu.Opened += (s, e) =>
             {
-                StationItem item = Selected();
-                bool canDelete = item != null && !string.IsNullOrEmpty(item.StoredPath) &&
-                                 IsInside(_station.Directory, item.StoredPath);
+                List<StationItem> selected = SelectedItems();
+                StationItem item = selected.Count == 0 ? null : selected[0];
+                bool canDelete = false;
+                foreach (StationItem candidate in selected)
+                {
+                    if (string.IsNullOrEmpty(candidate.StoredPath)) continue;
+                    if (!IsInside(_station.Directory, candidate.StoredPath)) continue;
+                    if (File.Exists(candidate.StoredPath)) { canDelete = true; break; }
+                }
+
                 delete.IsEnabled = canDelete;
                 open.IsEnabled = item != null;
                 reveal.IsEnabled = item != null;
                 copy.IsEnabled = item != null;
                 remove.IsEnabled = item != null;
+
+                remove.Header = selected.Count > 1 ? "从列表移除 " + selected.Count + " 项" : "从列表移除";
+                delete.Header = selected.Count > 1 ? "删除选中文件…" : "删除文件…";
 
                 int missingCount = 0;
                 foreach (StationItem candidate in _items)
@@ -641,6 +830,7 @@ namespace MirrorpondHUD.Cards
                 return;
             }
 
+            _selectionAnchor = null;
             Persist();
             Rebuild();
             SetStatus("已移除 " + removed + " 个丢失项", CardStatusKind.Success);
@@ -675,23 +865,32 @@ namespace MirrorpondHUD.Cards
             catch (Exception ex) { SetStatus("定位失败：" + ex.Message, CardStatusKind.Error); }
         }
 
-        void CopyItemPath(StationItem item)
+        void CopySelectedPaths()
         {
-            if (item == null) return;
+            List<StationItem> selected = SelectedItems();
+            if (selected.Count == 0) return;
 
-            bool ok = ClipboardService.TrySetText(item.DisplayPath);
-            SetStatus(ok ? "路径已复制" : "复制路径失败（剪贴板被占用）",
+            var lines = new List<string>();
+            foreach (StationItem item in selected) lines.Add(item.DisplayPath);
+
+            bool ok = ClipboardService.TrySetText(string.Join(Environment.NewLine, lines));
+            SetStatus(ok
+                    ? (selected.Count > 1 ? selected.Count + " 条路径已复制" : "路径已复制")
+                    : "复制路径失败（剪贴板被占用）",
                       ok ? CardStatusKind.Success : CardStatusKind.Error);
         }
 
-        void RemoveItem(StationItem item)
+        void RemoveSelected()
         {
-            if (item == null) return;
+            List<StationItem> selected = SelectedItems();
+            if (selected.Count == 0) return;
 
-            _items.Remove(item);
+            foreach (StationItem item in selected) _items.Remove(item);
+            _selectionAnchor = null;
             Persist();
             Rebuild();
-            SetStatus("已从列表移除", CardStatusKind.Normal);
+            SetStatus(selected.Count > 1 ? "已从列表移除 " + selected.Count + " 项" : "已从列表移除",
+                      CardStatusKind.Normal);
         }
 
         void ClearAll()
@@ -699,24 +898,34 @@ namespace MirrorpondHUD.Cards
             if (_items.Count == 0) return;
 
             _items.Clear();
+            _selectionAnchor = null;
             Persist();
             Rebuild();
             SetStatus("列表已清空（文件未删除）", CardStatusKind.Normal);
         }
 
-        void DeleteStoredFile(StationItem item)
+        void DeleteSelectedFiles()
         {
-            if (item == null || string.IsNullOrEmpty(item.StoredPath)) return;
-            if (!IsInside(_station.Directory, item.StoredPath))
+            List<StationItem> selected = SelectedItems();
+            var deletable = new List<StationItem>();
+            foreach (StationItem item in selected)
             {
-                SetStatus("只允许删除接收目录里的文件。", CardStatusKind.Error);
+                if (string.IsNullOrEmpty(item.StoredPath)) continue;
+                if (!IsInside(_station.Directory, item.StoredPath)) continue;
+                if (File.Exists(item.StoredPath)) deletable.Add(item);
+            }
+
+            if (deletable.Count == 0)
+            {
+                SetStatus("选中的条目没有可删除的接收目录文件。", CardStatusKind.Warning);
                 return;
             }
-            if (!File.Exists(item.StoredPath)) return;
 
             MessageBoxResult answer;
             Window owner = Window.GetWindow(this);
-            string message = "确定删除这个文件？\n\n" + item.Name;
+            string message = deletable.Count == 1
+                ? "确定删除这个文件？\n\n" + deletable[0].Name
+                : "确定删除选中的 " + deletable.Count + " 个文件？";
             if (owner == null)
                 answer = MessageBox.Show(message, "文件中转站", MessageBoxButton.YesNo, MessageBoxImage.Warning);
             else
@@ -724,18 +933,33 @@ namespace MirrorpondHUD.Cards
 
             if (answer != MessageBoxResult.Yes) return;
 
-            try
+            int deleted = 0;
+            int failed = 0;
+            foreach (StationItem item in deletable)
             {
-                File.Delete(item.StoredPath);
-                _items.Remove(item);
+                try
+                {
+                    File.Delete(item.StoredPath);
+                    _items.Remove(item);
+                    deleted++;
+                }
+                catch
+                {
+                    failed++;
+                }
+            }
+
+            if (deleted > 0)
+            {
+                _selectionAnchor = null;
                 Persist();
                 Rebuild();
-                SetStatus("已删除文件", CardStatusKind.Normal);
             }
-            catch (Exception ex)
-            {
-                SetStatus("删除失败：" + ex.Message, CardStatusKind.Error);
-            }
+
+            if (failed == 0)
+                SetStatus(deleted > 1 ? "已删除 " + deleted + " 个文件" : "已删除文件", CardStatusKind.Normal);
+            else
+                SetStatus("已删除 " + deleted + " 个，失败 " + failed + " 个", CardStatusKind.Warning);
         }
 
         void OpenDirectory()
@@ -992,6 +1216,17 @@ namespace MirrorpondHUD.Cards
                 }
 
                 Trim();
+
+                if (_station.AutoRemoveMissing)
+                {
+                    for (int i = _items.Count - 1; i >= 0; i--)
+                    {
+                        if (!_items[i].Missing) continue;
+                        _items.RemoveAt(i);
+                        _autoRemoved++;
+                    }
+                    if (_autoRemoved > 0) Persist();
+                }
             }
             catch (Exception ex)
             {
@@ -1021,7 +1256,17 @@ namespace MirrorpondHUD.Cards
 
         void UpdateHeader()
         {
-            _header.Badge = _items.Count + " 个文件";
+            int visible = 0;
+            foreach (StationItem item in _items)
+                if (Matches(item)) visible++;
+
+            _header.Badge = _filter.Length == 0
+                ? _items.Count + " 个文件"
+                : visible + "/" + _items.Count + " 个文件";
+
+            _search.Visibility = (_items.Count > 0 || _filter.Length > 0)
+                ? Visibility.Visible : Visibility.Collapsed;
+
             bool canOpen = _station.Mode != "Reference" && !string.IsNullOrWhiteSpace(_station.Directory);
             _openDirectory.Visibility = canOpen ? Visibility.Visible : Visibility.Collapsed;
             _openDirectory.IsEnabled = canOpen;
@@ -1030,6 +1275,8 @@ namespace MirrorpondHUD.Cards
 
         string EmptyText()
         {
+            if (_items.Count > 0 && _filter.Length > 0) return "没有匹配的文件。";
+
             if (_station.Mode != "Reference" && !string.IsNullOrWhiteSpace(_station.Directory))
                 return _station.Mode == "Move"
                     ? "把文件拖进来，移动到 " + _station.Directory
@@ -1114,6 +1361,8 @@ namespace MirrorpondHUD.Cards
         readonly TextBox _directory;
         readonly Button _browse;
         readonly TextBox _maxEntries;
+        readonly CheckBox _showIcons;
+        readonly CheckBox _autoRemove;
 
         public StationEditor(CardSettings config, Action onChanged)
         {
@@ -1166,6 +1415,29 @@ namespace MirrorpondHUD.Cards
             maxRow.Children.Add(new TextBlock { Text = " 条（超出丢最旧的列表项，不删文件）", VerticalAlignment = VerticalAlignment.Center });
             Children.Add(maxRow);
 
+            var optionRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
+            _showIcons = new CheckBox
+            {
+                Content = "显示文件图标",
+                IsChecked = station.ShowIcons,
+                Margin = new Thickness(0, 0, 20, 0),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            _showIcons.Checked += (s, e) => Commit();
+            _showIcons.Unchecked += (s, e) => Commit();
+            optionRow.Children.Add(_showIcons);
+
+            _autoRemove = new CheckBox
+            {
+                Content = "加载列表时移除丢失项（只清列表）",
+                IsChecked = station.AutoRemoveMissing,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            _autoRemove.Checked += (s, e) => Commit();
+            _autoRemove.Unchecked += (s, e) => Commit();
+            optionRow.Children.Add(_autoRemove);
+            Children.Add(optionRow);
+
             UpdateEnabled(station.Mode);
         }
 
@@ -1189,6 +1461,8 @@ namespace MirrorpondHUD.Cards
             station.Mode = _mode.SelectedIndex == 1 ? "Copy" : _mode.SelectedIndex == 2 ? "Move" : "Reference";
             station.Directory = _directory.Text;
             station.MaxEntries = ParseInt(_maxEntries.Text, station.MaxEntries);
+            station.ShowIcons = _showIcons.IsChecked == true;
+            station.AutoRemoveMissing = _autoRemove.IsChecked == true;
             station.Normalize();
             _config.SetExtras(DropStationCard.SettingsKey, station);
 

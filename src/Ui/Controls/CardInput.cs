@@ -35,7 +35,12 @@ namespace MirrorpondHUD.Ui.Controls
                 MaxLines = multiline ? int.MaxValue : 1,
                 VerticalContentAlignment = multiline ? VerticalAlignment.Top : VerticalAlignment.Center
             };
-            _box.TextChanged += (s, e) => UpdatePlaceholder();
+            _box.TextChanged += (s, e) =>
+            {
+                UpdatePlaceholder();
+                Action<string> handler = TextChanged;
+                if (handler != null) handler(_box.Text ?? "");
+            };
             _box.GotKeyboardFocus += (s, e) => UpdatePlaceholder();
             _box.LostKeyboardFocus += (s, e) => UpdatePlaceholder();
             _box.PreviewKeyDown += OnKeyDown;
@@ -55,6 +60,9 @@ namespace MirrorpondHUD.Ui.Controls
 
         /// <summary>回车提交（多行时 Ctrl+Enter）。参数是原始文本，调用方自己 Trim。</summary>
         public event Action<string> Submitted;
+
+        /// <summary>每次文本变化（搜索框 / 实时预览用）；参数是原始文本。</summary>
+        public event Action<string> TextChanged;
 
         public string Text
         {

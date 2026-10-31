@@ -1290,18 +1290,73 @@ namespace MirrorpondHUD
                     var missingView = new StationView(new Settings(), missingConfig, missingHost);
                     int before = missingView.ItemCountForTest;
                     missingView.RemoveMissing();
+
+                    var autoHost = new TestCardHost();
+                    autoHost.WriteState("items.json", Json.Serialize(missingState));
+                    var autoConfig = new CardSettings
+                    {
+                        Id = "selftest-station-auto", Kind = "dropstation", Name = "文件中转站",
+                        Extras = new Dictionary<string, object>()
+                    };
+                    StationSettings autoStation = DropStationCard.StationOf(autoConfig);
+                    autoStation.AutoRemoveMissing = true;
+                    autoConfig.SetExtras(DropStationCard.SettingsKey, autoStation);
+                    var autoView = new StationView(new Settings(), autoConfig, autoHost);
+
+                    bool autoCleanOk = autoView.ItemCountForTest == 1
+                                       && !string.IsNullOrEmpty(autoHost.LastWrittenState);
                     missingCleanupOk = before == 2 && missingView.ItemCountForTest == 1
-                                       && !string.IsNullOrEmpty(missingHost.LastWrittenState);
+                                       && !string.IsNullOrEmpty(missingHost.LastWrittenState)
+                                       && autoCleanOk;
                 }
                 finally
                 {
                     try { File.Delete(missingFile); } catch { }
                 }
 
+                bool searchOk = false;
+                string searchDir = Path.Combine(Path.GetTempPath(), "mhud-station-search-" + Guid.NewGuid().ToString("N"));
+                try
+                {
+                    Directory.CreateDirectory(searchDir);
+                    string alpha = Path.Combine(searchDir, "alpha.txt");
+                    string beta = Path.Combine(searchDir, "beta.txt");
+                    File.WriteAllText(alpha, "a");
+                    File.WriteAllText(beta, "b");
+
+                    var searchConfig = new CardSettings
+                    {
+                        Id = "selftest-station-search", Kind = "dropstation", Name = "文件中转站",
+                        Extras = new Dictionary<string, object>()
+                    };
+                    var searchView = new StationView(new Settings(), searchConfig, new TestCardHost());
+                    searchView.HandleDrop(new[] { alpha, beta });
+
+                    bool addedTwo = searchView.VisibleCountForTest == 2;
+                    searchView.SelectAllForTest();
+                    bool multiSelected = searchView.SelectedCountForTest == 2;
+                    searchView.SetSearchForTest("alpha");
+                    bool filtered = searchView.VisibleCountForTest == 1
+                                    && searchView.BadgeForTest == "1/2 个文件"
+                                    && searchView.SelectedCountForTest == 1;
+                    searchView.SetSearchForTest("");
+                    bool cleared = searchView.VisibleCountForTest == 2
+                                   && searchView.SelectedCountForTest == 1;
+                    searchView.SetSearchForTest("no-such-file");
+                    bool none = searchView.VisibleCountForTest == 0
+                                && searchView.BadgeForTest == "0/2 个文件";
+
+                    searchOk = addedTwo && multiSelected && filtered && cleared && none;
+                }
+                finally
+                {
+                    try { Directory.Delete(searchDir, true); } catch { }
+                }
+
                 stationOk = normalizeOk && validateOk && dropOk && feedbackOk &&
                             editor != null && added && dedupe && missingRejected &&
                             moveNormalizeOk && moveValidateOk && moveSummaryOk &&
-                            uniqueOk && transferOk && missingCleanupOk;
+                            uniqueOk && transferOk && missingCleanupOk && searchOk;
             }
             catch (Exception ex)
             {
@@ -1352,7 +1407,7 @@ namespace MirrorpondHUD
             Fix(sb, "渲染上下文", contextHostOk ? "OK（富内容创建上下文透传 ICardHost）" : "FAIL");
             Fix(sb, "后台任务", jobQueueOk ? "OK（串行队列：成功 / 失败 / 取消）" : "FAIL");
             Fix(sb, "Shell / 拖出", shellOk ? "OK（图标缓存一致；缩略图不挂；拖出阈值/空输入）" : "FAIL");
-            Fix(sb, "文件中转站", stationOk ? "OK（模块能力 / 设置 / 复制移动 / 冲突命名 / 丢失清理）" : "FAIL");
+            Fix(sb, "文件中转站", stationOk ? "OK（模块能力 / 设置 / 复制移动 / 搜索 / 丢失清理）" : "FAIL");
         }
 
         static bool RegisterIfSet(HotkeyManager hotkeys, string action, string combination)
