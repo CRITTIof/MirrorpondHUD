@@ -148,6 +148,10 @@
 | 2 | ZIP 包（`theme.json` + `assets/`，背景图 / 字体），相对路径 + 路径穿越校验 | 约 120 行 |
 | 3 | 主题预览（套用前先在设置页里渲染一张缩略卡片）、主题目录扫描 | 约 150 行 |
 
+> 落地进度：阶段 1 里的「令牌字段 / CLI 面板改读令牌 / 解析器 + 导出」已在 v2.9.0–v2.9.2 完成
+> （`src/Ui/ThemeTokens.cs`、`src/Core/ThemeFile.cs`）；设置页的导入 / 导出入口与预览留到 P4（见
+> `theme-rewrite-prerequisites.md`）。
+
 风险与对策：
 
 - **字体不存在**：`FontFamily` 回退到 `Microsoft YaHei UI` / `Consolas`（现在 `CardPalette.ResolveFont` 已经这么做了）；

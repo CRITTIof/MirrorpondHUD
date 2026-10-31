@@ -1,11 +1,11 @@
-# 版本修改记录（2.4.1 → 2.9.1）
+# 版本修改记录（2.4.1 → 2.9.2）
 
 > 范围：本文只记录**这一轮接手后我做的版本**（v2.4.1 起）。v2.4.0 及更早是既有历史，不在本文档里。
 > 数据全部取自仓库真实提交（`git diff --shortstat <上一版>..<本版>`），文件行的 `+ / -` 就是实际增删行数。
 > 版本状态：`main` 已推送到 GitHub；`v2.4.2`–`v2.4.5` 为附注标签（分别指向 `70343ef` / `aabe441` / `05857ce` / `f4b2b8b`），
 > v2.4.5 已发布 Release（附件为两个 requires-dotnet 单文件），v2.4.0 的 Release 已删除、其 tag 保留。
-> `v2.5.0` 为附注标签：**只在本地创建，尚未推送、也还没有 Release**。
-> `v2.6.0`（schema 5）、`v2.6.1`（P1-3）与 `v2.6.2`（schema 6）目前只有提交、**都没有打标签**；建议手工回归后再发版。
+> `v2.5.0`–`v2.9.2` 均为附注标签，**只在本地创建，尚未推送远端**（`v2.6.0` = `9c1bafa`、`v2.6.1` = `d3ac63d`、
+> `v2.6.2` = `1b138e7`、`v2.9.2` = 本次提交）；推送与 Release 需要你确认后再做。
 
 ## 0. 总览
 
@@ -26,7 +26,8 @@
 | v2.8.0 | 2026-10-31 | `9cbfbae` | 阶段 C 第一步：内容 / 样式签名拆两维；新增 `ICardStyleAware`，媒体卡支持「只换样式不重建」 | 9 文件，+179 / −33 |
 | v2.8.1 | 2026-10-31 | `dea72fa` | 阶段 C 收尾：`GlassPolicy` 纯决策 + `IGlassBackdrop` 抽象，两块底板搬出窗口 | 7 文件，+126 / −161，另新增 1 个源文件（189 行） |
 | v2.9.0 | 2026-10-31 | `ccda52a` | 外观重写前置 P1：令牌层（`ThemeTokens` / `ThemeResolver`），按钮与 CLI 面板改用令牌 | 8 文件，+162 / −24，另新增 1 个源文件（73 行） |
-| v2.9.1 | 2026-10-31 | 本次提交 | 外观重写前置 P2：`CliPanelView.ApplyStyle` 就地换肤，对话 / 命令行卡片支持「换外观不重建」 | 8 文件，+225 / −30 |
+| v2.9.1 | 2026-10-31 | `80ccb9d` | 外观重写前置 P2：`CliPanelView.ApplyStyle` 就地换肤，对话 / 命令行卡片支持「换外观不重建」 | 8 文件，+225 / −30 |
+| v2.9.2 | 2026-10-31 | 本次提交 | 外观重写前置 P3：`.mptheme` 解析 / 校验 / 导入导出（套用副本、失败不动当前设置），自检加两项 | 8 文件，+916 / −9（含新增 `src/Core/ThemeFile.cs` 668 行） |
 
 ---
 
@@ -704,7 +705,49 @@ v2.6.0 只把**命令行卡**的设置搬进了 `CardSettings.Extras`，媒体�
 
 ---
 
-## 17. 不在版本里的东西
+## 17. v2.9.2（本次提交，本地标签 `v2.9.2`）
+
+### 背景
+
+按 `theme-rewrite-prerequisites.md` 的 P3：外观只有 `settings.json` 里的一组字段，没有「存成文件 / 分享 / 回滚」的能力。
+`docs/themes/` 下的三份 `.mptheme` 只是草案，没有解析器——导入、导出、坏文件回滚都无从谈起。
+
+### 改动
+
+1. **新增 `src/Core/ThemeFile.cs`**（约 670 行）：`ThemeDocument` + `ThemeFile`。
+   格式对齐 `docs/theme-system.md` §3：`schema`（接受 `formatVersion` 别名，缺省按 1）+
+   `name / author / description` + `appearance{colors / typography / shape / outline / cliPanel}`。
+2. **解析与校验**：用仓库自带的 `Json.Parse`（不引新依赖）；未知键忽略；颜色必须是 `#RRGGBB` / `#AARRGGBB`；
+   数值范围与 `Settings.Normalize` 对齐（字号 6~96、圆角 0~60、内边距 0~80、透明度 0~1、CLI 尺寸与条数等）；
+   错误信息带 JSON 路径（如 `appearance.colors.muted 透明度必须在 0 ~ 1 之间`）；高版本 schema 直接拒绝。
+3. **软色两种写法**：数字 0~1 = 按**前景色**派生 alpha（兼容三份示例主题的 `"muted": 0.45`）；
+   字符串 = 直接写颜色（浅色主题可以让描边 / 滑块偏离前景色）。`ApplyTo` 先落前景色再派生软色。
+4. **导入 = 套用到副本**：`TryImport(path, source, out applied, out error)` 先克隆 `Settings`，
+   只覆盖主题里出现过的外观字段，最后 `Normalize()`；任何一步失败都返回原因、`applied` 为 null，源设置原样不动。
+   克隆失败直接报错，**不**退回 `new Settings()`（避免「一次异常 = 全默认值」）。
+5. **导出**：`Export(settings, name)` 字段顺序固定、空软色不写（继续按前景派生），便于 diff；
+   `TryExport` 以 UTF-8 无 BOM 落盘。
+6. **自检**新增两行：「主题文件」验证导出 → 解析 → 套用 → 再导出一致、数字透明度按前景派生、
+   并自动解析 `docs/themes/*.mptheme`；「主题文件校验」验证高版本 / 坏颜色 / 越界 / 缺 `appearance` / 坏 JSON 均被拒绝，
+   坏文件不碰当前设置、好文件导入也不改源对象。
+
+### 边界
+
+- **没有 UI**：导入 / 导出按钮、主题列表与预览属于 P4（2.9.3），本轮只提供可被 UI 调用的读写层。
+- 不包含背景图 / 字体资源包；ZIP + `assets/` 相对路径校验按 `theme-system.md` §7 属于第 2 阶段。
+- 导出时空的软色令牌不写进文件，所以把 A 主题（派生软色）导进一个已经显式设过软色的配置时，
+  那些软色会保留目标配置的值（增量语义；文档 §5.4 已注明）。
+- `.mptheme` 的 `schema` 与 `settings.json` 的 `SchemaVersion` 无关，配置仍是 schema 6。
+
+### 实测
+
+- `dotnet build -c Release`：0 警告 0 错误。
+- `--selftest`：**失败项 0**（`主题文件=OK`、`主题文件校验=OK`；三份示例主题全部解析通过）。
+- `--smoke 4 --smoke-visible`：退出码 0。
+
+---
+
+## 18. 不在版本里的东西
 
 - 验收脚本、样张与测量脚本（`cmd-e2e.ps1`、`drag-glass.ps1`、`measure-*.py`、`shots/` 等）都在仓库外的 `hud-test/` 里，**没有提交**。
 - 发布：`main` 与标签已推送到 [github.com/CRITTIof/MirrorpondHUD](https://github.com/CRITTIof/MirrorpondHUD)；
@@ -713,7 +756,7 @@ v2.6.0 只把**命令行卡**的设置搬进了 `CardSettings.Extras`，媒体�
   v2.4.0 的 Release 已删除（tag `v2.4.0` 保留，历史仍可检出）。
 - 仓库追踪的文件共 89 个，`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
 
-## 18. 已知代价（跨版本）
+## 19. 已知代价（跨版本）
 
 - 桌面亚克力为了不拍到自己，会把卡片排除在截屏之外 —— 这个模式下截图 / 录屏里**看不到卡片**，观感只能靠肉眼与离屏渲染验证。
 - 兼容实现每帧对身后窗口做 `PrintWindow`，拖动时最多 ~21 帧/秒；要更高只能走桌面亚克力（DXGI）。

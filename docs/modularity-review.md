@@ -277,6 +277,23 @@ XAML 用三块 `Visibility` 面板切换（`src/Ui/SettingsWindow.xaml:190` / `:
 | `src/Cards/CardModule.cs` | 「变量表按需构建一次，同一帧内的多张卡片可以复用」 | ✅ v2.7.1 起成立（一帧一份只读变量表） |
 | README §已知问题 | 「运行期插件 `cards/*.dll` 暂未实现」 | 属实，且受分层环限制（P1-10） |
 
+### 6.1 具体耦合点核验（2026-10-31，基线 v2.9.2）
+
+> 表格来自外部评审，行号按重构前写。下面逐条对照当前代码核对**事实是否成立**；按要求**只核验、不实现**。
+
+| 条目 | 当前证据 | 核验结论 |
+|---|---|---|
+| 出厂默认卡硬编码 Kind 与具体类 | `src/Cards/CardModel.cs:72-105`：三张 `Kind = "infotext"` + `Preset` + `InfoTextCard.LabelFor(...)`；`:96` `CardRegistry.Get("command")`、`:101` `Get("media")`。`CardRegistry.Get` 找不到时回退 `_modules[0]`（`CardRegistry.cs:21-25`） | **属实**。行号由 78-103 前移到 72-105；模块缺失时默认卡会套用第一个模块的显示名，仍然生成配置、不报错 |
+| Preset 是「信息与文本」专属的一等字段 | `src/Core/Settings.cs:714` `public string Preset = "metrics"` 在 `CardSettings` 通用层；只有 `InfoTextCard` 解释它。`src/Ui/CardEditor.cs:116-124` `IsInfoText`、`:126-156` `PresetIndex`、`:201` 按键预设隐藏内容编辑 | **属实**。任何新「子种类」都会想往 `CardSettings` 再加一个同类字段 |
+| 迁移层按 Kind 分支 + 具体类型 | `src/Core/SettingsMigration.cs:131-142` 按 `card.Kind` 走 `case "command"/"media"/"chat"` + `MoveExtra<CommandSettings/MediaSettings/ChatSettings>`；`:283-293` `NormalizeKind`（只服务 v1 迁移，未知一律归 `metrics`） | **属实**。行号 133-142 → 131-142、290 → 283-293；新增模块要接旧配置仍需改这里 |
+| 宿主直接调具体卡 | `src/Ui/OverlayController.cs:985-989` `CommandOf(slot)` → `CommandCard.CommandOf(slot.Config)`，就在快捷命令行的打开 / 关闭路径上 | **属实**，行号未变；「命令行」概念确实被宿主硬编码 |
+| 注册表静默回退 + 顺序依赖 | `src/Cards/CardRegistry.cs:21-25` `Get(kind)` 未知时返回 `_modules[0]`；`:81-107` `Discover` 只扫 `typeof(CardRegistry).Assembly`，按 `Order`、再按 `DisplayName` 排序 | **属实**。`_modules[0]` 取决于 Order，删改一个模块会改变所有未知 Kind 的落点；显式查询要走 `TryGet` |
+| 单程序集 + 命名空间环 | 只有 `MirrorpondHUD.csproj`；`src/Core/ConfigStore.cs:4` `using MirrorpondHUD.Cards`，`src/Cards/*.cs` 反向 `using MirrorpondHUD.Core`；`Discover` 用 `typeof(CardRegistry).Assembly` | **属实**。运行期加载 `cards/*.dll` 必须先拆程序集与接口层（与 README §已知问题一致） |
+| 设置副本克隆失败会静默重置 | `src/Ui/SettingsWindow.xaml.cs:1383-1387` `catch { return new Settings(); }`；`_working = Clone(s)`（`:288`、`:1320`），保存写 `_working`（`:830`） | **属实**。一次序列化异常 = 设置页显示全默认值，点保存会把默认值写盘 |
+
+**小结**：7 条全部成立，无一条因 v2.5–v2.9 的重构而失效。本轮按你的要求只记录核验结果，不改代码；
+其中第 3、5、7 条仍建议在对应功能（新模块 / 插件化 / 设置页）真正动手时一并处理。
+
 ---
 
 ## 7. 落地路线

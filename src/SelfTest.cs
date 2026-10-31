@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
@@ -220,6 +221,8 @@ namespace MirrorpondHUD
             bool themeOk = false;
             bool restyleOk = false;
             bool glassPolicyOk = false;
+            bool themeFileOk = false;
+            bool themeRejectOk = false;
 
             try
             {
@@ -687,10 +690,165 @@ namespace MirrorpondHUD
                 Log.Error("CLI 换肤自检异常", ex);
             }
 
+            try
+            {
+                // P3：导出 → 解析 → 套用 → 再导出，字段与外观必须一致（含软色的数字写法）。
+                var source = new Settings();
+                source.Style = new StyleSettings
+                {
+                    FontFamily = "Segoe UI",
+                    FontSize = 17,
+                    Bold = true,
+                    Foreground = "#101820",
+                    Background = "#FAFAF7",
+                    BackgroundOpacity = 0.9,
+                    Padding = 12,
+                    LineHeight = 4,
+                    TextAlignment = "Center",
+                    TextOutline = true,
+                    OutlineColor = "#FFFFFF",
+                    OutlineThickness = 1.5,
+                    IconScale = 1.3,
+                    Accent = "#4C8DFF",
+                    Danger = "#E57B6E",
+                    Muted = "#73E6EDF3",
+                    Border = "#1A101820",
+                    Panel = "#0B101820",
+                    Scrollbar = "#2E101820",
+                    ScrollbarHot = "#66101820",
+                    MonoFont = "Consolas"
+                };
+                source.Overlay = new OverlaySettings { CornerRadius = 12, Shadow = false };
+                source.Cli = new CliSettings { MaxWidth = 500, MaxHeight = 440, EntryMaxHeight = 150, MaxEntries = 8 };
+
+                string json = ThemeFile.Export(source, "往返测试");
+
+                ThemeDocument parsed;
+                string error;
+                bool parseOk = ThemeFile.TryParse(json, out parsed, out error)
+                            && parsed != null
+                            && parsed.Name == "往返测试"
+                            && parsed.Schema == ThemeFile.SupportedSchema;
+
+                var applied = new Settings();
+                if (parsed != null) parsed.ApplyTo(applied);
+                applied.Normalize();
+
+                bool same = applied.Style.FontFamily == source.Style.FontFamily
+                         && applied.Style.FontSize == source.Style.FontSize
+                         && applied.Style.Bold == source.Style.Bold
+                         && applied.Style.Foreground == source.Style.Foreground
+                         && applied.Style.Background == source.Style.Background
+                         && Math.Abs(applied.Style.BackgroundOpacity - source.Style.BackgroundOpacity) < 1e-9
+                         && applied.Style.Padding == source.Style.Padding
+                         && applied.Style.LineHeight == source.Style.LineHeight
+                         && applied.Style.TextAlignment == source.Style.TextAlignment
+                         && applied.Style.TextOutline == source.Style.TextOutline
+                         && applied.Style.OutlineColor == source.Style.OutlineColor
+                         && Math.Abs(applied.Style.OutlineThickness - source.Style.OutlineThickness) < 1e-9
+                         && Math.Abs(applied.Style.IconScale - source.Style.IconScale) < 1e-9
+                         && applied.Style.Accent == source.Style.Accent
+                         && applied.Style.Danger == source.Style.Danger
+                         && applied.Style.Muted == source.Style.Muted
+                         && applied.Style.Border == source.Style.Border
+                         && applied.Style.Panel == source.Style.Panel
+                         && applied.Style.Scrollbar == source.Style.Scrollbar
+                         && applied.Style.ScrollbarHot == source.Style.ScrollbarHot
+                         && applied.Style.MonoFont == source.Style.MonoFont
+                         && applied.Overlay.CornerRadius == source.Overlay.CornerRadius
+                         && applied.Overlay.Shadow == source.Overlay.Shadow
+                         && applied.Cli.MaxWidth == source.Cli.MaxWidth
+                         && applied.Cli.MaxHeight == source.Cli.MaxHeight
+                         && applied.Cli.EntryMaxHeight == source.Cli.EntryMaxHeight
+                         && applied.Cli.MaxEntries == source.Cli.MaxEntries;
+
+                // 软色写数字 = 按前景派生：0.45 * 255 ≈ 0x73
+                const string softJson = "{\"schema\":1,\"appearance\":{\"colors\":{\"foreground\":\"#E6EDF3\",\"muted\":0.45}}}";
+                ThemeDocument soft;
+                bool softParsed = ThemeFile.TryParse(softJson, out soft, out error);
+                var softApplied = new Settings();
+                if (soft != null) soft.ApplyTo(softApplied);
+                bool alphaOk = softParsed && softApplied.Style.Muted == "#73E6EDF3";
+
+                bool stable = ThemeFile.Export(applied, "往返测试") == json;
+
+                // 仓库里的示例主题（docs/themes/*.mptheme）必须都能解析并套用；发布版没有 docs 目录时跳过。
+                bool samplesOk = true;
+                DirectoryInfo dir = new DirectoryInfo(AppContext.BaseDirectory);
+                for (int i = 0; i < 6 && dir != null; i++)
+                {
+                    string themes = Path.Combine(dir.FullName, "docs", "themes");
+                    if (Directory.Exists(themes))
+                    {
+                        string[] files = Directory.GetFiles(themes, "*.mptheme");
+                        samplesOk = files.Length > 0;
+                        foreach (string file in files)
+                        {
+                            ThemeDocument sample;
+                            string sampleError;
+                            if (!ThemeFile.TryParse(File.ReadAllText(file), out sample, out sampleError))
+                            {
+                                samplesOk = false;
+                                Log.Error("示例主题解析失败 " + Path.GetFileName(file) + ": " + sampleError);
+                                continue;
+                            }
+
+                            var probe = new Settings();
+                            sample.ApplyTo(probe);
+                            if (probe.Style.Foreground != sample.Colors.Foreground) samplesOk = false;
+                        }
+                        break;
+                    }
+                    dir = dir.Parent;
+                }
+
+                themeFileOk = parseOk && same && alphaOk && stable && samplesOk;
+            }
+            catch (Exception ex)
+            {
+                Log.Error("主题文件自检异常", ex);
+            }
+
+            try
+            {
+                string error;
+                ThemeDocument doc;
+                bool future = !ThemeFile.TryParse("{\"schema\":2,\"appearance\":{}}", out doc, out error)
+                           && error != null && error.Contains("版本");
+                bool badColor = !ThemeFile.TryParse("{\"schema\":1,\"appearance\":{\"colors\":{\"accent\":\"nope\"}}}", out doc, out error);
+                bool badRange = !ThemeFile.TryParse("{\"schema\":1,\"appearance\":{\"typography\":{\"fontSize\":200}}}", out doc, out error);
+                bool noAppearance = !ThemeFile.TryParse("{\"schema\":1}", out doc, out error);
+                bool malformed = !ThemeFile.TryParse("{oops", out doc, out error);
+
+                // 坏文件不碰当前设置；好文件导入成功且源对象保持不变。
+                var current = new Settings();
+                current.Style.Accent = "#123456";
+                string temp = Path.Combine(Path.GetTempPath(), "mph-theme-selftest-" + Guid.NewGuid().ToString("N") + ".mptheme");
+                File.WriteAllText(temp, "{\"schema\":9,\"appearance\":{}}");
+                Settings rejected;
+                bool rejectedOk = !ThemeFile.TryImport(temp, current, out rejected, out error) && rejected == null;
+
+                File.WriteAllText(temp, ThemeFile.Export(new Settings(), "临时"));
+                Settings imported;
+                bool importedOk = ThemeFile.TryImport(temp, current, out imported, out error)
+                               && imported != null
+                               && imported.Style.Accent == new Settings().Style.Accent
+                               && current.Style.Accent == "#123456";
+
+                try { File.Delete(temp); } catch { }
+
+                themeRejectOk = future && badColor && badRange && noAppearance && malformed && rejectedOk && importedOk;
+            }
+            catch (Exception ex)
+            {
+                Log.Error("主题文件校验自检异常", ex);
+            }
+
             if (!(templateOk && unknownOk && collapseOk && thresholdOk && configOk && cardOk &&
                   keyNameOk && keyLimitOk && keyOverflowOk &&
                   commandOk && truncateOk && toolLabelOk && secretOk && chatHotkeyOk && settingsEditorOk &&
-                  stateStoreOk && renderOk && glassPolicyOk && themeOk && restyleOk)) failures++;
+                  stateStoreOk && renderOk && glassPolicyOk && themeOk && restyleOk &&
+                  themeFileOk && themeRejectOk)) failures++;
 
             Fix(sb, "逻辑自检", string.Format(
                 "模板={0} 未知占位符={1} 折叠={2} 阈值内展开={3} 配置读写={4} 卡片模块={11} 键名={5} 按键长度={6} 超长截断={7} 命令行={8} 行截断={9} 工具名={10} Key加密={12} 对话热键={13} 卡片设置={14} 状态存储={15} 渲染节流={16} 毛玻璃策略={17}",
@@ -715,6 +873,8 @@ namespace MirrorpondHUD
 
             Fix(sb, "外观令牌", themeOk ? "OK（派生值 = 旧 alpha 常量，非法值已归一化）" : "FAIL");
             Fix(sb, "CLI 换肤", restyleOk ? "OK（两张 CLI 卡片支持就地换肤，文字按新前景重算）" : "FAIL");
+            Fix(sb, "主题文件", themeFileOk ? "OK（导出 → 解析 → 套用 → 再导出一致，数字透明度按前景派生）" : "FAIL");
+            Fix(sb, "主题文件校验", themeRejectOk ? "OK（高版本 / 坏颜色 / 越界 / 缺 appearance 均拒绝，坏文件不动当前设置）" : "FAIL");
         }
 
         static bool RegisterIfSet(HotkeyManager hotkeys, string action, string combination)
