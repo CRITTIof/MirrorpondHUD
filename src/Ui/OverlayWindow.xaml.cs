@@ -54,6 +54,9 @@ namespace MirrorpondHUD.Ui
         }
 
         bool _dragging;
+        bool _dragEnabled = true;
+        Func<IDataObject, bool> _canDrop;
+        Action<IDataObject> _dropped;
         Point _dragStartScreen;
         Point _dragStartWindow;
         /// <summary>拖动中已经排队了一帧背景重取样（每个合成帧最多一次）。</summary>
@@ -614,6 +617,50 @@ namespace MirrorpondHUD.Ui
             });
         }
 
+        /// <summary>
+        /// 是否允许按住卡片移动整叠。卡片内容自己处理拖动时（画板、卡片内拖拽排序）宿主把它关掉，
+        /// 鼠标按下就完全交给内容，不会再「一按就拖卡」。
+        /// </summary>
+        public bool DragEnabled
+        {
+            get { return _dragEnabled; }
+            set { _dragEnabled = value; }
+        }
+
+        /// <summary>
+        /// 让这张卡片接住拖放（模块实现 <see cref="MirrorpondHUD.Cards.ICardDropTarget"/> 时由宿主注册）。
+        /// 传 null 关闭。锁定（点击穿透）状态下窗口收不到拖放，这是既有语义。
+        /// </summary>
+        public void EnableDrop(Func<IDataObject, bool> canDrop, Action<IDataObject> dropped)
+        {
+            _canDrop = canDrop;
+            _dropped = dropped;
+            AllowDrop = canDrop != null;
+        }
+
+        protected override void OnDragOver(DragEventArgs e)
+        {
+            base.OnDragOver(e);
+            if (_canDrop == null) return;
+
+            bool ok;
+            try { ok = _canDrop(e.Data); }
+            catch { ok = false; }
+
+            e.Effects = ok ? DragDropEffects.Copy : DragDropEffects.None;
+            e.Handled = true;
+        }
+
+        protected override void OnDrop(DragEventArgs e)
+        {
+            base.OnDrop(e);
+            if (_dropped == null) return;
+
+            e.Handled = true;
+            try { _dropped(e.Data); }
+            catch (Exception ex) { Log.Warn("卡片拖放处理失败: " + ex.Message); }
+        }
+
         // ==================== 拖动 ====================
         // 不用 DragMove()：它在鼠标抬起过快、窗口未激活等情况下会直接抛异常，表现为"拖动失灵"。
         // 这里自己抓鼠标，用屏幕坐标（设备像素）算位移，再按 DPI 换算成 WPF 的 DIP。
@@ -622,6 +669,7 @@ namespace MirrorpondHUD.Ui
         {
             base.OnMouseLeftButtonDown(e);
             if (_settings.Overlay.Locked || _commandMode) return;
+            if (!_dragEnabled) return;
             if (e.ClickCount > 1) return;
 
             _dragging = true;

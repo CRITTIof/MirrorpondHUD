@@ -30,6 +30,12 @@ namespace MirrorpondHUD.Cards
         /// <summary>是否是独占键盘输入的卡片（命令行）。</summary>
         bool IsInteractive { get; }
 
+        /// <summary>
+        /// 卡片内容自己处理鼠标拖动（画笔、卡片内拖拽排序等）。true 时按住卡片不会移动整叠，
+        /// 鼠标事件全部交给内容；画板这类卡片靠它避免「一按就拖卡」。
+        /// </summary>
+        bool HandlesOwnDrag { get; }
+
         /// <summary>新卡片的默认「常驻」状态。</summary>
         bool DefaultResident { get; }
 
@@ -118,6 +124,22 @@ namespace MirrorpondHUD.Cards
         void ExecuteHotkey(string action, FrameworkElement content);
     }
 
+    /// <summary>
+    /// 卡片接受拖放（例如中转站接住从资源管理器拖进来的文件）。
+    /// 模块只声明「收哪些、收到后做什么」，窗口层的 AllowDrop / DragOver / Drop 由宿主统一注册。
+    ///
+    /// 注意：锁定（点击穿透）状态下窗口收不到拖放——这是「锁定 = 不挡鼠标」的既有语义；
+    /// 需要拖入时先解锁。
+    /// </summary>
+    public interface ICardDropTarget
+    {
+        /// <summary>这份拖放数据能不能接（决定鼠标指针是「复制」还是「禁止」）。</summary>
+        bool CanDrop(IDataObject data);
+
+        /// <summary>接住这份数据；<paramref name="content"/> 是这张卡片的富内容（可能为 null）。</summary>
+        void Drop(IDataObject data, FrameworkElement content);
+    }
+
     /// <summary>卡片模块的公共基类：只提供默认实现，子类覆盖需要的部分。</summary>
     public abstract class CardModuleBase : ICardModule
     {
@@ -128,6 +150,7 @@ namespace MirrorpondHUD.Cards
         public virtual string DefaultContent { get { return ""; } }
         public virtual bool SupportsContent { get { return true; } }
         public virtual bool IsInteractive { get { return false; } }
+        public virtual bool HandlesOwnDrag { get { return false; } }
         public virtual bool DefaultResident { get { return true; } }
         public virtual string DefaultHotkey { get { return ""; } }
         public virtual int Order { get { return 50; } }

@@ -164,6 +164,8 @@ namespace MirrorpondHUD.Ui
             window.Interactive = slot.Rich != null && slot.Rich.NeedsMouseInput;
             slot.Window = window;
 
+            WireInputCapabilities(slot);
+
             window.SettingsRequested += ShowSettings;
             window.HideRequested += ToggleVisibility;
             window.LockToggleRequested += ToggleLock;
@@ -188,6 +190,37 @@ namespace MirrorpondHUD.Ui
         /// 旧实现在这里对整份配置做 JSON 深拷贝，卡片越多副本越多；而且克隆绕过 Normalize，
         /// 两份配置容易再次漂移。
         /// </summary>
+        /// <summary>
+        /// 按卡片能力接线：内容自己处理拖动（<see cref="ICardModule.HandlesOwnDrag"/>）时关掉整卡拖动；
+        /// 实现 <see cref="ICardDropTarget"/> 的卡片由宿主统一注册 AllowDrop / DragOver / Drop。
+        /// </summary>
+        void WireInputCapabilities(CardSlot slot)
+        {
+            if (slot == null || slot.Window == null) return;
+
+            slot.Window.DragEnabled = slot.Module == null || !slot.Module.HandlesOwnDrag;
+
+            var drop = slot.Module as ICardDropTarget;
+            if (drop == null)
+            {
+                slot.Window.EnableDrop(null, null);
+                return;
+            }
+
+            CardSlot captured = slot;
+            slot.Window.EnableDrop(
+                data =>
+                {
+                    try { return drop.CanDrop(data); }
+                    catch (Exception ex) { Log.Warn("卡片拖放判定失败: " + ex.Message); return false; }
+                },
+                data =>
+                {
+                    try { drop.Drop(data, captured.Content); }
+                    catch (Exception ex) { Log.Warn("卡片拖放处理失败: " + ex.Message); }
+                });
+        }
+
         Settings BuildDialog()
         {
             return new Settings
@@ -1071,6 +1104,9 @@ namespace MirrorpondHUD.Ui
                     slot.Window.Interactive = slot.Rich != null && slot.Rich.NeedsMouseInput;
                     slot.Summoned = summoned.TryGetValue(config.Id, out saved) ? saved : wasSummoned;
                     slot.Dialog = BuildDialog();
+
+                    // 卡片种类可能没变，但模块能力（拖动 / 拖放）要跟着重新接线。
+                    WireInputCapabilities(slot);
 
                     // 内容相关输入没变（改名字 / 热键 / 间距这类）：只刷新数据，不重建控件。
                     // 视频不重启、动图不回第一帧、AI 对话的历史也还在。

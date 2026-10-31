@@ -1,4 +1,4 @@
-# 版本修改记录（2.4.1 → 2.6.2）
+# 版本修改记录（2.4.1 → 2.6.3）
 
 > 范围：本文只记录**这一轮接手后我做的版本**（v2.4.1 起）。v2.4.0 及更早是既有历史，不在本文档里。
 > 数据全部取自仓库真实提交（`git diff --shortstat <上一版>..<本版>`），文件行的 `+ / -` 就是实际增删行数。
@@ -19,7 +19,8 @@
 | v2.5.0 | 2026-10-30 | `c4e68e2` | 模块化评审文档；修命令行打开时其它卡片停更、富内容每次应用设置都重建、每卡一份整份配置副本 | 5 文件，+183 / −30，另新增 2 篇文档（500 + 582 行） |
 | v2.6.0 | 2026-10-30 | `9c1bafa` | 卡片设置搬进 `CardSettings.Extras`（schema 5）；模块自带设置区块与校验；命令行卡试点 | 15 文件，+470 / −306，另新增 2 个源文件（45 + 259 行） |
 | v2.6.1 | 2026-10-31 | `d3ac63d` | P1-3：旧 Kind 别名与预设归一化下沉到模块，`CardModel` 不再认识 `InfoTextCard` | 10 文件，+146 / −22 |
-| v2.6.2 | 2026-10-31 | 本次提交 | 媒体卡 / 对话卡设置搬进 `Extras`（schema 6）；模块自带设置区块（`MediaCardSettingsView` / `ChatCardSettingsView`）与摘要 | 19 文件，+347 / −846，另新增 4 个源文件（728 行） |
+| v2.6.2 | 2026-10-31 | `1b138e7` | 媒体卡 / 对话卡设置搬进 `Extras`（schema 6）；模块自带设置区块（`MediaCardSettingsView` / `ChatCardSettingsView`）与摘要 | 19 文件，+347 / −846，另新增 4 个源文件（728 行） |
+| v2.6.3 | 2026-10-31 | 本次提交 | 输入能力拆分（`HandlesOwnDrag`）+ 拖放通道（`ICardDropTarget`），为画板 / 中转站铺路 | 8 文件，+169 / −12 |
 
 ---
 
@@ -434,7 +435,44 @@ v2.6.0 只把**命令行卡**的设置搬进了 `CardSettings.Extras`，媒体�
 
 ---
 
-## 10. 不在版本里的东西
+## 10. v2.6.3（本次提交，未打标签）
+
+### 背景
+
+评审 §9 的结论：下一步要做**快捷画板**与**文件中转站**，但宿主只有「键盘独占」一个输入概念
+（`IsInteractive` 同时表示单槽、抑制钩子、不穿透），而且按住未锁定的卡片就会拖动整叠——
+画板没法「画」，中转站也没法接住拖进来的文件（全项目没有一处 `AllowDrop`）。
+
+### 改动
+
+1. **拆出 `HandlesOwnDrag`**（`ICardModule` / `CardModuleBase`，默认 `false`）：
+   为 true 时 `OverlayWindow` 关掉整卡拖动，鼠标事件完全交给内容。
+   `IsInteractive` 保留原意（独占键盘 / 命令行单槽）；`NeedsMouseInput` 继续表示「内容要鼠标」。
+2. **新增 `ICardDropTarget`**（`CanDrop` / `Drop`）：模块只声明「收哪些、收到后做什么」，
+   窗口层 `AllowDrop` / `DragOver` / `Drop` 由宿主在 `WireInputCapabilities` 里统一注册，
+   拖放判定与处理都包了异常兜底。
+3. **接线时机**：建卡与每次应用设置都会重新接线，卡片种类不变也能同步能力变化。
+4. **锁定语义明确**：锁定 = 点击穿透（`WS_EX_TRANSPARENT`），收不到拖放；要拖入先解锁。
+5. **文档**：`cards-architecture.md` 增加「输入能力」四条对照表；`modularity-review.md` 把 P1-11 与拖放通道标记完成。
+
+### 说明
+
+- 本轮**没有**加 `NeedsKeyboardFocus`：它现在没有真实消费者，加进去就是新的死契约；
+  等真有「要键盘但不要命令行单槽」的卡片再拆。
+- 拖放只做到「宿主通道 + 模块接口」；中转站需要的文件图标 / 缩略图（`IShellItemImageFactory`）与
+  每卡状态存储仍按 §9.3 排后续。
+
+### 实测
+
+- `dotnet build -c Release`：**0 警告 0 错误**。
+- `--selftest`：**失败项 0**。
+- `--smoke 4 --smoke-visible`：退出码 0，启动与建卡无异常。
+- 未覆盖：画板 / 拖放的实际鼠标交互（当前没有使用这两条能力的卡片），
+  需要第一个用 `HandlesOwnDrag` / `ICardDropTarget` 的模块落地时手工验证。
+
+---
+
+## 11. 不在版本里的东西
 
 - 验收脚本、样张与测量脚本（`cmd-e2e.ps1`、`drag-glass.ps1`、`measure-*.py`、`shots/` 等）都在仓库外的 `hud-test/` 里，**没有提交**。
 - 发布：`main` 与标签已推送到 [github.com/CRITTIof/MirrorpondHUD](https://github.com/CRITTIof/MirrorpondHUD)；
@@ -443,7 +481,7 @@ v2.6.0 只把**命令行卡**的设置搬进了 `CardSettings.Extras`，媒体�
   v2.4.0 的 Release 已删除（tag `v2.4.0` 保留，历史仍可检出）。
 - 仓库追踪的文件共 89 个，`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
 
-## 11. 已知代价（跨版本）
+## 12. 已知代价（跨版本）
 
 - 桌面亚克力为了不拍到自己，会把卡片排除在截屏之外 —— 这个模式下截图 / 录屏里**看不到卡片**，观感只能靠肉眼与离屏渲染验证。
 - 兼容实现每帧对身后窗口做 `PrintWindow`，拖动时最多 ~21 帧/秒；要更高只能走桌面亚克力（DXGI）。

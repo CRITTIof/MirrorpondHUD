@@ -417,8 +417,8 @@ XAML 用三块 `Visibility` 面板切换（`src/Ui/SettingsWindow.xaml:190` / `:
 
 | 功能 | 强依赖（不做就会返工） | 明显受益 | 冲突 / 阻碍（要先改） | 评审未覆盖、需新增 |
 |---|---|---|---|---|
-| 文件中转站 | P1-1 `Extras`、P1-2 设置区块、P1-8 生命周期与服务 | P0-2 / P0-3（列表、缩略图不闪）、P1-6 按卡动作、P1-4 截图样张 | 宿主**完全没有拖放通道**（全项目无 `AllowDrop`）；锁定时整卡穿透，必然收不到 drop；`IsInteractive` 语义过载 | 拖放通道（`ICardDropTarget`）、Shell 图标 / 缩略图、每卡状态存储 |
-| 快捷画板 | P1-1 / P1-2 / P1-8、**样式热更新（新）**、P0-2 / P0-3（已完成） | P1-6 按卡动作（撤销 / 清空 / 保存）、P1-4 | **未锁定时按鼠标会拖动整卡**（`OverlayWindow` 只判断 `Locked` / `_commandMode`）；锁定=穿透，画不了；没有“内容自己处理拖动”的概念 | 输入能力拆分（`P1-11`）、分层窗口 + 大量墨迹的性能验证 |
+| 文件中转站 | P1-1 `Extras`、P1-2 设置区块、P1-8 生命周期与服务 | P0-2 / P0-3（列表、缩略图不闪）、P1-6 按卡动作、P1-4 截图样张 | 拖放通道已就绪（v2.6.3）；锁定时整卡穿透，收不到 drop；`IsInteractive` 语义过载 | Shell 图标 / 缩略图、每卡状态存储 |
+| 快捷画板 | P1-1 / P1-2 / P1-8、**样式热更新（新）**、P0-2 / P0-3（已完成） | P1-6 按卡动作（撤销 / 清空 / 保存）、P1-4 | 拖动冲突已由 `HandlesOwnDrag` 解决（v2.6.3）；锁定=穿透时仍画不了（产品语义） | 分层窗口 + 大量墨迹的性能验证 |
 | 外观深度重写 | **样式热更新契约（新）**、P2-1 毛玻璃抽象、P1-2 设置页拆分 | P0-4（`Style` 共享引用，每卡不再各存一份）、P1-10 分层（主题可独立成层） | **P0-3 的「`Style` 进签名 → 重建」边界**：主题编辑器一拖滑块就重建全部富内容；`Style` 是共享引用，编辑时必须先改副本 | 样式令牌层（`Accent` / `Danger` / `Muted` / `Border` / `Panel` / `MonoFont`）、替换 `CardButton.ThemeAccent` 之类硬编码 |
 
 ### 9.2 四个关键结论
@@ -458,7 +458,7 @@ XAML 用三块 `Visibility` 面板切换（`src/Ui/SettingsWindow.xaml:190` / `:
 | 独占单槽 | 要 | 不要（可多张） | 不要 |
 | 卡片拖动 | 不要（`_commandMode` 已挡） | 要 | **要能区分“画”与“拖”** |
 
-建议拆成 `NeedsMouseInput` / `NeedsKeyboardFocus` / `HandlesOwnDrag` 三个能力（新增 P1-11），
+建议拆成 `NeedsMouseInput` / `HandlesOwnDrag` 两个新能力（`IsInteractive` 继续表示“键盘独占”，新增 P1-11），
 宿主按能力组合决定：是否穿透、是否允许拖动、是否抢焦点。不拆的话，画板只能靠加特判实现，
 正是 P1-3 要消灭的东西。
 
@@ -473,10 +473,10 @@ XAML 用三块 `Visibility` 面板切换（`src/Ui/SettingsWindow.xaml:190` / `:
 
 | 新增项 | 说明 | 大致量级 |
 |---|---|---|
-| `P1-11` 输入能力拆分 | `NeedsMouseInput` / `NeedsKeyboardFocus` / `HandlesOwnDrag`，宿主按能力组合 | 小，但涉及 `OverlayWindow` 的拖动与穿透判断 |
+| `P1-11` 输入能力拆分 | `NeedsMouseInput` / `HandlesOwnDrag`（`IsInteractive` 继续表示键盘独占），宿主按能力组合 | ✅ v2.6.3 已完成 |
 | `P1-12` 每卡状态存储 | 中转站的列表、画板的草稿不该塞进 `settings.json`；给模块一个每卡目录 + 原子写 | 小 |
 | 样式热更新契约 | `ApplyStyle` + 签名拆两维 | 中，建议外观重写前完成 |
-| 拖放通道 | `AllowDrop` + `ICardDropTarget` + 锁定语义 | 中 |
+| 拖放通道 | `AllowDrop` + `ICardDropTarget` + 锁定语义 | ✅ v2.6.3 已完成（宿主统一注册，模块只声明收什么） |
 | Shell 集成 | 文件图标 / 缩略图（`SHGetFileInfo` 或 `IShellItemImageFactory`），供中转站与未来的媒体卡共用 | 中 |
 
 ### 9.4 建议的实施顺序（相对原 §7 的调整）

@@ -87,7 +87,7 @@ public sealed class MyMediaCard : RichCardModuleBase
         var view = new MediaView()
             .WithCornerRadius(context.Settings.Overlay.CornerRadius)
             .WithStyle(context.Settings.Style);
-        view.Bind(context.Config.Media);
+        view.Bind(MediaCard.MediaOf(context.Config));
         return view;
     }
 }
@@ -96,6 +96,18 @@ public sealed class MyMediaCard : RichCardModuleBase
 富内容契约只有三个方法：`CreateContent`（建控件）、`UpdateContent`（设置没变时刷新数据）、
 `OnVisibilityChanged` / `OnZOrderChanged`（卡片显示 / 隐藏、重新置顶时通知）。
 控件自己不碰窗口，所以卡片模块依旧是「新增一个类即可」。
+
+**输入能力**（v2.6.3 起拆开，四条各管一件事）：
+
+| 声明 | 含义 | 宿主行为 |
+|---|---|---|
+| `NeedsMouseInput`（`IRichCardModule`） | 内容要鼠标（按钮 / 画板 / 拖放） | 关掉点击穿透，鼠标能点到卡片里的控件 |
+| `IsInteractive` | 独占键盘（命令行提示符） | 单槽、呼出时抢前台与焦点、抑制全局按键钩子 |
+| `HandlesOwnDrag` | 内容自己处理拖动（画笔、卡内拖拽排序） | 按住卡片不再移动整叠，鼠标事件全交给内容 |
+| `ICardDropTarget` | 接受拖放 | 宿主统一注册 `AllowDrop` / `DragOver` / `Drop`；模块只管「收哪些、收到后做什么」 |
+
+拖放与锁定：锁定状态是点击穿透（`WS_EX_TRANSPARENT`），窗口收不到拖放——这是「锁定 = 不挡鼠标」的既有语义，
+需要拖入时先解锁。模块不需要自己碰窗口样式。
 
 新增一张**带自己设置的卡片**（`Extras` + 自带设置区块，v2.6.0 起）：
 
