@@ -226,6 +226,7 @@ namespace MirrorpondHUD
             bool themeCatalogOk = false;
             bool activationOk = false;
             bool cloneGuardOk = false;
+            bool restyleHostOk = false;
 
             try
             {
@@ -899,11 +900,55 @@ namespace MirrorpondHUD
                 Log.Error("设置副本自检异常", ex);
             }
 
+            try
+            {
+                // 回归：保存设置后宿主会换成新的 Settings 对象。ApplyStyle 必须整份跟随，
+                // 否则 CLI 卡片的圆角 / 宽度会一直读构造期那份旧配置（媒体卡同理，底层由 RefreshSurface 重画）。
+                var before = new Settings
+                {
+                    Style = new StyleSettings { FontSize = 15, Padding = 14, Foreground = "#E6EDF3" },
+                    Overlay = new OverlaySettings { CornerRadius = 10 },
+                    Cli = new CliSettings { MaxWidth = 460 }
+                };
+                var after = new Settings
+                {
+                    Style = new StyleSettings
+                    {
+                        FontSize = 20, Padding = 18, Foreground = "#FF0000",
+                        MonoFont = "Consolas, Microsoft YaHei UI"
+                    },
+                    Overlay = new OverlaySettings { CornerRadius = 24 },
+                    Cli = new CliSettings { MaxWidth = 540 }
+                };
+
+                var view = new CommandView(before, new CommandSettings());
+                view.ApplyStyle(after);
+
+                bool followsHost = ReferenceEquals(view.BoundSettings, after)
+                                && Math.Abs(view.BoundCorner - 24) < 0.01
+                                && Math.Abs(view.Width - 540) < 0.01
+                                && view.BoundMono.IndexOf("Consolas", StringComparison.OrdinalIgnoreCase) >= 0;
+
+                // 富内容卡片的底色 / 圆角由 OverlaySurface 画：重画后文字与圆角都要跟着新设置。
+                var surface = new OverlaySurface();
+                surface.Apply(before, "hello");
+                surface.Apply(after, surface.Text);
+                bool surfaceOk = surface.Text == "hello"
+                              && Math.Abs(surface.CornerRadius.TopLeft - 24) < 0.01;
+
+                restyleHostOk = followsHost && surfaceOk;
+            }
+            catch (Exception ex)
+            {
+                Log.Error("换肤跟随设置自检异常", ex);
+            }
+
             if (!(templateOk && unknownOk && collapseOk && thresholdOk && configOk && cardOk &&
                   keyNameOk && keyLimitOk && keyOverflowOk &&
                   commandOk && truncateOk && toolLabelOk && secretOk && chatHotkeyOk && settingsEditorOk &&
                   stateStoreOk && renderOk && glassPolicyOk && themeOk && restyleOk &&
-                  themeFileOk && themeRejectOk && themeCatalogOk && activationOk && cloneGuardOk)) failures++;
+                  themeFileOk && themeRejectOk && themeCatalogOk && activationOk && cloneGuardOk &&
+                  restyleHostOk)) failures++;
 
             Fix(sb, "逻辑自检", string.Format(
                 "模板={0} 未知占位符={1} 折叠={2} 阈值内展开={3} 配置读写={4} 卡片模块={11} 键名={5} 按键长度={6} 超长截断={7} 命令行={8} 行截断={9} 工具名={10} Key加密={12} 对话热键={13} 卡片设置={14} 状态存储={15} 渲染节流={16} 毛玻璃策略={17}",
@@ -933,6 +978,7 @@ namespace MirrorpondHUD
             Fix(sb, "内置主题", themeCatalogOk ? "OK（已编进程序集并全部解析）" : "FAIL");
             Fix(sb, "卡片激活", activationOk ? "OK（CommandCard 实现 ICardActivation，返回工具 / 目录摘要）" : "FAIL");
             Fix(sb, "设置副本", cloneGuardOk ? "OK（克隆失败返回 null + 原因，不退回默认值）" : "FAIL");
+            Fix(sb, "换肤跟随设置", restyleHostOk ? "OK（CLI 换肤跟随新 Settings 对象，底层圆角随重画更新）" : "FAIL");
         }
 
         static bool RegisterIfSet(HotkeyManager hotkeys, string action, string combination)

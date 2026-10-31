@@ -1,11 +1,11 @@
-# 版本修改记录（2.4.1 → 2.9.3）
+# 版本修改记录（2.4.1 → 2.9.4）
 
 > 范围：本文只记录**这一轮接手后我做的版本**（v2.4.1 起）。v2.4.0 及更早是既有历史，不在本文档里。
 > 数据全部取自仓库真实提交（`git diff --shortstat <上一版>..<本版>`），文件行的 `+ / -` 就是实际增删行数。
 > 版本状态：`main` 已推送到 GitHub；`v2.4.2`–`v2.4.5` 为附注标签（分别指向 `70343ef` / `aabe441` / `05857ce` / `f4b2b8b`），
 > v2.4.5 已发布 Release（附件为两个 requires-dotnet 单文件），v2.4.0 的 Release 已删除、其 tag 保留。
 > `v2.5.0`–`v2.9.2` 均为附注标签，**已随 2.9.2 的推送同步到远端**（`v2.6.0` = `9c1bafa`、`v2.6.1` = `d3ac63d`、
-> `v2.6.2` = `1b138e7`、`v2.9.2` = `754115e`）；`v2.4.1` 也已补推。`v2.9.3` 目前只在本地创建，尚未推送。
+> `v2.6.2` = `1b138e7`、`v2.9.2` = `754115e`）；`v2.4.1` 也已补推。`v2.9.3` 与 `v2.9.4` 目前只在本地创建，尚未推送。
 
 ## 0. 总览
 
@@ -28,7 +28,8 @@
 | v2.9.0 | 2026-10-31 | `ccda52a` | 外观重写前置 P1：令牌层（`ThemeTokens` / `ThemeResolver`），按钮与 CLI 面板改用令牌 | 8 文件，+162 / −24，另新增 1 个源文件（73 行） |
 | v2.9.1 | 2026-10-31 | `80ccb9d` | 外观重写前置 P2：`CliPanelView.ApplyStyle` 就地换肤，对话 / 命令行卡片支持「换外观不重建」 | 8 文件，+225 / −30 |
 | v2.9.2 | 2026-10-31 | `754115e` | 外观重写前置 P3：`.mptheme` 解析 / 校验 / 导入导出（套用副本、失败不动当前设置），自检加两项 | 8 文件，+916 / −9（含新增 `src/Core/ThemeFile.cs` 668 行） |
-| v2.9.3 | 2026-10-31 | 本次提交 | P4 设置页主题入口 + 离屏预览；#7 克隆失败禁止保存；#4 `ICardActivation` 激活契约 | 13 文件，+594 / −36（含新增 `src/Core/ThemeCatalog.cs` 69 行） |
+| v2.9.3 | 2026-10-31 | `6805bbe` | P4 设置页主题入口 + 离屏预览；#7 克隆失败禁止保存；#4 `ICardActivation` 激活契约 | 13 文件，+594 / −36（含新增 `src/Core/ThemeCatalog.cs` 69 行） |
+| v2.9.4 | 2026-10-31 | 本次提交 | 修 AI 对话 / 常驻媒体卡外观不随设置变化：CLI 面板跟随新 Settings 与 monoFont，宿主换肤时重画底层 | 11 文件，+165 / −29 |
 
 ---
 
@@ -785,7 +786,48 @@ v2.6.0 只把**命令行卡**的设置搬进了 `CardSettings.Extras`，媒体�
 
 ---
 
-## 19. 不在版本里的东西
+## 19. v2.9.4（本次提交，本地标签 `v2.9.4`）
+
+### 背景
+
+两处“改了外观但卡片不变”：
+1. **AI 对话卡**的外观不随外观设置变化（圆角、面板宽度、部分颜色、等宽字体仍是旧值）；
+2. **常驻媒体卡**在保存后外观完全不变（底色、背景不透明度、圆角、投影）。
+
+### 根因
+
+1. `CliPanelView` 在构造期把 `Settings` 与 `CliSettings` 存成 `readonly`（`HostSettings` / `Cli`），
+   `ApplyStyle` 只接收 `StyleSettings` + `CliSettings`，圆角仍读 `HostSettings.Overlay.CornerRadius`；
+   保存设置时宿主会换成**新的 `Settings` 对象**，面板继续指向旧对象，圆角 / CLI 高度上限 / 宽度都是旧值。
+   另外 `ApplyStyle` 从未更新 `Width`，改 CLI 面板宽度也不会生效。
+2. 等宽字体是 `static readonly CliPanelView.MonoFont`，主题里的 `monoFont` 只是存下来、从未接线——
+   导入浅色 / 终端主题后 CLI 面板字体不会变。
+3. 宿主“只换样式”的分支只调了 `slot.Window.RefreshSettings(dialog)`——它只换 `_settings` 引用、更新穿透与菜单，
+   **没有重新 `Apply` 卡片底层的 `OverlaySurface`**。富内容卡的底色 / 背景不透明度 / 圆角 / 投影
+   都是创建时那次 `Surface.Apply` 画的，所以媒体卡（以及对话卡的外层）一直保留旧外观。
+
+### 改动
+
+1. **`CliPanelView.ApplyStyle(Settings)`**：整份设置传进来，更新 `HostSettings` / `StyleSet` / `Cli` /
+   `Corner` / `Width` / `MonoFamily`，再套 chrome、每条记录、输入框与滚动条；`ChatCard` / `CommandCard` 调用点同步。
+2. **等宽字体实例化**：`MonoFamily` 从 `ThemeTokens.MonoFont` 取，构造与换肤时都更新，
+   标题 / 徽标 / 提示符 / 输入框 / 状态行 / 已有记录文字一起换（`CliEntryPanel` 自己保存 `_mono`）。
+3. **`OverlayWindow.RefreshSurface(Settings)`** + **`OverlaySurface.Text`**：只重画卡片底层，文字与富内容原样保留。
+4. **宿主换肤分支**：`RefreshSettings` 之后调用 `RefreshSurface`，再调模块 `ApplyStyle`。
+5. **自检「换肤跟随设置」**：验证 `ApplyStyle` 后绑定的是新 `Settings` 对象、圆角 / 宽度 / monoFont 跟着变；
+   以及 `OverlaySurface` 重画后文字保留、圆角更新。
+
+### 实测
+
+- `dotnet build -c Release`：0 警告 0 错误。
+- `--selftest`：**失败项 0**（新增「换肤跟随设置」OK）。
+- `--smoke 4 --smoke-visible`：退出码 0。
+- 未覆盖：真实窗口里改字号 / 圆角 / 底色后，对话与媒体卡的观感需要手工确认；
+  自检已覆盖“换肤跟随新设置对象”与“底层重画保留内容”两个根因点。
+
+---
+
+## 20. 不在版本里的东西
 
 - 验收脚本、样张与测量脚本（`cmd-e2e.ps1`、`drag-glass.ps1`、`measure-*.py`、`shots/` 等）都在仓库外的 `hud-test/` 里，**没有提交**。
 - 发布：`main` 与标签已推送到 [github.com/CRITTIof/MirrorpondHUD](https://github.com/CRITTIof/MirrorpondHUD)；
@@ -794,7 +836,7 @@ v2.6.0 只把**命令行卡**的设置搬进了 `CardSettings.Extras`，媒体�
   更早的 Release 正文与附件保留原样，v2.4.0 的 Release 已删除（tag `v2.4.0` 保留，历史仍可检出）。
 - 仓库追踪的文件共 103 个，`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
 
-## 20. 已知代价（跨版本）
+## 21. 已知代价（跨版本）
 
 - 桌面亚克力为了不拍到自己，会把卡片排除在截屏之外 —— 这个模式下截图 / 录屏里**看不到卡片**，观感只能靠肉眼与离屏渲染验证。
 - 兼容实现每帧对身后窗口做 `PrintWindow`，拖动时最多 ~21 帧/秒；要更高只能走桌面亚克力（DXGI）。

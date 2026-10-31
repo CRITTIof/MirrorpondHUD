@@ -1338,6 +1338,10 @@ namespace MirrorpondHUD.Ui
                         {
                             slot.Window.RefreshSettings(slot.Dialog);
 
+                            // 富内容卡的底色 / 不透明度 / 圆角 / 投影由 OverlaySurface 画；
+                            // 只调模块 ApplyStyle 的话，媒体卡与 CLI 卡会一直保留旧的外观。
+                            slot.Window.RefreshSurface(slot.Dialog);
+
                             try { styleAware.ApplyStyle(slot.Content, context); }
                             catch (Exception ex)
                             {

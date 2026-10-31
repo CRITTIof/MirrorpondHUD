@@ -105,6 +105,9 @@ namespace MirrorpondHUD.Ui
             SetText(text, cursor, -1);
         }
 
+        /// <summary>当前文字层内容（只重画底层时用来原样恢复）。</summary>
+        public string Text { get { return _canvas.Text; } }
+
         public void SetText(string text, bool cursor, int cursorIndex)
         {
             _canvas.Text = text ?? "";

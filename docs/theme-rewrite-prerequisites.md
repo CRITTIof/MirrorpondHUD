@@ -63,7 +63,8 @@ Panel / Border / Muted 都已改读令牌。`Theme.xaml`（设置窗口浅色 ch
 **状态（v2.9.1）**：✅ 已实现。`CliPanelView.ApplyStyle(style, cli)` 重套标题 / 徽标 / 分隔线 / 输入 / 状态 / 滚动条 /
 记录区高度；`CliEntryPanel.ApplyStyle` 重套内部面板与已有文字（每段文字的 alpha 与字号偏移存在 `Tag` 里）。
 `ChatCard` / `CommandCard` 已实现 `ICardStyleAware`，宿主走「只样式变 → 就地换肤」。
-**未做**：`MonoFont` 令牌还没变成实例级字体，换等宽字体仍需要重建。
+**已做（v2.9.4）**：`MonoFont` 已改为实例级 `MonoFamily`，构造与换肤时都从 `ThemeTokens.MonoFont` 取；
+标题 / 徽标 / 提示符 / 输入框 / 状态行与已有记录文字一起更新，导入主题的 `monoFont` 现在生效。
 
 **风险**：中。`CliUi.cs` 是 500 行的公共件，子控件多；需要逐个确认“哪些颜色是构造期写的”。
 
@@ -114,7 +115,7 @@ Panel / Border / Muted 都已改读令牌。`Theme.xaml`（设置窗口浅色 ch
 选中 / 导入 / 还原只改 `_working` 副本，点「保存并应用」才生效；`Style.ThemeName` 记录当前主题，
 手动改外观会清空为「自定义」。取消或关闭窗口不会改动已保存设置。
 
-**未做**：主题目录扫描、ZIP 资源包（`assets/`）、MonoFont 实例级字体（仍是 P2 遗留）。
+**未做**：主题目录扫描、ZIP 资源包（`assets/`）。
 
 ### P5 自检与验收自动化
 

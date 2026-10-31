@@ -108,7 +108,7 @@ namespace MirrorpondHUD.Cards
             var view = content as ChatView;
             if (view == null || context == null || context.Settings == null) return;
 
-            view.ApplyStyle(context.Settings.Style, context.Settings.Cli);
+            view.ApplyStyle(context.Settings);
         }
 
         /// <inheritdoc />

@@ -156,12 +156,14 @@ namespace MirrorpondHUD.Ui.Controls
         readonly StackPanel _body;
         Color _foreground;
         double _fontSize;
+        FontFamily _mono;
 
         public CliEntryPanel(StyleSettings style, CliSettings cli, Color foreground, double corner)
         {
             _foreground = foreground;
             _fontSize = Math.Max(10, (style == null ? 15 : style.FontSize) - 1);
             ThemeTokens tokens = ThemeResolver.Resolve(style);
+            _mono = new FontFamily(tokens.MonoFont);
 
             _body = new StackPanel { Orientation = Orientation.Vertical };
 
@@ -192,7 +194,7 @@ namespace MirrorpondHUD.Ui.Controls
             {
                 Text = text ?? "",
                 TextWrapping = TextWrapping.Wrap,
-                FontFamily = CliPanelView.MonoFont,
+                FontFamily = _mono,
                 FontSize = _fontSize + sizeDelta,
                 LineHeight = Math.Max(_fontSize + 2, _fontSize * 1.5),
                 Foreground = CardPalette.Brush(_foreground, alpha),
@@ -205,13 +207,14 @@ namespace MirrorpondHUD.Ui.Controls
             return block;
         }
 
-        /// <summary>就地换肤：面板底色 / 描边 / 滑块 / 已有文字的颜色与字号，全部按新令牌重算。</summary>
+        /// <summary>就地换肤：面板底色 / 描边 / 滑块 / 等宽字体 / 已有文字的颜色与字号，全部按新令牌重算。</summary>
         public void ApplyStyle(StyleSettings style, Color foreground, double corner)
         {
             _foreground = foreground;
             _fontSize = Math.Max(10, (style == null ? 15 : style.FontSize) - 1);
 
             ThemeTokens tokens = ThemeResolver.Resolve(style);
+            _mono = new FontFamily(tokens.MonoFont);
             Background = CardPalette.Brush(tokens.Panel);
             BorderBrush = CardPalette.Brush(tokens.Border);
             CornerRadius = new CornerRadius(Math.Max(3, corner - 3));
@@ -228,6 +231,7 @@ namespace MirrorpondHUD.Ui.Controls
 
                 block.FontSize = _fontSize + delta;
                 block.LineHeight = Math.Max(_fontSize + 2, _fontSize * 1.5);
+                block.FontFamily = _mono;
                 block.Foreground = CardPalette.Brush(_foreground, alpha);
             }
         }
@@ -251,14 +255,13 @@ namespace MirrorpondHUD.Ui.Controls
     /// </summary>
     public abstract class CliPanelView : Grid, ICliFocusTarget
     {
-        /// <summary>等宽字体：终端样式；中文靠后面的字体接住（WPF 会逐个字形回退）。</summary>
-        public static readonly FontFamily MonoFont =
-            new FontFamily("Cascadia Mono, Consolas, Microsoft YaHei UI");
+        /// <summary>等宽字体：终端样式；来自 ThemeTokens.MonoFont，随外观设置 / 主题实时更新。</summary>
+        protected FontFamily MonoFamily;
 
-        protected readonly Settings HostSettings;
+        protected Settings HostSettings;
         protected StyleSettings StyleSet;
         protected ThemeTokens Tokens;
-        protected readonly CliSettings Cli;
+        protected CliSettings Cli;
         protected Color Foreground;
         protected double Corner;
         protected double Pad;
@@ -287,6 +290,7 @@ namespace MirrorpondHUD.Ui.Controls
             Cli.Normalize();
             StyleSet = settings == null ? new StyleSettings() : settings.Style;
             Tokens = ThemeResolver.Resolve(StyleSet);
+            MonoFamily = new FontFamily(Tokens.MonoFont);
             Corner = settings == null ? 10 : settings.Overlay.CornerRadius;
             Foreground = CardPalette.TryColor(StyleSet.Foreground, Color.FromRgb(0xE6, 0xED, 0xF3));
             FontSize = Math.Max(10, StyleSet.FontSize - 1);
@@ -313,7 +317,7 @@ namespace MirrorpondHUD.Ui.Controls
                 VerticalAlignment = VerticalAlignment.Center,
                 Foreground = CardPalette.Brush(Foreground, 0.95),
                 FontSize = FontSize + 1,
-                FontFamily = MonoFont,
+                FontFamily = MonoFamily,
                 FontWeight = FontWeights.SemiBold
             };
 
@@ -323,7 +327,7 @@ namespace MirrorpondHUD.Ui.Controls
                 Margin = new Thickness(8, 0, 0, 0),
                 Foreground = CardPalette.Brush(Tokens.Muted),
                 FontSize = Math.Max(9, FontSize - 2),
-                FontFamily = MonoFont
+                FontFamily = MonoFamily
             };
 
             Grid.SetColumn(_badge, 1);
@@ -385,7 +389,7 @@ namespace MirrorpondHUD.Ui.Controls
                 Margin = new Thickness(0, 0, 6, 0),
                 Foreground = CardPalette.Brush(Foreground, 0.8),
                 FontSize = FontSize + 1,
-                FontFamily = MonoFont,
+                FontFamily = MonoFamily,
                 FontWeight = FontWeights.SemiBold
             };
 
@@ -395,7 +399,7 @@ namespace MirrorpondHUD.Ui.Controls
                 MaxLines = 1,
                 MinHeight = Math.Max(24, FontSize * 2),
                 VerticalContentAlignment = VerticalAlignment.Center,
-                FontFamily = MonoFont,
+                FontFamily = MonoFamily,
                 FontSize = FontSize + 1,
                 Background = Brushes.Transparent,
                 BorderThickness = new Thickness(0),
@@ -403,7 +407,7 @@ namespace MirrorpondHUD.Ui.Controls
                 Foreground = CardPalette.Brush(Foreground, 0.95)
             };
             Input.ApplyStyle(StyleSet, Corner);
-            Input.FontFamily = MonoFont;
+            Input.FontFamily = MonoFamily;
             Input.FontSize = FontSize + 1;
             Input.Background = Brushes.Transparent;
             Input.BorderThickness = new Thickness(0);
@@ -433,7 +437,7 @@ namespace MirrorpondHUD.Ui.Controls
                 TextWrapping = TextWrapping.Wrap,
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 FontSize = Math.Max(9, FontSize - 2),
-                FontFamily = MonoFont,
+                FontFamily = MonoFamily,
                 Foreground = CardPalette.Brush(Foreground, 0.5),
                 Margin = new Thickness(Pad, 1, Pad, Math.Max(5, Pad * 0.55))
             };
@@ -446,15 +450,26 @@ namespace MirrorpondHUD.Ui.Controls
         /// <summary>
         /// 只换外观、不重建：重新套用字体 / 颜色 / 内边距 / 圆角，所以对话历史与命令记录都还在。
         /// 宿主在「只改了外观」时调用它（<c>ICardStyleAware</c>），而不是销毁整个面板。
+        ///
+        /// 必须整份 <see cref="Settings"/> 传进来：保存设置时宿主会换成新对象，
+        /// 圆角、CLI 尺寸、热键都要跟着新对象走；只传 Style / Cli 会继续读构造期那份旧配置。
         /// </summary>
-        public void ApplyStyle(StyleSettings style, CliSettings cli)
+        public void ApplyStyle(Settings settings)
         {
-            StyleSet = style ?? new StyleSettings();
+            if (settings == null) return;
+
+            HostSettings = settings;
+            StyleSet = settings.Style ?? new StyleSettings();
+            Cli = settings.Cli ?? new CliSettings();
+            Cli.Normalize();
+
             Tokens = ThemeResolver.Resolve(StyleSet);
+            MonoFamily = new FontFamily(Tokens.MonoFont);
             Foreground = CardPalette.TryColor(StyleSet.Foreground, Color.FromRgb(0xE6, 0xED, 0xF3));
             FontSize = Math.Max(10, StyleSet.FontSize - 1);
             Pad = Math.Max(10, StyleSet.Padding * 0.85);
-            Corner = HostSettings == null ? 10 : HostSettings.Overlay.CornerRadius;
+            Corner = settings.Overlay == null ? 10 : settings.Overlay.CornerRadius;
+            Width = Math.Max(240, Cli.MaxWidth);
 
             ApplyChrome();
 
@@ -468,9 +483,11 @@ namespace MirrorpondHUD.Ui.Controls
         {
             _title.Foreground = CardPalette.Brush(Foreground, 0.95);
             _title.FontSize = FontSize + 1;
+            _title.FontFamily = MonoFamily;
 
             _badge.Foreground = CardPalette.Brush(Tokens.Muted);
             _badge.FontSize = Math.Max(9, FontSize - 2);
+            _badge.FontFamily = MonoFamily;
 
             _headerHost.Margin = new Thickness(Pad, Math.Max(6, Pad * 0.55), Pad, Math.Max(3, Pad * 0.3));
             _rule.Background = CardPalette.Brush(Foreground, 0.14);
@@ -482,9 +499,10 @@ namespace MirrorpondHUD.Ui.Controls
 
             _prompt.Foreground = CardPalette.Brush(Foreground, _inputReadOnly ? 0.35 : 0.8);
             _prompt.FontSize = FontSize + 1;
+            _prompt.FontFamily = MonoFamily;
 
             Input.ApplyStyle(StyleSet, Corner);
-            Input.FontFamily = MonoFont;
+            Input.FontFamily = MonoFamily;
             Input.FontSize = FontSize + 1;
             Input.Background = Brushes.Transparent;
             Input.BorderThickness = new Thickness(0);
@@ -492,6 +510,7 @@ namespace MirrorpondHUD.Ui.Controls
             Input.Foreground = CardPalette.Brush(Foreground, 0.95);
 
             _status.FontSize = Math.Max(9, FontSize - 2);
+            _status.FontFamily = MonoFamily;
             _status.Foreground = CardPalette.Brush(
                 _statusError ? Color.FromRgb(0xE5, 0x7B, 0x6E) : Foreground, _statusError ? 1.0 : 0.5);
             _status.Margin = new Thickness(Pad, 1, Pad, Math.Max(5, Pad * 0.55));
@@ -503,6 +522,15 @@ namespace MirrorpondHUD.Ui.Controls
 
         /// <summary>子类自己的额外控件（如果有）在这里跟着换肤。</summary>
         protected virtual void OnApplyStyle() { }
+
+        /// <summary>自检用：当前绑定的设置对象（宿主换设置后必须换成新对象）。</summary>
+        internal Settings BoundSettings { get { return HostSettings; } }
+
+        /// <summary>自检用：当前卡片圆角。</summary>
+        internal double BoundCorner { get { return Corner; } }
+
+        /// <summary>自检用：当前等宽字体名（主题的 monoFont 是否生效）。</summary>
+        internal string BoundMono { get { return MonoFamily == null ? "" : MonoFamily.Source; } }
 
         // ==================== 给子类用的零件 ====================
 

@@ -117,7 +117,7 @@ namespace MirrorpondHUD.Cards
             var view = content as CommandView;
             if (view == null || context == null || context.Settings == null) return;
 
-            view.ApplyStyle(context.Settings.Style, context.Settings.Cli);
+            view.ApplyStyle(context.Settings);
         }
     }
 

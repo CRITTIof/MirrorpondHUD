@@ -158,6 +158,18 @@ namespace MirrorpondHUD.Ui
             UpdateMenuHeaders();
         }
 
+        /// <summary>
+        /// 只重画卡片底层（底色 / 背景不透明度 / 圆角 / 投影 / 描边），富内容原样保留。
+        /// 「只改外观」时宿主必须调它：<see cref="RefreshSettings"/> 只换设置对象，不动 Surface，
+        /// 否则媒体 / CLI 这类就地换肤的卡片会保留旧的底色与圆角。
+        /// </summary>
+        public void RefreshSurface(Settings settings)
+        {
+            _settings = settings;
+            Surface.Apply(settings, Surface.Text);
+            if (_handleReady) UpdateGlassCapture();
+        }
+
         public void SetText(string text, bool cursor)
         {
             Surface.SetText(text, cursor);
