@@ -303,6 +303,24 @@ namespace MirrorpondHUD.Cards
 
         async void Send()
         {
+            // 顶层兜底：try 之前的 AddEntry / SetStatus 等 UI 调用一旦抛异常，
+            // async void 会把它交给 Dispatcher，默认行为是结束进程。
+            try
+            {
+                await SendCore();
+            }
+            catch (Exception ex)
+            {
+                _busy = false;
+                _spin.Stop();
+                if (_pending != null) { _pending.Dispose(); _pending = null; }
+                SetStatus("! " + Explain(ex), true);
+                Log.Error("对话请求异常", ex);
+            }
+        }
+
+        async Task SendCore()
+        {
             if (_busy) return;
 
             string text = (Input.Text ?? "").Trim();

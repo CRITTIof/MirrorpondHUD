@@ -21,7 +21,6 @@ namespace MirrorpondHUD.Ui
         static readonly int[] RefreshOptions = { 200, 300, 500, 800, 1000, 2000 };
         static readonly int[] NvidiaOptions = { 1000, 2000, 3000, 5000 };
 
-        readonly Settings _live;
         readonly Action<Settings> _onApply;
         readonly Action<double, double, int> _onPosition;
         readonly Action _onClearKeys;
@@ -43,7 +42,6 @@ namespace MirrorpondHUD.Ui
         {
             InitializeComponent();
 
-            _live = live;
             _onApply = onApply;
             _onPosition = onPosition;
             _onClearKeys = onClearKeys;

@@ -181,6 +181,24 @@ namespace MirrorpondHUD.Cards
 
         async void RunCommand()
         {
+            // 顶层兜底：命令面板的建立过程（AddEntry / SetStatus 等）一旦抛异常，
+            // async void 会把它交给 Dispatcher，默认行为是结束进程。
+            try
+            {
+                await RunCommandCore();
+            }
+            catch (Exception ex)
+            {
+                _running = false;
+                try { if (_cancel != null) _cancel.Cancel(); } catch { }
+                try { SetInputReadOnly(false); } catch { }
+                SetStatus("! " + ex.Message, true);
+                Log.Error("命令行界面异常", ex);
+            }
+        }
+
+        async Task RunCommandCore()
+        {
             if (_running) return;
 
             string command = (Input.Text ?? "").Trim();

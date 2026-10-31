@@ -5,7 +5,7 @@
 >
 > 范围：`src/` 全部 C# 与 `docs/` 中仍在描述“现状”的段落；行号以 v2.9.4（`055b3f9`）为准。
 > 结论：**没有发现与 2.9.4 完全同源的未修问题**；另有 13 条独立遗留，其中 2 条属于正确性（S1 / S4）。
-> 修复进度：**S1 + S2 已在 v2.9.5 修**；S3 + S4、S7 + S12 分别排 v2.9.6 / v2.9.7；其余仍只记录。
+> 修复进度：**S1 + S2 已在 v2.9.5 修，S3 + S4 已在 v2.9.6 修**；S7 + S12 排 v2.9.7；其余仍只记录。
 
 ## 0. 结论摘要
 
@@ -13,8 +13,8 @@
 |---|---|---|---|---|
 | S1 | 非法颜色静默变成白色，`TryColor` 的 fallback 实际不可达 | 正确性 | P1 | ✅ v2.9.5 |
 | S2 | 颜色解析 / 校验有 7 份实现，非法输入行为各不相同 | 结构 + 正确性 | P2 | ✅ v2.9.5 |
-| S3 | `SettingsWindow._live` 是死字段（只赋值、从不读） | 死代码 | P3 | 未修 |
-| S4 | `async void Send / RunCommand` 在 `try` 之前抛异常会直接崩进程 | 正确性 / 稳定性 | P1 | 未修 |
+| S3 | `SettingsWindow._live` 是死字段（只赋值、从不读） | 死代码 | P3 | ✅ v2.9.6 |
+| S4 | `async void Send / RunCommand` 在 `try` 之前抛异常会直接崩进程 | 正确性 / 稳定性 | P1 | ✅ v2.9.6 |
 | S5 | `OverlaySurface.BrushCache` 无上限 | 资源 | P3 | 未修 |
 | S6 | `ButtonsCard` 不做就地换肤（构造期捕获 `Style`），外观一变就重建、丢掉演示状态 | 一致性 | P2 | 未修 |
 | S7 | AI 对话历史条数写死 `12`，与 `Cli.MaxEntries` 脱钩 | 行为 | P2 | 未修 |
@@ -107,6 +107,8 @@
 `SettingsWindow` 的 `readonly Settings _live` 只在构造函数里赋值，之后从未读取（`grep -n "_live"` 只有两行）。
 要么删掉，要么接成“窗口打开期间外部配置变了就提示重载”。当前是纯噪音。
 
+**修复（v2.9.6）**：字段与赋值一起删除。
+
 ### S4 `async void` 没有顶层兜底（P1）
 
 `ChatView.Send` 与 `CommandView.RunCommand` 都是 `async void`。`await` 段虽然包在 `try/catch/finally` 里，
@@ -115,6 +117,9 @@
 
 **建议**：整个方法体包一层 `try { ... } catch (Exception ex) { SetStatus("! " + ex.Message, true); }`，
 或在 `App` 里挂 `DispatcherUnhandledException` 做兜底日志（不吞掉，但至少先落盘再决定）。
+
+**修复（v2.9.6）**：`Send / RunCommand` 拆成 `async void` 外壳 + `Core()`；
+外壳只做 `try { await Core(); } catch { 重置状态 + 状态行 + 日志 }`，准备阶段抛异常也不会再逸出。
 
 ### S5 `BrushCache` 无上限（P3）
 
@@ -217,3 +222,4 @@ grep -rn "仍回退重建\|构造期固化\|回退到重建" docs README.md
 | 版本 | 内容 |
 |---|---|
 | v2.9.5 | S1 + S2：`ColorCode` 单一解析；非法颜色回落到 fallback（不再变白）；删除 6 处复制 |
+| v2.9.6 | S3 + S4：删 `_live` 死字段；`Send / RunCommand` 加 `async void` 顶层兜底 |

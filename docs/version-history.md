@@ -1,11 +1,11 @@
-# 版本修改记录（2.4.1 → 2.9.5）
+# 版本修改记录（2.4.1 → 2.9.6）
 
 > 范围：本文只记录**这一轮接手后我做的版本**（v2.4.1 起）。v2.4.0 及更早是既有历史，不在本文档里。
 > 数据全部取自仓库真实提交（`git diff --shortstat <上一版>..<本版>`），文件行的 `+ / -` 就是实际增删行数。
 > 版本状态：`main` 已推送到 GitHub；`v2.4.2`–`v2.4.5` 为附注标签（分别指向 `70343ef` / `aabe441` / `05857ce` / `f4b2b8b`），
 > v2.4.5 已发布 Release（附件为两个 requires-dotnet 单文件），v2.4.0 的 Release 已删除、其 tag 保留。
 > `v2.5.0`–`v2.9.2` 均为附注标签，**已随 2.9.2 的推送同步到远端**（`v2.6.0` = `9c1bafa`、`v2.6.1` = `d3ac63d`、
-> `v2.6.2` = `1b138e7`、`v2.9.2` = `754115e`）；`v2.4.1` 也已补推。`v2.9.3`–`v2.9.5` 目前只在本地创建，尚未推送。
+> `v2.6.2` = `1b138e7`、`v2.9.2` = `754115e`）；`v2.4.1` 也已补推。`v2.9.3`–`v2.9.6` 目前只在本地创建，尚未推送。
 
 ## 0. 总览
 
@@ -30,7 +30,8 @@
 | v2.9.2 | 2026-10-31 | `754115e` | 外观重写前置 P3：`.mptheme` 解析 / 校验 / 导入导出（套用副本、失败不动当前设置），自检加两项 | 8 文件，+916 / −9（含新增 `src/Core/ThemeFile.cs` 668 行） |
 | v2.9.3 | 2026-10-31 | `6805bbe` | P4 设置页主题入口 + 离屏预览；#7 克隆失败禁止保存；#4 `ICardActivation` 激活契约 | 13 文件，+594 / −36（含新增 `src/Core/ThemeCatalog.cs` 69 行） |
 | v2.9.4 | 2026-10-31 | `055b3f9` | 修 AI 对话 / 常驻媒体卡外观不随设置变化：CLI 面板跟随新 Settings 与 monoFont，宿主换肤时重画底层 | 11 文件，+165 / −29 |
-| v2.9.5 | 2026-10-31 | 本次提交 | 源码遗留 S1+S2：单一 `ColorCode` 解析，删掉 6 处复制；非法颜色回落到 fallback 而不是变白 | 15 文件，+158 / −132（含新增 `src/Core/ColorCode.cs` 53 行） |
+| v2.9.5 | 2026-10-31 | `856b7bd` | 源码遗留 S1+S2：单一 `ColorCode` 解析，删掉 6 处复制；非法颜色回落到 fallback 而不是变白 | 15 文件，+158 / −132（含新增 `src/Core/ColorCode.cs` 53 行） |
+| v2.9.6 | 2026-10-31 | 本次提交 | 源码遗留 S3+S4：删死字段 `_live`；两个 `async void` 加顶层兜底，异常不再逸出崩进程 | 7 文件，+82 / −12 |
 
 ---
 
@@ -858,7 +859,36 @@ v2.6.0 只把**命令行卡**的设置搬进了 `CardSettings.Extras`，媒体�
 
 ---
 
-## 21. 不在版本里的东西
+## 21. v2.9.6（本次提交，本地标签 `v2.9.6`）
+
+### 背景
+
+`docs/legacy-audit.md` 的 S3 + S4：`SettingsWindow._live` 只赋值、从不读；
+`ChatView.Send` 与 `CommandView.RunCommand` 是 `async void`，`try` 只包住 `await` 段，
+之前的 `AddEntry` / `SetStatus` / `_spin.Start` 等 UI 调用一旦抛异常，会从 `async void` 逸出到 Dispatcher，
+默认行为是结束进程。
+
+### 改动
+
+1. **删掉 `_live`**（`SettingsWindow`）：构造函数里的赋值一起删，减少一个“看起来像同步源”的死字段。
+2. **`ChatView.Send` / `CommandView.RunCommand` 拆成两层**：
+   - `async void Send() / RunCommand()` 只负责 `try { await SendCore(); } catch (Exception ex) { ... }`；
+   - 原来的方法体（含既有的 `try/finally`）原样搬进 `SendCore() / RunCommandCore()`。
+3. **兜底行为**：
+   - 对话：重置 `_busy`、停转圈、释放 `_pending`、状态行显示错误、写日志；
+   - 命令行：重置 `_running`、取消并释放进行中的命令、恢复输入框、状态行显示错误、写日志。
+
+这样即使异常发生在“准备阶段”，界面也会回到可再次提交的状态，而不是静默崩掉。
+
+### 实测
+
+- `dotnet build -c Release`：0 警告 0 错误。
+- `--selftest`：失败项 0。
+- `--smoke 4 --smoke-visible`：退出码 0。
+
+---
+
+## 22. 不在版本里的东西
 
 - 验收脚本、样张与测量脚本（`cmd-e2e.ps1`、`drag-glass.ps1`、`measure-*.py`、`shots/` 等）都在仓库外的 `hud-test/` 里，**没有提交**。
 - 发布：`main` 与标签已推送到 [github.com/CRITTIof/MirrorpondHUD](https://github.com/CRITTIof/MirrorpondHUD)；
@@ -867,7 +897,7 @@ v2.6.0 只把**命令行卡**的设置搬进了 `CardSettings.Extras`，媒体�
   更早的 Release 正文与附件保留原样，v2.4.0 的 Release 已删除（tag `v2.4.0` 保留，历史仍可检出）。
 - 仓库追踪的文件共 107 个，`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
 
-## 22. 已知代价（跨版本）
+## 23. 已知代价（跨版本）
 
 - 桌面亚克力为了不拍到自己，会把卡片排除在截屏之外 —— 这个模式下截图 / 录屏里**看不到卡片**，观感只能靠肉眼与离屏渲染验证。
 - 兼容实现每帧对身后窗口做 `PrintWindow`，拖动时最多 ~21 帧/秒；要更高只能走桌面亚克力（DXGI）。
