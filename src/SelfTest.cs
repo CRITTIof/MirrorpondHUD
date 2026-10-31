@@ -211,6 +211,7 @@ namespace MirrorpondHUD
             bool secretOk = false;
             bool chatHotkeyOk = false;
             bool settingsEditorOk = false;
+            bool stateStoreOk = false;
 
             try
             {
@@ -538,12 +539,39 @@ namespace MirrorpondHUD
                 Log.Error("卡片设置区块自检异常", ex);
             }
 
+            try
+            {
+                // 每卡状态存储（P1-12）：原子写、回读一致、拒绝路径穿越、不留 .tmp
+                string id = "selftest-" + Guid.NewGuid().ToString("N");
+                string dir = CardStateStore.DirectoryFor(id);
+
+                bool wrote = CardStateStore.Write(id, "state.json", "{\"n\":1}");
+                bool read = CardStateStore.Read(id, "state.json") == "{\"n\":1}";
+                bool noTmp = dir != null && !System.IO.File.Exists(System.IO.Path.Combine(dir, "state.json.tmp"));
+
+                bool rejected = CardStateStore.Write(id, "..\\escape.txt", "x") == false
+                             && CardStateStore.Write(id, "../escape.txt", "x") == false
+                             && CardStateStore.Read(id, "..\\escape.txt") == null
+                             && CardStateStore.Write("..\\bad", "a.json", "x") == false;
+
+                bool deleted = CardStateStore.Delete(id, "state.json");
+                bool gone = CardStateStore.Read(id, "state.json") == null;
+
+                stateStoreOk = wrote && read && noTmp && rejected && deleted && gone
+                            && !string.IsNullOrEmpty(dir);
+            }
+            catch (Exception ex)
+            {
+                Log.Error("卡片状态存储自检异常", ex);
+            }
+
             if (!(templateOk && unknownOk && collapseOk && thresholdOk && configOk && cardOk &&
                   keyNameOk && keyLimitOk && keyOverflowOk &&
-                  commandOk && truncateOk && toolLabelOk && secretOk && chatHotkeyOk && settingsEditorOk)) failures++;
+                  commandOk && truncateOk && toolLabelOk && secretOk && chatHotkeyOk && settingsEditorOk &&
+                  stateStoreOk)) failures++;
 
             Fix(sb, "逻辑自检", string.Format(
-                "模板={0} 未知占位符={1} 折叠={2} 阈值内展开={3} 配置读写={4} 卡片模块={11} 键名={5} 按键长度={6} 超长截断={7} 命令行={8} 行截断={9} 工具名={10} Key加密={12} 对话热键={13} 卡片设置={14}",
+                "模板={0} 未知占位符={1} 折叠={2} 阈值内展开={3} 配置读写={4} 卡片模块={11} 键名={5} 按键长度={6} 超长截断={7} 命令行={8} 行截断={9} 工具名={10} Key加密={12} 对话热键={13} 卡片设置={14} 状态存储={15}",
                 templateOk ? "OK" : "FAIL",
                 unknownOk ? "OK" : "FAIL",
                 collapseOk ? "OK" : "FAIL",
@@ -558,7 +586,8 @@ namespace MirrorpondHUD
                 cardOk ? "OK" : "FAIL",
                 secretOk ? "OK" : "FAIL",
                 chatHotkeyOk ? "OK" : "FAIL",
-                settingsEditorOk ? "OK" : "FAIL"));
+                settingsEditorOk ? "OK" : "FAIL",
+                stateStoreOk ? "OK" : "FAIL"));
         }
 
         static bool RegisterIfSet(HotkeyManager hotkeys, string action, string combination)

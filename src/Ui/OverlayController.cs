@@ -49,6 +49,59 @@ namespace MirrorpondHUD.Ui
             /// 应用设置时拿它和新签名比较：一样就只刷新数据，不一样才重建控件。
             /// </summary>
             public string ContentSignature;
+
+            /// <summary>这张卡片拿到的宿主服务（状态目录、请求重画 / 布局）。</summary>
+            public CardHost Host;
+        }
+
+        /// <summary>
+        /// 每张卡片一份的宿主服务实现：把状态读写落到 <c>cards\&lt;id&gt;\</c>，
+        /// 把「重画 / 重新布局」转给控制器。模块是单例，所以这只是下发对象，不长期持有。
+        /// </summary>
+        internal sealed class CardHost : ICardHost
+        {
+            readonly OverlayController _owner;
+
+            public CardHost(OverlayController owner, CardSettings config)
+            {
+                _owner = owner;
+                Config = config;
+            }
+
+            /// <summary>卡片配置；应用设置时由控制器换成新对象。</summary>
+            public CardSettings Config { get; set; }
+
+            public string StateDirectory
+            {
+                get { return CardStateStore.DirectoryFor(CardId); }
+            }
+
+            public string ReadState(string fileName)
+            {
+                return CardStateStore.Read(CardId, fileName);
+            }
+
+            public bool WriteState(string fileName, string text)
+            {
+                return CardStateStore.Write(CardId, fileName, text);
+            }
+
+            public bool DeleteState(string fileName)
+            {
+                return CardStateStore.Delete(CardId, fileName);
+            }
+
+            public void RequestRender()
+            {
+                _owner.RequestRenderFromModule();
+            }
+
+            public void RequestLayout()
+            {
+                _owner.RequestLayoutFromModule();
+            }
+
+            string CardId { get { return Config == null ? "" : Config.Id; } }
         }
 
         Settings _settings;
@@ -158,6 +211,8 @@ namespace MirrorpondHUD.Ui
                 ContentSignature = ContentSignature(config)
             };
             slot.Rich = slot.Module as IRichCardModule;
+            slot.Host = new CardHost(this, config);
+            AttachHost(slot);
 
             var window = new OverlayWindow(dialog);
             // 带按钮 / 输入框的卡片（AI 对话、按钮演示）自己声明需要鼠标，宿主据此关掉这张卡的点击穿透。
@@ -182,14 +237,6 @@ namespace MirrorpondHUD.Ui
             return slot;
         }
 
-        /// <summary>
-        /// 每张卡片的窗口需要「外观 + 本卡位置」。这里浅拷贝一份 <see cref="Settings"/>：
-        /// 外观 / CLI / 热键这些大对象共享同一个实例，只有 <see cref="OverlaySettings"/> 单独复制
-        /// （窗口会改自己的 X / Y / 锁定状态，不能互相踩）。
-        ///
-        /// 旧实现在这里对整份配置做 JSON 深拷贝，卡片越多副本越多；而且克隆绕过 Normalize，
-        /// 两份配置容易再次漂移。
-        /// </summary>
         /// <summary>
         /// 按卡片能力接线：内容自己处理拖动（<see cref="ICardModule.HandlesOwnDrag"/>）时关掉整卡拖动；
         /// 实现 <see cref="ICardDropTarget"/> 的卡片由宿主统一注册 AllowDrop / DragOver / Drop。
@@ -219,6 +266,52 @@ namespace MirrorpondHUD.Ui
                     try { drop.Drop(data, captured.Content); }
                     catch (Exception ex) { Log.Warn("卡片拖放处理失败: " + ex.Message); }
                 });
+        }
+
+        /// <summary>
+        /// 每张卡片的窗口需要「外观 + 本卡位置」。这里浅拷贝一份 <see cref="Settings"/>：
+        /// 外观 / CLI / 热键这些大对象共享同一个实例，只有 <see cref="OverlaySettings"/> 单独复制
+        /// （窗口会改自己的 X / Y / 锁定状态，不能互相踩）。
+        ///
+        /// 旧实现在这里对整份配置做 JSON 深拷贝，卡片越多副本越多；而且克隆绕过 Normalize，
+        /// 两份配置容易再次漂移。
+        /// </summary>
+        /// <summary>让实现 <see cref="ICardHostAware"/> 的模块拿到这张卡片的宿主服务。</summary>
+        void AttachHost(CardSlot slot)
+        {
+            if (slot == null || slot.Host == null) return;
+
+            var aware = slot.Module as ICardHostAware;
+            if (aware == null) return;
+
+            try { aware.Attach(slot.Host); }
+            catch (Exception ex) { Log.Warn("卡片宿主服务接线失败(" + slot.Config.Name + "): " + ex.Message); }
+        }
+
+        /// <summary>卡片被删 / 程序退出 / 换模块时解绑。</summary>
+        void DetachHost(CardSlot slot)
+        {
+            if (slot == null || slot.Host == null) return;
+
+            var aware = slot.Module as ICardHostAware;
+            if (aware == null) return;
+
+            try { aware.Detach(slot.Host); }
+            catch (Exception ex) { Log.Warn("卡片宿主服务解绑失败(" + slot.Config.Name + "): " + ex.Message); }
+        }
+
+        /// <summary>模块改了数据但采样快照没变：排一次重画。</summary>
+        internal void RequestRenderFromModule()
+        {
+            if (_disposed || Application.Current == null) return;
+            Application.Current.Dispatcher.BeginInvoke(new Action(RenderNow), DispatcherPriority.Background);
+        }
+
+        /// <summary>内容尺寸变了：排一次布局校正。</summary>
+        internal void RequestLayoutFromModule()
+        {
+            if (_disposed) return;
+            ScheduleLayout();
         }
 
         Settings BuildDialog()
@@ -1098,12 +1191,19 @@ namespace MirrorpondHUD.Ui
                     bool saved;
                     string signature = ContentSignature(config);
 
+                    // 换配置 = 换 host 里的配置对象；模块种类可能变，先解绑旧的再绑新的。
+                    DetachHost(slot);
+
                     slot.Config = config;
                     slot.Module = CardRegistry.Get(config.Kind);
                     slot.Rich = slot.Module as IRichCardModule;
                     slot.Window.Interactive = slot.Rich != null && slot.Rich.NeedsMouseInput;
                     slot.Summoned = summoned.TryGetValue(config.Id, out saved) ? saved : wasSummoned;
                     slot.Dialog = BuildDialog();
+
+                    if (slot.Host == null) slot.Host = new CardHost(this, config);
+                    else slot.Host.Config = config;
+                    AttachHost(slot);
 
                     // 卡片种类可能没变，但模块能力（拖动 / 拖放）要跟着重新接线。
                     WireInputCapabilities(slot);
@@ -1162,6 +1262,7 @@ namespace MirrorpondHUD.Ui
                     _commandCard = null;
                 }
 
+                DetachHost(removed);
                 ReleaseContent(removed);
                 try { removed.Window.Close(); } catch { }
             }
@@ -1496,6 +1597,8 @@ namespace MirrorpondHUD.Ui
                 {
                     try { target.Cancel(); } catch { }
                 }
+
+                DetachHost(slot);
             }
 
             try { _activation?.Set(); } catch { }

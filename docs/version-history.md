@@ -1,4 +1,4 @@
-# 版本修改记录（2.4.1 → 2.6.3）
+# 版本修改记录（2.4.1 → 2.7.0）
 
 > 范围：本文只记录**这一轮接手后我做的版本**（v2.4.1 起）。v2.4.0 及更早是既有历史，不在本文档里。
 > 数据全部取自仓库真实提交（`git diff --shortstat <上一版>..<本版>`），文件行的 `+ / -` 就是实际增删行数。
@@ -20,7 +20,8 @@
 | v2.6.0 | 2026-10-30 | `9c1bafa` | 卡片设置搬进 `CardSettings.Extras`（schema 5）；模块自带设置区块与校验；命令行卡试点 | 15 文件，+470 / −306，另新增 2 个源文件（45 + 259 行） |
 | v2.6.1 | 2026-10-31 | `d3ac63d` | P1-3：旧 Kind 别名与预设归一化下沉到模块，`CardModel` 不再认识 `InfoTextCard` | 10 文件，+146 / −22 |
 | v2.6.2 | 2026-10-31 | `1b138e7` | 媒体卡 / 对话卡设置搬进 `Extras`（schema 6）；模块自带设置区块（`MediaCardSettingsView` / `ChatCardSettingsView`）与摘要 | 19 文件，+347 / −846，另新增 4 个源文件（728 行） |
-| v2.6.3 | 2026-10-31 | 本次提交 | 输入能力拆分（`HandlesOwnDrag`）+ 拖放通道（`ICardDropTarget`），为画板 / 中转站铺路 | 8 文件，+169 / −12 |
+| v2.6.3 | 2026-10-31 | `7733b37` | 输入能力拆分（`HandlesOwnDrag`）+ 拖放通道（`ICardDropTarget`），为画板 / 中转站铺路 | 8 文件，+169 / −12 |
+| v2.7.0 | 2026-10-31 | 本次提交 | 阶段 B 收尾：`ICardHost` 宿主服务与 `ICardHostAware` 生命周期；`CardStateStore` 每卡状态存储（原子写 + 路径校验） | 7 文件，+220 / −23，另新增 2 个源文件（165 行） |
 
 ---
 
@@ -472,7 +473,50 @@ v2.6.0 只把**命令行卡**的设置搬进了 `CardSettings.Extras`，媒体�
 
 ---
 
-## 11. 不在版本里的东西
+## 11. v2.7.0（本次提交，未打标签）
+
+### 背景
+
+评审 §9 的阶段 B 还剩两项：**P1-8**（模块没有生命周期与宿主服务）和 **P1-12**（每卡状态存储）。
+文件中转站和快捷画板都需要它们：一个要监听目录、记住文件列表；一个要持有笔迹草稿和撤销栈。
+
+### 改动
+
+1. **`ICardHost`**（`src/Cards/CardHost.cs`）：每张卡片一份的宿主服务——`Config`、`StateDirectory`、
+   `ReadState` / `WriteState` / `DeleteState`、`RequestRender()` / `RequestLayout()`。
+2. **`ICardHostAware`**：模块在卡片建卡 / 应用设置时 `Attach(host)`，删卡 / 退出时 `Detach(host)`。
+   `OverlayController` 在 `CreateSlot`、`SyncCards`、删除循环、`Dispose` 四处接线，并处理异常。
+   约定写进接口注释：**模块是单例，不能把 host 存进字段**，跨次状态放进内容控件或状态文件。
+3. **`CardStateStore`**（`src/Core/CardStateStore.cs`）：每卡状态落在
+   `<settings.json 目录>\cards\<卡片 Id>\`，与配置一起便携；按「临时文件 + 替换」原子写；
+   卡片 Id 只允许字母 / 数字 / `-_`，文件名禁止目录分隔符与 `..`（防路径穿越）。
+4. **自检**新增「状态存储=OK」：写入 / 回读 / 拒绝路径穿越 / 删除 / 不留 `.tmp`。
+
+### 说明
+
+- 这是**基础设施**：目前还没有模块实现 `ICardHostAware`。第一个消费者是文件中转站（文件列表）
+  与快捷画板（草稿 / 撤销栈）。存储行为已由自检覆盖，Attach/Detach 接线在第一个消费者落地时会实际走到。
+- 没有把状态塞进 `settings.json`：配置会越读越大，而且和 `Normalize` 的“补默认值、夹紧范围”打架。
+
+### 文件
+
+| 文件 | 行数 | 说明 |
+|---|---|---|
+| `src/Cards/CardHost.cs` | 新增 | `ICardHost` / `ICardHostAware` 契约 |
+| `src/Core/CardStateStore.cs` | 新增 | 每卡状态目录、原子写、路径校验 |
+| `src/Ui/OverlayController.cs` | 每槽 `CardHost`，Attach / Detach 四处接线，`RequestRender` / `RequestLayout` 转发 |
+| `src/SelfTest.cs` | 新增状态存储用例 |
+| `MirrorpondHUD.csproj` / `README.md` | 版本号与文档区间 |
+
+### 实测
+
+- `dotnet build -c Release`：0 警告 0 错误。
+- `--selftest`：**失败项 0**（`状态存储=OK`）。
+- 未覆盖：Attach / Detach 的实际调用（还没有模块实现 `ICardHostAware`）。
+
+---
+
+## 12. 不在版本里的东西
 
 - 验收脚本、样张与测量脚本（`cmd-e2e.ps1`、`drag-glass.ps1`、`measure-*.py`、`shots/` 等）都在仓库外的 `hud-test/` 里，**没有提交**。
 - 发布：`main` 与标签已推送到 [github.com/CRITTIof/MirrorpondHUD](https://github.com/CRITTIof/MirrorpondHUD)；
@@ -481,7 +525,7 @@ v2.6.0 只把**命令行卡**的设置搬进了 `CardSettings.Extras`，媒体�
   v2.4.0 的 Release 已删除（tag `v2.4.0` 保留，历史仍可检出）。
 - 仓库追踪的文件共 89 个，`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
 
-## 12. 已知代价（跨版本）
+## 13. 已知代价（跨版本）
 
 - 桌面亚克力为了不拍到自己，会把卡片排除在截屏之外 —— 这个模式下截图 / 录屏里**看不到卡片**，观感只能靠肉眼与离屏渲染验证。
 - 兼容实现每帧对身后窗口做 `PrintWindow`，拖动时最多 ~21 帧/秒；要更高只能走桌面亚克力（DXGI）。

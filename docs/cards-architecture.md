@@ -18,6 +18,8 @@
 | `src/Cards/CommandCard.cs` / `CommandCardEditor.cs` | 命令行卡（富内容面板，见 §9）与它自己的设置区块；设置存在 `CardSettings.Extras.command` |
 | `src/Cards/MediaCard.cs` / `MediaCardSettingsView.xaml(.cs)` | 媒体卡：图片 / 动图 / 视频；文件与缩放参数在 `Extras.media`，设置区块由模块自己提供 |
 | `src/Cards/ChatCard.cs` / `ChatCardSettingsView.xaml(.cs)` | AI 对话卡；接口 / 模型 / Key 在 `Extras.chat`，设置区块由模块自己提供 |
+| `src/Cards/CardHost.cs` | 每卡宿主服务 `ICardHost`（状态目录、重画 / 布局请求）与生命周期 `ICardHostAware`（v2.7.0） |
+| `src/Core/CardStateStore.cs` | 每卡状态文件：`<settings.json 目录>\cards\<Id>\`，临时文件 + 替换的原子写，卡片 Id / 文件名都做路径校验 |
 | `src/Cards/ChatCard.cs` | AI 对话卡：和命令行卡同一套 CLI 面板（模型名 + `>` 输入行 + 每条问答一块小面板），单次 / 轮询走全局热键 |
 | `src/Ui/Controls/CliUi.cs` | CLI 面板公共件：面板骨架 `CliPanelView`、内部小面板 `CliEntryPanel`、卡片风格滑块 `CliScrollBars`、取色 `CardPalette` |
 | `src/Cards/ButtonsCard.cs` | 按钮演示卡：验证 `CardButton` / `CardTextBox` 这套卡片控件 |
@@ -108,6 +110,23 @@ public sealed class MyMediaCard : RichCardModuleBase
 
 拖放与锁定：锁定状态是点击穿透（`WS_EX_TRANSPARENT`），窗口收不到拖放——这是「锁定 = 不挡鼠标」的既有语义，
 需要拖入时先解锁。模块不需要自己碰窗口样式。
+
+**宿主服务**（v2.7.0 起）：需要持久状态或主动刷新时，模块实现 `ICardHostAware`：
+
+```csharp
+public void Attach(ICardHost host)
+{
+    // 每张卡一份：host.StateDirectory 是 <settings.json 目录>\cards\<卡片 Id>\
+    // 状态不要塞进 settings.json（配置会越读越大，还会和 Normalize 打架）
+    host.WriteState("draft.json", "{}");
+    host.RequestLayout();   // 内容尺寸变了
+}
+
+public void Detach(ICardHost host) { }   // 删卡 / 退出时
+```
+
+宿主在**建卡与应用设置**时 Attach、**删卡与退出**时 Detach。模块是单例，
+所以**不要把 host 存进字段**——需要跨次使用的状态放进内容控件或状态文件。
 
 新增一张**带自己设置的卡片**（`Extras` + 自带设置区块，v2.6.0 起）：
 
