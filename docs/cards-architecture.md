@@ -99,6 +99,11 @@ public sealed class MyMediaCard : RichCardModuleBase
 `OnVisibilityChanged` / `OnZOrderChanged`（卡片显示 / 隐藏、重新置顶时通知）。
 控件自己不碰窗口，所以卡片模块依旧是「新增一个类即可」。
 
+**渲染节奏**（v2.7.1 起）：文字卡片的 `Render` 由宿主按 120 ms 的 tick 调用，
+模块可以实现 `ICardModule.RefreshIntervalMs(CardSettings)` 声明「最快多久重画一次」（0 = 每帧）——
+时钟 / 文本 1 s、按键 250 ms、系统信息每帧。同一帧里所有文字卡片共用一份**只读**变量表，
+所以同一帧的 `{time}` / `{uptime}` 一定一致；模块不要改写这份表。
+
 **输入能力**（v2.6.3 起拆开，四条各管一件事）：
 
 | 声明 | 含义 | 宿主行为 |

@@ -45,6 +45,12 @@ namespace MirrorpondHUD.Cards
         /// <summary>「添加卡片」菜单里的排序，小的在前。</summary>
         int Order { get; }
 
+        /// <summary>
+        /// 这张卡片最快多久重画一次（毫秒）；0 = 每个渲染 tick（120 ms）。
+        /// 只影响宿主逐帧刷新的文字卡片：时钟这种每秒变一次的不必按 8 帧/秒重画。
+        /// </summary>
+        int RefreshIntervalMs(CardSettings config);
+
         /// <summary>把卡片内容渲染成一行文本（多行用 \n）。</summary>
         string Render(CardRenderContext context);
     }
@@ -53,13 +59,25 @@ namespace MirrorpondHUD.Cards
     public sealed class CardRenderContext
     {
         Dictionary<string, object> _variables;
+        readonly IDictionary<string, object> _sharedVariables;
 
         public CardRenderContext(Settings settings, MetricsSnapshot snapshot, KeyHistory keys, CardSettings config)
+            : this(settings, snapshot, keys, config, null)
+        {
+        }
+
+        /// <summary>
+        /// 用一帧里已经建好的变量表（宿主每帧只建一次）。传进来的表**按只读对待**，
+        /// 模块不要去改它——同一帧里的所有卡片共用这一份。
+        /// </summary>
+        public CardRenderContext(Settings settings, MetricsSnapshot snapshot, KeyHistory keys,
+                                 CardSettings config, IDictionary<string, object> sharedVariables)
         {
             Settings = settings ?? new Settings();
             Snapshot = snapshot ?? new MetricsSnapshot();
             Keys = keys;
             Config = config;
+            _sharedVariables = sharedVariables;
         }
 
         public Settings Settings { get; private set; }
@@ -71,6 +89,7 @@ namespace MirrorpondHUD.Cards
         {
             get
             {
+                if (_sharedVariables != null) return _sharedVariables;
                 if (_variables == null)
                     _variables = Core.Variables.Build(Snapshot, Settings, Keys);
                 return _variables;
@@ -154,6 +173,8 @@ namespace MirrorpondHUD.Cards
         public virtual bool DefaultResident { get { return true; } }
         public virtual string DefaultHotkey { get { return ""; } }
         public virtual int Order { get { return 50; } }
+
+        public virtual int RefreshIntervalMs(CardSettings config) { return 0; }
 
         public abstract string Render(CardRenderContext context);
 

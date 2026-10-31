@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -52,6 +53,9 @@ namespace MirrorpondHUD.Ui
 
             /// <summary>这张卡片拿到的宿主服务（状态目录、请求重画 / 布局）。</summary>
             public CardHost Host;
+
+            /// <summary>上次真正重画的时间；和模块的刷新间隔配合做节流。</summary>
+            public DateTime LastRenderUtc;
         }
 
         /// <summary>
@@ -268,14 +272,6 @@ namespace MirrorpondHUD.Ui
                 });
         }
 
-        /// <summary>
-        /// 每张卡片的窗口需要「外观 + 本卡位置」。这里浅拷贝一份 <see cref="Settings"/>：
-        /// 外观 / CLI / 热键这些大对象共享同一个实例，只有 <see cref="OverlaySettings"/> 单独复制
-        /// （窗口会改自己的 X / Y / 锁定状态，不能互相踩）。
-        ///
-        /// 旧实现在这里对整份配置做 JSON 深拷贝，卡片越多副本越多；而且克隆绕过 Normalize，
-        /// 两份配置容易再次漂移。
-        /// </summary>
         /// <summary>让实现 <see cref="ICardHostAware"/> 的模块拿到这张卡片的宿主服务。</summary>
         void AttachHost(CardSlot slot)
         {
@@ -314,6 +310,14 @@ namespace MirrorpondHUD.Ui
             ScheduleLayout();
         }
 
+        /// <summary>
+        /// 每张卡片的窗口需要「外观 + 本卡位置」。这里浅拷贝一份 <see cref="Settings"/>：
+        /// 外观 / CLI / 热键这些大对象共享同一个实例，只有 <see cref="OverlaySettings"/> 单独复制
+        /// （窗口会改自己的 X / Y / 锁定状态，不能互相踩）。
+        ///
+        /// 旧实现在这里对整份配置做 JSON 深拷贝，卡片越多副本越多；而且克隆绕过 Normalize，
+        /// 两份配置容易再次漂移。
+        /// </summary>
         Settings BuildDialog()
         {
             return new Settings
@@ -387,11 +391,18 @@ namespace MirrorpondHUD.Ui
 
         string RenderCardText(CardSlot slot)
         {
+            return RenderCardText(slot, null);
+        }
+
+        /// <summary>用一帧里已经建好的变量表渲染（<paramref name="sharedVariables"/> 为 null 时自己建一份）。</summary>
+        string RenderCardText(CardSlot slot, IDictionary<string, object> sharedVariables)
+        {
             if (slot == null || slot.Module.IsInteractive) return "";
 
             try
             {
-                return slot.Module.Render(new CardRenderContext(_settings, _last, _keys, slot.Config));
+                return slot.Module.Render(
+                    new CardRenderContext(_settings, _last, _keys, slot.Config, sharedVariables));
             }
             catch (Exception ex)
             {
@@ -438,6 +449,9 @@ namespace MirrorpondHUD.Ui
         void ShowCard(CardSlot slot, string text)
         {
             if (slot == null) return;
+
+            // 刚显示要立刻画一帧，不要等模块的刷新间隔。
+            slot.LastRenderUtc = DateTime.MinValue;
 
             if (slot.Rich != null)
             {
@@ -769,6 +783,9 @@ namespace MirrorpondHUD.Ui
         {
             if (!_overlayVisible) return;
 
+            IDictionary<string, object> shared = null;
+            DateTime now = DateTime.UtcNow;
+
             // 交互卡（命令行）自己管刷新，靠下面循环里的 IsInteractive 跳过；
             // 这里不能再按 _commandMode 整块返回，否则命令行一开，其它常驻卡片的文字就停更了。
             foreach (CardSlot slot in _cards)
@@ -777,11 +794,40 @@ namespace MirrorpondHUD.Ui
                 if (slot.Rich != null) continue;   // 富内容（图片 / 视频）不需要逐帧刷新文字
                 if (ReferenceEquals(slot, _introCard) && _phase != IntroPhase.Live) continue;
 
+                // 模块可以声明「最快多久重画一次」：时钟不必按 8 帧/秒重算模板。
+                int interval = 0;
+                try { interval = slot.Module.RefreshIntervalMs(slot.Config); }
+                catch { interval = 0; }
+
+                if (_hasSnapshot && interval > 0 &&
+                    (now - slot.LastRenderUtc).TotalMilliseconds < interval)
+                    continue;
+
+                if (shared == null) shared = BuildFrameVariables();
+
                 // 首帧采样还没回来时显示占位符，不要把 "0.0%" 这种假数据显示给用户。
-                slot.Window.SetText(_hasSnapshot ? RenderCardText(slot) : RenderPlaceholderText(slot), false);
+                slot.Window.SetText(_hasSnapshot ? RenderCardText(slot, shared) : RenderPlaceholderText(slot), false);
+                slot.LastRenderUtc = now;
             }
 
             LayoutIfNeeded();
+        }
+
+        /// <summary>
+        /// 一帧只建一次变量表：同一帧里所有文字卡片共用，时间 / 采样值完全一致。
+        /// 用只读包装，避免某个模块顺手改写变量串到别的卡片。
+        /// </summary>
+        IDictionary<string, object> BuildFrameVariables()
+        {
+            try
+            {
+                return new ReadOnlyDictionary<string, object>(Variables.Build(_last, _settings, _keys));
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("变量表构建失败: " + ex.Message);
+                return null;
+            }
         }
 
         /// <summary>
@@ -1204,6 +1250,9 @@ namespace MirrorpondHUD.Ui
                     if (slot.Host == null) slot.Host = new CardHost(this, config);
                     else slot.Host.Config = config;
                     AttachHost(slot);
+
+                    // 设置刚变过：下一次渲染立刻生效，别被刷新间隔压住。
+                    slot.LastRenderUtc = DateTime.MinValue;
 
                     // 卡片种类可能没变，但模块能力（拖动 / 拖放）要跟着重新接线。
                     WireInputCapabilities(slot);

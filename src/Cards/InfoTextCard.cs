@@ -47,6 +47,20 @@ namespace MirrorpondHUD.Cards
         public override string DefaultContent { get { return Settings.DefaultMetricsContent; } }
         public override int Order { get { return 0; } }
 
+        /// <summary>
+        /// 按预设决定重画节奏：系统信息跟着采样走（每帧刷），时钟 / 文本每秒一次就够，
+        /// 按键要跟手一点（250 ms）。省下的是模板渲染与字符串构造，不是「卡顿」。
+        /// </summary>
+        public override int RefreshIntervalMs(CardSettings config)
+        {
+            switch (NormalizePreset(config == null ? null : config.Preset))
+            {
+                case "keys": return 250;
+                case "metrics": return 0;
+                default: return 1000;
+            }
+        }
+
         // ==================== 模块自己的设置 / 旧 Kind 迁移 ====================
 
         /// <inheritdoc />

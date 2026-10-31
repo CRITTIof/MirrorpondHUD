@@ -1,4 +1,4 @@
-# 版本修改记录（2.4.1 → 2.7.0）
+# 版本修改记录（2.4.1 → 2.7.1）
 
 > 范围：本文只记录**这一轮接手后我做的版本**（v2.4.1 起）。v2.4.0 及更早是既有历史，不在本文档里。
 > 数据全部取自仓库真实提交（`git diff --shortstat <上一版>..<本版>`），文件行的 `+ / -` 就是实际增删行数。
@@ -21,7 +21,8 @@
 | v2.6.1 | 2026-10-31 | `d3ac63d` | P1-3：旧 Kind 别名与预设归一化下沉到模块，`CardModel` 不再认识 `InfoTextCard` | 10 文件，+146 / −22 |
 | v2.6.2 | 2026-10-31 | `1b138e7` | 媒体卡 / 对话卡设置搬进 `Extras`（schema 6）；模块自带设置区块（`MediaCardSettingsView` / `ChatCardSettingsView`）与摘要 | 19 文件，+347 / −846，另新增 4 个源文件（728 行） |
 | v2.6.3 | 2026-10-31 | `7733b37` | 输入能力拆分（`HandlesOwnDrag`）+ 拖放通道（`ICardDropTarget`），为画板 / 中转站铺路 | 8 文件，+169 / −12 |
-| v2.7.0 | 2026-10-31 | 本次提交 | 阶段 B 收尾：`ICardHost` 宿主服务与 `ICardHostAware` 生命周期；`CardStateStore` 每卡状态存储（原子写 + 路径校验） | 7 文件，+220 / −23，另新增 2 个源文件（165 行） |
+| v2.7.0 | 2026-10-31 | `cba71fd` | 阶段 B 收尾：`ICardHost` 宿主服务与 `ICardHostAware` 生命周期；`CardStateStore` 每卡状态存储（原子写 + 路径校验） | 7 文件，+220 / −23，另新增 2 个源文件（165 行） |
+| v2.7.1 | 2026-10-31 | 本次提交 | P0-5：一帧一份共享变量表 + 模块声明刷新间隔（时钟 1 s / 按键 250 ms / 系统信息每帧） | 9 文件，+194 / −32 |
 
 ---
 
@@ -516,7 +517,49 @@ v2.6.0 只把**命令行卡**的设置搬进了 `CardSettings.Extras`，媒体�
 
 ---
 
-## 12. 不在版本里的东西
+## 12. v2.7.1（本次提交，未打标签）
+
+### 背景
+
+评审 P0-5：`RenderNow` 每 120 ms 遍历所有文字卡片，每张卡各建一份 48 键变量表（含 `DateTime.Now`、`GetTickCount64`），
+同帧内各卡片的时间还可能差一秒；而时钟这种每秒才变一次的卡片也在按 8 帧/秒重算模板。
+
+### 改动
+
+1. **一帧一份变量表**：`RenderNow` 里按需构建一次 `Variables.Build(...)`，用 `ReadOnlyDictionary` 包一层，
+   通过新的 `CardRenderContext(..., sharedVariables)` 构造重载传给每张卡片。
+   这样同帧所有卡片的 `{time}` / `{uptime}` 完全一致，也省掉重复的字典构建与字符串格式化。
+2. **模块声明刷新节奏**：`ICardModule.RefreshIntervalMs(CardSettings)`（默认 0 = 每帧）。
+   `InfoTextCard` 按预设给出：系统信息 0（跟着采样走）、按键 250 ms、时钟 / 文本 1000 ms。
+   宿主用 `CardSlot.LastRenderUtc` 做节流；卡片刚显示、设置刚应用时重置，保证立刻画一帧。
+3. **只读约束**：共享变量表是只读包装，模块顺手改写会抛异常而不是串到别的卡片（接口注释里也写明按只读对待）。
+4. **自检**：新增「渲染节流=OK」（共享字典实例被复用 + 三个预设的间隔符合预期）。
+
+### 说明
+
+- 节流只作用于**文字卡片**；富内容（图片 / 视频 / CLI 面板）本来就跳过逐帧刷新。
+- 系统信息卡的间隔保持 0：采样间隔可由用户调到 100 ms，固定节流会让数字看起来"卡住"。
+
+### 文件
+
+| 文件 | 行数 | 说明 |
+|---|---|---|
+| `src/Cards/CardModule.cs` | 共享变量表构造重载 + `RefreshIntervalMs` 契约与默认实现 |
+| `src/Cards/InfoTextCard.cs` | 按预设声明刷新间隔 |
+| `src/Ui/OverlayController.cs` | 每帧建一次变量表、节流、只读包装、显示/应用时重置时间戳 |
+| `src/SelfTest.cs` | 渲染节流用例 |
+| `MirrorpondHUD.csproj` / `README.md` | 版本号与文档区间 |
+
+### 实测
+
+- `dotnet build -c Release`：0 警告 0 错误。
+- `--selftest`：**失败项 0**（`渲染节流=OK`）。
+- `--smoke 5 --smoke-visible`：退出码 0，5 张卡片正常创建与刷新。
+- 未做量化性能测量：收益主要在「少建 N−1 份变量表 + 时钟卡降频」，这两个都是代码级结论。
+
+---
+
+## 13. 不在版本里的东西
 
 - 验收脚本、样张与测量脚本（`cmd-e2e.ps1`、`drag-glass.ps1`、`measure-*.py`、`shots/` 等）都在仓库外的 `hud-test/` 里，**没有提交**。
 - 发布：`main` 与标签已推送到 [github.com/CRITTIof/MirrorpondHUD](https://github.com/CRITTIof/MirrorpondHUD)；
@@ -525,7 +568,7 @@ v2.6.0 只把**命令行卡**的设置搬进了 `CardSettings.Extras`，媒体�
   v2.4.0 的 Release 已删除（tag `v2.4.0` 保留，历史仍可检出）。
 - 仓库追踪的文件共 89 个，`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
 
-## 13. 已知代价（跨版本）
+## 14. 已知代价（跨版本）
 
 - 桌面亚克力为了不拍到自己，会把卡片排除在截屏之外 —— 这个模式下截图 / 录屏里**看不到卡片**，观感只能靠肉眼与离屏渲染验证。
 - 兼容实现每帧对身后窗口做 `PrintWindow`，拖动时最多 ~21 帧/秒；要更高只能走桌面亚克力（DXGI）。

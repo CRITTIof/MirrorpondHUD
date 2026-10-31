@@ -212,6 +212,7 @@ namespace MirrorpondHUD
             bool chatHotkeyOk = false;
             bool settingsEditorOk = false;
             bool stateStoreOk = false;
+            bool renderOk = false;
 
             try
             {
@@ -565,13 +566,41 @@ namespace MirrorpondHUD
                 Log.Error("卡片状态存储自检异常", ex);
             }
 
+            try
+            {
+                // P0-5：一帧一份变量表（同一个字典实例被复用）+ 模块自己声明刷新节奏
+                var shared = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+                {
+                    { "time", "12:34:56" },
+                    { "cpu", 1.0 }
+                };
+
+                var context = new CardRenderContext(new Settings(), Screenshots.DemoSnapshot(), null,
+                                                    new CardSettings { Kind = "infotext", Preset = "clock", Content = "{time}" },
+                                                    shared);
+
+                bool sharedUsed = ReferenceEquals(context.Variables, shared)
+                               && context.Render("{time}") == "12:34:56";
+
+                ICardModule infotext = CardRegistry.Get("infotext");
+                bool cadenceOk = infotext.RefreshIntervalMs(new CardSettings { Kind = "infotext", Preset = "clock" }) == 1000
+                              && infotext.RefreshIntervalMs(new CardSettings { Kind = "infotext", Preset = "keys" }) == 250
+                              && infotext.RefreshIntervalMs(new CardSettings { Kind = "infotext", Preset = "metrics" }) == 0;
+
+                renderOk = sharedUsed && cadenceOk;
+            }
+            catch (Exception ex)
+            {
+                Log.Error("渲染上下文自检异常", ex);
+            }
+
             if (!(templateOk && unknownOk && collapseOk && thresholdOk && configOk && cardOk &&
                   keyNameOk && keyLimitOk && keyOverflowOk &&
                   commandOk && truncateOk && toolLabelOk && secretOk && chatHotkeyOk && settingsEditorOk &&
-                  stateStoreOk)) failures++;
+                  stateStoreOk && renderOk)) failures++;
 
             Fix(sb, "逻辑自检", string.Format(
-                "模板={0} 未知占位符={1} 折叠={2} 阈值内展开={3} 配置读写={4} 卡片模块={11} 键名={5} 按键长度={6} 超长截断={7} 命令行={8} 行截断={9} 工具名={10} Key加密={12} 对话热键={13} 卡片设置={14} 状态存储={15}",
+                "模板={0} 未知占位符={1} 折叠={2} 阈值内展开={3} 配置读写={4} 卡片模块={11} 键名={5} 按键长度={6} 超长截断={7} 命令行={8} 行截断={9} 工具名={10} Key加密={12} 对话热键={13} 卡片设置={14} 状态存储={15} 渲染节流={16}",
                 templateOk ? "OK" : "FAIL",
                 unknownOk ? "OK" : "FAIL",
                 collapseOk ? "OK" : "FAIL",
@@ -587,7 +616,8 @@ namespace MirrorpondHUD
                 secretOk ? "OK" : "FAIL",
                 chatHotkeyOk ? "OK" : "FAIL",
                 settingsEditorOk ? "OK" : "FAIL",
-                stateStoreOk ? "OK" : "FAIL"));
+                stateStoreOk ? "OK" : "FAIL",
+                renderOk ? "OK" : "FAIL"));
         }
 
         static bool RegisterIfSet(HotkeyManager hotkeys, string action, string combination)
