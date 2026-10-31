@@ -195,6 +195,7 @@ namespace MirrorpondHUD.Ui.Controls
 
         void StartSpin()
         {
+            if (_busy) return;
             _busy = true;
             _frame = 0;
             _icon.Text = Spin[0];

@@ -5,6 +5,7 @@ using System.IO;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using MirrorpondHUD.Core;
 using MirrorpondHUD.Ui;
@@ -15,9 +16,10 @@ namespace MirrorpondHUD.Cards
     /// <summary>
     /// 文件中转站：把文件从资源管理器拖进卡片，暂存成列表，之后打开 / 定位 / 复制路径 / 移除。
     ///
-    /// 两种模式：
+    /// 三种模式：
     /// - 引用（默认）：只记录路径，不动文件；
-    /// - 复制：把文件收进「接收目录」，重名自动改成 <c>名字 (2).扩展名</c>，复制在后台串行执行。
+    /// - 复制：把文件收进「接收目录」，重名自动改成 <c>名字 (2).扩展名</c>，复制在后台串行执行；
+    /// - 移动：先复制到接收目录，成功后再删除源文件（跨盘也走复制 + 删除）。
     ///
     /// 列表持久化在每卡状态目录的 <c>items.json</c>，不塞进 settings.json。
     /// </summary>
@@ -64,7 +66,7 @@ namespace MirrorpondHUD.Cards
         public string Validate(CardSettings config)
         {
             StationSettings station = StationOf(config);
-            if (station.Mode != "Copy") return null;
+            if (station.Mode == "Reference") return null;
 
             if (string.IsNullOrWhiteSpace(station.Directory)) return "还没选接收目录。";
 
@@ -82,12 +84,13 @@ namespace MirrorpondHUD.Cards
         public string Summary(CardSettings config)
         {
             StationSettings station = StationOf(config);
-            if (station.Mode != "Copy") return "引用";
+            if (station.Mode == "Reference") return "引用";
 
             string directory = (station.Directory ?? "").Trim();
-            if (directory.Length == 0) return "收纳 · 未选目录";
-            try { return "收纳 · " + Path.GetFileName(directory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)); }
-            catch { return "收纳"; }
+            string prefix = station.Mode == "Move" ? "移动" : "收纳";
+            if (directory.Length == 0) return prefix + " · 未选目录";
+            try { return prefix + " · " + Path.GetFileName(directory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)); }
+            catch { return prefix; }
         }
 
         public void ApplyStyle(FrameworkElement content, CardRenderContext context)
@@ -131,10 +134,10 @@ namespace MirrorpondHUD.Cards
     /// <summary>中转站的设置（住在 CardSettings.Extras）。</summary>
     public sealed class StationSettings
     {
-        /// <summary>Reference = 只记路径；Copy = 收进接收目录。</summary>
+        /// <summary>Reference = 只记路径；Copy = 收进接收目录；Move = 复制成功后删除源文件。</summary>
         public string Mode = "Reference";
 
-        /// <summary>接收目录（Copy 模式必填）。</summary>
+        /// <summary>接收目录（Copy / Move 模式必填）。</summary>
         public string Directory = "";
 
         /// <summary>列表最多保留多少条（超出从最旧开始丢列表项，不删文件）。</summary>
@@ -144,7 +147,11 @@ namespace MirrorpondHUD.Cards
 
         public void Normalize()
         {
-            Mode = string.Equals((Mode ?? "").Trim(), "Copy", StringComparison.OrdinalIgnoreCase) ? "Copy" : "Reference";
+            string mode = (Mode ?? "").Trim();
+            if (string.Equals(mode, "Copy", StringComparison.OrdinalIgnoreCase)) Mode = "Copy";
+            else if (string.Equals(mode, "Move", StringComparison.OrdinalIgnoreCase)) Mode = "Move";
+            else Mode = "Reference";
+
             Directory = (Directory ?? "").Trim();
             MaxEntries = (int)Settings.Clamp(MaxEntries, 1, 500);
         }
@@ -195,6 +202,7 @@ namespace MirrorpondHUD.Cards
         readonly CardHeader _header;
         readonly CardButton _openDirectory;
         readonly CardButton _clear;
+        readonly CardButton _cancelCopy;
         readonly CardList _list;
         readonly CardStatus _status;
         readonly CardDropOverlay _dropOverlay;
@@ -204,6 +212,12 @@ namespace MirrorpondHUD.Cards
         Color _foreground = Color.FromRgb(0xE6, 0xED, 0xF3);
         int _copyTotal;
         int _copyDone;
+        string _activeName;
+        double _activePercent;
+        double _activeSpeed;
+        bool _cancelRequested;
+        StationItem _dragItem;
+        Point _dragOrigin;
 
         public StationView(Settings settings, CardSettings config, ICardHost host)
         {
@@ -216,8 +230,9 @@ namespace MirrorpondHUD.Cards
             RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-            _header = new CardHeader("文件中转站") { Margin = new Thickness(0, 0, 0, 6) };
+            _header = new CardHeader("文件中转站") { Margin = new Thickness(0, 0, 0, 8) };
             _openDirectory = _header.Actions.Add("打开目录", OpenDirectory, CardButtonTone.Normal, "在资源管理器中打开接收目录");
+            _header.Actions.Add("粘贴", PasteFromClipboard, CardButtonTone.Normal, "从剪贴板添加文件");
             _clear = _header.Actions.Add("清空", ClearAll, CardButtonTone.Normal, "清空列表（不删除文件）");
             Children.Add(_header);
 
@@ -229,6 +244,10 @@ namespace MirrorpondHUD.Cards
             _list.SetEmptyText("把文件拖进来");
             _list.ItemActivated += row => OpenItem(ItemOf(row));
             _list.Inner.ContextMenu = BuildMenu();
+            _list.Inner.PreviewMouseLeftButtonDown += OnRowMouseDown;
+            _list.Inner.PreviewMouseMove += OnRowMouseMove;
+            _list.Inner.PreviewMouseLeftButtonUp += (s, e) => _dragItem = null;
+            _list.Inner.PreviewMouseRightButtonDown += OnRowRightButtonDown;
 
             _dropOverlay = new CardDropOverlay();
 
@@ -239,8 +258,25 @@ namespace MirrorpondHUD.Cards
             Children.Add(body);
 
             _status = new CardStatus { Margin = new Thickness(0, 4, 0, 0) };
-            SetRow(_status, 2);
-            Children.Add(_status);
+
+            var statusRow = new Grid();
+            statusRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            statusRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            statusRow.Children.Add(_status);
+
+            _cancelCopy = new CardButton("取消", CardButtonTone.Normal)
+            {
+                Margin = new Thickness(8, 6, 0, 0),
+                VerticalAlignment = VerticalAlignment.Top,
+                Visibility = Visibility.Collapsed
+            };
+            _cancelCopy.ToolTip = "取消排队和进行中的收纳";
+            _cancelCopy.Click += (s, e) => CancelCopies();
+            Grid.SetColumn(_cancelCopy, 1);
+            statusRow.Children.Add(_cancelCopy);
+
+            SetRow(statusRow, 2);
+            Children.Add(statusRow);
 
             ApplyStyle(_settings);
             Load();
@@ -259,6 +295,7 @@ namespace MirrorpondHUD.Cards
             _header.ApplyStyle(_settings.Style, _settings.Overlay.CornerRadius);
             _list.ApplyStyle(_settings.Style, cli);
             _status.ApplyStyle(_settings.Style);
+            _cancelCopy.ApplyStyle(_settings.Style, _settings.Overlay.CornerRadius);
             _dropOverlay.ApplyStyle(_settings.Style, _settings.Overlay.CornerRadius);
             _list.SetEmptyText(EmptyText());
             _list.MaxHeight = Math.Max(140, cli.MaxHeight - 70);
@@ -267,6 +304,15 @@ namespace MirrorpondHUD.Cards
 
         /// <summary>自检用：当前列表条数。</summary>
         internal int ItemCountForTest { get { return _items.Count; } }
+
+        /// <summary>自检用：复制 / 移动队列是否还在跑。</summary>
+        internal bool CopyBusyForTest { get { return _copyTotal > 0 && _copyDone < _copyTotal; } }
+
+        /// <summary>自检用：第一条已收纳文件的目标路径（没有则为 null）。</summary>
+        internal string FirstStoredPathForTest
+        {
+            get { return _items.Count == 0 ? null : _items[0].StoredPath; }
+        }
 
         public void ShowDropHint(bool over, int count)
         {
@@ -281,12 +327,32 @@ namespace MirrorpondHUD.Cards
         public void HandleDrop(string[] paths)
         {
             _dropOverlay.Hide();
-            if (paths == null || paths.Length == 0) return;
+            AddPaths(paths);
+        }
 
-            if (_station.Mode == "Copy" && string.IsNullOrWhiteSpace(_station.Directory))
+        /// <summary>从剪贴板取文件列表；没有文件时给出提示，不弹对话框。</summary>
+        void PasteFromClipboard()
+        {
+            string[] paths;
+            if (!ClipboardService.TryGetFiles(out paths) || paths == null || paths.Length == 0)
+            {
+                SetStatus("剪贴板里没有文件。", CardStatusKind.Warning);
+                return;
+            }
+
+            int added = AddPaths(paths);
+            if (added == 0) SetStatus("剪贴板里没有可添加的文件。", CardStatusKind.Normal);
+        }
+
+        /// <summary>拖入 / 粘贴共用：归一化路径、去重、按模式加进列表或排队收纳。返回新增条数。</summary>
+        int AddPaths(string[] paths)
+        {
+            if (paths == null || paths.Length == 0) return 0;
+
+            if (_station.Mode != "Reference" && string.IsNullOrWhiteSpace(_station.Directory))
             {
                 SetStatus("先到设置里选接收目录。", CardStatusKind.Error);
-                return;
+                return 0;
             }
 
             int added = 0;
@@ -321,6 +387,12 @@ namespace MirrorpondHUD.Cards
                 }
                 else
                 {
+                    if (!File.Exists(source))
+                    {
+                        SetStatus("文件不存在：" + Path.GetFileName(source), CardStatusKind.Error);
+                        continue;
+                    }
+
                     var item = new StationItem
                     {
                         Id = NewId(),
@@ -334,12 +406,14 @@ namespace MirrorpondHUD.Cards
                 }
             }
 
-            if (added == 0) return;
+            if (added == 0) return 0;
 
             Trim();
             Persist();
             Rebuild();
-            SetStatus(added + " 个文件已加入", CardStatusKind.Success);
+            if (_station.Mode == "Reference") SetStatus(added + " 个文件已加入", CardStatusKind.Success);
+            else RefreshCopyStatus();
+            return added;
         }
 
         // ==================== 列表 ====================
@@ -412,6 +486,85 @@ namespace MirrorpondHUD.Cards
             return element == null ? null : element.Tag as StationItem;
         }
 
+        ListBoxItem ContainerAt(Point point)
+        {
+            DependencyObject hit = _list.Inner.InputHitTest(point) as DependencyObject;
+            while (hit != null && !(hit is ListBoxItem))
+                hit = VisualTreeHelper.GetParent(hit);
+            return hit as ListBoxItem;
+        }
+
+        StationItem ItemAt(Point point, out FrameworkElement row)
+        {
+            row = null;
+            ListBoxItem container = ContainerAt(point);
+            if (container == null) return null;
+
+            row = container.Content as FrameworkElement;
+            return ItemOf(row);
+        }
+
+        /// <summary>
+        /// 行内左键按下：手动选中并标记 Handled。整卡拖动在窗口的冒泡处理里，
+        /// Preview 阶段吃掉左键后，从行上开始拖动就不会把整张卡片拖走。
+        /// </summary>
+        void OnRowMouseDown(object sender, MouseButtonEventArgs e)
+        {
+            if (e.ChangedButton != MouseButton.Left) return;
+
+            Point point = e.GetPosition(_list.Inner);
+            FrameworkElement row;
+            StationItem item = ItemAt(point, out row);
+            if (item == null) { _dragItem = null; return; }
+
+            _list.Inner.SelectedItem = row;
+            _list.Inner.Focus();
+            _dragOrigin = point;
+            _dragItem = File.Exists(item.DisplayPath) ? item : null;
+            e.Handled = true;
+
+            // 行内按下已被吃掉，CardList 的 MouseDoubleClick 不会再触发；
+            // 这里按 ClickCount 自己处理双击打开，避免和拖出阈值冲突。
+            if (e.ClickCount > 1)
+            {
+                _dragItem = null;
+                OpenItem(item);
+            }
+        }
+
+        /// <summary>行内移动超过阈值才拖出；只允许 Copy，拖完不移除列表项。</summary>
+        void OnRowMouseMove(object sender, MouseEventArgs e)
+        {
+            if (_dragItem == null || e.LeftButton != MouseButtonState.Pressed) return;
+
+            Point point = e.GetPosition(_list.Inner);
+            if (!DragSource.ShouldStart(_dragOrigin, point)) return;
+
+            StationItem item = _dragItem;
+            _dragItem = null;
+
+            string path = item.DisplayPath;
+            if (!File.Exists(path))
+            {
+                SetStatus("文件已不存在：" + path, CardStatusKind.Error);
+                return;
+            }
+
+            e.Handled = true;
+            DragDropEffects effect = DragSource.BeginFiles(_list, new[] { path }, DragDropEffects.Copy);
+            if (effect == DragDropEffects.None)
+                SetStatus("拖出已取消", CardStatusKind.Normal);
+            else
+                SetStatus("已拖出：" + (string.IsNullOrEmpty(item.Name) ? Path.GetFileName(path) : item.Name),
+                          CardStatusKind.Success);
+        }
+
+        void OnRowRightButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            FrameworkElement row;
+            if (ItemAt(e.GetPosition(_list.Inner), out row) != null) _list.Inner.SelectedItem = row;
+        }
+
         StationItem Selected()
         {
             return ItemOf(_list.SelectedItem);
@@ -443,6 +596,12 @@ namespace MirrorpondHUD.Cards
             delete.Click += (s, e) => DeleteStoredFile(Selected());
             menu.Items.Add(delete);
 
+            menu.Items.Add(new Separator());
+
+            var missing = new MenuItem { Header = "移除丢失项" };
+            missing.Click += (s, e) => RemoveMissing();
+            menu.Items.Add(missing);
+
             menu.Opened += (s, e) =>
             {
                 StationItem item = Selected();
@@ -453,12 +612,39 @@ namespace MirrorpondHUD.Cards
                 reveal.IsEnabled = item != null;
                 copy.IsEnabled = item != null;
                 remove.IsEnabled = item != null;
+
+                int missingCount = 0;
+                foreach (StationItem candidate in _items)
+                    if (candidate.Missing || !File.Exists(candidate.DisplayPath)) missingCount++;
+                missing.Header = missingCount == 0 ? "移除丢失项" : "移除 " + missingCount + " 个丢失项";
+                missing.IsEnabled = missingCount > 0;
             };
 
             return menu;
         }
 
         // ==================== 操作 ====================
+
+        internal void RemoveMissing()
+        {
+            int before = _items.Count;
+            for (int i = _items.Count - 1; i >= 0; i--)
+            {
+                StationItem item = _items[i];
+                if (item.Missing || !File.Exists(item.DisplayPath)) _items.RemoveAt(i);
+            }
+
+            int removed = before - _items.Count;
+            if (removed == 0)
+            {
+                SetStatus("没有丢失的文件。", CardStatusKind.Normal);
+                return;
+            }
+
+            Persist();
+            Rebuild();
+            SetStatus("已移除 " + removed + " 个丢失项", CardStatusKind.Success);
+        }
 
         void OpenItem(StationItem item)
         {
@@ -568,7 +754,7 @@ namespace MirrorpondHUD.Cards
             }
         }
 
-        // ==================== 复制 ====================
+        // ==================== 复制 / 移动 ====================
 
         void EnqueueCopy(StationItem item)
         {
@@ -578,13 +764,29 @@ namespace MirrorpondHUD.Cards
             string target = null;
 
             _copyTotal++;
-            SetStatus("正在收纳 " + _copyDone + "/" + _copyTotal + "…", CardStatusKind.Busy);
-            _status.SetProgress(_copyTotal == 0 ? 0 : (double)_copyDone / _copyTotal);
+            _cancelRequested = false;
+            _cancelCopy.Visibility = Visibility.Visible;
+            _cancelCopy.IsEnabled = true;
+            RefreshCopyStatus();
 
             CardJob job = _jobs.Enqueue(fileName, (token, progress) =>
             {
                 Directory.CreateDirectory(directory);
                 target = UniqueTarget(directory, fileName);
+
+                long total = SafeSize(source);
+                long copied = 0;
+                var watch = Stopwatch.StartNew();
+                DateTime lastReport = DateTime.MinValue;
+
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    if (_cancelRequested || _copyDone >= _copyTotal) return;
+                    _activeName = fileName;
+                    _activePercent = 0;
+                    _activeSpeed = 0;
+                    RefreshCopyStatus();
+                }));
 
                 try
                 {
@@ -597,6 +799,21 @@ namespace MirrorpondHUD.Cards
                         {
                             token.ThrowIfCancellationRequested();
                             output.Write(buffer, 0, read);
+                            copied += read;
+
+                            double ratio = total > 0 ? Math.Min(1.0, (double)copied / total) : 1.0;
+                            progress.Report(ratio);
+
+                            DateTime now = DateTime.UtcNow;
+                            if ((now - lastReport).TotalMilliseconds < 120) continue;
+                            lastReport = now;
+
+                            double speed = watch.Elapsed.TotalSeconds > 0
+                                ? copied / (1024.0 * 1024.0) / watch.Elapsed.TotalSeconds
+                                : 0;
+                            double uiRatio = ratio;
+                            double uiSpeed = speed;
+                            Dispatcher.BeginInvoke(new Action(() => UpdateActiveCopy(fileName, uiRatio, uiSpeed)));
                         }
                     }
                 }
@@ -620,6 +837,9 @@ namespace MirrorpondHUD.Cards
         void CompleteCopy(StationItem item, CardJob job, string target)
         {
             _copyDone++;
+            _activeName = null;
+            _activePercent = 0;
+            _activeSpeed = 0;
 
             if (job.State == CardJobState.Succeeded && !string.IsNullOrEmpty(target))
             {
@@ -627,7 +847,24 @@ namespace MirrorpondHUD.Cards
                 item.Name = Path.GetFileName(target);
                 item.Size = SafeSize(target);
                 item.Missing = false;
-                SetStatus("已收纳 " + item.Name, CardStatusKind.Success);
+
+                if (_station.Mode == "Move")
+                {
+                    try
+                    {
+                        File.Delete(item.Path);
+                        SetStatus("已移动 " + item.Name, CardStatusKind.Success);
+                    }
+                    catch (Exception ex)
+                    {
+                        // 复制已经成功，目标文件保留；源文件删不掉只提示，不回滚目标。
+                        SetStatus("已收纳，但删除源文件失败：" + ex.Message, CardStatusKind.Warning);
+                    }
+                }
+                else
+                {
+                    SetStatus("已收纳 " + item.Name, CardStatusKind.Success);
+                }
             }
             else if (job.State == CardJobState.Failed)
             {
@@ -642,24 +879,82 @@ namespace MirrorpondHUD.Cards
 
             Persist();
             Rebuild();
-            UpdateCopyProgress();
+
+            if (_copyDone >= _copyTotal)
+            {
+                _copyTotal = 0;
+                _copyDone = 0;
+                _cancelRequested = false;
+            }
+
+            RefreshCopyStatus();
         }
 
-        void UpdateCopyProgress()
+        internal void CancelCopies()
         {
-            if (_copyDone < _copyTotal)
-            {
-                SetStatus("正在收纳 " + _copyDone + "/" + _copyTotal + "…", CardStatusKind.Busy);
-                _status.SetProgress(_copyTotal == 0 ? 0 : (double)_copyDone / _copyTotal);
-            }
-            else
+            if (_copyTotal == 0 || _copyDone >= _copyTotal) return;
+
+            _cancelRequested = true;
+            _cancelCopy.IsEnabled = false;
+            _jobs.CancelAll();
+            RefreshCopyStatus();
+        }
+
+        void UpdateActiveCopy(string name, double percent, double speed)
+        {
+            if (_cancelRequested || _copyTotal == 0 || _copyDone >= _copyTotal) return;
+
+            _activeName = name;
+            _activePercent = Math.Max(0, Math.Min(1, percent));
+            _activeSpeed = Math.Max(0, speed);
+            RefreshCopyStatus();
+        }
+
+        /// <summary>复制期间的状态行：当前文件 + 百分比 + 速度；取消中显示进度；结束后清掉进度条。</summary>
+        void RefreshCopyStatus()
+        {
+            bool busy = _copyTotal > 0 && _copyDone < _copyTotal;
+            _cancelCopy.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
+            if (!busy)
             {
                 _status.SetBusy(false);
                 _status.SetProgress(null);
+                return;
             }
+
+            if (_cancelRequested)
+            {
+                _status.SetText("正在取消收纳 " + _copyDone + "/" + _copyTotal + "…", CardStatusKind.Busy);
+                _status.SetProgress(_copyTotal == 0 ? 0 : (double)_copyDone / _copyTotal);
+                return;
+            }
+
+            int current = Math.Min(_copyTotal, _copyDone + 1);
+            string text = "正在收纳 " + current + "/" + _copyTotal;
+            if (!string.IsNullOrEmpty(_activeName))
+            {
+                text += " · " + _activeName;
+                if (_activePercent > 0) text += " " + (int)Math.Round(_activePercent * 100) + "%";
+                if (_activeSpeed > 0) text += " · " + FormatSpeed(_activeSpeed);
+            }
+            else
+            {
+                text += "…";
+            }
+
+            _status.SetText(text, CardStatusKind.Busy);
+            _status.SetProgress(string.IsNullOrEmpty(_activeName)
+                ? (_copyTotal == 0 ? 0 : (double)_copyDone / _copyTotal)
+                : _activePercent);
         }
 
-        static string UniqueTarget(string directory, string fileName)
+        static string FormatSpeed(double mbPerSecond)
+        {
+            if (mbPerSecond >= 1) return mbPerSecond.ToString("0.0") + " MB/s";
+            return (mbPerSecond * 1024).ToString("0") + " KB/s";
+        }
+
+        internal static string UniqueTarget(string directory, string fileName)
         {
             string baseName = Path.GetFileNameWithoutExtension(fileName);
             string extension = Path.GetExtension(fileName);
@@ -727,7 +1022,7 @@ namespace MirrorpondHUD.Cards
         void UpdateHeader()
         {
             _header.Badge = _items.Count + " 个文件";
-            bool canOpen = _station.Mode == "Copy" && !string.IsNullOrWhiteSpace(_station.Directory);
+            bool canOpen = _station.Mode != "Reference" && !string.IsNullOrWhiteSpace(_station.Directory);
             _openDirectory.Visibility = canOpen ? Visibility.Visible : Visibility.Collapsed;
             _openDirectory.IsEnabled = canOpen;
             _clear.IsEnabled = _items.Count > 0;
@@ -735,8 +1030,10 @@ namespace MirrorpondHUD.Cards
 
         string EmptyText()
         {
-            if (_station.Mode == "Copy" && !string.IsNullOrWhiteSpace(_station.Directory))
-                return "把文件拖进来，收纳到 " + _station.Directory;
+            if (_station.Mode != "Reference" && !string.IsNullOrWhiteSpace(_station.Directory))
+                return _station.Mode == "Move"
+                    ? "把文件拖进来，移动到 " + _station.Directory
+                    : "把文件拖进来，收纳到 " + _station.Directory;
 
             return "把文件拖进来（只记录路径，不移动文件）";
         }
@@ -830,10 +1127,11 @@ namespace MirrorpondHUD.Cards
 
             var modeRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
             modeRow.Children.Add(new TextBlock { Text = "收纳方式", Width = 90, VerticalAlignment = VerticalAlignment.Center });
-            _mode = new ComboBox { Width = 220 };
+            _mode = new ComboBox { Width = 320 };
             _mode.Items.Add(new ComboBoxItem { Content = "引用（只记录路径，不动文件）" });
             _mode.Items.Add(new ComboBoxItem { Content = "复制到接收目录" });
-            _mode.SelectedIndex = station.Mode == "Copy" ? 1 : 0;
+            _mode.Items.Add(new ComboBoxItem { Content = "移动到接收目录（先复制，成功后删源）" });
+            _mode.SelectedIndex = station.Mode == "Copy" ? 1 : station.Mode == "Move" ? 2 : 0;
             _mode.SelectionChanged += (s, e) => Commit();
             modeRow.Children.Add(_mode);
             Children.Add(modeRow);
@@ -888,7 +1186,7 @@ namespace MirrorpondHUD.Cards
         {
             StationSettings station = DropStationCard.StationOf(_config);
 
-            station.Mode = _mode.SelectedIndex == 1 ? "Copy" : "Reference";
+            station.Mode = _mode.SelectedIndex == 1 ? "Copy" : _mode.SelectedIndex == 2 ? "Move" : "Reference";
             station.Directory = _directory.Text;
             station.MaxEntries = ParseInt(_maxEntries.Text, station.MaxEntries);
             station.Normalize();
@@ -902,7 +1200,7 @@ namespace MirrorpondHUD.Cards
 
         void UpdateEnabled(string mode)
         {
-            bool copy = string.Equals(mode, "Copy", StringComparison.OrdinalIgnoreCase);
+            bool copy = !string.Equals(mode, "Reference", StringComparison.OrdinalIgnoreCase);
             _directory.IsEnabled = copy;
             _browse.IsEnabled = copy;
         }

@@ -239,6 +239,10 @@ public sealed class DropStationCard : RichCardModuleBase,
 **先做 30 分钟 spike**：在现有按钮卡上试“行内 `Handled` 能否阻止整卡拖动”。能 → 不用 `HandlesOwnDrag`；
 不能 → M1 不做拖出，M2 再看是否给 `HandlesOwnDrag` 加“拖动手柄区域”的细化。
 
+**v2.12.0 已按前者落地**：行内 `PreviewMouseLeftButtonDown` 手动选中并标记 `Handled`，窗口的整卡拖动
+（冒泡阶段）不会启动；行内移动超过 6 px 调 `DoDragDrop`。从标题栏 / 列表空白处仍可拖动整张卡片。
+双击打开改用 `ClickCount` 自己处理，右键先选中命中行。
+
 ### 7.3 拖放效果只有 Copy
 
 `ICardDropTarget.CanDrop` 返回 `bool`，宿主把 `DragOver.Effects` 固定为 `Copy`（或 `None`）。
@@ -333,20 +337,38 @@ M2 如果要在 UI 上尊重 Shift / Ctrl，需要把接口扩成 `DragDropEffec
 - 拖放接线：`OverlayController.WireInputCapabilities`、`OverlayWindow.EnableDrop`
 - 颜色 / 主题：[theme-rewrite-prerequisites.md](theme-rewrite-prerequisites.md)
 
-## 14. 实现状态（v2.11.0，M1；v2.11.1 视觉修订）
+## 14. 实现状态（v2.12.0，M2）
 
-已落地：
+### M1（v2.11.0）
 
 - `src/Cards/DropStationCard.cs`：模块 + `StationSettings` + `StationView` + `StationEditor`，单文件；
-- 两种模式：**引用**（默认，只记路径）与**复制**（写入接收目录，重名自动 `名字 (2).扩展名`）；
-- 拖入：`ICardDropTarget` + `ICardDropFeedback`，拖入时显示 `CardDropOverlay`；
-- 列表：`CardList`（图标 / 名称 / 大小、丢失标记、双击打开、右键菜单）；
-- 操作：打开 / 在资源管理器中显示 / 复制路径 / 从列表移除 / 删除接收目录内的文件（二次确认）；
+- 引用 / 复制两种模式；拖入、列表、双击打开、定位、移除、清空；
+- 列表：`CardList`（图标 / 名称 / 大小、丢失标记、右键菜单）；
 - 持久化：每卡 `items.json`（`ICardHost` / `CardStateStore`），启动时标记丢失文件，超出上限丢最旧列表项；
 - 复制：`CardJobQueue` 串行后台执行，失败 / 取消会删除写了一半的目标文件；
 - 设置：模式 / 接收目录 / 最多保留；`Validate` 拦住「复制但没有目录」；
 - 自检：模块能力、设置归一化 / 校验、拖放判定、临时文件拖入 / 去重 / 缺失拒绝；
   `--screenshot-widgets` 会同时渲染中转站的空状态。
+
+### M2（v2.12.0）
+
+- **拖出**：行内左键在 Preview 阶段接管并手动选中，移动超过 6 px 后 `DoDragDrop`（只允许 Copy）；
+  行内事件被吃掉后整卡拖动不会抢事件，从标题栏 / 列表空白处仍可拖整卡；拖出不移除列表项。
+- **剪贴板**：标题行「粘贴」通过 `ClipboardService.TryGetFiles` 读取资源管理器复制的文件；无文件只提示。
+- **复制进度 / 取消 / 速度**：状态行显示 `当前/总数 · 文件名 百分比 · 速度`，取消按钮取消排队与进行中任务；
+  失败 / 取消删除半成品，源文件保留。
+- **移动**：先复制到接收目录，成功后再删除源文件；跨盘一致走复制 + 删除，保证进度与取消；
+  源文件删除失败时保留目标文件并给出警告，不回滚。
+- **丢失清理**：右键「移除 N 个丢失项」，只清列表，不删文件。
+- **外观**：`CardButton` 内边距 12×6、最小高度 28，`CardList` 行内边距 8×6，标题行下边距 8，
+  和 AI 对话小面板的 8 / 6 留白一致。
+- **自检**：设置归一化 / 校验、移动摘要、冲突命名、真实 Copy / Move 临时文件、丢失清理。
+
+### 还没做
+
+- 文件夹递归收纳、缩略图、自动清理、搜索 / 过滤、多选、复制队列持久化；
+- 拖放时按 Shift / Ctrl 显示 Move / Copy（宿主契约仍只回 Copy）；
+- 复制过程中对单条 pending 项执行删除 / 清空时，后台任务与列表的一致性还需收口。
 - v2.11.1：标题行按钮改成细描边幽灵样式；`清空` 改为普通语气，列表为空时禁用。
 
 尚未做（对应本文的 M2 / M3）：

@@ -172,7 +172,7 @@ namespace MirrorpondHUD.Ui.Controls
             var style = new Style(typeof(ListBoxItem));
             style.Setters.Add(new Setter(Control.BackgroundProperty, Brushes.Transparent));
             style.Setters.Add(new Setter(Control.BorderThicknessProperty, new Thickness(0)));
-            style.Setters.Add(new Setter(Control.PaddingProperty, new Thickness(8, 5, 8, 5)));
+            style.Setters.Add(new Setter(Control.PaddingProperty, new Thickness(8, 6, 8, 6)));
             style.Setters.Add(new Setter(Control.MarginProperty, new Thickness(0, 0, 0, 1)));
             style.Setters.Add(new Setter(Control.HorizontalContentAlignmentProperty, HorizontalAlignment.Stretch));
             style.Setters.Add(new Setter(Control.ForegroundProperty, new SolidColorBrush(foreground)));

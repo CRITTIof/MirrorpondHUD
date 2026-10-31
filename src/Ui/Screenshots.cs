@@ -311,13 +311,14 @@ namespace MirrorpondHUD.Ui
 
                 var header = new CardHeader("文件中转站") { Badge = "12 个文件", Margin = new Thickness(0, 0, 0, 10) };
                 header.Actions.Add("打开目录", null, CardButtonTone.Normal, "在资源管理器中打开接收目录");
+                header.Actions.Add("粘贴", null, CardButtonTone.Normal, "从剪贴板添加文件");
                 header.Actions.Add("清空", null, CardButtonTone.Normal, "清空列表（不删除文件）");
                 header.ApplyStyle(style, settings.Overlay.CornerRadius);
                 stack.Children.Add(header);
 
                 var status = new CardStatus { Margin = new Thickness(0, 0, 0, 10) };
                 status.ApplyStyle(style);
-                status.SetText("正在复制 2/5 · a.zip", CardStatusKind.Busy);
+                status.SetText("正在收纳 2/5 · a.zip 42% · 18.4 MB/s", CardStatusKind.Busy);
                 status.SetProgress(0.42);
                 stack.Children.Add(status);
 

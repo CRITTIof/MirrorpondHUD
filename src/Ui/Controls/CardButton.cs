@@ -42,9 +42,9 @@ namespace MirrorpondHUD.Ui.Controls
                 TextWrapping = TextWrapping.NoWrap,
                 VerticalAlignment = VerticalAlignment.Center
             };
-            Padding = new Thickness(10, 3, 10, 3);
+            Padding = new Thickness(12, 6, 12, 6);
             MinWidth = 0;
-            MinHeight = 22;
+            MinHeight = 28;
             MaxWidth = 360;
             Cursor = System.Windows.Input.Cursors.Hand;
             Focusable = true;

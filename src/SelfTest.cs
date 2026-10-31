@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Threading;
 using MirrorpondHUD.Cards;
 using MirrorpondHUD.Core;
 using MirrorpondHUD.Media;
@@ -1196,8 +1197,111 @@ namespace MirrorpondHUD
                 bool missingRejected = view.ItemCountForTest == 1;
                 try { File.Delete(temp); } catch { }
 
+                // M2：移动模式归一化 / 校验 / 摘要，冲突命名，真实复制与移动，丢失项清理。
+                station.Mode = "move";
+                station.Directory = "";
+                station.Normalize();
+                config.SetExtras(DropStationCard.SettingsKey, station);
+                bool moveNormalizeOk = station.Mode == "Move";
+                string moveError = validator == null ? "no validator" : validator.Validate(config);
+                bool moveValidateOk = !string.IsNullOrEmpty(moveError) && moveError.Contains("接收目录");
+
+                string uniqueDir = Path.Combine(Path.GetTempPath(), "mhud-station-unique-" + Guid.NewGuid().ToString("N"));
+                bool uniqueOk = false;
+                bool moveSummaryOk = false;
+                try
+                {
+                    Directory.CreateDirectory(uniqueDir);
+                    File.WriteAllText(Path.Combine(uniqueDir, "a.txt"), "x");
+                    File.WriteAllText(Path.Combine(uniqueDir, "a (2).txt"), "x");
+                    uniqueOk = Path.GetFileName(StationView.UniqueTarget(uniqueDir, "a.txt")) == "a (3).txt";
+
+                    station.Directory = uniqueDir;
+                    station.Normalize();
+                    config.SetExtras(DropStationCard.SettingsKey, station);
+                    var summarySource = module as ICardSummary;
+                    string summary = summarySource == null ? "" : summarySource.Summary(config);
+                    moveSummaryOk = summary.StartsWith("移动", StringComparison.Ordinal);
+                }
+                finally
+                {
+                    try { Directory.Delete(uniqueDir, true); } catch { }
+                }
+
+                bool transferOk = true;
+                foreach (string mode in new[] { "Copy", "Move" })
+                {
+                    string transferDir = Path.Combine(Path.GetTempPath(), "mhud-station-" + mode + "-" + Guid.NewGuid().ToString("N"));
+                    string transferSource = Path.Combine(Path.GetTempPath(), "mhud-station-src-" + Guid.NewGuid().ToString("N") + ".bin");
+                    try
+                    {
+                        Directory.CreateDirectory(transferDir);
+                        File.WriteAllBytes(transferSource, new byte[256 * 1024]);
+
+                        var transferConfig = new CardSettings
+                        {
+                            Id = "selftest-transfer-" + mode, Kind = "dropstation", Name = "文件中转站",
+                            Extras = new Dictionary<string, object>()
+                        };
+                        StationSettings transferStation = DropStationCard.StationOf(transferConfig);
+                        transferStation.Mode = mode;
+                        transferStation.Directory = transferDir;
+                        transferStation.Normalize();
+                        transferConfig.SetExtras(DropStationCard.SettingsKey, transferStation);
+
+                        var transferView = new StationView(new Settings(), transferConfig, new TestCardHost());
+                        transferView.HandleDrop(new[] { transferSource });
+                        bool finished = PumpUntil(() => !transferView.CopyBusyForTest, 5000);
+                        string stored = transferView.FirstStoredPathForTest;
+
+                        bool targetOk = finished && !string.IsNullOrEmpty(stored) && File.Exists(stored)
+                                        && new FileInfo(stored).Length == 256 * 1024;
+                        bool sourceOk = mode == "Move" ? !File.Exists(transferSource) : File.Exists(transferSource);
+                        transferOk = transferOk && targetOk && sourceOk;
+                    }
+                    finally
+                    {
+                        try { if (File.Exists(transferSource)) File.Delete(transferSource); } catch { }
+                        try { Directory.Delete(transferDir, true); } catch { }
+                    }
+                }
+
+                string missingFile = Path.GetTempFileName();
+                string goneFile = missingFile + ".gone";
+                bool missingCleanupOk = false;
+                try
+                {
+                    var missingHost = new TestCardHost();
+                    var missingState = new StationState
+                    {
+                        Items = new List<StationItem>
+                        {
+                            new StationItem { Id = "keep", Path = missingFile, Name = Path.GetFileName(missingFile), AddedUtc = "x" },
+                            new StationItem { Id = "gone", Path = goneFile, Name = Path.GetFileName(goneFile), AddedUtc = "x" }
+                        }
+                    };
+                    missingHost.WriteState("items.json", Json.Serialize(missingState));
+
+                    var missingConfig = new CardSettings
+                    {
+                        Id = "selftest-station-missing", Kind = "dropstation", Name = "文件中转站",
+                        Extras = new Dictionary<string, object>()
+                    };
+                    var missingView = new StationView(new Settings(), missingConfig, missingHost);
+                    int before = missingView.ItemCountForTest;
+                    missingView.RemoveMissing();
+                    missingCleanupOk = before == 2 && missingView.ItemCountForTest == 1
+                                       && !string.IsNullOrEmpty(missingHost.LastWrittenState);
+                }
+                finally
+                {
+                    try { File.Delete(missingFile); } catch { }
+                }
+
                 stationOk = normalizeOk && validateOk && dropOk && feedbackOk &&
-                            editor != null && added && dedupe && missingRejected;
+                            editor != null && added && dedupe && missingRejected &&
+                            moveNormalizeOk && moveValidateOk && moveSummaryOk &&
+                            uniqueOk && transferOk && missingCleanupOk;
             }
             catch (Exception ex)
             {
@@ -1248,7 +1352,7 @@ namespace MirrorpondHUD
             Fix(sb, "渲染上下文", contextHostOk ? "OK（富内容创建上下文透传 ICardHost）" : "FAIL");
             Fix(sb, "后台任务", jobQueueOk ? "OK（串行队列：成功 / 失败 / 取消）" : "FAIL");
             Fix(sb, "Shell / 拖出", shellOk ? "OK（图标缓存一致；缩略图不挂；拖出阈值/空输入）" : "FAIL");
-            Fix(sb, "文件中转站", stationOk ? "OK（模块能力 / 设置归一化 / 校验 / 拖放判定）" : "FAIL");
+            Fix(sb, "文件中转站", stationOk ? "OK（模块能力 / 设置 / 复制移动 / 冲突命名 / 丢失清理）" : "FAIL");
         }
 
         static bool RegisterIfSet(HotkeyManager hotkeys, string action, string combination)
@@ -1281,6 +1385,21 @@ namespace MirrorpondHUD
         {
             if (double.IsNaN(v)) return "n/a";
             return v.ToString("0.0", CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>自检里跑一次 WPF 消息泵，等待后台任务回到 UI 线程（最多 timeoutMs）。</summary>
+        static bool PumpUntil(Func<bool> condition, int timeoutMs)
+        {
+            DateTime deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+            while (!condition() && DateTime.UtcNow < deadline)
+            {
+                var frame = new DispatcherFrame();
+                Dispatcher.CurrentDispatcher.BeginInvoke(
+                    DispatcherPriority.Background, new Action(() => frame.Continue = false));
+                Dispatcher.PushFrame(frame);
+                Thread.Sleep(10);
+            }
+            return condition();
         }
 
         /// <summary>自检用的假宿主：状态放内存，不读写磁盘。</summary>
