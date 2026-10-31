@@ -181,6 +181,22 @@ public sealed class DropStationCard : RichCardModuleBase,
 > 中转站本身的调研与设计（数据模型、引用 / 复制 / 移动、拖出、锁定语义、分阶段）见
 > [file-transfer-station.md](file-transfer-station.md)。
 
+### 共享控件（v2.10.0 / v2.10.1）
+
+多条目 / 交互型卡片先看这里，不要每张卡重写列表、状态行和拖入提示：
+
+| 控件 | 用途 | 要点 |
+|---|---|---|
+| `CardList` | 主题化列表：行模板、悬停 / 选中、空状态、双击 / 回车激活 | 用 `ItemTemplate` 或直接放控件；虚拟化需要给固定 / 最大高度 |
+| `CardStatus` | 状态行：图标 + 文字 + 进度 + 转圈 + 错误态 | `SetText` / `SetBusy` / `SetProgress` |
+| `CardHeader` + `CardToolbar` | 标题 + 徽标 + 右侧动作按钮 | `Actions.Add("清空", handler, CardButtonTone.Danger)` |
+| `CardInput` | 输入框：占位符、Enter / Ctrl+Enter 提交、错误描边 | 多行构造 `new CardInput(true)` |
+| `CardDropOverlay` | 拖入高亮与“松开添加 N 个”提示 | 配合 `ICardDropFeedback` 的进入 / 离开回调使用 |
+
+外观统一走 `ApplyStyle(style, ...)`，颜色来自 `ThemeTokens`；颜色与令牌规则见
+[theme-rewrite-prerequisites.md](theme-rewrite-prerequisites.md)。
+`--screenshot-widgets <png>` 可以离屏预览这一组控件。
+
 ## 3. 配置模型
 
 ```json

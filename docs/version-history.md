@@ -1,11 +1,11 @@
-# 版本修改记录（2.4.1 → 2.10.0）
+# 版本修改记录（2.4.1 → 2.10.1）
 
 > 范围：本文只记录**这一轮接手后我做的版本**（v2.4.1 起）。v2.4.0 及更早是既有历史，不在本文档里。
 > 数据全部取自仓库真实提交（`git diff --shortstat <上一版>..<本版>`），文件行的 `+ / -` 就是实际增删行数。
 > 版本状态：`main` 已推送到 GitHub；`v2.4.2`–`v2.4.5` 为附注标签（分别指向 `70343ef` / `aabe441` / `05857ce` / `f4b2b8b`），
 > v2.4.5 已发布 Release（附件为两个 requires-dotnet 单文件），v2.4.0 的 Release 已删除、其 tag 保留。
 > `v2.5.0`–`v2.9.2` 均为附注标签，**已随 2.9.2 的推送同步到远端**（`v2.6.0` = `9c1bafa`、`v2.6.1` = `d3ac63d`、
-> `v2.6.2` = `1b138e7`、`v2.9.2` = `754115e`）；`v2.4.1` 也已补推。`v2.9.3`–`v2.10.0` 目前只在本地创建，尚未推送。
+> `v2.6.2` = `1b138e7`、`v2.9.2` = `754115e`）；`v2.4.1` 也已补推。`v2.9.3`–`v2.10.1` 目前只在本地创建，尚未推送。
 
 ## 0. 总览
 
@@ -33,7 +33,8 @@
 | v2.9.5 | 2026-10-31 | `856b7bd` | 源码遗留 S1+S2：单一 `ColorCode` 解析，删掉 6 处复制；非法颜色回落到 fallback 而不是变白 | 15 文件，+158 / −132（含新增 `src/Core/ColorCode.cs` 53 行） |
 | v2.9.6 | 2026-10-31 | `c9842a9` | 源码遗留 S3+S4：删死字段 `_live`；两个 `async void` 加顶层兜底，异常不再逸出崩进程 | 7 文件，+82 / −12 |
 | v2.9.7 | 2026-10-31 | `69cb3b4` | 源码遗留 S7+S12：对话上下文跟随 `Cli.MaxEntries`；设置页 / 校验保证最多一张交互卡 | 8 文件，+132 / −13 |
-| v2.10.0 | 2026-10-31 | 本次提交 | 共享控件第一梯队（上）：`CardList` 主题化列表（虚拟化 / 空态 / 激活）+ `CardStatus`（转圈 / 进度 / 错误态） | 8 文件，+630 / −9（含新增 `CardList.cs` 206 行、`CardStatus.cs` 218 行） |
+| v2.10.0 | 2026-10-31 | `0605fee` | 共享控件第一梯队（上）：`CardList` 主题化列表（虚拟化 / 空态 / 激活）+ `CardStatus`（转圈 / 进度 / 错误态） | 8 文件，+630 / −9（含新增 `CardList.cs` 206 行、`CardStatus.cs` 218 行） |
+| v2.10.1 | 2026-10-31 | 本次提交 | 共享控件第一梯队（下）：`CardHeader`/`CardToolbar`、`CardInput`、`CardDropOverlay` + 宿主拖入/拖出反馈 | 12 文件，+543 / −26（含新增 `CardHeader.cs` 126 行、`CardInput.cs` 144 行、`CardDropOverlay.cs` 101 行） |
 
 ---
 
@@ -953,16 +954,50 @@ v2.6.0 只把**命令行卡**的设置搬进了 `CardSettings.Extras`，媒体�
 
 ---
 
-## 24. 不在版本里的东西
+## 24. v2.10.1（本次提交，本地标签 `v2.10.1`）
+
+### 背景
+
+第一梯队剩下四块：标题 / 工具栏、输入框、拖入高亮，以及让高亮真正可用的“拖入 / 拖出”宿主回调。
+
+### 改动
+
+1. **`CardHeader` + `CardToolbar`**：标题 + 徽标 + 右侧动作按钮；按钮统一间距与换肤，
+   文字按钮即可（需要图标时调用方自己换 `Content`）。
+2. **`CardInput`**：占位符、单行回车提交 / 多行 Ctrl+Enter 提交、错误描边；
+   底子仍是 `CardTextBox`，提交事件返回原始文本。
+3. **`CardDropOverlay`**：拖入时的覆盖层；底色是“卡片底色 + 强调色 22%”的**不透明**混合，
+   避免透出底下的空状态文字；支持接受 / 拒绝两种文案与颜色。
+4. **`ICardDropFeedback` + 宿主接线**：`OverlayWindow.EnableDrop` 新增可选的拖入状态回调，
+   `DragEnter` / `DragLeave` / `Drop` 各通知一次；`OverlayController.WireInputCapabilities` 把它转给模块。
+   卡片实现该接口后即可 `overlay.Show(n) / Hide()`。
+5. **自检**新增「共享控件（交互）」：Header 按钮可点、Input 提交、Overlay 显隐；
+   `--screenshot-widgets` 的预览扩展到标题栏 / 输入框 / 拖入高亮。
+
+### 边界
+
+- 反馈只覆盖“进入 / 离开 / 放下”三次状态，不提供每次 `DragOver` 的数据；需要计数由卡片自己在 `CanDrop` 里缓存。
+- 覆盖层是控件，放哪里、盖多大由卡片自己决定（通常铺满列表区域）。
+- 拖出（`DoDragDrop`）仍未封装；需要时先做“行内拖动 vs 整卡拖动”的 spike。
+
+### 实测
+
+- `dotnet build -c Release`：0 警告 0 错误。
+- `--selftest`：失败项 0（「共享控件」「共享控件（交互）」均 OK）。
+- `--screenshot-widgets`：标题栏 / 按钮 / 输入框 / 拖入覆盖层显示正常，覆盖层不再叠字。
+
+---
+
+## 25. 不在版本里的东西
 
 - 验收脚本、样张与测量脚本（`cmd-e2e.ps1`、`drag-glass.ps1`、`measure-*.py`、`shots/` 等）都在仓库外的 `hud-test/` 里，**没有提交**。
 - 发布：`main` 与标签已推送到 [github.com/CRITTIof/MirrorpondHUD](https://github.com/CRITTIof/MirrorpondHUD)；
   [v2.9.2 Release](https://github.com/CRITTIof/MirrorpondHUD/releases/tag/v2.9.2) 只有两个附件
   （`MirrorpondHUD-x64-requires-dotnet.exe`、`MirrorpondHUD-arm64-requires-dotnet.exe`，均需 .NET 8 桌面运行时，已自签名）；
   更早的 Release 正文与附件保留原样，v2.4.0 的 Release 已删除（tag `v2.4.0` 保留，历史仍可检出）。
-- 仓库追踪的文件共 109 个，`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
+- 仓库追踪的文件共 112 个，`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
 
-## 25. 已知代价（跨版本）
+## 26. 已知代价（跨版本）
 
 - 桌面亚克力为了不拍到自己，会把卡片排除在截屏之外 —— 这个模式下截图 / 录屏里**看不到卡片**，观感只能靠肉眼与离屏渲染验证。
 - 兼容实现每帧对身后窗口做 `PrintWindow`，拖动时最多 ~21 帧/秒；要更高只能走桌面亚克力（DXGI）。

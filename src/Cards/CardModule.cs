@@ -173,6 +173,15 @@ namespace MirrorpondHUD.Cards
         void OnDeactivated(CardSettings config);
     }
 
+    /// <summary>
+    /// 拖入 / 拖出卡片窗口的反馈（不是每次 DragOver）：卡片据此显示 / 隐藏拖放高亮。
+    /// 与 <see cref="ICardDropTarget"/> 搭配使用；宿主在 DragEnter / DragLeave / Drop 时各调一次。
+    /// </summary>
+    public interface ICardDropFeedback
+    {
+        void OnDropStateChanged(bool over, IDataObject data);
+    }
+
     /// <summary>卡片模块的公共基类：只提供默认实现，子类覆盖需要的部分。</summary>
     public abstract class CardModuleBase : ICardModule
     {

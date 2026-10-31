@@ -57,6 +57,7 @@ namespace MirrorpondHUD.Ui
         bool _dragEnabled = true;
         Func<IDataObject, bool> _canDrop;
         Action<IDataObject> _dropped;
+        Action<bool, IDataObject> _dropState;
         Point _dragStartScreen;
         Point _dragStartWindow;
         /// <summary>拖动中已经排队了一帧背景重取样（每个合成帧最多一次）。</summary>
@@ -550,11 +551,34 @@ namespace MirrorpondHUD.Ui
         /// 让这张卡片接住拖放（模块实现 <see cref="MirrorpondHUD.Cards.ICardDropTarget"/> 时由宿主注册）。
         /// 传 null 关闭。锁定（点击穿透）状态下窗口收不到拖放，这是既有语义。
         /// </summary>
-        public void EnableDrop(Func<IDataObject, bool> canDrop, Action<IDataObject> dropped)
+        public void EnableDrop(Func<IDataObject, bool> canDrop, Action<IDataObject> dropped,
+                               Action<bool, IDataObject> dropState = null)
         {
             _canDrop = canDrop;
             _dropped = dropped;
+            _dropState = dropState;
             AllowDrop = canDrop != null;
+        }
+
+        protected override void OnDragEnter(DragEventArgs e)
+        {
+            base.OnDragEnter(e);
+            NotifyDropState(true, e.Data);
+        }
+
+        protected override void OnDragLeave(DragEventArgs e)
+        {
+            base.OnDragLeave(e);
+            NotifyDropState(false, null);
+        }
+
+        void NotifyDropState(bool over, IDataObject data)
+        {
+            Action<bool, IDataObject> handler = _dropState;
+            if (handler == null) return;
+
+            try { handler(over, data); }
+            catch (Exception ex) { Log.Warn("卡片拖放状态回调失败: " + ex.Message); }
         }
 
         protected override void OnDragOver(DragEventArgs e)
@@ -578,6 +602,7 @@ namespace MirrorpondHUD.Ui
             e.Handled = true;
             try { _dropped(e.Data); }
             catch (Exception ex) { Log.Warn("卡片拖放处理失败: " + ex.Message); }
+            NotifyDropState(false, null);
         }
 
         // ==================== 拖动 ====================

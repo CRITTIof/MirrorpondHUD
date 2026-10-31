@@ -308,14 +308,12 @@ namespace MirrorpondHUD.Ui
                 Color foreground = OverlaySurface.ParseColor(style.Foreground, Color.FromRgb(0xE6, 0xED, 0xF3));
 
                 var stack = new StackPanel { Width = 520 };
-                stack.Children.Add(new TextBlock
-                {
-                    Text = "共享控件预览",
-                    FontSize = 16,
-                    FontWeight = FontWeights.SemiBold,
-                    Foreground = CardPalette.Brush(foreground, 0.95),
-                    Margin = new Thickness(0, 0, 0, 10)
-                });
+
+                var header = new CardHeader("文件中转站") { Badge = "12 个文件", Margin = new Thickness(0, 0, 0, 10) };
+                header.Actions.Add("打开目录", null, CardButtonTone.Normal, "在资源管理器中打开接收目录");
+                header.Actions.Add("清空", null, CardButtonTone.Danger, "清空列表（不删除文件）");
+                header.ApplyStyle(style, settings.Overlay.CornerRadius);
+                stack.Children.Add(header);
 
                 var status = new CardStatus { Margin = new Thickness(0, 0, 0, 10) };
                 status.ApplyStyle(style);
@@ -323,7 +321,7 @@ namespace MirrorpondHUD.Ui
                 status.SetProgress(0.42);
                 stack.Children.Add(status);
 
-                var list = new CardList { Height = 180, Margin = new Thickness(0, 0, 0, 10) };
+                var list = new CardList { Height = 160, Margin = new Thickness(0, 0, 0, 10) };
                 list.ApplyStyle(style, settings.Cli);
                 list.SetEmptyText("把文件拖进来");
                 list.Items.Add(WidgetRow("a.zip", "12.4 MB", foreground));
@@ -333,10 +331,22 @@ namespace MirrorpondHUD.Ui
                 list.SelectedIndex = 1;
                 stack.Children.Add(list);
 
-                var empty = new CardList { Height = 90, Margin = new Thickness(0, 0, 0, 10) };
-                empty.ApplyStyle(style, settings.Cli);
-                empty.SetEmptyText("把文件拖进来（空状态）");
-                stack.Children.Add(empty);
+                var input = new CardInput(false) { Margin = new Thickness(0, 0, 0, 10) };
+                input.Placeholder = "输入备注，回车提交…";
+                input.ApplyStyle(style, settings.Overlay.CornerRadius);
+                stack.Children.Add(input);
+
+                var dropHost = new Grid { Height = 100, Margin = new Thickness(0, 0, 0, 10) };
+                var dropList = new CardList();
+                dropList.ApplyStyle(style, settings.Cli);
+                dropList.SetEmptyText("把文件拖进来（空状态）");
+                dropHost.Children.Add(dropList);
+
+                var dropOverlay = new CardDropOverlay { Margin = new Thickness(2) };
+                dropOverlay.ApplyStyle(style, settings.Overlay.CornerRadius);
+                dropOverlay.Show(3);
+                dropHost.Children.Add(dropOverlay);
+                stack.Children.Add(dropHost);
 
                 var error = new CardStatus { Margin = new Thickness(0, 0, 0, 6) };
                 error.ApplyStyle(style);
@@ -358,7 +368,7 @@ namespace MirrorpondHUD.Ui
                 var host = new Grid
                 {
                     Width = 640,
-                    Height = 520,
+                    Height = 560,
                     Background = new LinearGradientBrush(
                         Color.FromRgb(0x14, 0x1B, 0x2B),
                         Color.FromRgb(0x2A, 0x1D, 0x2A),

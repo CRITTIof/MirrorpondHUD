@@ -255,10 +255,21 @@ namespace MirrorpondHUD.Ui
 
             slot.Window.DragEnabled = slot.Module == null || !slot.Module.HandlesOwnDrag;
 
+            var feedback = slot.Module as ICardDropFeedback;
+            Action<bool, IDataObject> dropState = null;
+            if (feedback != null)
+            {
+                dropState = (over, data) =>
+                {
+                    try { feedback.OnDropStateChanged(over, data); }
+                    catch (Exception ex) { Log.Warn("卡片拖放状态处理失败: " + ex.Message); }
+                };
+            }
+
             var drop = slot.Module as ICardDropTarget;
             if (drop == null)
             {
-                slot.Window.EnableDrop(null, null);
+                slot.Window.EnableDrop(null, null, dropState);
                 return;
             }
 
@@ -273,7 +284,8 @@ namespace MirrorpondHUD.Ui
                 {
                     try { drop.Drop(data, captured.Content); }
                     catch (Exception ex) { Log.Warn("卡片拖放处理失败: " + ex.Message); }
-                });
+                },
+                dropState);
         }
 
         /// <summary>让实现 <see cref="ICardHostAware"/> 的模块拿到这张卡片的宿主服务。</summary>

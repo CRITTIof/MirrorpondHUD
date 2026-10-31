@@ -5,6 +5,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
+using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using MirrorpondHUD.Cards;
@@ -230,6 +231,7 @@ namespace MirrorpondHUD
             bool chatContextOk = false;
             bool singleInteractiveOk = false;
             bool widgetsOk = false;
+            bool widgets2Ok = false;
 
             try
             {
@@ -1022,12 +1024,48 @@ namespace MirrorpondHUD
                 Log.Error("共享控件自检异常", ex);
             }
 
+            try
+            {
+                // 2.10.1 共享控件：Header/Toolbar 的按钮可点，Input 回车提交，DropOverlay 显隐。
+                var style = new StyleSettings { FontSize = 15, Foreground = "#E6EDF3" };
+
+                var header = new CardHeader("文件中转站") { Badge = "12 个文件" };
+                bool clicked = false;
+                CardButton button = header.Actions.Add("清空", () => clicked = true);
+                header.ApplyStyle(style, 10);
+                button.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+
+                var input = new CardInput(false);
+                input.ApplyStyle(style, 10);
+                string submitted = null;
+                input.Submitted += text => submitted = text;
+                input.Text = "hello";
+                input.Submit();
+
+                var overlay = new CardDropOverlay();
+                overlay.ApplyStyle(style, 10);
+                overlay.Show(3);
+                bool shown = overlay.Visibility == Visibility.Visible;
+                overlay.Hide();
+
+                widgets2Ok = header.Title == "文件中转站"
+                          && header.Badge == "12 个文件"
+                          && clicked
+                          && submitted == "hello"
+                          && shown
+                          && overlay.Visibility == Visibility.Collapsed;
+            }
+            catch (Exception ex)
+            {
+                Log.Error("共享控件（交互）自检异常", ex);
+            }
+
             if (!(templateOk && unknownOk && collapseOk && thresholdOk && configOk && cardOk &&
                   keyNameOk && keyLimitOk && keyOverflowOk &&
                   commandOk && truncateOk && toolLabelOk && secretOk && chatHotkeyOk && settingsEditorOk &&
                   stateStoreOk && renderOk && glassPolicyOk && themeOk && restyleOk &&
                   themeFileOk && themeRejectOk && themeCatalogOk && activationOk && cloneGuardOk &&
-                  restyleHostOk && chatContextOk && singleInteractiveOk && widgetsOk)) failures++;
+                  restyleHostOk && chatContextOk && singleInteractiveOk && widgetsOk && widgets2Ok)) failures++;
 
             Fix(sb, "逻辑自检", string.Format(
                 "模板={0} 未知占位符={1} 折叠={2} 阈值内展开={3} 配置读写={4} 卡片模块={11} 键名={5} 按键长度={6} 超长截断={7} 命令行={8} 行截断={9} 工具名={10} Key加密={12} 对话热键={13} 卡片设置={14} 状态存储={15} 渲染节流={16} 毛玻璃策略={17}",
@@ -1061,6 +1099,7 @@ namespace MirrorpondHUD
             Fix(sb, "对话上下文", chatContextOk ? "OK（每条记录两条消息，跟随 CLI 最多保留条数）" : "FAIL");
             Fix(sb, "交互卡唯一", singleInteractiveOk ? "OK（默认一张；第二张会被设置页 / 校验拦住）" : "FAIL");
             Fix(sb, "共享控件", widgetsOk ? "OK（CardList 空态/计数/选中；CardStatus 忙碌/进度/错误）" : "FAIL");
+            Fix(sb, "共享控件（交互）", widgets2Ok ? "OK（Header 按钮可点；Input 提交；DropOverlay 显隐）" : "FAIL");
         }
 
         static bool RegisterIfSet(HotkeyManager hotkeys, string action, string combination)
