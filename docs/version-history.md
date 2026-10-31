@@ -1,11 +1,11 @@
-# 版本修改记录（2.4.1 → 2.9.4）
+# 版本修改记录（2.4.1 → 2.9.5）
 
 > 范围：本文只记录**这一轮接手后我做的版本**（v2.4.1 起）。v2.4.0 及更早是既有历史，不在本文档里。
 > 数据全部取自仓库真实提交（`git diff --shortstat <上一版>..<本版>`），文件行的 `+ / -` 就是实际增删行数。
 > 版本状态：`main` 已推送到 GitHub；`v2.4.2`–`v2.4.5` 为附注标签（分别指向 `70343ef` / `aabe441` / `05857ce` / `f4b2b8b`），
 > v2.4.5 已发布 Release（附件为两个 requires-dotnet 单文件），v2.4.0 的 Release 已删除、其 tag 保留。
 > `v2.5.0`–`v2.9.2` 均为附注标签，**已随 2.9.2 的推送同步到远端**（`v2.6.0` = `9c1bafa`、`v2.6.1` = `d3ac63d`、
-> `v2.6.2` = `1b138e7`、`v2.9.2` = `754115e`）；`v2.4.1` 也已补推。`v2.9.3` 与 `v2.9.4` 目前只在本地创建，尚未推送。
+> `v2.6.2` = `1b138e7`、`v2.9.2` = `754115e`）；`v2.4.1` 也已补推。`v2.9.3`–`v2.9.5` 目前只在本地创建，尚未推送。
 
 ## 0. 总览
 
@@ -29,7 +29,8 @@
 | v2.9.1 | 2026-10-31 | `80ccb9d` | 外观重写前置 P2：`CliPanelView.ApplyStyle` 就地换肤，对话 / 命令行卡片支持「换外观不重建」 | 8 文件，+225 / −30 |
 | v2.9.2 | 2026-10-31 | `754115e` | 外观重写前置 P3：`.mptheme` 解析 / 校验 / 导入导出（套用副本、失败不动当前设置），自检加两项 | 8 文件，+916 / −9（含新增 `src/Core/ThemeFile.cs` 668 行） |
 | v2.9.3 | 2026-10-31 | `6805bbe` | P4 设置页主题入口 + 离屏预览；#7 克隆失败禁止保存；#4 `ICardActivation` 激活契约 | 13 文件，+594 / −36（含新增 `src/Core/ThemeCatalog.cs` 69 行） |
-| v2.9.4 | 2026-10-31 | 本次提交 | 修 AI 对话 / 常驻媒体卡外观不随设置变化：CLI 面板跟随新 Settings 与 monoFont，宿主换肤时重画底层 | 11 文件，+165 / −29 |
+| v2.9.4 | 2026-10-31 | `055b3f9` | 修 AI 对话 / 常驻媒体卡外观不随设置变化：CLI 面板跟随新 Settings 与 monoFont，宿主换肤时重画底层 | 11 文件，+165 / −29 |
+| v2.9.5 | 2026-10-31 | 本次提交 | 源码遗留 S1+S2：单一 `ColorCode` 解析，删掉 6 处复制；非法颜色回落到 fallback 而不是变白 | 15 文件，+158 / −132（含新增 `src/Core/ColorCode.cs` 53 行） |
 
 ---
 
@@ -827,16 +828,46 @@ v2.6.0 只把**命令行卡**的设置搬进了 `CardSettings.Extras`，媒体�
 
 ---
 
-## 20. 不在版本里的东西
+## 20. v2.9.5（本次提交，本地标签 `v2.9.5`）
+
+### 背景
+
+`docs/legacy-audit.md` 的 S1 + S2：颜色字符串在 7 个地方各解析一遍，而且“非法输入”分别返回
+白 / 前景色 / false；`CardButton.TryColor` 之类写在 `catch` 里的 fallback 因为底层吞异常而**永远不可达**，
+设置页把前景色改成 `nope` 时预览会静默变白。
+
+### 改动
+
+1. **新增 `src/Core/ColorCode.cs`**：唯一解析入口，只认 `#RRGGBB` / `#AARRGGBB`，返回 `bool + ARGB`；
+   `Settings.IsColorToken` 也改为委托它。
+2. **`OverlaySurface.ParseColor(hex, fallback)`**：默认重载仍回白色（取色预览要能画），带 fallback 的重载供业务用。
+3. **删掉 6 处复制**：`CardButton.TryColor`、`CardTextBox.TryColor`、`ButtonsCard.TryColor`、
+   `MediaView.ParseColor`、`ThemeResolver.Parse`、`ThemeFile.TryParseColor`；
+   `CardPalette.TryColor` 保留 API 但只做委托。
+4. **自检**：`ColorCode` 的 6/8 位解析、`#12345` 拒绝；非法前景色下 `Muted` 仍按默认前景派生，
+   而不是变成白色；「外观令牌」结果行注明“非法值回落而不是变白”。
+
+**行为变化**：`MediaView` 不再接受颜色名（`ColorConverter` 的 `Red` / `Gray`）；配置与设置页只允许十六进制，
+所以正常路径不受影响，非法值统一回落到各调用方给的 fallback。
+
+### 实测
+
+- `dotnet build -c Release`：0 警告 0 错误。
+- `--selftest`：失败项 0（「外观令牌」带新的非法色断言）。
+- `--smoke 4 --smoke-visible`：退出码 0。
+
+---
+
+## 21. 不在版本里的东西
 
 - 验收脚本、样张与测量脚本（`cmd-e2e.ps1`、`drag-glass.ps1`、`measure-*.py`、`shots/` 等）都在仓库外的 `hud-test/` 里，**没有提交**。
 - 发布：`main` 与标签已推送到 [github.com/CRITTIof/MirrorpondHUD](https://github.com/CRITTIof/MirrorpondHUD)；
   [v2.9.2 Release](https://github.com/CRITTIof/MirrorpondHUD/releases/tag/v2.9.2) 只有两个附件
   （`MirrorpondHUD-x64-requires-dotnet.exe`、`MirrorpondHUD-arm64-requires-dotnet.exe`，均需 .NET 8 桌面运行时，已自签名）；
   更早的 Release 正文与附件保留原样，v2.4.0 的 Release 已删除（tag `v2.4.0` 保留，历史仍可检出）。
-- 仓库追踪的文件共 106 个，`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
+- 仓库追踪的文件共 107 个，`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
 
-## 21. 已知代价（跨版本）
+## 22. 已知代价（跨版本）
 
 - 桌面亚克力为了不拍到自己，会把卡片排除在截屏之外 —— 这个模式下截图 / 录屏里**看不到卡片**，观感只能靠肉眼与离屏渲染验证。
 - 兼容实现每帧对身后窗口做 `PrintWindow`，拖动时最多 ~21 帧/秒；要更高只能走桌面亚克力（DXGI）。

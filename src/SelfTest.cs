@@ -662,7 +662,19 @@ namespace MirrorpondHUD
                 bad.Normalize();
                 bool normalizeOk = bad.Style.Accent == "#2F6FEB" && bad.Style.Muted == "";
 
-                themeOk = defaultOk && mutedOk && scrollOk && validateOk && normalizeOk;
+                byte ca, cr, cg, cb;
+                bool codeOk = ColorCode.TryParse("#80E6EDF3", out ca, out cr, out cg, out cb)
+                           && ca == 0x80 && cr == 0xE6 && cg == 0xED && cb == 0xF3
+                           && !ColorCode.TryParse("nope", out ca, out cr, out cg, out cb)
+                           && !ColorCode.TryParse("#12345", out ca, out cr, out cg, out cb);
+
+                // 非法颜色必须回落到调用方给的 fallback，而不是静默变成白色。
+                ThemeTokens badToken = ThemeResolver.Resolve(new StyleSettings { Foreground = "nope" });
+                bool fallbackOk = OverlaySurface.ParseColor("nope", fg) == fg
+                               && badToken.Muted == ThemeResolver.WithAlpha(fg, 0.45)
+                               && badToken.Accent == System.Windows.Media.Color.FromRgb(0x2F, 0x6F, 0xEB);
+
+                themeOk = defaultOk && mutedOk && scrollOk && validateOk && normalizeOk && codeOk && fallbackOk;
             }
             catch (Exception ex)
             {
@@ -971,7 +983,7 @@ namespace MirrorpondHUD
                 renderOk ? "OK" : "FAIL",
                 glassPolicyOk ? "OK" : "FAIL"));
 
-            Fix(sb, "外观令牌", themeOk ? "OK（派生值 = 旧 alpha 常量，非法值已归一化）" : "FAIL");
+            Fix(sb, "外观令牌", themeOk ? "OK（派生值 = 旧 alpha 常量，非法值回落而不是变白）" : "FAIL");
             Fix(sb, "CLI 换肤", restyleOk ? "OK（两张 CLI 卡片支持就地换肤，文字按新前景重算）" : "FAIL");
             Fix(sb, "主题文件", themeFileOk ? "OK（导出 → 解析 → 套用 → 再导出一致，数字透明度按前景派生）" : "FAIL");
             Fix(sb, "主题文件校验", themeRejectOk ? "OK（高版本 / 坏颜色 / 越界 / 缺 appearance 均拒绝，坏文件不动当前设置）" : "FAIL");

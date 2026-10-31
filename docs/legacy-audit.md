@@ -4,15 +4,15 @@
 > 确认还有没有类似“史山”：构造期捕获状态、双重真相、静态可变缓存、静默失败、过期文档。
 >
 > 范围：`src/` 全部 C# 与 `docs/` 中仍在描述“现状”的段落；行号以 v2.9.4（`055b3f9`）为准。
-> 结论：**没有发现与 2.9.4 完全同源的未修问题**；另有 13 条独立遗留，其中 2 条属于正确性（S1 / S4），
-> 其余是结构、可维护性与文档问题。本文只记录，**不在本轮顺手改代码**。
+> 结论：**没有发现与 2.9.4 完全同源的未修问题**；另有 13 条独立遗留，其中 2 条属于正确性（S1 / S4）。
+> 修复进度：**S1 + S2 已在 v2.9.5 修**；S3 + S4、S7 + S12 分别排 v2.9.6 / v2.9.7；其余仍只记录。
 
 ## 0. 结论摘要
 
 | 编号 | 问题 | 类型 | 优先级 | 状态 |
 |---|---|---|---|---|
-| S1 | 非法颜色静默变成白色，`TryColor` 的 fallback 实际不可达 | 正确性 | P1 | 未修 |
-| S2 | 颜色解析 / 校验有 6 份实现，非法输入行为各不相同 | 结构 + 正确性 | P2 | 未修 |
+| S1 | 非法颜色静默变成白色，`TryColor` 的 fallback 实际不可达 | 正确性 | P1 | ✅ v2.9.5 |
+| S2 | 颜色解析 / 校验有 7 份实现，非法输入行为各不相同 | 结构 + 正确性 | P2 | ✅ v2.9.5 |
 | S3 | `SettingsWindow._live` 是死字段（只赋值、从不读） | 死代码 | P3 | 未修 |
 | S4 | `async void Send / RunCommand` 在 `try` 之前抛异常会直接崩进程 | 正确性 / 稳定性 | P1 | 未修 |
 | S5 | `OverlaySurface.BrushCache` 无上限 | 资源 | P3 | 未修 |
@@ -20,7 +20,7 @@
 | S7 | AI 对话历史条数写死 `12`，与 `Cli.MaxEntries` 脱钩 | 行为 | P2 | 未修 |
 | S8 | `Style.ThemeName` 进了样式签名，只改主题名也会触发全部卡片换肤 | 轻微抖动 | P3 | 未修 |
 | S9 | `.mptheme` 的数值范围与 `Settings.Normalize` 各写一份 | 漂移风险 | P3 | 未修 |
-| S10 | 评审文档仍说「CLI 面板换外观会重建」 | 文档过期 | P2 | **本轮修** |
+| S10 | 评审文档仍说「CLI 面板换外观会重建」 | 文档过期 | P2 | ✅ v2.9.4 |
 | S11 | `OverlayController` / `SettingsWindow` 超过 1600 行 | 结构 | P3 | 未修 |
 | S12 | `FindCommandCard` 取“第一张交互卡”，第二张交互卡会被静默忽略 | 语义隐式 | P2 | 未修 |
 | S13 | `DesktopBackground` 只按路径缓存壁纸，同路径换图不会刷新 | 边缘 | P3 | 未修 |
@@ -67,7 +67,7 @@
 
 ## 2. 新发现的问题
 
-### S1 非法颜色静默变成白色（P1）
+### S1 非法颜色静默变成白色（P1，✅ v2.9.5）
 
 `OverlaySurface.ParseColor`（`src/Ui/OverlaySurface.cs:334`）内部 `catch { }` 后 **返回 `Colors.White`**。
 于是：
@@ -79,23 +79,28 @@
 最直观的复现：设置页预览里把前景色输入框改成 `nope`，预览会变白，而不是保持上一帧的颜色。
 这不会写盘（`Normalize` 会拦），但属于“静默错误值”，与 2.9.4 同一类。
 
-**建议**：抽一个 `ColorCode.TryParse(string, out int a, out int r, out int g, out int b)`（Core，无 WPF 依赖），
-UI 侧只留 `ToColor`；调用方显式拿 `bool` 决定 fallback。顺带删掉 S2 的重复实现。
+**修复（v2.9.5）**：新增 `src/Core/ColorCode.cs`（`TryParse` → bool + ARGB），
+`OverlaySurface.ParseColor(hex, fallback)` 委托它；`CardPalette.TryColor` 保留但只做委托。
+新增自检：非法前景色下 `Muted` 仍按默认前景派生，不再变白。
 
-### S2 颜色解析 / 校验有 6 份实现（P2）
+### S2 颜色解析 / 校验有 7 份实现（P2，✅ v2.9.5）
 
 | 实现 | 非法输入 | 备注 |
 |---|---|---|
 | `OverlaySurface.ParseColor` | 白色 | 吞异常 |
 | `CardButton.TryColor` | 实际白色 | catch 不可达 |
+| `CardTextBox.TryColor` | 实际白色 | 与上者逐行相同 |
 | `ButtonsCard.TryColor` | 实际白色 | 与上者逐行相同 |
-| `MediaView.ParseColor` | 前景色 `#E6EDF3` | 自己又写了一套 6/8 位解析 |
+| `MediaView.ParseColor` | 前景色 `#E6EDF3` | 自己又写了一套 `ColorConverter`（还认颜色名） |
 | `ThemeResolver.Parse` | 实际白色 | catch 不可达 |
 | `ThemeFile.TryParseColor` | `false` | 唯一返回失败的，但只输出 ARGB int |
 | `Settings.IsColorToken` | `false` | 只做格式校验，不解析 |
 
 同一个 `#AARRGGBB` 在“解析失败”上有三种语义（白 / 前景 / false），新增调用方很容易选错。
-**建议**：Core 里一份解析 + 一份校验；UI 里一份 `Color` 适配；其余全部删除。
+
+**修复（v2.9.5）**：只保留 `ColorCode`（Core）+ `OverlaySurface.ParseColor(hex, fallback)`（UI）+ `OverlaySurface.ParseColor(hex)`
+（默认白，取色预览用）；删除 6 处复制，`CardPalette.TryColor` 与 `Settings.IsColorToken` 改为委托。
+`MediaView` 不再接受颜色名（配置本来只允许十六进制）。
 
 ### S3 `_live` 死字段（P3）
 
@@ -206,3 +211,9 @@ grep -rn "static readonly" src
 grep -rn "Cache.Count\|Cache.Clear" src
 grep -rn "仍回退重建\|构造期固化\|回退到重建" docs README.md
 ```
+
+## 6. 修复记录
+
+| 版本 | 内容 |
+|---|---|
+| v2.9.5 | S1 + S2：`ColorCode` 单一解析；非法颜色回落到 fallback（不再变白）；删除 6 处复制 |

@@ -77,7 +77,7 @@ namespace MirrorpondHUD.Ui.Controls
             if (style == null) return;
 
             ThemeTokens tokens = ThemeResolver.Resolve(style);
-            Color foreground = TryColor(style.Foreground, Color.FromRgb(0xE6, 0xED, 0xF3));
+            Color foreground = OverlaySurface.ParseColor(style.Foreground, Color.FromRgb(0xE6, 0xED, 0xF3));
             Color accent = tokens.Accent;
 
             Color background;
@@ -146,12 +146,6 @@ namespace MirrorpondHUD.Ui.Controls
 
         /// <summary>卡片自己的圆角（0 = 直角）。</summary>
         public double CornerRadius { get; private set; }
-
-        static Color TryColor(string hex, Color fallback)
-        {
-            try { return OverlaySurface.ParseColor(hex); }
-            catch { return fallback; }
-        }
 
         static Color WithAlpha(Color color, double alpha)
         {

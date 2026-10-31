@@ -25,7 +25,7 @@ namespace MirrorpondHUD.Ui.Controls
         {
             if (style == null) return;
 
-            Color foreground = TryColor(style.Foreground, Color.FromRgb(0xE6, 0xED, 0xF3));
+            Color foreground = OverlaySurface.ParseColor(style.Foreground, Color.FromRgb(0xE6, 0xED, 0xF3));
 
             Foreground = new SolidColorBrush(foreground);
             CaretBrush = new SolidColorBrush(foreground);
@@ -54,12 +54,6 @@ namespace MirrorpondHUD.Ui.Controls
                 "</ControlTemplate>";
 
             return (ControlTemplate)System.Windows.Markup.XamlReader.Parse(xaml);
-        }
-
-        static Color TryColor(string hex, Color fallback)
-        {
-            try { return OverlaySurface.ParseColor(hex); }
-            catch { return fallback; }
         }
 
         static Color Alpha(Color color, double alpha)

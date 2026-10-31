@@ -19,8 +19,7 @@ namespace MirrorpondHUD.Ui.Controls
     {
         public static Color TryColor(string hex, Color fallback)
         {
-            try { return OverlaySurface.ParseColor(hex); }
-            catch { return fallback; }
+            return OverlaySurface.ParseColor(hex, fallback);
         }
 
         public static Color WithAlpha(Color color, double alpha)

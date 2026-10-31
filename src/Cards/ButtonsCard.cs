@@ -53,7 +53,7 @@ namespace MirrorpondHUD.Cards
         {
             _style = settings == null ? new StyleSettings() : settings.Style;
             _corner = settings == null ? 10 : settings.Overlay.CornerRadius;
-            _foreground = TryColor(_style.Foreground, Color.FromRgb(0xE6, 0xED, 0xF3));
+            _foreground = OverlaySurface.ParseColor(_style.Foreground, Color.FromRgb(0xE6, 0xED, 0xF3));
             _pad = Math.Max(10, _style.Padding * 0.85);
 
             Width = 340;
@@ -158,12 +158,6 @@ namespace MirrorpondHUD.Cards
                 Foreground = new SolidColorBrush(Alpha(_foreground, alpha)),
                 Margin = new Thickness(0, topMargin, 0, 0)
             };
-        }
-
-        static Color TryColor(string hex, Color fallback)
-        {
-            try { return OverlaySurface.ParseColor(hex); }
-            catch { return fallback; }
         }
 
         static Color Alpha(Color color, double alpha)

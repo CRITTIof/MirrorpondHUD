@@ -122,15 +122,9 @@ namespace MirrorpondHUD.Core
         {
             string text = (value ?? "").Trim();
             if (text.Length == 0) return true;
-            if (text.Length != 7 && text.Length != 9) return false;
-            if (text[0] != '#') return false;
 
-            for (int i = 1; i < text.Length; i++)
-            {
-                if (!Uri.IsHexDigit(text[i])) return false;
-            }
-
-            return true;
+            byte a, r, g, b;
+            return ColorCode.TryParse(text, out a, out r, out g, out b);
         }
 
         static string NormalizeColorToken(string value, string fallback)

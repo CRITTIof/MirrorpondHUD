@@ -103,8 +103,8 @@ namespace MirrorpondHUD.Core
             if (Colors.Accent != null) style.Accent = Colors.Accent;
             if (Colors.Danger != null) style.Danger = Colors.Danger;
 
-            int a, r, g, b;
-            bool hasForeground = ThemeFile.TryParseColor(style.Foreground, out a, out r, out g, out b);
+            byte a, r, g, b;
+            bool hasForeground = ColorCode.TryParse(style.Foreground, out a, out r, out g, out b);
             ApplySoft(Colors.Muted, hasForeground, a, r, g, b, ref style.Muted);
             ApplySoft(Colors.Border, hasForeground, a, r, g, b, ref style.Border);
             ApplySoft(Colors.Panel, hasForeground, a, r, g, b, ref style.Panel);
@@ -483,33 +483,6 @@ namespace MirrorpondHUD.Core
                 case "justify": return "Justify";
                 default: return null;
             }
-        }
-
-        /// <summary>#RRGGBB / #AARRGGBB → ARGB。失败返回 false（前景色非法时软色就不派生）。</summary>
-        internal static bool TryParseColor(string hex, out int a, out int r, out int g, out int b)
-        {
-            a = 255; r = 0; g = 0; b = 0;
-            string text = (hex ?? "").Trim();
-            if (!Settings.IsColorToken(text) || text.Length == 0) return false;
-
-            try
-            {
-                int offset = text.Length == 9 ? 1 : 0;
-                if (text.Length == 9) a = Hex(text, 1);
-                r = Hex(text, 1 + offset);
-                g = Hex(text, 3 + offset);
-                b = Hex(text, 5 + offset);
-                return true;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        static int Hex(string text, int index)
-        {
-            return int.Parse(text.Substring(index, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture);
         }
 
         internal static string AlphaToken(int a, int r, int g, int b, double alpha)

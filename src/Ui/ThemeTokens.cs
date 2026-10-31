@@ -34,17 +34,17 @@ namespace MirrorpondHUD.Ui
         public static ThemeTokens Resolve(StyleSettings style)
         {
             StyleSettings s = style ?? new StyleSettings();
-            Color foreground = Parse(s.Foreground, Color.FromRgb(0xE6, 0xED, 0xF3));
+            Color foreground = OverlaySurface.ParseColor(s.Foreground, Color.FromRgb(0xE6, 0xED, 0xF3));
 
             return new ThemeTokens
             {
-                Accent = Parse(s.Accent, Color.FromRgb(0x2F, 0x6F, 0xEB)),
-                Danger = Parse(s.Danger, Color.FromRgb(0xD1, 0x43, 0x43)),
-                Muted = Parse(s.Muted, WithAlpha(foreground, 0.45)),
-                Border = Parse(s.Border, WithAlpha(foreground, 0.10)),
-                Panel = Parse(s.Panel, WithAlpha(foreground, 0.045)),
-                Scrollbar = Parse(s.Scrollbar, WithAlpha(foreground, 0.18)),
-                ScrollbarHot = Parse(s.ScrollbarHot, WithAlpha(foreground, 0.40)),
+                Accent = OverlaySurface.ParseColor(s.Accent, Color.FromRgb(0x2F, 0x6F, 0xEB)),
+                Danger = OverlaySurface.ParseColor(s.Danger, Color.FromRgb(0xD1, 0x43, 0x43)),
+                Muted = OverlaySurface.ParseColor(s.Muted, WithAlpha(foreground, 0.45)),
+                Border = OverlaySurface.ParseColor(s.Border, WithAlpha(foreground, 0.10)),
+                Panel = OverlaySurface.ParseColor(s.Panel, WithAlpha(foreground, 0.045)),
+                Scrollbar = OverlaySurface.ParseColor(s.Scrollbar, WithAlpha(foreground, 0.18)),
+                ScrollbarHot = OverlaySurface.ParseColor(s.ScrollbarHot, WithAlpha(foreground, 0.40)),
                 MonoFont = string.IsNullOrWhiteSpace(s.MonoFont) ? DefaultMonoFont : s.MonoFont.Trim()
             };
         }
@@ -59,15 +59,6 @@ namespace MirrorpondHUD.Ui
         public static bool IsValidColor(string hex)
         {
             return Settings.IsColorToken(hex);
-        }
-
-        static Color Parse(string hex, Color fallback)
-        {
-            string value = (hex ?? "").Trim();
-            if (value.Length == 0) return fallback;
-
-            try { return OverlaySurface.ParseColor(value); }
-            catch { return fallback; }
         }
     }
 }

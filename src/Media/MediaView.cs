@@ -257,16 +257,10 @@ namespace MirrorpondHUD.Media
         static Color ParseColor(string text)
         {
             Color fallback = Color.FromRgb(0xE6, 0xED, 0xF3);
-            if (string.IsNullOrWhiteSpace(text)) return fallback;
-
-            try
-            {
-                object value = ColorConverter.ConvertFromString(text.Trim());
-                if (value is Color) return (Color)value;
-            }
-            catch { }
-
-            return fallback;
+            byte a, r, g, b;
+            return ColorCode.TryParse(text, out a, out r, out g, out b)
+                ? Color.FromArgb(a, r, g, b)
+                : fallback;
         }
 
         // ==================== 绑定 ====================

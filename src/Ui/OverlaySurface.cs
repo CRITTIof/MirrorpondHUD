@@ -331,32 +331,18 @@ namespace MirrorpondHUD.Ui
             return brush;
         }
 
+        /// <summary>解析颜色；非法值返回白色（取色预览等“总能画出来”的场景用）。</summary>
         public static Color ParseColor(string hex)
         {
-            try
-            {
-                if (!string.IsNullOrWhiteSpace(hex) && hex.TrimStart().StartsWith("#"))
-                {
-                    string s = hex.Trim().TrimStart('#');
-                    if (s.Length == 6)
-                    {
-                        return Color.FromRgb(
-                            Convert.ToByte(s.Substring(0, 2), 16),
-                            Convert.ToByte(s.Substring(2, 2), 16),
-                            Convert.ToByte(s.Substring(4, 2), 16));
-                    }
-                    if (s.Length == 8)
-                    {
-                        return Color.FromArgb(
-                            Convert.ToByte(s.Substring(0, 2), 16),
-                            Convert.ToByte(s.Substring(2, 2), 16),
-                            Convert.ToByte(s.Substring(4, 2), 16),
-                            Convert.ToByte(s.Substring(6, 2), 16));
-                    }
-                }
-            }
-            catch { }
-            return Colors.White;
+            return ParseColor(hex, Colors.White);
+        }
+
+        /// <summary>解析颜色；非法值返回 <paramref name="fallback"/>。唯一实现委托给 <see cref="ColorCode"/>。</summary>
+        public static Color ParseColor(string hex, Color fallback)
+        {
+            byte a, r, g, b;
+            if (!ColorCode.TryParse(hex, out a, out r, out g, out b)) return fallback;
+            return Color.FromArgb(a, r, g, b);
         }
     }
 }
