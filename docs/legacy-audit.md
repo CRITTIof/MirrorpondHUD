@@ -170,12 +170,13 @@ v2.9.1 起 CLI 面板已支持就地换肤，v2.9.4 补齐了 Settings 跟随与
 
 | 文件 | 行数 | 说明 |
 |---|---|---|
-| `src/Ui/OverlayController.cs` | 1760 | 卡片同步、布局、热键、托盘、玻璃、命令行都在一个类里 |
-| `src/Ui/SettingsWindow.xaml.cs` | 1677 | 五个页签 + 卡片列表 + 主题 + 颜色/字体/热键 |
-| `src/Ui/Controls/CliUi.cs` | 659 | 面板骨架 + 输入框 + 条目面板 + 滚动条 |
+| `src/Ui/OverlayController.cs` | 1434 | v2.13.0 已拆出 `CardSlot`/`CardHost`、`CardLayoutCoordinator`、`OverlayIntro`；剩余卡片同步、热键、命令行、托盘等 |
+| `src/Ui/SettingsWindow.xaml.cs` | 1695 | 五个页签 + 卡片列表 + 主题 + 颜色/字体/热键 |
+| `src/Ui/Controls/CliUi.cs` | 658 | 面板骨架 + 输入框 + 条目面板 + 滚动条 |
 
-不建议现在拆；下次要动其中一块时按功能切（例如把 `SyncCards` / `LayoutCards` 抽成 `CardLayoutCoordinator`，
-把外观页的控件事件抽成 partial）。拆之前先把 S1/S2 做完，否则颜色逻辑会跟着搬两次。
+v2.13.0 做了第一步：`OverlayController` 从 1772 降到 1434，布局 / 启动动画 / 卡片状态各自独立。
+剩余部分仍是“上帝类”，建议继续按 2.13.x 拆（下一步优先 `SyncCards` / `ApplySettings` / 热键），
+`SettingsWindow` / `CliUi` 暂时不动，等对应功能真的需要改时再按页签 / 面板切。
 
 ### S12 `FindCommandCard` 取第一张交互卡（P2）
 

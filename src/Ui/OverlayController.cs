@@ -18,98 +18,8 @@ namespace MirrorpondHUD.Ui
     /// </summary>
     public sealed class OverlayController : IDisposable
     {
-        enum IntroPhase
-        {
-            WelcomeTyping,
-            WelcomeHold,
-            WelcomeErase,
-            ContentTyping,
-            Live
-        }
-
         readonly List<string> _args;
         readonly KeyHistory _keys = new KeyHistory();
-
-        sealed class CardSlot
-        {
-            public CardSettings Config;
-            public ICardModule Module;
-            /// <summary>模块同时是富内容卡片时（图片 / 视频 / CLI 面板）非空。</summary>
-            public IRichCardModule Rich;
-            public Settings Dialog;
-            public OverlayWindow Window;
-            public bool Summoned;
-            public bool Shown;
-            public double BodyHeight;
-
-            /// <summary>富内容控件的当前实例（隐藏时保留，设置变化时重建）。</summary>
-            public FrameworkElement Content;
-
-            /// <summary>
-            /// 建 / 刷新这个内容时用的**内容**签名（种类、模板、本卡设置）。
-            /// 应用设置时拿它和新签名比较：一样就只刷新数据，不一样才重建控件。
-            /// </summary>
-            public string ContentSignature;
-
-            /// <summary>**样式**签名（外观 / CLI 尺寸 / 圆角 / 投影）；只变它时优先就地换肤。</summary>
-            public string StyleSignature;
-
-            /// <summary>这张卡片拿到的宿主服务（状态目录、请求重画 / 布局）。</summary>
-            public CardHost Host;
-
-            /// <summary>上次真正重画的时间；和模块的刷新间隔配合做节流。</summary>
-            public DateTime LastRenderUtc;
-        }
-
-        /// <summary>
-        /// 每张卡片一份的宿主服务实现：把状态读写落到 <c>cards\&lt;id&gt;\</c>，
-        /// 把「重画 / 重新布局」转给控制器。模块是单例，所以这只是下发对象，不长期持有。
-        /// </summary>
-        internal sealed class CardHost : ICardHost
-        {
-            readonly OverlayController _owner;
-
-            public CardHost(OverlayController owner, CardSettings config)
-            {
-                _owner = owner;
-                Config = config;
-            }
-
-            /// <summary>卡片配置；应用设置时由控制器换成新对象。</summary>
-            public CardSettings Config { get; set; }
-
-            public string StateDirectory
-            {
-                get { return CardStateStore.DirectoryFor(CardId); }
-            }
-
-            public string ReadState(string fileName)
-            {
-                return CardStateStore.Read(CardId, fileName);
-            }
-
-            public bool WriteState(string fileName, string text)
-            {
-                return CardStateStore.Write(CardId, fileName, text);
-            }
-
-            public bool DeleteState(string fileName)
-            {
-                return CardStateStore.Delete(CardId, fileName);
-            }
-
-            public void RequestRender()
-            {
-                _owner.RequestRenderFromModule();
-            }
-
-            public void RequestLayout()
-            {
-                _owner.RequestLayoutFromModule();
-            }
-
-            string CardId { get { return Config == null ? "" : Config.Id; } }
-        }
 
         Settings _settings;
         MetricEngine _engine;
@@ -118,31 +28,29 @@ namespace MirrorpondHUD.Ui
         TrayIcon _tray;
         HotkeyManager _hotkeys;
         DispatcherTimer _renderTimer;
-        DispatcherTimer _introTimer;
         EventWaitHandle _activation;
         Thread _activationThread;
         MetricsSnapshot _last = new MetricsSnapshot();
         volatile bool _disposed;
         bool _overlayVisible;
-        bool _layoutScheduled;
         bool _hasSnapshot;
 
         readonly List<CardSlot> _cards = new List<CardSlot>();
+        readonly CardLayoutCoordinator _layout;
+        readonly OverlayIntro _intro;
 
         CardSlot _commandCard;
         bool _commandMode;
-
-        CardSlot _introCard;
-        IntroPhase _phase = IntroPhase.Live;
-        DateTime _phaseStart;
-        string _introWelcome = "";
-        string _introContent = "";
-        string _shownText = "";
 
         public OverlayController(Settings settings, List<string> args)
         {
             _settings = settings;
             _args = args ?? new List<string>();
+            _layout = new CardLayoutCoordinator(_cards, () => _settings, () => _disposed,
+                                                Dispatcher.CurrentDispatcher);
+            _intro = new OverlayIntro(_cards, () => _settings, CardTemplate,
+                                      slot => RenderCardText(slot), _layout.SyncHeight, _layout.Layout,
+                                      RenderNow, Dispatcher.CurrentDispatcher);
         }
 
         public Settings CurrentSettings { get { return _settings; } }
@@ -167,9 +75,9 @@ namespace MirrorpondHUD.Ui
             UpdateCommandInfo();
 
             if (minimized)
-                _phase = IntroPhase.Live;
+                _intro.Reset();
             else if (intro)
-                BeginIntro();
+                _intro.Begin();
 
             Log.Info("卡片已创建，数量=" + _cards.Count + "，可见=" + _overlayVisible +
                      "，置顶=" + _settings.Overlay.Topmost + "，锁定=" + _settings.Overlay.Locked);
@@ -201,7 +109,7 @@ namespace MirrorpondHUD.Ui
         {
             _cards.Clear();
             _commandCard = null;
-            _introCard = null;
+            _intro.Reset();
 
             foreach (CardSettings config in _settings.Cards)
                 _cards.Add(CreateSlot(config));
@@ -235,7 +143,7 @@ namespace MirrorpondHUD.Ui
             window.ExitRequested += Exit;
             window.Moved += (dx, dy, monitor) => OnCardMoved(slot, dx, dy, monitor);
             window.CommandLineRequested += () => ToggleCommandLine();
-            window.SizeChanged += (s, e) => ScheduleLayout();
+            window.SizeChanged += (s, e) => _layout.Schedule();
             window.RaisedTopmost += () =>
             {
                 if (slot.Rich == null || slot.Content == null) return;
@@ -323,7 +231,7 @@ namespace MirrorpondHUD.Ui
         internal void RequestLayoutFromModule()
         {
             if (_disposed) return;
-            ScheduleLayout();
+            _layout.Schedule();
         }
 
         /// <summary>
@@ -478,7 +386,7 @@ namespace MirrorpondHUD.Ui
                     HideCard(slot);
             }
 
-            LayoutCards();
+            _layout.Layout();
         }
 
         void ShowCard(CardSlot slot, string text)
@@ -504,7 +412,7 @@ namespace MirrorpondHUD.Ui
 
             slot.Shown = true;
             slot.BodyHeight = slot.Window.CardHeight;
-            LayoutCards();
+            _layout.Layout();
 
             slot.Window.Opacity = 1;
             slot.Window.UpdateClickThrough();
@@ -568,94 +476,7 @@ namespace MirrorpondHUD.Ui
             slot.Shown = false;
             slot.BodyHeight = 0;
             slot.Window.Hide();
-            LayoutCards();
-        }
-
-        void SyncHeight(CardSlot slot)
-        {
-            if (slot == null) return;
-            slot.BodyHeight = slot.Shown ? slot.Window.CardHeight : 0;
-        }
-
-        void ScheduleLayout()
-        {
-            if (_layoutScheduled || _disposed) return;
-            _layoutScheduled = true;
-
-            Application.Current.Dispatcher.BeginInvoke(new Action(() =>
-            {
-                _layoutScheduled = false;
-                if (_disposed) return;
-                foreach (CardSlot slot in _cards) SyncHeight(slot);
-                LayoutCards();
-            }), DispatcherPriority.Render);
-        }
-
-        /// <summary>从锚点开始按顺序把可见卡片往下排，间距取每张卡片自己的 Spacing。</summary>
-        void LayoutCards()
-        {
-            // 先量出整叠卡片里最宽的一张：右对齐时每张卡片的 X = 锚点 + (最宽 - 自己宽度)，
-            // 这样所有卡片的右边缘落在同一条竖线上；左对齐时所有卡片共用锚点 X。
-            double stackWidth = 0;
-            foreach (CardSlot slot in _cards)
-            {
-                if (!slot.Shown) continue;
-                stackWidth = Math.Max(stackWidth, slot.Window.CardWidth);
-            }
-
-            string align = ResolveCardAlign(stackWidth);
-            double top = 0;
-            bool first = true;
-
-            foreach (CardSlot slot in _cards)
-            {
-                if (!slot.Shown) continue;
-
-                if (!first) top += Math.Max(0, slot.Config.Spacing);
-
-                double x = _settings.Overlay.X;
-                if (align == "Right")
-                    x += Math.Max(0, stackWidth - slot.Window.CardWidth);
-
-                slot.Dialog.Overlay.X = x;
-                slot.Dialog.Overlay.Y = _settings.Overlay.Y + top;
-                slot.Dialog.Overlay.Monitor = _settings.Overlay.Monitor;
-                slot.Dialog.Overlay.Locked = _settings.Overlay.Locked;
-                slot.Window.ApplyPosition();
-
-                top += slot.BodyHeight > 0 ? slot.BodyHeight : slot.Window.CardHeight;
-                first = false;
-            }
-        }
-
-        /// <summary>左对齐 = 左边缘共线，右对齐 = 右边缘共线；自动按整叠卡片在屏幕左 / 右半边决定。</summary>
-        string ResolveCardAlign(double stackWidth)
-        {
-            string mode = Settings.NormalizeCardAlign(_settings.Style.CardAlign);
-            if (mode == "Left" || mode == "Right") return mode;
-
-            try
-            {
-                System.Windows.Forms.Screen[] screens = System.Windows.Forms.Screen.AllScreens;
-                if (screens.Length == 0) return "Left";
-
-                int index = Math.Max(0, Math.Min(_settings.Overlay.Monitor, screens.Length - 1));
-                System.Drawing.Rectangle work = screens[index].WorkingArea;
-
-                double scale = 1.0;
-                if (screens[0].Bounds.Width > 0)
-                {
-                    double candidate = System.Windows.SystemParameters.PrimaryScreenWidth / screens[0].Bounds.Width;
-                    if (candidate > 0.1 && candidate < 10) scale = candidate;
-                }
-
-                double center = _settings.Overlay.X + stackWidth / 2;
-                return center < work.Width * scale / 2 ? "Left" : "Right";
-            }
-            catch
-            {
-                return "Left";
-            }
+            _layout.Layout();
         }
 
         void OnCardMoved(CardSlot slot, double dx, double dy, int monitor)
@@ -666,7 +487,7 @@ namespace MirrorpondHUD.Ui
             _settings.Overlay.Y += dy;
             _settings.Overlay.Monitor = monitor;
 
-            LayoutCards();
+            _layout.Layout();
             SaveSettings();
 
             if (_settingsWindow != null)
@@ -827,7 +648,7 @@ namespace MirrorpondHUD.Ui
             {
                 if (!slot.Shown || slot.Module.IsInteractive) continue;
                 if (slot.Rich != null) continue;   // 富内容（图片 / 视频）不需要逐帧刷新文字
-                if (ReferenceEquals(slot, _introCard) && _phase != IntroPhase.Live) continue;
+                if (_intro.IsCard(slot) && _intro.IsRunning) continue;
 
                 // 模块可以声明「最快多久重画一次」：时钟不必按 8 帧/秒重算模板。
                 int interval = 0;
@@ -845,7 +666,7 @@ namespace MirrorpondHUD.Ui
                 slot.LastRenderUtc = now;
             }
 
-            LayoutIfNeeded();
+            _layout.LayoutIfNeeded();
         }
 
         /// <summary>
@@ -865,37 +686,16 @@ namespace MirrorpondHUD.Ui
             }
         }
 
-        /// <summary>
-        /// 文字变长 / 命令行展开后窗口会自己长高，这里在每次渲染后校正一次堆叠位置，
-        /// 不依赖 Window.SizeChanged 一定按时触发。
-        /// </summary>
-        void LayoutIfNeeded()
-        {
-            bool changed = false;
-            foreach (CardSlot slot in _cards)
-            {
-                if (!slot.Shown) continue;
-                double height = slot.Window.CardHeight;
-                if (Math.Abs(height - slot.BodyHeight) > 0.5)
-                {
-                    slot.BodyHeight = height;
-                    changed = true;
-                }
-            }
-
-            if (changed) LayoutCards();
-        }
-
         void OnSnapshot(MetricsSnapshot snapshot)
         {
             _last = snapshot;
             _hasSnapshot = !snapshot.Warmup;
 
-            if (_phase != IntroPhase.Live)
+            if (_intro.IsRunning)
             {
                 // 动画期间不刷新内容，但可以按真实数据把整块尺寸先撑好，
                 // 这样动画结束时不会突然变宽、文字位置也不会跳。
-                Application.Current.Dispatcher.BeginInvoke(new Action(UpdateIntroLayout), DispatcherPriority.Background);
+                Application.Current.Dispatcher.BeginInvoke(new Action(_intro.LayoutChanged), DispatcherPriority.Background);
                 return;
             }
 
@@ -924,7 +724,7 @@ namespace MirrorpondHUD.Ui
             }
 
             if (_commandMode) ExitCommandLine();
-            if (_phase != IntroPhase.Live) FinishIntro();
+            if (_intro.IsRunning) _intro.Finish();
 
             if (!_overlayVisible)
             {
@@ -1010,144 +810,6 @@ namespace MirrorpondHUD.Ui
             Log.Info("快捷命令行已关闭，命令与返回已清空");
         }
 
-        // ==================== 启动动画 ====================
-
-        CardSlot FirstLiveCard()
-        {
-            foreach (CardSlot slot in _cards)
-                if (slot.Shown && !slot.Module.IsInteractive && slot.Rich == null) return slot;
-            return null;
-        }
-
-        void BeginIntro()
-        {
-            _introCard = FirstLiveCard();
-            if (_introCard == null || !_settings.Behavior.IntroEnabled)
-            {
-                _phase = IntroPhase.Live;
-                RenderNow();
-                return;
-            }
-
-            _introWelcome = string.IsNullOrEmpty(_settings.Behavior.WelcomeText)
-                ? "Welcome Back"
-                : _settings.Behavior.WelcomeText;
-            _introContent = TemplateEngine.RenderPlaceholder(CardTemplate(_introCard), "---");
-            _shownText = "";
-
-            // 先用完整内容把整块尺寸定下来，逐字打字时窗口和文本位置都不会抖动
-            _introCard.Window.SetLayoutText(_introContent);
-            _introCard.Window.SetText("", true);
-            SyncHeight(_introCard);
-
-            _phase = IntroPhase.WelcomeTyping;
-            _phaseStart = DateTime.UtcNow;
-
-            if (_introTimer == null)
-            {
-                _introTimer = new DispatcherTimer(DispatcherPriority.Render)
-                {
-                    Interval = TimeSpan.FromMilliseconds(20)
-                };
-                _introTimer.Tick += (s, e) => IntroTick();
-            }
-
-            _introTimer.Start();
-            Log.Info("启动动画开始（欢迎语=" + _introWelcome + "，速度=" + _settings.Behavior.TypeSpeedMs + "ms/字）");
-        }
-
-        void ShowIntroText(string text)
-        {
-            if (text == _shownText || _introCard == null) return;
-            _shownText = text;
-            _introCard.Window.SetText(text, true);
-        }
-
-        void IntroTick()
-        {
-            if (_phase == IntroPhase.Live)
-            {
-                _introTimer.Stop();
-                return;
-            }
-
-            double speed = Math.Max(8, _settings.Behavior.TypeSpeedMs);
-            double elapsed = (DateTime.UtcNow - _phaseStart).TotalMilliseconds;
-            int chars = (int)(elapsed / speed);
-
-            switch (_phase)
-            {
-                case IntroPhase.WelcomeTyping:
-                {
-                    int n = Math.Min(chars, _introWelcome.Length);
-                    ShowIntroText(_introWelcome.Substring(0, n));
-                    if (n >= _introWelcome.Length)
-                    {
-                        _phase = IntroPhase.WelcomeHold;
-                        _phaseStart = DateTime.UtcNow;
-                    }
-                    break;
-                }
-
-                case IntroPhase.WelcomeHold:
-                    if ((DateTime.UtcNow - _phaseStart).TotalMilliseconds >= 650)
-                    {
-                        _phase = IntroPhase.WelcomeErase;
-                        _phaseStart = DateTime.UtcNow;
-                    }
-                    break;
-
-                case IntroPhase.WelcomeErase:
-                {
-                    int removed = Math.Min(chars, _introWelcome.Length);
-                    int remain = _introWelcome.Length - removed;
-                    ShowIntroText(remain <= 0 ? "" : _introWelcome.Substring(0, remain));
-                    if (remain <= 0)
-                    {
-                        _phase = IntroPhase.ContentTyping;
-                        _phaseStart = DateTime.UtcNow;
-                    }
-                    break;
-                }
-
-                case IntroPhase.ContentTyping:
-                {
-                    int n = Math.Min(chars, _introContent.Length);
-                    ShowIntroText(_introContent.Substring(0, n));
-                    if (n >= _introContent.Length) FinishIntro();
-                    break;
-                }
-            }
-        }
-
-        void FinishIntro()
-        {
-            if (_phase == IntroPhase.Live) return;
-            _phase = IntroPhase.Live;
-            if (_introTimer != null) _introTimer.Stop();
-
-            if (_introCard != null)
-            {
-                _introCard.Window.SetLayoutText(null);
-                _introCard.Window.SetText(RenderCardText(_introCard), false);
-                SyncHeight(_introCard);
-            }
-
-            _introCard = null;
-            LayoutCards();
-
-            Log.Info("启动动画结束，光标消失，开始刷新数据");
-            RenderNow();
-        }
-
-        void UpdateIntroLayout()
-        {
-            if (_phase == IntroPhase.Live || _introCard == null) return;
-            _introCard.Window.SetLayoutText(RenderCardText(_introCard));
-            SyncHeight(_introCard);
-            LayoutCards();
-        }
-
         // ==================== 操作 ====================
 
         public void ToggleVisibility()
@@ -1157,7 +819,7 @@ namespace MirrorpondHUD.Ui
             if (_overlayVisible)
             {
                 if (_commandMode) ExitCommandLine();
-                if (_phase != IntroPhase.Live) FinishIntro();
+                if (_intro.IsRunning) _intro.Finish();
                 _overlayVisible = false;
                 foreach (CardSlot slot in _cards) HideCard(slot);
             }
@@ -1250,7 +912,7 @@ namespace MirrorpondHUD.Ui
             settings.Overlay.Monitor = _settings.Overlay.Monitor;
             settings.Overlay.Locked = _settings.Overlay.Locked;
 
-            FinishIntro();
+            _intro.Finish();
 
             var summoned = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
             foreach (CardSlot slot in _cards) summoned[slot.Config.Id] = slot.Summoned;
@@ -1430,7 +1092,7 @@ namespace MirrorpondHUD.Ui
             }
             else
             {
-                LayoutCards();
+                _layout.Layout();
             }
 
             SaveSettings();
@@ -1734,7 +1396,7 @@ namespace MirrorpondHUD.Ui
             _disposed = true;
 
             try { _renderTimer?.Stop(); } catch { }
-            try { _introTimer?.Stop(); } catch { }
+            try { _intro.Dispose(); } catch { }
 
             foreach (CardSlot slot in _cards)
             {

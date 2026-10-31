@@ -34,7 +34,10 @@
 | `src/Media/Decoders.cs` | 解码器探测：自定义路径 → PATH → 常见安装目录，找 ffmpeg / mpv / VLC |
 | `src/Media/FfmpegPlayer.cs` | 外部 ffmpeg 解码：原始 BGRA 帧管道、进度、循环、变速、图片兜底 |
 | `src/Media/WaveOutPlayer.cs` | winmm waveOut 播放 ffmpeg 的 PCM 音频（暂停 / 继续 / 音量） |
-| `src/Ui/OverlayController.cs` | 每张卡片一个窗口，负责堆叠、显示 / 隐藏、热键、命令行会话、富内容生命周期 |
+| `src/Ui/OverlayController.cs` | 每张卡片一个窗口，负责生命周期编排、显示 / 隐藏、热键、命令行、富内容 |
+| `src/Ui/CardSlot.cs` | 单张卡片的运行时模型（配置 / 模块 / 窗口 / 富内容 / 签名）与 `CardHost` |
+| `src/Ui/CardLayoutCoordinator.cs` | 垂直堆叠、左右对齐、窗口高度变化合并与延迟布局 |
+| `src/Ui/OverlayIntro.cs` | 启动动画：欢迎语 / 内容逐字、停留、擦除、回到实时刷新 |
 | `src/Ui/CardEditor.cs` | 设置页「内容」里的一张卡片设置卡（双向绑定，含每卡命令行 / 媒体 / AI 接口设置） |
 
 ## 2. 卡片接口
@@ -428,8 +431,10 @@ ffmpeg 路线把视频解成逐帧原始像素，什么格式都能放（代价�
 
 ## 7. 生命周期
 
-`OverlayController` 持有 `List<CardSlot>`，每个 `CardSlot` = `CardSettings` + `ICardModule` + `OverlayWindow`
-+ 富内容控件。命令行 / AI 对话面板的**记录与取消令牌都在面板自己身上**（`CliPanelView`），
+`OverlayController` 持有 `List<CardSlot>`；`CardSlot`（`src/Ui/CardSlot.cs`）=
+`CardSettings` + `ICardModule` + `OverlayWindow` + 富内容控件。堆叠布局由
+`CardLayoutCoordinator` 负责，启动动画由 `OverlayIntro` 负责，控制器只决定“何时调用”。
+命令行 / AI 对话面板的**记录与取消令牌都在面板自己身上**（`CliPanelView`），
 宿主只负责「唤起 / 收起」并把键盘焦点交过去。
 
 `ApplySettings` 时按 `Id` 对齐：
