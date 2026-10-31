@@ -223,7 +223,9 @@ namespace MirrorpondHUD.Cards
             SetBadge("[运行中]", WorkingDirectory());
             SetStatus("… 正在执行：" + command, false);
 
-            Log.Info("命令行执行（" + CommandRunner.ToolLabel(_command) + "，目录 " + WorkingDirectory() + "）：" + command);
+            // P2-6：完整命令可能带 Authorization / token，不写进日志；只记工具、目录、长度和脱敏摘要。
+            Log.Info("命令行执行（" + CommandRunner.ToolLabel(_command) + "，目录 " + WorkingDirectory() +
+                     "，命令 " + command.Length + " 字）：" + CommandRunner.DescribeCommand(command));
 
             _cancel = new CancellationTokenSource();
             CancellationToken token = _cancel.Token;
@@ -237,10 +239,14 @@ namespace MirrorpondHUD.Cards
                 if (session != _session) return;
 
                 output.Text = CommandRunner.FormatOutput(result, snapshot);
-                SetStatus(result.Canceled ? "已取消" : "● 完成 · 输入下一条命令", false);
+                bool truncated = result.OutputTruncated || result.ErrorTruncated;
+                SetStatus(result.Canceled
+                              ? "已取消"
+                              : "● 完成 · 输入下一条命令" + (truncated ? " · 输出已截断" : ""), false);
 
                 Log.Info("命令行完成：退出码 " + result.ExitCode + "，输出 " +
-                         ((output.Text ?? "").Length) + " 字" + (result.TimedOut ? "（超时）" : ""));
+                         ((output.Text ?? "").Length) + " 字" + (result.TimedOut ? "（超时）" : "") +
+                         (truncated ? "（输出已截断）" : ""));
             }
             catch (Exception ex)
             {

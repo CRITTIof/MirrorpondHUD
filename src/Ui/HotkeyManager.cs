@@ -114,10 +114,9 @@ namespace MirrorpondHUD.Ui
         {
             if (_disposed || _window == null || string.IsNullOrEmpty(action)) return false;
 
-            Detach(action);
-
             if (string.IsNullOrWhiteSpace(combination))
             {
+                Detach(action);
                 Log.Info("热键未设置（已禁用）: " + action);
                 return false;
             }
@@ -125,39 +124,81 @@ namespace MirrorpondHUD.Ui
             uint mods, vk;
             if (!TryParse(combination, out mods, out vk))
             {
-                Log.Warn("无法识别的热键: " + combination + "（" + action + "）");
+                // P2-3：不能先 Detach 再解析。解析失败 / 新键被占用时必须保留旧绑定。
+                Log.Warn("无法识别的热键: " + combination + "（" + action + "），保留原绑定");
                 return false;
             }
 
             string key = KeyOf(mods, vk);
-            int id;
-            if (_keyToId.TryGetValue(key, out id))
+            int oldId;
+            _actionToId.TryGetValue(action, out oldId);
+
+            int existingId;
+            if (_keyToId.TryGetValue(key, out existingId))
             {
                 List<string> shared;
-                if (!_idToActions.TryGetValue(id, out shared))
+                if (!_idToActions.TryGetValue(existingId, out shared))
                 {
                     shared = new List<string>();
-                    _idToActions[id] = shared;
+                    _idToActions[existingId] = shared;
                 }
-                shared.Add(action);
-                _actionToId[action] = id;
-                Log.Info("热键 " + combination + " 已合并（同一组合键共 " + shared.Count + " 个动作）");
+
+                bool already = false;
+                for (int i = 0; i < shared.Count; i++)
+                {
+                    if (string.Equals(shared[i], action, StringComparison.OrdinalIgnoreCase))
+                    {
+                        already = true;
+                        break;
+                    }
+                }
+
+                if (!already) shared.Add(action);
+                _actionToId[action] = existingId;
+
+                // 新组合键已经有注册项：不需要动 OS；把旧 id 上的这个动作摘掉即可。
+                if (oldId != 0 && oldId != existingId) RemoveActionFromId(action, oldId);
+
+                if (!already) Log.Info("热键 " + combination + " 已合并（同一组合键共 " + shared.Count + " 个动作）");
                 return true;
             }
 
             int newId = _nextId++;
             if (!RegisterHotKey(_window.Handle, newId, mods | ModNoRepeat, vk))
             {
+                // 注册失败：旧绑定保持原样（这是 P2-3 的核心）。
                 Log.Warn("热键注册失败（多半被其它程序占用）: " + combination +
-                         " err=" + Marshal.GetLastWin32Error());
+                         " err=" + Marshal.GetLastWin32Error() + "，保留原绑定");
                 return false;
             }
 
             _keyToId[key] = newId;
             _idToKey[newId] = key;
             _idToActions[newId] = new List<string> { action };
+
+            if (oldId != 0 && oldId != newId) RemoveActionFromId(action, oldId);
             _actionToId[action] = newId;
             return true;
+        }
+
+        /// <summary>只把一个动作从指定 id 上摘掉；id 上还有别的动作时保留组合键注册（P2-3）。</summary>
+        void RemoveActionFromId(string action, int id)
+        {
+            List<string> actions;
+            if (!_idToActions.TryGetValue(id, out actions)) return;
+
+            actions.RemoveAll(a => string.Equals(a, action, StringComparison.OrdinalIgnoreCase));
+            if (actions.Count > 0) return;
+
+            _idToActions.Remove(id);
+            if (_window != null) UnregisterHotKey(_window.Handle, id);
+
+            string key;
+            if (_idToKey.TryGetValue(id, out key))
+            {
+                _idToKey.Remove(id);
+                _keyToId.Remove(key);
+            }
         }
 
         /// <summary>解除一个动作的绑定；组合键上还有别的动作时保持注册。</summary>

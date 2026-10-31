@@ -45,6 +45,13 @@ namespace MirrorpondHUD.Media
 
         readonly ManualResetEventSlim _resume = new ManualResetEventSlim(true);
 
+        // P2-18：_stop 原先兼作“重启代号”。RestartAt 的 Join(1500) 超时后旧读线程晚归，
+        // 会看到 _stop 已被清掉继续跑，还可能 Kill 掉新一代的进程、或对新一代报假失败。
+        // 现在每次 Start / RestartAt 都 ++_run；读线程全程用自己捕获的 run 校验，
+        // 所有进程 / 音频播放器的安装与 Kill 都在 _sync 里校验代次，旧代晚归直接作废。
+        readonly object _sync = new object();
+        int _run;
+
         Process _process;
         Process _audioProcess;
         Thread _reader;
@@ -73,12 +80,23 @@ namespace MirrorpondHUD.Media
         {
             get
             {
-                double position = _startSeconds + (_fps > 0 ? _frames / _fps : 0);
+                double start;
+                long frames;
+                lock (_sync)
+                {
+                    start = _startSeconds;
+                    frames = _frames;
+                }
+
+                double position = start + (_fps > 0 ? frames / _fps : 0);
                 return _duration > 0.01 ? Math.Min(_duration, position) : position;
             }
         }
 
-        public bool IsRunning { get { return _process != null && !_stop; } }
+        public bool IsRunning
+        {
+            get { lock (_sync) { return _process != null && !_stop; } }
+        }
         public bool IsPaused { get { return !_resume.IsSet; } }
         public double Speed { get { return _speed; } }
 
@@ -91,6 +109,8 @@ namespace MirrorpondHUD.Media
         {
             StopInternal();
 
+            double startAt = Math.Max(0, startSeconds);
+
             _ffmpeg = ffmpeg;
             _path = path;
             _width = Math.Max(16, width - width % 2);
@@ -98,19 +118,19 @@ namespace MirrorpondHUD.Media
             _fps = fps >= 1 && fps <= 121 ? fps : 25;
             _duration = duration;
             _loop = loop;
-            _frames = 0;
-            _stop = false;
             _readrateRetried = false;
             _speed = ClampSpeed(speed);
-            _startSeconds = Math.Max(0, startSeconds);
             _audioEnabled = audio;
             _volume = Math.Max(0, Math.Min(100, volume));
-            _startPaused = !autoplay;
+
+            // 新一轮播放：++代次并重置本代状态（旧读线程 / 旧进程由此失效）。
+            int run = BeginRun(startAt, !autoplay);
+            _stop = false;
             _resume.Set();
 
             try
             {
-                LaunchAll();
+                LaunchAll(run, startAt);
             }
             catch (Exception ex)
             {
@@ -119,26 +139,45 @@ namespace MirrorpondHUD.Media
                 return;
             }
 
-            StartReader();
+            StartReader(run);
         }
 
-        void StartReader()
+        /// <summary>开始一代新播放：递增代次，重置本代的起始位置 / 帧计数 / 起播暂停标记。</summary>
+        int BeginRun(double startSeconds, bool paused)
         {
-            _reader = new Thread(ReadLoop)
+            lock (_sync)
+            {
+                _run++;
+                _startSeconds = Math.Max(0, startSeconds);
+                _frames = 0;
+                _startPaused = paused;
+                return _run;
+            }
+        }
+
+        bool IsCurrent(int run)
+        {
+            return run == Volatile.Read(ref _run);
+        }
+
+        void StartReader(int run)
+        {
+            Thread reader = new Thread(() => ReadLoop(run))
             {
                 IsBackground = true,
                 Name = "MirrorpondHUD.ffmpeg"
             };
-            _reader.Start();
+            _reader = reader;
+            reader.Start();
         }
 
-        void LaunchAll()
+        void LaunchAll(int run, double startSeconds)
         {
-            LaunchVideo();
-            LaunchAudio();
+            LaunchVideo(run, startSeconds);
+            LaunchAudio(run, startSeconds);
         }
 
-        void LaunchVideo()
+        void LaunchVideo(int run, double startSeconds)
         {
             var psi = new ProcessStartInfo(_ffmpeg)
             {
@@ -148,7 +187,7 @@ namespace MirrorpondHUD.Media
                 RedirectStandardError = true
             };
 
-            AddInput(psi);
+            AddInput(psi, startSeconds);
             psi.ArgumentList.Add("-readrate");
             psi.ArgumentList.Add(_speed.ToString("0.###", CultureInfo.InvariantCulture));
             psi.ArgumentList.Add("-i");
@@ -179,13 +218,35 @@ namespace MirrorpondHUD.Media
             };
             process.BeginErrorReadLine();
 
-            _process = process;
+            // 代次校验 + 换手都在 _sync 里：旧代的启动不能把新代进程顶掉（P2-18）。
+            Process replaced = null;
+            bool current;
+            lock (_sync)
+            {
+                current = run == _run;
+                if (current)
+                {
+                    replaced = _process;
+                    _process = process;
+                }
+            }
+
+            if (!current)
+            {
+                // 这一代在启动过程中已经被作废：新进程直接收掉，别污染当前状态。
+                DisposeProcess(process);
+                return;
+            }
+
+            DisposeProcess(replaced);
         }
 
-        void LaunchAudio()
+        void LaunchAudio(int run, double startSeconds)
         {
             if (!_audioEnabled || _volume <= 0) return;
 
+            Process process = null;
+            WaveOutPlayer player = null;
             try
             {
                 var psi = new ProcessStartInfo(_ffmpeg)
@@ -196,7 +257,7 @@ namespace MirrorpondHUD.Media
                     RedirectStandardError = true
                 };
 
-                AddInput(psi);
+                AddInput(psi, startSeconds);
                 psi.ArgumentList.Add("-i");
                 psi.ArgumentList.Add(_path);
                 psi.ArgumentList.Add("-vn");
@@ -218,7 +279,7 @@ namespace MirrorpondHUD.Media
                 psi.ArgumentList.Add("s16le");
                 psi.ArgumentList.Add("pipe:1");
 
-                Process process = Process.Start(psi);
+                process = Process.Start(psi);
                 if (process == null) return;
 
                 process.ErrorDataReceived += (s, e) =>
@@ -228,37 +289,81 @@ namespace MirrorpondHUD.Media
                 };
                 process.BeginErrorReadLine();
 
-                _audioProcess = process;
+                // 安装音频解码进程（代次校验，P2-18）
+                Process replacedProcess = null;
+                bool current;
+                lock (_sync)
+                {
+                    current = run == _run;
+                    if (current)
+                    {
+                        replacedProcess = _audioProcess;
+                        _audioProcess = process;
+                    }
+                }
 
-                _audio = new WaveOutPlayer { Volume = _volume };
-                if (!_audio.Start(process.StandardOutput.BaseStream))
+                if (!current)
+                {
+                    DisposeProcess(process);
+                    return;
+                }
+                DisposeProcess(replacedProcess);
+
+                player = new WaveOutPlayer { Volume = _volume };
+                if (!player.Start(process.StandardOutput.BaseStream))
                 {
                     Log.Warn("音频输出启动失败，继续静音播放");
-                    StopAudio();
+                    try { player.Dispose(); } catch { }
+                    player = null;
+                    StopAudio(run);
+                    return;
                 }
-                else
+
+                // 安装播放器：启动期间可能又被重启 / 停止
+                WaveOutPlayer replacedAudio = null;
+                bool installed;
+                lock (_sync)
                 {
-                    Log.Info("音频输出已启动（48 kHz 立体声，音量 " + _volume + "%）");
+                    installed = run == _run;
+                    if (installed)
+                    {
+                        replacedAudio = _audio;
+                        _audio = player;
+                    }
                 }
+
+                if (!installed)
+                {
+                    // 这一代已被作废：刚起来的播放器自己收掉，不污染当前状态。
+                    try { player.Stop(); } catch { }
+                    try { player.Dispose(); } catch { }
+                    DisposeProcess(process);
+                    return;
+                }
+
+                DisposeAudio(replacedAudio);
+                Log.Info("音频输出已启动（48 kHz 立体声，音量 " + _volume + "%）");
             }
             catch (Exception ex)
             {
                 Log.Warn("启动音频解码失败: " + ex.Message);
-                StopAudio();
+                DisposeProcess(process);
+                DisposeAudio(player);
+                StopAudio(run);
             }
         }
 
-        void AddInput(ProcessStartInfo psi)
+        void AddInput(ProcessStartInfo psi, double startSeconds)
         {
             psi.ArgumentList.Add("-hide_banner");
             psi.ArgumentList.Add("-loglevel");
             psi.ArgumentList.Add("error");
             psi.ArgumentList.Add("-nostdin");
 
-            if (_startSeconds > 0.01)
+            if (startSeconds > 0.01)
             {
                 psi.ArgumentList.Add("-ss");
-                psi.ArgumentList.Add(_startSeconds.ToString("0.###", CultureInfo.InvariantCulture));
+                psi.ArgumentList.Add(startSeconds.ToString("0.###", CultureInfo.InvariantCulture));
             }
         }
 
@@ -293,36 +398,72 @@ namespace MirrorpondHUD.Media
 
         // ==================== 读帧 ====================
 
-        void ReadLoop()
+        void ReadLoop(int run)
         {
             try
             {
-                int size = _width * _height * 4;
+                // 尺寸在开播时固定；之后即使 UI 换了文件也不能用新的 _width/_height 去解释
+                // 这一代的 buffer（否则会越界 / 抛异常）。
+                int width = _width;
+                int height = _height;
+                int size = width * height * 4;
                 var buffer = new byte[size];
                 long framesSinceLaunch = 0;
 
                 while (!_stop)
                 {
-                    _resume.Wait();
-                    if (_stop) break;
+                    if (!IsCurrent(run)) break;
 
-                    Process process = _process;
+                    _resume.Wait();
+                    if (_stop || !IsCurrent(run)) break;
+
+                    Process process;
+                    lock (_sync)
+                    {
+                        if (run != _run) break;
+                        process = _process;
+                    }
                     if (process == null) break;
 
                     Stream stream = process.StandardOutput.BaseStream;
-                    if (!ReadFull(stream, buffer))
+                    bool frameRead;
+                    try
                     {
-                        if (_stop) break;
+                        frameRead = ReadFull(stream, buffer);
+                    }
+                    catch (Exception)
+                    {
+                        // 进程被 Stop 杀掉时管道会抛 / 返回 0：老代不算错误。
+                        if (!IsCurrent(run) || _stop) break;
+                        throw;
+                    }
+
+                    if (!frameRead)
+                    {
+                        // 老代晚归：直接退出，不碰新代状态、不报假失败（P2-18）。
+                        if (!IsCurrent(run) || _stop) break;
 
                         // 一帧都没解出来：可能是老版本 ffmpeg 不认 -readrate，退回 -re 再试一次。
-                        if (framesSinceLaunch == 0 && !_readrateRetried)
+                        if (framesSinceLaunch == 0)
                         {
-                            _readrateRetried = true;
-                            if (Math.Abs(_speed - 1) > 0.001)
+                            bool retried = false;
+                            double speed;
+                            lock (_sync)
                             {
+                                if (run != _run) break;
+                                speed = _speed;
+                                if (!_readrateRetried)
+                                {
+                                    _readrateRetried = true;
+                                    retried = true;
+                                }
+                            }
+
+                            if (retried && Math.Abs(speed - 1) > 0.001)
+                            {
+                                lock (_sync) { if (run == _run) _speed = 1; }
                                 Log.Warn("ffmpeg 不支持 -readrate，改用 -re 并以 1× 播放");
-                                _speed = 1;
-                                LoopRestart(0);
+                                LoopRestart(run, 0);
                                 continue;
                             }
                         }
@@ -330,30 +471,36 @@ namespace MirrorpondHUD.Media
                         // 一帧都没解出来 = 文件打不开 / 格式不支持，再重开也是死循环。
                         if (framesSinceLaunch == 0)
                         {
-                            RaiseFailed("ffmpeg 没有解出画面");
+                            if (IsCurrent(run)) RaiseFailed("ffmpeg 没有解出画面");
                             break;
                         }
 
                         if (_loop)
                         {
-                            LoopRestart(0);
+                            LoopRestart(run, 0);
                             framesSinceLaunch = 0;
                             continue;
                         }
 
-                        Action completed = Completed;
-                        if (completed != null)
+                        if (IsCurrent(run))
                         {
-                            try { completed(); } catch { }
+                            Action completed = Completed;
+                            if (completed != null)
+                            {
+                                try { completed(); } catch { }
+                            }
                         }
                         break;
                     }
 
                     framesSinceLaunch++;
 
-                    var frame = BitmapSource.Create(_width, _height, 96, 96,
-                        PixelFormats.Bgra32, null, buffer, _width * 4);
+                    var frame = BitmapSource.Create(width, height, 96, 96,
+                        PixelFormats.Bgra32, null, buffer, width * 4);
                     frame.Freeze();
+
+                    // 出帧期间可能已被重启：老代的帧直接丢掉，不写进当前代的计数 / 画面。
+                    if (!IsCurrent(run)) break;
 
                     Interlocked.Increment(ref _frames);
 
@@ -366,7 +513,13 @@ namespace MirrorpondHUD.Media
 
                     if (_startPaused)
                     {
-                        _startPaused = false;
+                        bool current;
+                        lock (_sync)
+                        {
+                            current = run == _run;
+                            if (current) _startPaused = false;
+                        }
+                        if (!current) break;
                         _resume.Reset();
                         PauseAudio();
                     }
@@ -374,7 +527,8 @@ namespace MirrorpondHUD.Media
             }
             catch (Exception ex)
             {
-                if (!_stop)
+                // 只有当前代才汇报失败；老代晚归的异常静默丢弃（P2-18：不再报假失败）。
+                if (IsCurrent(run) && !_stop)
                 {
                     Log.Warn("ffmpeg 解码线程结束: " + ex.Message);
                     RaiseFailed(ex.Message);
@@ -394,24 +548,40 @@ namespace MirrorpondHUD.Media
             return true;
         }
 
-        /// <summary>读线程内部的重开：不 join 自己，只换进程。</summary>
-        void LoopRestart(double seconds)
+        /// <summary>
+        /// 读线程内部的重开：不 join 自己，只换进程（同一代内）。
+        /// 每一步都做代次校验：如果 UI 在重开过程中又 Seek / Stop 了（代次变了），
+        /// 这里就必须立刻收手，不能 Kill 掉新一代刚起的进程（P2-18）。
+        /// </summary>
+        void LoopRestart(int run, double seconds)
         {
-            StopAudio();
-            KillProcess();
+            if (!IsCurrent(run)) return;
 
-            _startSeconds = Math.Max(0, seconds);
-            _frames = 0;
+            double startAt = Math.Max(0, seconds);
+            lock (_sync)
+            {
+                if (run != _run) return;
+                _startSeconds = startAt;
+                _frames = 0;
+            }
+
+            StopAudio(run);
+            KillProcess(run);
+
+            if (!IsCurrent(run)) return;   // 换进程期间可能已被 UI 重启 / 停止
 
             try
             {
-                LaunchVideo();
-                LaunchAudio();
+                LaunchVideo(run, startAt);
+                LaunchAudio(run, startAt);
             }
             catch (Exception ex)
             {
-                Log.Warn("ffmpeg 重新打开失败: " + ex.Message);
-                RaiseFailed(ex.Message);
+                if (IsCurrent(run))
+                {
+                    Log.Warn("ffmpeg 重新打开失败: " + ex.Message);
+                    RaiseFailed(ex.Message);
+                }
             }
         }
 
@@ -419,27 +589,29 @@ namespace MirrorpondHUD.Media
         void RestartAt(double seconds)
         {
             bool paused = IsPaused;
+            double startAt = Math.Max(0, seconds);
 
             StopInternal();
 
+            int run = BeginRun(startAt, paused);
             _stop = false;
-            _startSeconds = Math.Max(0, seconds);
-            _frames = 0;
-            _startPaused = paused;
             _resume.Set();
 
             try
             {
-                LaunchAll();
+                LaunchAll(run, startAt);
             }
             catch (Exception ex)
             {
-                Log.Warn("ffmpeg 重新打开失败: " + ex.Message);
-                RaiseFailed(ex.Message);
+                if (IsCurrent(run))
+                {
+                    Log.Warn("ffmpeg 重新打开失败: " + ex.Message);
+                    RaiseFailed(ex.Message);
+                }
                 return;
             }
 
-            StartReader();
+            StartReader(run);
         }
 
         // ==================== 控制 ====================
@@ -496,33 +668,78 @@ namespace MirrorpondHUD.Media
             try { if (_audio != null) _audio.Resume(); } catch { }
         }
 
+        /// <summary>管理路径（StopInternal / Dispose）用：无条件收掉当前音频进程与播放器。</summary>
         void StopAudio()
         {
-            Process process = _audioProcess;
-            _audioProcess = null;
-            if (process != null)
+            Process process;
+            WaveOutPlayer audio;
+            lock (_sync)
             {
-                try { if (!process.HasExited) process.Kill(); } catch { }
-                try { process.Dispose(); } catch { }
+                process = _audioProcess;
+                _audioProcess = null;
+                audio = _audio;
+                _audio = null;
             }
 
-            WaveOutPlayer audio = _audio;
-            _audio = null;
-            if (audio != null)
-            {
-                try { audio.Stop(); } catch { }
-                try { audio.Dispose(); } catch { }
-            }
+            DisposeProcess(process);
+            DisposeAudio(audio);
         }
 
+        /// <summary>只有仍是当前代时才收音频；旧代晚归不能停掉新一代的声音（P2-18）。</summary>
+        void StopAudio(int run)
+        {
+            Process process;
+            WaveOutPlayer audio;
+            lock (_sync)
+            {
+                if (run != _run) return;
+                process = _audioProcess;
+                _audioProcess = null;
+                audio = _audio;
+                _audio = null;
+            }
+
+            DisposeProcess(process);
+            DisposeAudio(audio);
+        }
+
+        /// <summary>管理路径用：无条件杀掉当前视频解码进程。</summary>
         void KillProcess()
         {
-            Process process = _process;
-            _process = null;
-            if (process == null) return;
+            Process process;
+            lock (_sync)
+            {
+                process = _process;
+                _process = null;
+            }
+            DisposeProcess(process);
+        }
 
+        /// <summary>只有仍是当前代时才杀视频解码进程，旧代晚归不会误杀新进程（P2-18）。</summary>
+        void KillProcess(int run)
+        {
+            Process process;
+            lock (_sync)
+            {
+                if (run != _run) return;
+                process = _process;
+                _process = null;
+            }
+            DisposeProcess(process);
+        }
+
+        static void DisposeProcess(Process process)
+        {
+            if (process == null) return;
             try { if (!process.HasExited) process.Kill(); } catch { }
             try { process.Dispose(); } catch { }
+        }
+
+        static void DisposeAudio(WaveOutPlayer audio)
+        {
+            if (audio == null) return;
+            try { audio.Stop(); } catch { }
+            try { audio.Dispose(); } catch { }
         }
 
         void RaiseFailed(string message)
@@ -716,6 +933,10 @@ namespace MirrorpondHUD.Media
         {
             _stop = true;
             _resume.Set();
+
+            // 作废当前代：之后旧读线程无论从 ReadFull / FrameReady / LoopRestart 哪一步回来，
+            // 都会发现代次不符并立即退出，既不会 Kill 新进程，也不会对新一代报假失败（P2-18）。
+            lock (_sync) { _run++; }
 
             StopAudio();
             KillProcess();

@@ -160,20 +160,26 @@ namespace MirrorpondHUD.Core
     {
         public const int SupportedSchema = 1;
 
-        /// <summary>读取并套用到 source 的副本。失败时 applied 为 null，source 原样不动。</summary>
+        /// <summary>
+        /// 导入主题文件的大小上限（1 MB）。超过直接拒绝：巨型文件 / 命名管道这类“读不完”的输入
+        /// 不应该被整个读进内存，更不应该拖住调用线程。
+        /// </summary>
+        public const int MaxImportBytes = 1024 * 1024;
+
+        /// <summary>
+        /// 读取并套用到 source 的副本。失败时 applied 为 null，source 原样不动。
+        /// 文件超过 <see cref="MaxImportBytes"/> 会被明确拒绝；读取本身有界，不会接受无限流。
+        /// </summary>
         public static bool TryImport(string path, Settings source, out Settings applied, out string error)
         {
             applied = null;
             error = null;
 
             string json;
-            try
+            string readError;
+            if (!TryReadTextBounded(path, out json, out readError))
             {
-                json = File.ReadAllText(path);
-            }
-            catch (Exception ex)
-            {
-                error = "读取主题文件失败：" + ex.Message;
+                error = readError;
                 return false;
             }
 
@@ -210,6 +216,92 @@ namespace MirrorpondHUD.Core
 
             applied = duplicate;
             return true;
+        }
+
+        /// <summary>
+        /// 有界读取主题文本：命名管道 / 设备路径直接拒绝（它们可能永远读不完）；普通文件先按
+        /// <see cref="FileInfo.Length"/> 快速拒绝超大文件，再按字节数上限读取兜底。
+        /// </summary>
+        static bool TryReadTextBounded(string path, out string text, out string error)
+        {
+            text = null;
+            error = null;
+
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                error = "读取主题文件失败：路径为空";
+                return false;
+            }
+
+            // 命名管道 / 设备路径不是主题文件，读操作可能永远不返回：直接拒绝。
+            // （设置页已经把读取放到后台线程，但后台线程也不该被无限流挂住。）
+            if (path.StartsWith(@"\\.\", StringComparison.Ordinal))
+            {
+                error = "读取主题文件失败：不支持命名管道 / 设备路径";
+                return false;
+            }
+
+            // 普通文件先看大小，避免白读 1 MB 才拒绝；拿不到长度的路径（如网络异常）忽略异常，走下面的有界读取。
+            try
+            {
+                var info = new FileInfo(path);
+                if (info.Exists && info.Length > MaxImportBytes)
+                {
+                    error = "主题文件过大：" + info.Length + " 字节，超过上限 " + MaxImportBytes + " 字节（1 MB）";
+                    return false;
+                }
+            }
+            catch { }
+
+            try
+            {
+                byte[] buffer = new byte[81920];
+                using (var stream = new FileStream(path, FileMode.Open, FileAccess.Read,
+                                                  FileShare.ReadWrite | FileShare.Delete))
+                using (var memory = new MemoryStream())
+                {
+                    long total = 0;
+                    while (true)
+                    {
+                        int read = stream.Read(buffer, 0, buffer.Length);
+                        if (read <= 0) break;
+
+                        total += read;
+                        if (total > MaxImportBytes)
+                        {
+                            error = "主题文件过大：超过上限 " + MaxImportBytes + " 字节（1 MB），已拒绝导入";
+                            return false;
+                        }
+
+                        memory.Write(buffer, 0, read);
+                    }
+
+                    text = DecodeThemeText(memory.ToArray());
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                error = "读取主题文件失败：" + ex.Message;
+                return false;
+            }
+        }
+
+        /// <summary>与 File.ReadAllText 的编码行为对齐：按 BOM 识别 UTF-8 / UTF-16，其余按 UTF-8。</summary>
+        static string DecodeThemeText(byte[] bytes)
+        {
+            if (bytes == null || bytes.Length == 0) return "";
+
+            if (bytes.Length >= 2)
+            {
+                if (bytes[0] == 0xFF && bytes[1] == 0xFE)
+                    return Encoding.Unicode.GetString(bytes, 2, bytes.Length - 2);
+                if (bytes[0] == 0xFE && bytes[1] == 0xFF)
+                    return Encoding.BigEndianUnicode.GetString(bytes, 2, bytes.Length - 2);
+            }
+
+            // UTF-8 BOM 不解掉，留给 TryParse 统一去（它本来就处理 \uFEFF）。
+            return Encoding.UTF8.GetString(bytes);
         }
 
         /// <summary>把当前外观写成 `.mptheme`（UTF-8 无 BOM）。失败返回 false。</summary>

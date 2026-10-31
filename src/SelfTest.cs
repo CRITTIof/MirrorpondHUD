@@ -215,6 +215,7 @@ namespace MirrorpondHUD
             bool keyLimitOk = false;
             bool keyOverflowOk = false;
             bool commandOk = false;
+            bool commandP2Ok = false;
             bool truncateOk = false;
             bool toolLabelOk = false;
             bool secretOk = false;
@@ -324,6 +325,28 @@ namespace MirrorpondHUD
             catch (Exception ex)
             {
                 Log.Error("命令行截断自检异常", ex);
+            }
+
+            try
+            {
+                // P2-5/P2-6：尾部保留 N 行、截断提示、完整命令不落日志。
+                var tailSettings = new CommandSettings { MaxLines = 2, Truncate = true, MaxLineChars = 100 };
+                var tailResult = new CommandResult { Output = "a\nb\nc", ExitCode = 0 };
+                bool tailOk = CommandRunner.FormatOutput(tailResult, tailSettings) == "b\nc";
+
+                var truncatedResult = new CommandResult { Output = "x", OutputTruncated = true, ExitCode = 0 };
+                bool noteOk = CommandRunner.FormatOutput(truncatedResult, tailSettings)
+                    .IndexOf("输出已截断", StringComparison.Ordinal) >= 0;
+
+                string redacted = CommandRunner.DescribeCommand("curl -H \"Authorization: Bearer sk-secret\"");
+                bool redactOk = redacted.IndexOf("sk-secret", StringComparison.Ordinal) < 0
+                             && redacted.IndexOf("***", StringComparison.Ordinal) >= 0;
+
+                commandP2Ok = tailOk && noteOk && redactOk;
+            }
+            catch (Exception ex)
+            {
+                Log.Error("命令行安全自检异常", ex);
             }
 
             try
@@ -921,9 +944,19 @@ namespace MirrorpondHUD
                                && imported.Style.Accent == new Settings().Style.Accent
                                && current.Style.Accent == "#123456";
 
-                try { File.Delete(temp); } catch { }
+                // P2-7：超过 1 MB 的主题文件必须明确拒绝，不能整读。
+                string big = temp + ".big";
+                File.WriteAllBytes(big, new byte[ThemeFile.MaxImportBytes + 1]);
+                Settings bigImported;
+                bool bigOk = !ThemeFile.TryImport(big, current, out bigImported, out error)
+                          && bigImported == null
+                          && error != null && error.Contains("过大");
 
-                themeRejectOk = future && badColor && badRange && noAppearance && malformed && rejectedOk && importedOk;
+                try { File.Delete(temp); } catch { }
+                try { File.Delete(big); } catch { }
+
+                themeRejectOk = future && badColor && badRange && noAppearance && malformed
+                             && rejectedOk && importedOk && bigOk;
             }
             catch (Exception ex)
             {
@@ -1178,6 +1211,23 @@ namespace MirrorpondHUD
                               && failJob.Error == "boom"
                               && cancelJob.State == CardJobState.Canceled;
                 }
+
+                // P2-10：已完成任务只保留有限条数；Dispose 时 in-flight 不再抛 ObjectDisposedException。
+                using (var many = new CardJobQueue(1))
+                {
+                    var tasks = new List<Task>();
+                    for (int i = 0; i < 20; i++)
+                        tasks.Add(many.Enqueue("done-" + i, (ct, p) => Task.CompletedTask).Task);
+                    Task.WaitAll(tasks.ToArray(), 5000);
+                    jobQueueOk &= many.Jobs.Count <= 16;
+                }
+
+                var disposing = new CardJobQueue(1);
+                var inFlight = disposing.Enqueue("slow", (ct, p) => Task.Delay(300, ct));
+                disposing.Dispose();
+                bool disposedCleanly = inFlight.Task.Wait(3000)
+                                    && inFlight.State == CardJobState.Canceled;
+                jobQueueOk &= disposedCleanly;
             }
             catch (Exception ex)
             {
@@ -1488,7 +1538,7 @@ namespace MirrorpondHUD
 
             if (!(templateOk && unknownOk && collapseOk && thresholdOk && configOk && configRepairOk && cardOk &&
                   keyNameOk && keyLimitOk && keyOverflowOk &&
-                  commandOk && truncateOk && toolLabelOk && secretOk && chatUrlOk && chatHotkeyOk && settingsEditorOk &&
+                  commandOk && commandP2Ok && truncateOk && toolLabelOk && secretOk && chatUrlOk && chatHotkeyOk && settingsEditorOk &&
                   stateStoreOk && renderOk && glassPolicyOk && themeOk && restyleOk &&
                   themeFileOk && themeRejectOk && themeCatalogOk && activationOk && cloneGuardOk &&
                   restyleHostOk && chatContextOk && singleInteractiveOk && widgetsOk && widgets2Ok &&
@@ -1516,6 +1566,8 @@ namespace MirrorpondHUD
                 glassPolicyOk ? "OK" : "FAIL"));
 
             Fix(sb, "外观令牌", themeOk ? "OK（派生值 = 旧 alpha 常量，非法值回落而不是变白）" : "FAIL");
+            Fix(sb, "命令安全", commandP2Ok
+                ? "OK（尾部保留 N 行 / 截断提示 / 日志脱敏）" : "FAIL");
             Fix(sb, "CLI 换肤", restyleOk ? "OK（两张 CLI 卡片支持就地换肤，文字按新前景重算）" : "FAIL");
             Fix(sb, "配置修复", configRepairOk
                 ? "OK（null 判空 / 损坏标记 / 旧 schema / 状态 .bak 回退）" : "FAIL");

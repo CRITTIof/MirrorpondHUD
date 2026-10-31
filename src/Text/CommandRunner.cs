@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -18,6 +19,11 @@ namespace MirrorpondHUD.Core
         public bool TimedOut;
         public bool Failed;
         public bool Canceled;
+
+        /// <summary>stdout 超过上限、只保留了尾部时为 true（显示层据此提示“输出已截断”）。</summary>
+        public bool OutputTruncated;
+        /// <summary>stderr 超过上限、只保留了尾部时为 true。</summary>
+        public bool ErrorTruncated;
     }
 
     /// <summary>
@@ -30,6 +36,23 @@ namespace MirrorpondHUD.Core
         static CommandRunner()
         {
             try { Encoding.RegisterProvider(CodePagesEncodingProvider.Instance); } catch { }
+        }
+
+        // ==================== 输出上限 ====================
+
+        /// <summary>
+        /// 每个流（stdout / stderr）最多保留的字节数。超出后丢掉前面的数据、保留尾部（和现有的
+        /// 行/总行数截断一样是“留最新的”），并置 <see cref="CommandResult.OutputTruncated"/> /
+        /// <see cref="CommandResult.ErrorTruncated"/>。达到上限后仍然继续把管道读空再丢弃，
+        /// 否则子进程会因管道写满而卡住。
+        /// </summary>
+        public const int MaxCaptureBytes = 1024 * 1024;
+
+        /// <summary>有界读取的结果：最多 <see cref="MaxCaptureBytes"/> 字节，超出时只保留尾部。</summary>
+        sealed class BoundedOutput
+        {
+            public byte[] Bytes = new byte[0];
+            public bool Truncated;
         }
 
         // ==================== 工具与提示符 ====================
@@ -176,8 +199,8 @@ namespace MirrorpondHUD.Core
                         return result;
                     }
 
-                    Task<byte[]> stdout = ReadAllBytesAsync(process.StandardOutput.BaseStream);
-                    Task<byte[]> stderr = ReadAllBytesAsync(process.StandardError.BaseStream);
+                    Task<BoundedOutput> stdout = ReadBoundedAsync(process.StandardOutput.BaseStream, MaxCaptureBytes);
+                    Task<BoundedOutput> stderr = ReadBoundedAsync(process.StandardError.BaseStream, MaxCaptureBytes);
 
                     int timeoutMs = Math.Max(1, command_settings.TimeoutSeconds) * 1000;
                     using (token.Register(() => { try { process.Kill(true); } catch { } }))
@@ -190,8 +213,12 @@ namespace MirrorpondHUD.Core
                         }
                     }
 
-                    result.Output = Decode(WaitBytes(stdout));
-                    result.Error = Decode(WaitBytes(stderr));
+                    BoundedOutput stdoutBytes = WaitOutput(stdout);
+                    BoundedOutput stderrBytes = WaitOutput(stderr);
+                    result.Output = Decode(stdoutBytes.Bytes, stdoutBytes.Truncated);
+                    result.Error = Decode(stderrBytes.Bytes, stderrBytes.Truncated);
+                    result.OutputTruncated = stdoutBytes.Truncated;
+                    result.ErrorTruncated = stderrBytes.Truncated;
                     result.Canceled = token.IsCancellationRequested;
 
                     try { result.ExitCode = process.HasExited ? process.ExitCode : -1; }
@@ -207,32 +234,88 @@ namespace MirrorpondHUD.Core
             return result;
         }
 
-        static async Task<byte[]> ReadAllBytesAsync(Stream stream)
+        /// <summary>
+        /// 有界读取：环形缓冲只保留最新 <paramref name="limit"/> 字节，更早的数据直接被覆盖并标截断。
+        /// 读满上限后仍然继续把流读空再丢弃——否则子进程会因 stdout/stderr 管道写满而卡死。
+        /// </summary>
+        static async Task<BoundedOutput> ReadBoundedAsync(Stream stream, int limit)
         {
-            using (var buffer = new MemoryStream())
+            var output = new BoundedOutput();
+            if (stream == null || limit <= 0) return output;
+
+            byte[] buffer = new byte[81920];
+            byte[] ring = new byte[limit];
+            long total = 0;
+            int write = 0;   // 环形缓冲的下一个写入位置；total > limit 时它正好是最旧字节所在位置
+
+            try
             {
-                await stream.CopyToAsync(buffer).ConfigureAwait(false);
-                return buffer.ToArray();
+                while (true)
+                {
+                    int read = await stream.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false);
+                    if (read <= 0) break;
+
+                    total += read;
+
+                    int copy = Math.Min(read, limit);
+                    int source = read - copy;
+
+                    int first = Math.Min(copy, limit - write);
+                    Buffer.BlockCopy(buffer, source, ring, write, first);
+                    if (copy > first)
+                        Buffer.BlockCopy(buffer, source + first, ring, 0, copy - first);
+                    write = (write + copy) % limit;
+                }
             }
+            catch
+            {
+                // 进程被结束 / 管道断开：已经读到的部分照常返回（超时与取消语义由调用方处理）。
+            }
+
+            if (total <= limit)
+            {
+                output.Bytes = new byte[(int)total];
+                if (total > 0) Buffer.BlockCopy(ring, 0, output.Bytes, 0, (int)total);
+                return output;
+            }
+
+            // 只保留尾部：从最旧字节的位置绕环形缓冲读满一圈。
+            output.Truncated = true;
+            output.Bytes = new byte[limit];
+            Buffer.BlockCopy(ring, write, output.Bytes, 0, limit - write);
+            if (write > 0) Buffer.BlockCopy(ring, 0, output.Bytes, limit - write, write);
+            return output;
         }
 
-        static byte[] WaitBytes(Task<byte[]> task)
+        static BoundedOutput WaitOutput(Task<BoundedOutput> task)
         {
             try
             {
+                // 保留原来的 5 秒等待：子进程被 Kill 后，个别孙进程可能还攥着管道，
+                // 这时宁可返回已读到的部分（空数组），也不要无限等。
                 if (task.Wait(5000)) return task.Result;
             }
             catch { }
-            return new byte[0];
+            return new BoundedOutput();
         }
 
-        static string Decode(byte[] bytes)
+        static string Decode(byte[] bytes, bool truncatedTail = false)
         {
             if (bytes == null || bytes.Length == 0) return "";
 
+            int start = 0;
+            if (truncatedTail)
+            {
+                // 截断点可能落在 UTF-8 多字节字符中间：跳过开头的续字节，
+                // 否则整段严格解码失败会退化成 OEM 代码页，把好好的 UTF-8 输出解成乱码。
+                while (start < bytes.Length && (bytes[start] & 0xC0) == 0x80) start++;
+                if (start >= bytes.Length) return "";
+            }
+
+            int count = bytes.Length - start;
             try
             {
-                return new UTF8Encoding(false, true).GetString(bytes);
+                return new UTF8Encoding(false, true).GetString(bytes, start, count);
             }
             catch (DecoderFallbackException) { }
             catch { }
@@ -240,21 +323,61 @@ namespace MirrorpondHUD.Core
             try
             {
                 int codePage = CultureInfo.CurrentCulture.TextInfo.OEMCodePage;
-                return Encoding.GetEncoding(codePage).GetString(bytes);
+                return Encoding.GetEncoding(codePage).GetString(bytes, start, count);
             }
             catch
             {
-                return Encoding.UTF8.GetString(bytes);
+                return Encoding.UTF8.GetString(bytes, start, count);
             }
+        }
+
+        // ==================== 日志脱敏 ====================
+
+        /// <summary>日志里命令摘要的最大字数（完整命令不进日志）。</summary>
+        public const int LogSummaryChars = 80;
+
+        static readonly Regex AuthorizationPattern = new Regex(
+            @"(?i)(authorization\s*[:=]\s*)(?:bearer\s+)?[^\s""']+", RegexOptions.Compiled);
+
+        static readonly Regex BearerPattern = new Regex(
+            @"(?i)(\bbearer\s+)[^\s""']+", RegexOptions.Compiled);
+
+        static readonly Regex SecretValuePattern = new Regex(
+            @"(?i)((?:--?|/)?(?:access[_-]?token|refresh[_-]?token|token|password|passwd|pwd|secret|api[_-]?key|access[_-]?key|apikey|auth(?:orization)?|bearer)\s*[=:]\s*)(""[^""]*""|'[^']*'|[^\s""']+)",
+            RegexOptions.Compiled);
+
+        /// <summary>
+        /// 给日志用的命令摘要：绝不回传完整命令。先把常见密文写法（Authorization / Bearer /
+        /// token= / --password= 等）替换成 ***，再截到 <see cref="LogSummaryChars"/> 字。
+        /// 完整命令只留在界面上给用户自己看。
+        /// </summary>
+        public static string DescribeCommand(string command)
+        {
+            string text = (command ?? "").Trim();
+            if (text.Length == 0) return "(空命令)";
+
+            text = RedactSecrets(text);
+            if (text.Length > LogSummaryChars)
+                text = text.Substring(0, LogSummaryChars) + "…";
+            return text;
+        }
+
+        static string RedactSecrets(string text)
+        {
+            text = AuthorizationPattern.Replace(text, "$1***");
+            text = BearerPattern.Replace(text, "$1***");
+            text = SecretValuePattern.Replace(text, "$1***");
+            return text;
         }
 
         // ==================== 显示格式 ====================
 
-        /// <summary>把返回内容整理成要显示的多行文本：单行截断 + 限制总行数。</summary>
+        /// <summary>把返回内容整理成要显示的多行文本：单行截断 + 限制总行数（大输出只保留尾部）。</summary>
         public static string FormatOutput(CommandResult result, CommandSettings settings)
         {
             settings = settings ?? new CommandSettings();
-            var lines = new List<string>(64);
+            int maxLines = Math.Max(1, settings.MaxLines);
+            var lines = new List<string>(Math.Min(maxLines, 256));
 
             if (result == null)
             {
@@ -262,8 +385,9 @@ namespace MirrorpondHUD.Core
                 return string.Join("\n", lines);
             }
 
-            AddLines(lines, result.Output);
-            AddLines(lines, result.Error);
+            // 每个流只切出尾部 maxLines 行：1 MB 输出可能有上百万行，先全量 Split 再裁剪会把 List 撑爆。
+            AddLines(lines, result.Output, maxLines);
+            AddLines(lines, result.Error, maxLines);
 
             if (result.TimedOut)
                 lines.Add("(超时 " + Math.Max(1, settings.TimeoutSeconds) + " 秒，已终止)");
@@ -280,21 +404,57 @@ namespace MirrorpondHUD.Core
             for (int i = 0; i < lines.Count; i++)
                 lines[i] = TruncateLine(lines[i], settings);
 
-            int maxLines = Math.Max(1, settings.MaxLines);
             if (lines.Count > maxLines)
                 lines = lines.GetRange(lines.Count - maxLines, maxLines);
+
+            // 截断提示放在最后，避免像普通输出行一样被行数上限裁掉——显示层要能看出“输出已截断”。
+            if (result.OutputTruncated || result.ErrorTruncated)
+                lines.Add(TruncationNote(result));
 
             return string.Join("\n", lines);
         }
 
-        static void AddLines(List<string> target, string text)
+        static string TruncationNote(CommandResult result)
         {
-            if (string.IsNullOrEmpty(text)) return;
+            string which;
+            if (result.OutputTruncated && result.ErrorTruncated) which = "输出与错误输出";
+            else if (result.OutputTruncated) which = "输出";
+            else which = "错误输出";
+
+            return "(输出已截断：" + which + "超过 " + FormatBytes(MaxCaptureBytes) + "，仅保留尾部)";
+        }
+
+        static string FormatBytes(int bytes)
+        {
+            if (bytes >= 1024 * 1024) return (bytes / (1024 * 1024)) + " MB";
+            if (bytes >= 1024) return (bytes / 1024) + " KB";
+            return bytes + " 字节";
+        }
+
+        /// <summary>把文本尾部最多 limit 行追加到 target（只切尾部，避免全量 Split 大输出）。</summary>
+        static void AddLines(List<string> target, string text, int limit)
+        {
+            if (string.IsNullOrEmpty(text) || limit <= 0) return;
 
             string normalized = text.Replace("\r\n", "\n").Replace('\r', '\n').TrimEnd('\n');
             if (normalized.Length == 0) return;
 
-            string[] parts = normalized.Split('\n');
+            // 从后往前数 limit 个换行，只切出尾部这些行；行数不够时 start 保持 0，整段都是尾部。
+            int start = 0;
+            int seen = 0;
+            for (int i = normalized.Length - 1; i >= 0; i--)
+            {
+                if (normalized[i] != '\n') continue;
+                seen++;
+                if (seen >= limit)
+                {
+                    start = i + 1;
+                    break;
+                }
+            }
+
+            string tail = normalized.Substring(start);
+            string[] parts = tail.Split('\n');
             for (int i = 0; i < parts.Length; i++)
                 target.Add(parts[i].TrimEnd('\r'));
         }

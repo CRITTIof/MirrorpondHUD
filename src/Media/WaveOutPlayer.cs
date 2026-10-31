@@ -13,7 +13,8 @@ namespace MirrorpondHUD.Media
     ///  · 固定 48 kHz / 16 bit / 立体声，和 ffmpeg 的 `-f s16le -ac 2 -ar 48000` 对齐；
     ///  · 后台线程从管道读 PCM，轮流写进 4 个 WAVEHDR 缓冲；
     ///  · 暂停用 waveOutPause + 暂停读管道（管道写满后 ffmpeg 自己会停）；
-    ///  · 音量直接 waveOutSetVolume，静音就是 0。
+    ///  · 音量：默认 100% 时**不碰系统音量**；只有显式设成 &lt;100 才临时改设备音量，
+    ///    并在收尾时恢复原值（P2-11：对 WAVE_MAPPER 调 waveOutSetVolume 是设备级的）。
     /// 声音本身由声卡按采样率播放，所以这里不需要自己做节拍。
     /// </summary>
     internal sealed class WaveOutPlayer : IDisposable
@@ -74,6 +75,9 @@ namespace MirrorpondHUD.Media
         [DllImport("winmm.dll")]
         static extern int waveOutSetVolume(IntPtr handle, uint volume);
 
+        [DllImport("winmm.dll")]
+        static extern int waveOutGetVolume(IntPtr handle, out uint volume);
+
         const uint WhdrDone = 0x00000001;
 
         readonly ManualResetEventSlim _resume = new ManualResetEventSlim(true);
@@ -98,6 +102,12 @@ namespace MirrorpondHUD.Media
         int _next;
         bool _disposed;
         int _volume = 100;
+
+        // P2-11：显式 <100 音量时改过设备音量的话，记下用户原值，收尾时恢复。
+        // 单独一把锁，只保护这两个字段 + 对应的 winmm 调用；持有它期间不再获取其他锁。
+        readonly object _volumeSync = new object();
+        bool _deviceVolumeSaved;
+        uint _deviceVolumeSavedValue;
 
         public bool IsOpen { get { return _handle != IntPtr.Zero; } }
         public bool IsPaused { get { return !_resume.IsSet; } }
@@ -184,12 +194,57 @@ namespace MirrorpondHUD.Media
             return true;
         }
 
+        /// <summary>
+        /// 应用音量。P2-11：waveOutOpen(device: -1 = WAVE_MAPPER) 上的 waveOutSetVolume
+        /// 是**设备级（全局）**音量，不是应用私有音量 —— 播放一个视频就把用户自己调低的
+        /// 系统波形音量拉到 100% 是明显的越权。所以：
+        ///  · 默认 / 满音量（100）时完全不写系统音量；
+        ///  · 只有显式设成 &lt;100 时才临时改，并先保存原值，收尾时恢复。
+        /// 应用内“静音”由上层不启动音频进程实现，不依赖设备音量。
+        /// </summary>
         void ApplyVolume()
         {
-            if (_handle == IntPtr.Zero) return;
+            IntPtr handle = _handle;
+            if (handle == IntPtr.Zero) return;
 
-            uint level = (uint)Math.Round(_volume / 100.0 * 0xFFFF);
-            try { waveOutSetVolume(_handle, level | (level << 16)); } catch { }
+            if (_volume >= 100)
+            {
+                // 之前可能因显式 <100 音量改过设备音量：恢复用户原值后不再写。
+                RestoreDeviceVolume(handle);
+                return;
+            }
+
+            lock (_volumeSync)
+            {
+                if (!_deviceVolumeSaved)
+                {
+                    uint original;
+                    if (waveOutGetVolume(handle, out original) != 0)
+                    {
+                        // 连原音量都读不到，就更不该覆盖用户的系统设置。
+                        Log.Warn("读取系统波形音量失败，保持系统音量不变");
+                        return;
+                    }
+                    _deviceVolumeSaved = true;
+                    _deviceVolumeSavedValue = original;
+                }
+
+                uint level = (uint)Math.Round(_volume / 100.0 * 0xFFFF);
+                try { waveOutSetVolume(handle, level | (level << 16)); } catch { }
+            }
+        }
+
+        /// <summary>把设备音量恢复成打开时读到的用户原值（没改过就什么都不做）。</summary>
+        void RestoreDeviceVolume(IntPtr handle)
+        {
+            lock (_volumeSync)
+            {
+                if (!_deviceVolumeSaved) return;
+
+                _deviceVolumeSaved = false;
+                if (handle == IntPtr.Zero) return;
+                try { waveOutSetVolume(handle, _deviceVolumeSavedValue); } catch { }
+            }
         }
 
         void Feed(Stream pcm, IntPtr handle)
@@ -344,6 +399,10 @@ namespace MirrorpondHUD.Media
         void ClaimCleanup(IntPtr handle)
         {
             if (Interlocked.CompareExchange(ref _cleanupClaimed, 1, 0) != 0) return;
+
+            // P2-11：关闭设备前把用户原来的系统波形音量恢复回去
+            // （只有我们显式设过 <100 音量、改过设备音量时才会真的写）。
+            if (handle != IntPtr.Zero) RestoreDeviceVolume(handle);
 
             try
             {

@@ -93,7 +93,11 @@ namespace MirrorpondHUD.Ui
             SizeChanged += (s, e) => UpdateBackdrop();
             IsVisibleChanged += (s, e) => UpdateBackdrop();
             DpiChanged += (s, e) => UpdateBackdrop();
-            Closed += (s, e) => ReleaseBackdrop();
+            Closed += (s, e) =>
+            {
+                StopTimers();
+                ReleaseBackdrop();
+            };
 
             BuildContextMenu();
         }
@@ -408,6 +412,25 @@ namespace MirrorpondHUD.Ui
         {
             HideBackdrops();
             _systemBackdrop.Dispose();
+        }
+
+        /// <summary>
+        /// 窗口关闭时停掉两个 DispatcherTimer（P2-4）。原来只 ReleaseBackdrop，
+        /// 定时器仍每 2.5 秒 / 每帧把已关闭的窗口整棵可视树钉在 Dispatcher 上。
+        /// </summary>
+        void StopTimers()
+        {
+            if (_topmostTimer != null)
+            {
+                try { _topmostTimer.Stop(); } catch { }
+                _topmostTimer = null;
+            }
+
+            if (_glassTimer != null)
+            {
+                try { _glassTimer.Stop(); } catch { }
+                _glassTimer = null;
+            }
         }
 
         void UpdateGlassCapture()

@@ -136,7 +136,9 @@ namespace MirrorpondHUD.Core
                     {
                         IntPtr ptr = new IntPtr(buffer.ToInt64() + i * stride);
                         PdhFmtCounterValueItemW item = (PdhFmtCounterValueItemW)Marshal.PtrToStructure(ptr, typeof(PdhFmtCounterValueItemW));
-                        if (item.FmtValue.CStatus != 0) continue; // 无效样本跳过
+                        // PDH_CSTATUS_VALID_DATA=0、PDH_CSTATUS_NEW_DATA=1 都是可用样本；
+                        // 其它状态（无数据 / 无效）才跳过（P2-17）。
+                        if (item.FmtValue.CStatus != 0 && item.FmtValue.CStatus != 1) continue;
 
                         string name = item.SzName == IntPtr.Zero ? "" : Marshal.PtrToStringUni(item.SzName);
                         output.Add(new InstanceValue { Name = name ?? "", Value = item.FmtValue.DoubleValue });

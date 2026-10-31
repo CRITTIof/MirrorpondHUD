@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -36,6 +37,7 @@ namespace MirrorpondHUD.Ui
         bool _reallyClose;
         bool _loadFailed;
         bool _applyingTheme;
+        bool _importingTheme;
 
         public SettingsWindow(Settings live, Action<Settings> onApply,
                               Action<double, double, int> onPosition, Action onClearKeys)
@@ -1056,9 +1058,9 @@ namespace MirrorpondHUD.Ui
             }
         }
 
-        void ImportThemeClick(object sender, RoutedEventArgs e)
+        async void ImportThemeClick(object sender, RoutedEventArgs e)
         {
-            if (_working == null) return;
+            if (_working == null || _importingTheme) return;
 
             var dialog = new Microsoft.Win32.OpenFileDialog
             {
@@ -1067,26 +1069,67 @@ namespace MirrorpondHUD.Ui
             };
             if (dialog.ShowDialog(this) != true) return;
 
-            Settings applied;
-            string error;
-            if (!ThemeFile.TryImport(dialog.FileName, _working, out applied, out error))
+            // P2-7：文件读取 + JSON 解析放到后台线程（TryImport 内部还有 1 MB 硬上限，不会读无限流），
+            // 慢盘 / 命名管道不再卡住 UI 线程；await 之后回到 UI 线程再套用。
+            Settings source = _working;
+            string path = dialog.FileName;
+
+            Settings snapshot;
+            string cloneError;
+            if (!TryClone(source, out snapshot, out cloneError))
             {
-                ThemeStatusText.Text = "导入失败：" + error;
+                ThemeStatusText.Text = "导入失败：复制当前设置失败：" + cloneError;
                 return;
             }
 
-            applied.Style.ThemeName = Path.GetFileNameWithoutExtension(dialog.FileName);
-
-            _applyingTheme = true;
+            _importingTheme = true;
+            ThemeStatusText.Text = "正在导入主题…";
             try
             {
-                CardModel.Normalize(applied);
-                LoadUi(applied);
-                ThemeStatusText.Text = "已导入「" + applied.Style.ThemeName + "」，点“保存并应用”生效";
+                ThemeImportOutcome outcome = await Task.Run(() =>
+                {
+                    Settings imported;
+                    string importError;
+                    bool ok = ThemeFile.TryImport(path, snapshot, out imported, out importError);
+                    return new ThemeImportOutcome { Ok = ok, Applied = imported, Error = importError };
+                });
+
+                if (!outcome.Ok)
+                {
+                    ThemeStatusText.Text = "导入失败：" + outcome.Error;
+                    return;
+                }
+
+                // 后台读取期间窗口可能被重新加载/关闭，过期结果不要再写回界面。
+                if (!ReferenceEquals(_working, source) || _loadFailed)
+                {
+                    ThemeStatusText.Text = "导入已取消：设置已变化，请重新导入";
+                    return;
+                }
+
+                Settings applied = outcome.Applied;
+                applied.Style.ThemeName = Path.GetFileNameWithoutExtension(path);
+
+                _applyingTheme = true;
+                try
+                {
+                    CardModel.Normalize(applied);
+                    LoadUi(applied);
+                    ThemeStatusText.Text = "已导入「" + applied.Style.ThemeName + "」，点“保存并应用”生效";
+                }
+                finally
+                {
+                    _applyingTheme = false;
+                }
+            }
+            catch (Exception ex)
+            {
+                ThemeStatusText.Text = "导入失败：" + ex.Message;
+                Log.Error("导入主题异常", ex);
             }
             finally
             {
-                _applyingTheme = false;
+                _importingTheme = false;
             }
         }
 
@@ -1674,6 +1717,14 @@ namespace MirrorpondHUD.Ui
 
         /// <summary>加载当前设置是否失败（失败时窗口不打开、保存被禁用）。</summary>
         public bool LoadFailed { get { return _loadFailed; } }
+
+        /// <summary>P2-7：后台线程读取/解析主题文件的结果，回到 UI 线程再决定是否套用。</summary>
+        sealed class ThemeImportOutcome
+        {
+            public bool Ok;
+            public Settings Applied;
+            public string Error;
+        }
 
         /// <summary>克隆当前设置；失败返回 false（clone 为 null）。调用方必须拒绝继续，不能拿默认值顶上。</summary>
         internal static bool TryClone(Settings source, out Settings clone, out string error)

@@ -20,14 +20,17 @@ namespace MirrorpondHUD.Core
         [DllImport("advapi32.dll", SetLastError = true)]
         static extern bool GetTokenInformation(IntPtr token, int infoClass, IntPtr buffer, uint length, out uint returnLength);
 
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static extern bool CloseHandle(IntPtr handle);
+
         /// <summary>完整性级别 RID：0x0000 Untrusted、0x1000 Low、0x2000 Medium、0x3000 High、0x4000 System。拿不到返回 -1。</summary>
         public static int Level
         {
             get
             {
+                IntPtr token = IntPtr.Zero;
                 try
                 {
-                    IntPtr token;
                     if (!OpenProcessToken(GetCurrentProcess(), 0x0008, out token)) return -1;
 
                     IntPtr buffer = Marshal.AllocHGlobal(256);
@@ -53,6 +56,11 @@ namespace MirrorpondHUD.Core
                     }
                 }
                 catch { return -1; }
+                finally
+                {
+                    // P2-2：OpenProcessToken 的句柄之前从未关闭，启动期调用几次就泄漏几次。
+                    if (token != IntPtr.Zero) CloseHandle(token);
+                }
             }
         }
 
