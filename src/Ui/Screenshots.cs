@@ -324,10 +324,10 @@ namespace MirrorpondHUD.Ui
                 var list = new CardList { Height = 160, Margin = new Thickness(0, 0, 0, 10) };
                 list.ApplyStyle(style, settings.Cli);
                 list.SetEmptyText("把文件拖进来");
-                list.Items.Add(WidgetRow("a.zip", "12.4 MB", foreground));
-                list.Items.Add(WidgetRow("screenshot.png", "2.1 MB", foreground));
-                list.Items.Add(WidgetRow("notes.txt", "8 KB", foreground));
-                list.Items.Add(WidgetRow("video.mp4", "248 MB", foreground));
+                list.Items.Add(WidgetRow("a.zip", "12.4 MB", foreground, ShellIcons.GetIcon("a.zip", 16)));
+                list.Items.Add(WidgetRow("screenshot.png", "2.1 MB", foreground, ShellIcons.GetIcon("x.png", 16)));
+                list.Items.Add(WidgetRow("notes.txt", "8 KB", foreground, ShellIcons.GetIcon("x.txt", 16)));
+                list.Items.Add(WidgetRow("video.mp4", "248 MB", foreground, ShellIcons.GetIcon("x.mp4", 16)));
                 list.SelectedIndex = 1;
                 stack.Children.Add(list);
 
@@ -398,11 +398,22 @@ namespace MirrorpondHUD.Ui
             }
         }
 
-        static FrameworkElement WidgetRow(string name, string meta, Color foreground)
+        static FrameworkElement WidgetRow(string name, string meta, Color foreground, ImageSource icon)
         {
             var grid = new Grid();
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var image = new Image
+            {
+                Source = icon,
+                Width = 16,
+                Height = 16,
+                Margin = new Thickness(0, 0, 8, 0),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            grid.Children.Add(image);
 
             var left = new TextBlock
             {
@@ -411,6 +422,8 @@ namespace MirrorpondHUD.Ui
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 VerticalAlignment = VerticalAlignment.Center
             };
+            Grid.SetColumn(left, 1);
+
             var right = new TextBlock
             {
                 Text = meta,
@@ -418,7 +431,7 @@ namespace MirrorpondHUD.Ui
                 Margin = new Thickness(12, 0, 0, 0),
                 VerticalAlignment = VerticalAlignment.Center
             };
-            Grid.SetColumn(right, 1);
+            Grid.SetColumn(right, 2);
 
             grid.Children.Add(left);
             grid.Children.Add(right);

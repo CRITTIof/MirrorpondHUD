@@ -1,11 +1,11 @@
-# 版本修改记录（2.4.1 → 2.10.2）
+# 版本修改记录（2.4.1 → 2.10.3）
 
 > 范围：本文只记录**这一轮接手后我做的版本**（v2.4.1 起）。v2.4.0 及更早是既有历史，不在本文档里。
 > 数据全部取自仓库真实提交（`git diff --shortstat <上一版>..<本版>`），文件行的 `+ / -` 就是实际增删行数。
 > 版本状态：`main` 已推送到 GitHub；`v2.4.2`–`v2.4.5` 为附注标签（分别指向 `70343ef` / `aabe441` / `05857ce` / `f4b2b8b`），
 > v2.4.5 已发布 Release（附件为两个 requires-dotnet 单文件），v2.4.0 的 Release 已删除、其 tag 保留。
 > `v2.5.0`–`v2.9.2` 均为附注标签，**已随 2.9.2 的推送同步到远端**（`v2.6.0` = `9c1bafa`、`v2.6.1` = `d3ac63d`、
-> `v2.6.2` = `1b138e7`、`v2.9.2` = `754115e`）；`v2.4.1` 也已补推。`v2.9.3`–`v2.10.2` 目前只在本地创建，尚未推送。
+> `v2.6.2` = `1b138e7`、`v2.9.2` = `754115e`）；`v2.4.1` 也已补推。`v2.9.3`–`v2.10.3` 目前只在本地创建，尚未推送。
 
 ## 0. 总览
 
@@ -35,7 +35,8 @@
 | v2.9.7 | 2026-10-31 | `69cb3b4` | 源码遗留 S7+S12：对话上下文跟随 `Cli.MaxEntries`；设置页 / 校验保证最多一张交互卡 | 8 文件，+132 / −13 |
 | v2.10.0 | 2026-10-31 | `0605fee` | 共享控件第一梯队（上）：`CardList` 主题化列表（虚拟化 / 空态 / 激活）+ `CardStatus`（转圈 / 进度 / 错误态） | 8 文件，+630 / −9（含新增 `CardList.cs` 206 行、`CardStatus.cs` 218 行） |
 | v2.10.1 | 2026-10-31 | `d994c6e` | 共享控件第一梯队（下）：`CardHeader`/`CardToolbar`、`CardInput`、`CardDropOverlay` + 宿主拖入/拖出反馈 | 12 文件，+543 / −26（含新增 `CardHeader.cs` 126 行、`CardInput.cs` 144 行、`CardDropOverlay.cs` 101 行） |
-| v2.10.2 | 2026-10-31 | 本次提交 | 第二梯队（上）：`CardRenderContext.Host` 透传 + `ClipboardService` + 串行可取消 `CardJobQueue` | 10 文件，+463 / −23（含新增 `CardJobQueue.cs` 177 行、`ClipboardService.cs` 129 行） |
+| v2.10.2 | 2026-10-31 | `7d53106` | 第二梯队（上）：`CardRenderContext.Host` 透传 + `ClipboardService` + 串行可取消 `CardJobQueue` | 10 文件，+463 / −23（含新增 `CardJobQueue.cs` 177 行、`ClipboardService.cs` 129 行） |
+| v2.10.3 | 2026-10-31 | 本次提交 | 第二梯队（下）：`ShellIcons`（扩展名图标 + STA 缩略图）+ `DragSource`（拖出阈值 / 文件 / 文本） | 8 文件，+457 / −18（含新增 `ShellIcons.cs` 294 行、`DragSource.cs` 70 行） |
 
 ---
 
@@ -1023,16 +1024,50 @@ v2.6.0 只把**命令行卡**的设置搬进了 `CardSettings.Extras`，媒体�
 
 ---
 
-## 26. 不在版本里的东西
+## 26. v2.10.3（本次提交，本地标签 `v2.10.3`）
+
+### 背景
+
+第二梯队剩下平台相关的两块：文件图标 / 缩略图，以及“从卡片拖出到资源管理器”的最小助手。
+两者都容易各写一套 P/Invoke 与鼠标阈值，收进共享层。
+
+### 改动
+
+1. **`src/Ui/ShellIcons.cs`**：
+   - 图标：`SHGetFileInfo` 默认走 `SHGFI_USEFILEATTRIBUTES`（按扩展名，不碰磁盘 / 网络盘），
+     按“扩展名 + 尺寸”缓存；需要 exe / 快捷方式专属图标时传 `extensionOnly: false`。
+   - 缩略图：`IShellItemImageFactory`，在**常驻 STA 线程**上执行，网络盘 / 慢文件不会卡 UI；
+     `Task<ImageSource>` 返回，失败 / 无缩略图返回 null。
+   - 图标 / 缩略图缓存都有上限，`ClearCache()` 可整体失效。
+2. **`src/Ui/DragSource.cs`**：`ShouldStart(press, current)` 阈值判断 +
+   `BeginFiles` / `BeginText`（OLE `DoDragDrop`，必须在 UI 线程；阻塞到拖放结束）。
+3. **预览图**：`--screenshot-widgets` 的列表行接入真实 Shell 图标（zip / png / txt / mp4）。
+4. **自检**新增「Shell / 拖出」：图标缓存一致、缩略图请求不挂、拖出阈值与空输入。
+
+### 边界
+
+- 图标默认按扩展名，和资源管理器里 exe 的自定义图标可能不同；需要时用 `extensionOnly: false`（会碰磁盘）。
+- 缩略图缓存键是“路径 + 尺寸”，同一路径换文件后可能显示旧图，调 `ShellIcons.ClearCache()`。
+- 拖出只提供 `DoDragDrop` 本身；与整卡拖动的冲突仍未解决（见 `file-transfer-station.md` §7.2 的 spike）。
+
+### 实测
+
+- `dotnet build -c Release`：0 警告 0 错误。
+- `--selftest`：失败项 0（「Shell / 拖出」OK）。
+- `--screenshot-widgets`：四行文件图标正常显示。
+
+---
+
+## 27. 不在版本里的东西
 
 - 验收脚本、样张与测量脚本（`cmd-e2e.ps1`、`drag-glass.ps1`、`measure-*.py`、`shots/` 等）都在仓库外的 `hud-test/` 里，**没有提交**。
 - 发布：`main` 与标签已推送到 [github.com/CRITTIof/MirrorpondHUD](https://github.com/CRITTIof/MirrorpondHUD)；
   [v2.9.2 Release](https://github.com/CRITTIof/MirrorpondHUD/releases/tag/v2.9.2) 只有两个附件
   （`MirrorpondHUD-x64-requires-dotnet.exe`、`MirrorpondHUD-arm64-requires-dotnet.exe`，均需 .NET 8 桌面运行时，已自签名）；
   更早的 Release 正文与附件保留原样，v2.4.0 的 Release 已删除（tag `v2.4.0` 保留，历史仍可检出）。
-- 仓库追踪的文件共 114 个，`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
+- 仓库追踪的文件共 116 个，`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
 
-## 27. 已知代价（跨版本）
+## 28. 已知代价（跨版本）
 
 - 桌面亚克力为了不拍到自己，会把卡片排除在截屏之外 —— 这个模式下截图 / 录屏里**看不到卡片**，观感只能靠肉眼与离屏渲染验证。
 - 兼容实现每帧对身后窗口做 `PrintWindow`，拖动时最多 ~21 帧/秒；要更高只能走桌面亚克力（DXGI）。

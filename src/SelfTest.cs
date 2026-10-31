@@ -235,6 +235,7 @@ namespace MirrorpondHUD
             bool widgets2Ok = false;
             bool contextHostOk = false;
             bool jobQueueOk = false;
+            bool shellOk = false;
 
             try
             {
@@ -1114,13 +1115,34 @@ namespace MirrorpondHUD
                 Log.Error("后台任务队列自检异常", ex);
             }
 
+            try
+            {
+                // 2.10.3：Shell 图标缓存一致、缩略图请求不会挂住；拖出阈值与空输入。
+                var icon1 = ShellIcons.GetIcon("selftest.zzz", 16);
+                var icon2 = ShellIcons.GetIcon("selftest.zzz", 16);
+                bool cacheOk = ReferenceEquals(icon1, icon2) && (icon1 == null || icon1.Width > 0);
+
+                var thumbnail = ShellIcons.GetThumbnailAsync("C:\\__mirrorpond_no_such__\\x.png", 32);
+                bool thumbOk = thumbnail.Wait(2000);
+
+                bool dragOk = !DragSource.ShouldStart(new Point(0, 0), new Point(1, 1))
+                           && DragSource.ShouldStart(new Point(0, 0), new Point(10, 0))
+                           && DragSource.BeginFiles(null, new[] { "a" }) == DragDropEffects.None;
+
+                shellOk = cacheOk && thumbOk && dragOk;
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Shell / 拖出自检异常", ex);
+            }
+
             if (!(templateOk && unknownOk && collapseOk && thresholdOk && configOk && cardOk &&
                   keyNameOk && keyLimitOk && keyOverflowOk &&
                   commandOk && truncateOk && toolLabelOk && secretOk && chatHotkeyOk && settingsEditorOk &&
                   stateStoreOk && renderOk && glassPolicyOk && themeOk && restyleOk &&
                   themeFileOk && themeRejectOk && themeCatalogOk && activationOk && cloneGuardOk &&
                   restyleHostOk && chatContextOk && singleInteractiveOk && widgetsOk && widgets2Ok &&
-                  contextHostOk && jobQueueOk)) failures++;
+                  contextHostOk && jobQueueOk && shellOk)) failures++;
 
             Fix(sb, "逻辑自检", string.Format(
                 "模板={0} 未知占位符={1} 折叠={2} 阈值内展开={3} 配置读写={4} 卡片模块={11} 键名={5} 按键长度={6} 超长截断={7} 命令行={8} 行截断={9} 工具名={10} Key加密={12} 对话热键={13} 卡片设置={14} 状态存储={15} 渲染节流={16} 毛玻璃策略={17}",
@@ -1157,6 +1179,7 @@ namespace MirrorpondHUD
             Fix(sb, "共享控件（交互）", widgets2Ok ? "OK（Header 按钮可点；Input 提交；DropOverlay 显隐）" : "FAIL");
             Fix(sb, "渲染上下文", contextHostOk ? "OK（富内容创建上下文透传 ICardHost）" : "FAIL");
             Fix(sb, "后台任务", jobQueueOk ? "OK（串行队列：成功 / 失败 / 取消）" : "FAIL");
+            Fix(sb, "Shell / 拖出", shellOk ? "OK（图标缓存一致；缩略图不挂；拖出阈值/空输入）" : "FAIL");
         }
 
         static bool RegisterIfSet(HotkeyManager hotkeys, string action, string combination)

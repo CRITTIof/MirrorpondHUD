@@ -195,17 +195,21 @@ public sealed class DropStationCard : RichCardModuleBase,
 > 中转站本身的调研与设计（数据模型、引用 / 复制 / 移动、拖出、锁定语义、分阶段）见
 > [file-transfer-station.md](file-transfer-station.md)。
 
-### 共享控件（v2.10.0 / v2.10.1）
+### 共享控件与平台服务（v2.10.0 – v2.10.3）
 
-多条目 / 交互型卡片先看这里，不要每张卡重写列表、状态行和拖入提示：
+多条目 / 交互型卡片先看这里，不要每张卡重写列表、状态行、拖入提示与 Shell 调用：
 
-| 控件 | 用途 | 要点 |
+| 控件 / 服务 | 用途 | 要点 |
 |---|---|---|
 | `CardList` | 主题化列表：行模板、悬停 / 选中、空状态、双击 / 回车激活 | 用 `ItemTemplate` 或直接放控件；虚拟化需要给固定 / 最大高度 |
 | `CardStatus` | 状态行：图标 + 文字 + 进度 + 转圈 + 错误态 | `SetText` / `SetBusy` / `SetProgress` |
 | `CardHeader` + `CardToolbar` | 标题 + 徽标 + 右侧动作按钮 | `Actions.Add("清空", handler, CardButtonTone.Danger)` |
 | `CardInput` | 输入框：占位符、Enter / Ctrl+Enter 提交、错误描边 | 多行构造 `new CardInput(true)` |
 | `CardDropOverlay` | 拖入高亮与“松开添加 N 个”提示 | 配合 `ICardDropFeedback` 的进入 / 离开回调使用 |
+| `ShellIcons` | 文件图标 / 缩略图 | 图标默认按扩展名、不碰磁盘；缩略图在 STA 后台线程，失败返回 null |
+| `DragSource` | 文件 / 文本拖出 | `ShouldStart` 阈值 + `BeginFiles` / `BeginText`（UI 线程、阻塞到拖放结束） |
+| `ClipboardService` | 文本 / 文件 / 图片剪贴板 | 自动重试被占用；同步方法要求 UI 线程 |
+| `CardJobQueue` | 串行可取消后台任务 | 复制大文件排队，`CardJob` 带状态 / 进度 / `Task` |
 
 外观统一走 `ApplyStyle(style, ...)`，颜色来自 `ThemeTokens`；颜色与令牌规则见
 [theme-rewrite-prerequisites.md](theme-rewrite-prerequisites.md)。
