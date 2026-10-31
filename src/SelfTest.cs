@@ -229,6 +229,7 @@ namespace MirrorpondHUD
             bool restyleHostOk = false;
             bool chatContextOk = false;
             bool singleInteractiveOk = false;
+            bool widgetsOk = false;
 
             try
             {
@@ -986,12 +987,47 @@ namespace MirrorpondHUD
                 Log.Error("交互卡唯一性自检异常", ex);
             }
 
+            try
+            {
+                // 2.10.0 共享控件：列表的空状态 / 计数 / 选中，状态行的忙碌 / 进度 / 错误态。
+                var style = new StyleSettings { FontSize = 15, Foreground = "#E6EDF3" };
+                var cli = new CliSettings();
+
+                var list = new CardList();
+                list.ApplyStyle(style, cli);
+                bool emptyOk = list.IsEmpty;
+
+                list.Items.Add("a");
+                list.Items.Add("b");
+                bool countOk = !list.IsEmpty && list.Items.Count == 2;
+
+                list.SelectedIndex = 1;
+                bool selectOk = list.SelectedIndex == 1;
+
+                var status = new CardStatus();
+                status.ApplyStyle(style);
+                status.SetText("正在复制 2/5", CardStatusKind.Busy);
+                status.SetProgress(0.4);
+                bool busyOk = status.Kind == CardStatusKind.Busy;
+
+                status.SetBusy(false);
+                status.SetText("复制失败：磁盘已满", CardStatusKind.Error);
+                status.SetProgress(null);
+                bool errorOk = status.Kind == CardStatusKind.Error;
+
+                widgetsOk = emptyOk && countOk && selectOk && busyOk && errorOk;
+            }
+            catch (Exception ex)
+            {
+                Log.Error("共享控件自检异常", ex);
+            }
+
             if (!(templateOk && unknownOk && collapseOk && thresholdOk && configOk && cardOk &&
                   keyNameOk && keyLimitOk && keyOverflowOk &&
                   commandOk && truncateOk && toolLabelOk && secretOk && chatHotkeyOk && settingsEditorOk &&
                   stateStoreOk && renderOk && glassPolicyOk && themeOk && restyleOk &&
                   themeFileOk && themeRejectOk && themeCatalogOk && activationOk && cloneGuardOk &&
-                  restyleHostOk && chatContextOk && singleInteractiveOk)) failures++;
+                  restyleHostOk && chatContextOk && singleInteractiveOk && widgetsOk)) failures++;
 
             Fix(sb, "逻辑自检", string.Format(
                 "模板={0} 未知占位符={1} 折叠={2} 阈值内展开={3} 配置读写={4} 卡片模块={11} 键名={5} 按键长度={6} 超长截断={7} 命令行={8} 行截断={9} 工具名={10} Key加密={12} 对话热键={13} 卡片设置={14} 状态存储={15} 渲染节流={16} 毛玻璃策略={17}",
@@ -1024,6 +1060,7 @@ namespace MirrorpondHUD
             Fix(sb, "换肤跟随设置", restyleHostOk ? "OK（CLI 换肤跟随新 Settings 对象，底层圆角随重画更新）" : "FAIL");
             Fix(sb, "对话上下文", chatContextOk ? "OK（每条记录两条消息，跟随 CLI 最多保留条数）" : "FAIL");
             Fix(sb, "交互卡唯一", singleInteractiveOk ? "OK（默认一张；第二张会被设置页 / 校验拦住）" : "FAIL");
+            Fix(sb, "共享控件", widgetsOk ? "OK（CardList 空态/计数/选中；CardStatus 忙碌/进度/错误）" : "FAIL");
         }
 
         static bool RegisterIfSet(HotkeyManager hotkeys, string action, string combination)

@@ -88,6 +88,14 @@ namespace MirrorpondHUD
                 return;
             }
 
+            string shotWidgets = GetOption(args, "--screenshot-widgets");
+            if (shotWidgets != null)
+            {
+                Screenshots.CaptureWidgets(shotWidgets);
+                Shutdown(0);
+                return;
+            }
+
             if (args.Contains("--selftest"))
             {
                 int failures = SelfTest.Run();

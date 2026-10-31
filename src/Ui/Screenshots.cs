@@ -298,6 +298,123 @@ namespace MirrorpondHUD.Ui
             return Math.Max(40, surface.DesiredSize.Height);
         }
 
+        public static void CaptureWidgets(string path)
+        {
+            try
+            {
+                Settings settings = ConfigStore.Load();
+                settings.Overlay.Shadow = false;
+                StyleSettings style = settings.Style;
+                Color foreground = OverlaySurface.ParseColor(style.Foreground, Color.FromRgb(0xE6, 0xED, 0xF3));
+
+                var stack = new StackPanel { Width = 520 };
+                stack.Children.Add(new TextBlock
+                {
+                    Text = "共享控件预览",
+                    FontSize = 16,
+                    FontWeight = FontWeights.SemiBold,
+                    Foreground = CardPalette.Brush(foreground, 0.95),
+                    Margin = new Thickness(0, 0, 0, 10)
+                });
+
+                var status = new CardStatus { Margin = new Thickness(0, 0, 0, 10) };
+                status.ApplyStyle(style);
+                status.SetText("正在复制 2/5 · a.zip", CardStatusKind.Busy);
+                status.SetProgress(0.42);
+                stack.Children.Add(status);
+
+                var list = new CardList { Height = 180, Margin = new Thickness(0, 0, 0, 10) };
+                list.ApplyStyle(style, settings.Cli);
+                list.SetEmptyText("把文件拖进来");
+                list.Items.Add(WidgetRow("a.zip", "12.4 MB", foreground));
+                list.Items.Add(WidgetRow("screenshot.png", "2.1 MB", foreground));
+                list.Items.Add(WidgetRow("notes.txt", "8 KB", foreground));
+                list.Items.Add(WidgetRow("video.mp4", "248 MB", foreground));
+                list.SelectedIndex = 1;
+                stack.Children.Add(list);
+
+                var empty = new CardList { Height = 90, Margin = new Thickness(0, 0, 0, 10) };
+                empty.ApplyStyle(style, settings.Cli);
+                empty.SetEmptyText("把文件拖进来（空状态）");
+                stack.Children.Add(empty);
+
+                var error = new CardStatus { Margin = new Thickness(0, 0, 0, 6) };
+                error.ApplyStyle(style);
+                error.SetText("复制失败：磁盘空间不足", CardStatusKind.Error);
+                error.SetProgress(null);
+                stack.Children.Add(error);
+
+                var card = new Border
+                {
+                    Width = 560,
+                    Background = CardPalette.Brush(
+                        OverlaySurface.ParseColor(style.Background, Color.FromRgb(0x0D, 0x11, 0x17)),
+                        style.BackgroundOpacity),
+                    CornerRadius = new CornerRadius(settings.Overlay.CornerRadius),
+                    Padding = new Thickness(20),
+                    Child = stack
+                };
+
+                var host = new Grid
+                {
+                    Width = 640,
+                    Height = 520,
+                    Background = new LinearGradientBrush(
+                        Color.FromRgb(0x14, 0x1B, 0x2B),
+                        Color.FromRgb(0x2A, 0x1D, 0x2A),
+                        45)
+                };
+                card.HorizontalAlignment = HorizontalAlignment.Center;
+                card.VerticalAlignment = VerticalAlignment.Center;
+                host.Children.Add(card);
+
+                host.Measure(new Size(host.Width, host.Height));
+                host.Arrange(new Rect(0, 0, host.Width, host.Height));
+                host.UpdateLayout();
+
+                const double scale = 2.0;
+                var rtb = new RenderTargetBitmap(
+                    (int)Math.Ceiling(host.Width * scale),
+                    (int)Math.Ceiling(host.Height * scale),
+                    96 * scale, 96 * scale, PixelFormats.Pbgra32);
+                rtb.Render(host);
+
+                SavePng(rtb, path);
+                Log.Info("已生成共享控件截图: " + path);
+            }
+            catch (Exception ex)
+            {
+                Log.Error("生成共享控件截图失败", ex);
+            }
+        }
+
+        static FrameworkElement WidgetRow(string name, string meta, Color foreground)
+        {
+            var grid = new Grid();
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var left = new TextBlock
+            {
+                Text = name,
+                Foreground = CardPalette.Brush(foreground, 0.92),
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            var right = new TextBlock
+            {
+                Text = meta,
+                Foreground = CardPalette.Brush(foreground, 0.45),
+                Margin = new Thickness(12, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            Grid.SetColumn(right, 1);
+
+            grid.Children.Add(left);
+            grid.Children.Add(right);
+            return grid;
+        }
+
         public static void CaptureSettings(string path)
         {
             try

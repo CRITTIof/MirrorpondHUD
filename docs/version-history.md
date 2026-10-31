@@ -1,11 +1,11 @@
-# 版本修改记录（2.4.1 → 2.9.7）
+# 版本修改记录（2.4.1 → 2.10.0）
 
 > 范围：本文只记录**这一轮接手后我做的版本**（v2.4.1 起）。v2.4.0 及更早是既有历史，不在本文档里。
 > 数据全部取自仓库真实提交（`git diff --shortstat <上一版>..<本版>`），文件行的 `+ / -` 就是实际增删行数。
 > 版本状态：`main` 已推送到 GitHub；`v2.4.2`–`v2.4.5` 为附注标签（分别指向 `70343ef` / `aabe441` / `05857ce` / `f4b2b8b`），
 > v2.4.5 已发布 Release（附件为两个 requires-dotnet 单文件），v2.4.0 的 Release 已删除、其 tag 保留。
 > `v2.5.0`–`v2.9.2` 均为附注标签，**已随 2.9.2 的推送同步到远端**（`v2.6.0` = `9c1bafa`、`v2.6.1` = `d3ac63d`、
-> `v2.6.2` = `1b138e7`、`v2.9.2` = `754115e`）；`v2.4.1` 也已补推。`v2.9.3`–`v2.9.7` 目前只在本地创建，尚未推送。
+> `v2.6.2` = `1b138e7`、`v2.9.2` = `754115e`）；`v2.4.1` 也已补推。`v2.9.3`–`v2.10.0` 目前只在本地创建，尚未推送。
 
 ## 0. 总览
 
@@ -32,7 +32,8 @@
 | v2.9.4 | 2026-10-31 | `055b3f9` | 修 AI 对话 / 常驻媒体卡外观不随设置变化：CLI 面板跟随新 Settings 与 monoFont，宿主换肤时重画底层 | 11 文件，+165 / −29 |
 | v2.9.5 | 2026-10-31 | `856b7bd` | 源码遗留 S1+S2：单一 `ColorCode` 解析，删掉 6 处复制；非法颜色回落到 fallback 而不是变白 | 15 文件，+158 / −132（含新增 `src/Core/ColorCode.cs` 53 行） |
 | v2.9.6 | 2026-10-31 | `c9842a9` | 源码遗留 S3+S4：删死字段 `_live`；两个 `async void` 加顶层兜底，异常不再逸出崩进程 | 7 文件，+82 / −12 |
-| v2.9.7 | 2026-10-31 | 本次提交 | 源码遗留 S7+S12：对话上下文跟随 `Cli.MaxEntries`；设置页 / 校验保证最多一张交互卡 | 8 文件，+132 / −13 |
+| v2.9.7 | 2026-10-31 | `69cb3b4` | 源码遗留 S7+S12：对话上下文跟随 `Cli.MaxEntries`；设置页 / 校验保证最多一张交互卡 | 8 文件，+132 / −13 |
+| v2.10.0 | 2026-10-31 | 本次提交 | 共享控件第一梯队（上）：`CardList` 主题化列表（虚拟化 / 空态 / 激活）+ `CardStatus`（转圈 / 进度 / 错误态） | 8 文件，+630 / −9（含新增 `CardList.cs` 206 行、`CardStatus.cs` 218 行） |
 
 ---
 
@@ -918,16 +919,50 @@ v2.6.0 只把**命令行卡**的设置搬进了 `CardSettings.Extras`，媒体�
 
 ---
 
-## 23. 不在版本里的东西
+## 23. v2.10.0（本次提交，本地标签 `v2.10.0`）
+
+### 背景
+
+为文件中转站、剪贴板历史、待办这类“多条目卡片”准备共享控件。此前只有按钮 / 输入框 / CLI 面板，
+列表、空状态、状态行、进度与转圈每张卡都得重写一遍，而且很容易各写一套颜色。
+
+本版先做两个地基：`CardList` 与 `CardStatus`。
+
+### 改动
+
+1. **`src/Ui/Controls/CardList.cs`**：
+   - 基于 `ListBox`，开启 `VirtualizingStackPanel` 的回收虚拟化；
+   - 行模板换成自定义 `ControlTemplate`（圆角、无系统白框），悬停 / 选中由主题令牌上色；
+   - 空状态（细边框 + 居中提示）、双击 / 回车激活、`SelectedItem/Index`、`ScrollToEnd`；
+   - `ApplyStyle(style, cli)` 重套字体 / 颜色 / 行高 / 滚动条；行内容由 `ItemTemplate` 或直接放控件决定。
+2. **`src/Ui/Controls/CardStatus.cs`**：图标 + 文字 + 可选进度条；
+   `SetText(text, kind)` / `SetBusy(bool)` / `SetProgress(0..1)`，错误态用 `Danger` 令牌，忙碌态带 braille 转圈。
+3. **自检**新增「共享控件」：列表空态 / 计数 / 选中；状态行忙碌 / 进度 / 错误态。
+4. **`--screenshot-widgets <png>`**：离屏渲染一张控件预览（列表 / 空态 / 进度 / 错误），用于目检。
+
+### 边界
+
+- 列表要虚拟化时请给 `CardList` 设固定 / 最大高度（放在无高度约束的 `StackPanel` 里会退化为全量测量）。
+- 行内拖出、右键菜单、多选模板尚未封装；需要时用 `CardList.Inner`（底层 `ListBox`）接。
+
+### 实测
+
+- `dotnet build -c Release`：0 警告 0 错误。
+- `--selftest`：失败项 0（「共享控件」OK）。
+- `--screenshot-widgets`：选中行为主题色圆角、空状态有细边框、错误态红字，观感正常。
+
+---
+
+## 24. 不在版本里的东西
 
 - 验收脚本、样张与测量脚本（`cmd-e2e.ps1`、`drag-glass.ps1`、`measure-*.py`、`shots/` 等）都在仓库外的 `hud-test/` 里，**没有提交**。
 - 发布：`main` 与标签已推送到 [github.com/CRITTIof/MirrorpondHUD](https://github.com/CRITTIof/MirrorpondHUD)；
   [v2.9.2 Release](https://github.com/CRITTIof/MirrorpondHUD/releases/tag/v2.9.2) 只有两个附件
   （`MirrorpondHUD-x64-requires-dotnet.exe`、`MirrorpondHUD-arm64-requires-dotnet.exe`，均需 .NET 8 桌面运行时，已自签名）；
   更早的 Release 正文与附件保留原样，v2.4.0 的 Release 已删除（tag `v2.4.0` 保留，历史仍可检出）。
-- 仓库追踪的文件共 107 个，`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
+- 仓库追踪的文件共 109 个，`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
 
-## 24. 已知代价（跨版本）
+## 25. 已知代价（跨版本）
 
 - 桌面亚克力为了不拍到自己，会把卡片排除在截屏之外 —— 这个模式下截图 / 录屏里**看不到卡片**，观感只能靠肉眼与离屏渲染验证。
 - 兼容实现每帧对身后窗口做 `PrintWindow`，拖动时最多 ~21 帧/秒；要更高只能走桌面亚克力（DXGI）。
