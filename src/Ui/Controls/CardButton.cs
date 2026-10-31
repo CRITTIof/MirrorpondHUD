@@ -76,8 +76,9 @@ namespace MirrorpondHUD.Ui.Controls
         {
             if (style == null) return;
 
+            ThemeTokens tokens = ThemeResolver.Resolve(style);
             Color foreground = TryColor(style.Foreground, Color.FromRgb(0xE6, 0xED, 0xF3));
-            Color accent = TryColor(ThemeAccent, Color.FromRgb(0x2F, 0x6F, 0xEB));
+            Color accent = tokens.Accent;
 
             Color background;
             Color border;
@@ -91,7 +92,7 @@ namespace MirrorpondHUD.Ui.Controls
                     text = PickReadable(accent, foreground);
                     break;
                 case CardButtonTone.Danger:
-                    Color danger = Color.FromRgb(0xD1, 0x43, 0x43);
+                    Color danger = tokens.Danger;
                     background = WithAlpha(danger, 0.85);
                     border = WithAlpha(danger, 0.95);
                     text = PickReadable(danger, foreground);
@@ -145,8 +146,6 @@ namespace MirrorpondHUD.Ui.Controls
 
         /// <summary>卡片自己的圆角（0 = 直角）。</summary>
         public double CornerRadius { get; private set; }
-
-        const string ThemeAccent = "#2F6FEB";
 
         static Color TryColor(string hex, Color fallback)
         {

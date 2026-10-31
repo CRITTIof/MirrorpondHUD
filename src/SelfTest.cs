@@ -214,6 +214,7 @@ namespace MirrorpondHUD
             bool settingsEditorOk = false;
             bool stateStoreOk = false;
             bool renderOk = false;
+            bool themeOk = false;
             bool glassPolicyOk = false;
 
             try
@@ -627,10 +628,40 @@ namespace MirrorpondHUD
                 Log.Error("毛玻璃策略自检异常", ex);
             }
 
+            try
+            {
+                // 外观令牌（P1）：默认派生值必须等于旧 alpha 常量，非法值要被归一化掉。
+                ThemeTokens defaults = ThemeResolver.Resolve(new StyleSettings());
+                bool defaultOk = defaults.Accent == System.Windows.Media.Color.FromRgb(0x2F, 0x6F, 0xEB)
+                              && defaults.Danger == System.Windows.Media.Color.FromRgb(0xD1, 0x43, 0x43);
+
+                System.Windows.Media.Color fg = System.Windows.Media.Color.FromRgb(0xE6, 0xED, 0xF3);
+                bool mutedOk = defaults.Muted.A == (byte)Math.Round(0.45 * 255)
+                            && defaults.Muted.R == fg.R && defaults.Muted.G == fg.G && defaults.Muted.B == fg.B;
+
+                bool scrollOk = defaults.Scrollbar.A == (byte)Math.Round(0.18 * 255)
+                             && defaults.ScrollbarHot.A == (byte)Math.Round(0.40 * 255);
+
+                bool validateOk = !Settings.IsColorToken("#GGGGGG")
+                               && !Settings.IsColorToken("123456")
+                               && Settings.IsColorToken("")
+                               && Settings.IsColorToken("#80FFFFFF");
+
+                var bad = new Settings { Style = { Accent = "nope", Muted = "#12" } };
+                bad.Normalize();
+                bool normalizeOk = bad.Style.Accent == "#2F6FEB" && bad.Style.Muted == "";
+
+                themeOk = defaultOk && mutedOk && scrollOk && validateOk && normalizeOk;
+            }
+            catch (Exception ex)
+            {
+                Log.Error("外观令牌自检异常", ex);
+            }
+
             if (!(templateOk && unknownOk && collapseOk && thresholdOk && configOk && cardOk &&
                   keyNameOk && keyLimitOk && keyOverflowOk &&
                   commandOk && truncateOk && toolLabelOk && secretOk && chatHotkeyOk && settingsEditorOk &&
-                  stateStoreOk && renderOk && glassPolicyOk)) failures++;
+                  stateStoreOk && renderOk && glassPolicyOk && themeOk)) failures++;
 
             Fix(sb, "逻辑自检", string.Format(
                 "模板={0} 未知占位符={1} 折叠={2} 阈值内展开={3} 配置读写={4} 卡片模块={11} 键名={5} 按键长度={6} 超长截断={7} 命令行={8} 行截断={9} 工具名={10} Key加密={12} 对话热键={13} 卡片设置={14} 状态存储={15} 渲染节流={16} 毛玻璃策略={17}",
@@ -652,6 +683,8 @@ namespace MirrorpondHUD
                 stateStoreOk ? "OK" : "FAIL",
                 renderOk ? "OK" : "FAIL",
                 glassPolicyOk ? "OK" : "FAIL"));
+
+            Fix(sb, "外观令牌", themeOk ? "OK（派生值 = 旧 alpha 常量，非法值已归一化）" : "FAIL");
         }
 
         static bool RegisterIfSet(HotkeyManager hotkeys, string action, string combination)

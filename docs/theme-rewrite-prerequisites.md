@@ -39,6 +39,11 @@
 
 **验收**：旧配置打开后逐像素与 v2.8.1 一致（令牌全部走派生）；只改 `Accent` 时按钮 / 滑块热区 / 选中态变，其他不变。
 
+**状态（v2.9.0）**：✅ 已实现。`ThemeTokens` / `ThemeResolver` 在 `src/Ui/ThemeTokens.cs`；
+`CardButton` 的 Accent/Danger、`CliScrollBars`（常态 / 悬停）、`CliPanelView` / `CliEntryPanel` 的
+Panel / Border / Muted 都已改读令牌。`Theme.xaml`（设置窗口浅色 chrome）留到 P4 一起做，
+`MonoFont` 令牌留到 P2 接线（CLI 面板字体是实例级改造）。
+
 **风险**：低。纯读取路径改动，不碰布局与窗口。
 
 ### P2 CLI 面板可换肤（`ApplyStyle` 补全）

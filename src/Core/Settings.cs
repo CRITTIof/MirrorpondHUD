@@ -98,12 +98,44 @@ namespace MirrorpondHUD.Core
             if (!IsHexColor(Style.Foreground)) Style.Foreground = "#E6EDF3";
             if (!IsHexColor(Style.Background)) Style.Background = "#0D1117";
 
+            // 外观令牌：非法值回落到默认 / 派生，避免主题文件写坏后整块外观失效。
+            Style.Accent = NormalizeColorToken(Style.Accent, "#2F6FEB");
+            Style.Danger = NormalizeColorToken(Style.Danger, "#D14343");
+            Style.Muted = NormalizeColorToken(Style.Muted, "");
+            Style.Border = NormalizeColorToken(Style.Border, "");
+            Style.Panel = NormalizeColorToken(Style.Panel, "");
+            Style.Scrollbar = NormalizeColorToken(Style.Scrollbar, "");
+            Style.ScrollbarHot = NormalizeColorToken(Style.ScrollbarHot, "");
+            Style.MonoFont = (Style.MonoFont ?? "").Trim();
+
             // 卡片列表的结构由 CardModel.Normalize 处理（需要卡片注册表里的元数据）。
         }
 
         static string NormalizeHotkey(string value, string fallback)
         {
             return string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+        }
+
+        /// <summary>颜色令牌：#RRGGBB 或 #AARRGGBB；空串合法（= 按前景派生）；其它一律回落。</summary>
+        public static bool IsColorToken(string value)
+        {
+            string text = (value ?? "").Trim();
+            if (text.Length == 0) return true;
+            if (text.Length != 7 && text.Length != 9) return false;
+            if (text[0] != '#') return false;
+
+            for (int i = 1; i < text.Length; i++)
+            {
+                if (!Uri.IsHexDigit(text[i])) return false;
+            }
+
+            return true;
+        }
+
+        static string NormalizeColorToken(string value, string fallback)
+        {
+            string text = (value ?? "").Trim();
+            return IsColorToken(text) ? text : fallback;
         }
 
 
@@ -332,6 +364,34 @@ namespace MirrorpondHUD.Core
 
         /// <summary>桌面亚克力的刷新帧率（帧/秒）：每帧读一次屏 + 重新模糊。</summary>
         public int GlassFps = 10;
+
+        // ==================== 外观令牌（v2.9.0） ====================
+        // 颜色为空 = 按前景色派生（派生值等于旧代码里的 alpha 常量，所以默认观感不变）。
+        // 软色（Muted / Border / Panel / Scrollbar / ScrollbarHot）要半透明时写 #AARRGGBB。
+
+        /// <summary>强调色：主操作按钮、选中态、滑块热区。</summary>
+        public string Accent = "#2F6FEB";
+
+        /// <summary>危险色：危险按钮 / 错误文字。</summary>
+        public string Danger = "#D14343";
+
+        /// <summary>次要文字（时间戳 / 提示）。空 = 前景 0.45。</summary>
+        public string Muted = "";
+
+        /// <summary>面板 / 输入框描边。空 = 前景 0.10。</summary>
+        public string Border = "";
+
+        /// <summary>内部小面板底色。空 = 前景 0.045。</summary>
+        public string Panel = "";
+
+        /// <summary>滚动条常态。空 = 前景 0.18。</summary>
+        public string Scrollbar = "";
+
+        /// <summary>滚动条悬停 / 拖动。空 = 前景 0.40。</summary>
+        public string ScrollbarHot = "";
+
+        /// <summary>CLI 面板的等宽字体。空 = Cascadia Mono / Consolas。</summary>
+        public string MonoFont = "";
 
     }
 

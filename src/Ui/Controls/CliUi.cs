@@ -36,6 +36,14 @@ namespace MirrorpondHUD.Ui.Controls
             return brush;
         }
 
+        /// <summary>令牌通常是「已带 alpha」的最终颜色，直接刷。</summary>
+        public static SolidColorBrush Brush(Color color)
+        {
+            var brush = new SolidColorBrush(color);
+            brush.Freeze();
+            return brush;
+        }
+
         public static FontFamily ResolveFont(string name)
         {
             if (string.IsNullOrWhiteSpace(name)) return new FontFamily("Microsoft YaHei UI");
@@ -97,10 +105,10 @@ namespace MirrorpondHUD.Ui.Controls
 
         static readonly Dictionary<string, Style> Cache = new Dictionary<string, Style>(StringComparer.Ordinal);
 
-        /// <summary>按前景色生成（并缓存）滚动条样式：同一套配色在多个面板里复用同一个 Style。</summary>
-        public static Style For(Color foreground)
+        /// <summary>按令牌生成（并缓存）滚动条样式：常态 / 悬停两块颜色来自主题。</summary>
+        public static Style For(Color thumb, Color hot)
         {
-            string key = foreground.ToString();
+            string key = thumb + "|" + hot;
             Style style;
             lock (Cache)
             {
@@ -109,8 +117,8 @@ namespace MirrorpondHUD.Ui.Controls
 
             // 注意不能用 string.Format：模板里的 {StaticResource ...} 会被当成占位符。
             string xaml = TemplateFormat
-                .Replace("%THUMB%", CardPalette.WithAlpha(foreground, 0.18).ToString())
-                .Replace("%THUMBHOT%", CardPalette.WithAlpha(foreground, 0.40).ToString());
+                .Replace("%THUMB%", thumb.ToString())
+                .Replace("%THUMBHOT%", hot.ToString());
 
             var dictionary = (ResourceDictionary)XamlReader.Parse(xaml);
             style = (Style)dictionary["Bar"];
@@ -124,10 +132,10 @@ namespace MirrorpondHUD.Ui.Controls
         }
 
         /// <summary>把统一滑块挂到一个滚动区域上（只影响这个子树）。</summary>
-        public static void Apply(FrameworkElement host, Color foreground)
+        public static void Apply(FrameworkElement host, Color thumb, Color hot)
         {
             if (host == null) return;
-            host.Resources[typeof(ScrollBar)] = For(foreground);
+            host.Resources[typeof(ScrollBar)] = For(thumb, hot);
         }
     }
 
@@ -146,6 +154,7 @@ namespace MirrorpondHUD.Ui.Controls
         {
             _foreground = foreground;
             _fontSize = Math.Max(10, (style == null ? 15 : style.FontSize) - 1);
+            ThemeTokens tokens = ThemeResolver.Resolve(style);
 
             _body = new StackPanel { Orientation = Orientation.Vertical };
 
@@ -158,11 +167,11 @@ namespace MirrorpondHUD.Ui.Controls
                 Padding = new Thickness(0),
                 Focusable = false
             };
-            CliScrollBars.Apply(_scroller, foreground);
+            CliScrollBars.Apply(_scroller, tokens.Scrollbar, tokens.ScrollbarHot);
 
             Child = _scroller;
-            Background = CardPalette.Brush(foreground, 0.045);
-            BorderBrush = CardPalette.Brush(foreground, 0.10);
+            Background = CardPalette.Brush(tokens.Panel);
+            BorderBrush = CardPalette.Brush(tokens.Border);
             BorderThickness = new Thickness(1);
             CornerRadius = new CornerRadius(Math.Max(3, corner - 3));
             Padding = new Thickness(8, 6, 4, 6);
@@ -213,6 +222,7 @@ namespace MirrorpondHUD.Ui.Controls
 
         protected readonly Settings HostSettings;
         protected readonly StyleSettings StyleSet;
+        protected readonly ThemeTokens Tokens;
         protected readonly CliSettings Cli;
         protected readonly Color Foreground;
         protected readonly double Corner;
@@ -234,6 +244,7 @@ namespace MirrorpondHUD.Ui.Controls
             Cli = cli ?? new CliSettings();
             Cli.Normalize();
             StyleSet = settings == null ? new StyleSettings() : settings.Style;
+            Tokens = ThemeResolver.Resolve(StyleSet);
             Corner = settings == null ? 10 : settings.Overlay.CornerRadius;
             Foreground = CardPalette.TryColor(StyleSet.Foreground, Color.FromRgb(0xE6, 0xED, 0xF3));
             FontSize = Math.Max(10, StyleSet.FontSize - 1);
@@ -241,7 +252,7 @@ namespace MirrorpondHUD.Ui.Controls
 
             Width = Math.Max(240, Cli.MaxWidth);
             Background = Brushes.Transparent;
-            CliScrollBars.Apply(this, Foreground);
+            CliScrollBars.Apply(this, Tokens.Scrollbar, Tokens.ScrollbarHot);
 
             RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // 标题
             RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // 分隔线
@@ -268,7 +279,7 @@ namespace MirrorpondHUD.Ui.Controls
             {
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(8, 0, 0, 0),
-                Foreground = CardPalette.Brush(Foreground, 0.45),
+                Foreground = CardPalette.Brush(Tokens.Muted),
                 FontSize = Math.Max(9, FontSize - 2),
                 FontFamily = MonoFont
             };
@@ -310,7 +321,7 @@ namespace MirrorpondHUD.Ui.Controls
                 Margin = new Thickness(0),
                 Focusable = false
             };
-            CliScrollBars.Apply(_recordView, Foreground);
+            CliScrollBars.Apply(_recordView, Tokens.Scrollbar, Tokens.ScrollbarHot);
 
             var recordHost = new Border
             {

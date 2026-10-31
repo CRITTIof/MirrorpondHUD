@@ -1,4 +1,4 @@
-# 版本修改记录（2.4.1 → 2.8.1）
+# 版本修改记录（2.4.1 → 2.9.0）
 
 > 范围：本文只记录**这一轮接手后我做的版本**（v2.4.1 起）。v2.4.0 及更早是既有历史，不在本文档里。
 > 数据全部取自仓库真实提交（`git diff --shortstat <上一版>..<本版>`），文件行的 `+ / -` 就是实际增删行数。
@@ -24,7 +24,8 @@
 | v2.7.0 | 2026-10-31 | `cba71fd` | 阶段 B 收尾：`ICardHost` 宿主服务与 `ICardHostAware` 生命周期；`CardStateStore` 每卡状态存储（原子写 + 路径校验） | 7 文件，+220 / −23，另新增 2 个源文件（165 行） |
 | v2.7.1 | 2026-10-31 | `3ab0fd0` | P0-5：一帧一份共享变量表 + 模块声明刷新间隔（时钟 1 s / 按键 250 ms / 系统信息每帧） | 9 文件，+194 / −32 |
 | v2.8.0 | 2026-10-31 | `9cbfbae` | 阶段 C 第一步：内容 / 样式签名拆两维；新增 `ICardStyleAware`，媒体卡支持「只换样式不重建」 | 9 文件，+179 / −33 |
-| v2.8.1 | 2026-10-31 | 本次提交 | 阶段 C 收尾：`GlassPolicy` 纯决策 + `IGlassBackdrop` 抽象，两块底板搬出窗口 | 7 文件，+126 / −161，另新增 1 个源文件（189 行） |
+| v2.8.1 | 2026-10-31 | `dea72fa` | 阶段 C 收尾：`GlassPolicy` 纯决策 + `IGlassBackdrop` 抽象，两块底板搬出窗口 | 7 文件，+126 / −161，另新增 1 个源文件（189 行） |
+| v2.9.0 | 2026-10-31 | 本次提交 | 外观重写前置 P1：令牌层（`ThemeTokens` / `ThemeResolver`），按钮与 CLI 面板改用令牌 | 8 文件，+162 / −24，另新增 1 个源文件（73 行） |
 
 ---
 
@@ -639,7 +640,36 @@ v2.6.0 只把**命令行卡**的设置搬进了 `CardSettings.Extras`，媒体�
 
 ---
 
-## 15. 不在版本里的东西
+## 15. v2.9.0（本次提交，未打标签）
+
+### 背景
+
+按 `docs/theme-rewrite-prerequisites.md` 的 P1：外观的颜色令牌没有单一来源——强调色硬编码在 `CardButton`，
+面板/描边/次要文字靠「前景色 × alpha」现算，主题重写会把这些散落的常量搬进更大的文件。
+
+### 改动
+
+1. **令牌与解析**（`src/Ui/ThemeTokens.cs`）：`ThemeTokens`（Accent / Danger / Muted / Border / Panel / Scrollbar / ScrollbarHot / MonoFont）
+   + `ThemeResolver.Resolve(style)`。**空值按前景色派生**，派生 alpha 刻意等于旧常量（0.45 / 0.10 / 0.045 / 0.18 / 0.40），
+   所以默认观感逐像素不变。
+2. **配置字段**：`StyleSettings` 新增 8 个字符串令牌；`Accent` / `Danger` 默认 `#2F6FEB` / `#D14343`，其余为空（= 派生）。
+   `Settings.Normalize` 用 `Settings.IsColorToken` 校验 `#RRGGBB` / `#AARRGGBB`，非法值回落。
+3. **接线**：
+   - `CardButton` 的强调 / 危险色改读令牌，删掉硬编码 `ThemeAccent`；
+   - `CliScrollBars` 改为接收「常态 / 悬停」两块颜色（来自令牌），缓存键跟着变；
+   - `CliPanelView` / `CliEntryPanel` 的内部小面板底色、描边、次要文字改用 `Panel` / `Border` / `Muted`。
+4. **未接线（留给 P2）**：`MonoFont` 令牌已经能存，但 `CliPanelView` 的等宽字体仍是静态字段，
+   等 P2 的「就地换肤」一起改成实例级。
+
+### 实测
+
+- `dotnet build -c Release`：0 警告 0 错误（输出到临时目录验证；`bin\Release` 当时被你运行中的实例锁住）。
+- `--selftest`：**待补**（同一原因：单实例互斥量被占用，跑不了自检）。
+- 默认观感不变由「派生值 = 旧 alpha 常量」保证；`Accent` / `Danger` 的默认值与旧硬编码相同。
+
+---
+
+## 16. 不在版本里的东西
 
 - 验收脚本、样张与测量脚本（`cmd-e2e.ps1`、`drag-glass.ps1`、`measure-*.py`、`shots/` 等）都在仓库外的 `hud-test/` 里，**没有提交**。
 - 发布：`main` 与标签已推送到 [github.com/CRITTIof/MirrorpondHUD](https://github.com/CRITTIof/MirrorpondHUD)；
@@ -648,7 +678,7 @@ v2.6.0 只把**命令行卡**的设置搬进了 `CardSettings.Extras`，媒体�
   v2.4.0 的 Release 已删除（tag `v2.4.0` 保留，历史仍可检出）。
 - 仓库追踪的文件共 89 个，`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
 
-## 16. 已知代价（跨版本）
+## 17. 已知代价（跨版本）
 
 - 桌面亚克力为了不拍到自己，会把卡片排除在截屏之外 —— 这个模式下截图 / 录屏里**看不到卡片**，观感只能靠肉眼与离屏渲染验证。
 - 兼容实现每帧对身后窗口做 `PrintWindow`，拖动时最多 ~21 帧/秒；要更高只能走桌面亚克力（DXGI）。
