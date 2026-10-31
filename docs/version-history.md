@@ -1,4 +1,4 @@
-# 版本修改记录（2.4.1 → 2.9.0）
+# 版本修改记录（2.4.1 → 2.9.1）
 
 > 范围：本文只记录**这一轮接手后我做的版本**（v2.4.1 起）。v2.4.0 及更早是既有历史，不在本文档里。
 > 数据全部取自仓库真实提交（`git diff --shortstat <上一版>..<本版>`），文件行的 `+ / -` 就是实际增删行数。
@@ -25,7 +25,8 @@
 | v2.7.1 | 2026-10-31 | `3ab0fd0` | P0-5：一帧一份共享变量表 + 模块声明刷新间隔（时钟 1 s / 按键 250 ms / 系统信息每帧） | 9 文件，+194 / −32 |
 | v2.8.0 | 2026-10-31 | `9cbfbae` | 阶段 C 第一步：内容 / 样式签名拆两维；新增 `ICardStyleAware`，媒体卡支持「只换样式不重建」 | 9 文件，+179 / −33 |
 | v2.8.1 | 2026-10-31 | `dea72fa` | 阶段 C 收尾：`GlassPolicy` 纯决策 + `IGlassBackdrop` 抽象，两块底板搬出窗口 | 7 文件，+126 / −161，另新增 1 个源文件（189 行） |
-| v2.9.0 | 2026-10-31 | 本次提交 | 外观重写前置 P1：令牌层（`ThemeTokens` / `ThemeResolver`），按钮与 CLI 面板改用令牌 | 8 文件，+162 / −24，另新增 1 个源文件（73 行） |
+| v2.9.0 | 2026-10-31 | `ccda52a` | 外观重写前置 P1：令牌层（`ThemeTokens` / `ThemeResolver`），按钮与 CLI 面板改用令牌 | 8 文件，+162 / −24，另新增 1 个源文件（73 行） |
+| v2.9.1 | 2026-10-31 | 本次提交 | 外观重写前置 P2：`CliPanelView.ApplyStyle` 就地换肤，对话 / 命令行卡片支持「换外观不重建」 | 8 文件，+225 / −30 |
 
 ---
 
@@ -669,7 +670,41 @@ v2.6.0 只把**命令行卡**的设置搬进了 `CardSettings.Extras`，媒体�
 
 ---
 
-## 16. 不在版本里的东西
+## 16. v2.9.1（本次提交，未打标签）
+
+### 背景
+
+按 `theme-rewrite-prerequisites.md` 的 P2：`CliPanelView` 的配色 / 圆角 / 内边距 / 字号在构造期写死，
+换主题会走「销毁 + 重建」——AI 对话的历史和命令行的记录全丢。
+
+### 改动
+
+1. **样式字段可变**：`CliPanelView` 的 `Foreground` / `Corner` / `Pad` / `FontSize` / `Tokens` / `StyleSet` 去掉 `readonly`；
+   标题 / 徽标 / 分隔线 / 输入 / 状态 / 记录区这些宿主 Border 存成字段，换肤时能重新套。
+2. **`CliPanelView.ApplyStyle(style, cli)`**：重算令牌、字号、内边距、圆角，重新套用标题与徽标颜色、
+   分隔线与各 Host 的 Margin、输入框（`CardTextBox.ApplyStyle`）、状态行（保留「是否报错」状态）、
+   两个滚动条（`CliScrollBars.Apply` 令牌色）以及记录区高度上限；子类可以通过 `OnApplyStyle()` 追加自己的控件。
+3. **`CliEntryPanel.ApplyStyle`**：内部小面板重套底色 / 描边 / 圆角 / 滚动条；
+   每段文字在 `AddText` 时把自己的 `alpha` 与字号偏移存进 `Tag`，换肤时按新前景重算颜色与字号。
+4. **两张 CLI 卡片实现 `ICardStyleAware`**：`ChatCard` / `CommandCard` 把宿主的「回退重建」切到「就地换肤」。
+5. **自检**新增「CLI 换肤=OK」：两张卡片都实现契约；`CliEntryPanel` 换肤后文字颜色 / 字号按新样式重算。
+
+### 边界
+
+- 主题换了「等宽字体」（`MonoFont` 令牌）时，已有文字块的 `FontFamily` 仍指向静态 `CliPanelView.MonoFont`，
+  本轮没有把它改成实例级——换字体仍需要重建卡片。颜色 / 字号 / 圆角 / 内边距都已经能就地换。
+- 记录区已有的文字块不会重排布局（只改字号与颜色），极端字号下记录面板高度可能略有出入，滚动条仍可用。
+
+### 实测
+
+- `dotnet build -c Release`：0 警告 0 错误。
+- `--selftest`：**失败项 0**（`CLI 换肤=OK`）。
+- `--smoke 4 --smoke-visible`：退出码 0，对话卡正常渲染（走 `CliPanelView` 新令牌路径）。
+- 未覆盖：真实换肤的观感（把 Accent / Padding / FontSize 改大再应用，确认对话历史仍在）需要手工确认。
+
+---
+
+## 17. 不在版本里的东西
 
 - 验收脚本、样张与测量脚本（`cmd-e2e.ps1`、`drag-glass.ps1`、`measure-*.py`、`shots/` 等）都在仓库外的 `hud-test/` 里，**没有提交**。
 - 发布：`main` 与标签已推送到 [github.com/CRITTIof/MirrorpondHUD](https://github.com/CRITTIof/MirrorpondHUD)；
@@ -678,7 +713,7 @@ v2.6.0 只把**命令行卡**的设置搬进了 `CardSettings.Extras`，媒体�
   v2.4.0 的 Release 已删除（tag `v2.4.0` 保留，历史仍可检出）。
 - 仓库追踪的文件共 89 个，`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
 
-## 17. 已知代价（跨版本）
+## 18. 已知代价（跨版本）
 
 - 桌面亚克力为了不拍到自己，会把卡片排除在截屏之外 —— 这个模式下截图 / 录屏里**看不到卡片**，观感只能靠肉眼与离屏渲染验证。
 - 兼容实现每帧对身后窗口做 `PrintWindow`，拖动时最多 ~21 帧/秒；要更高只能走桌面亚克力（DXGI）。

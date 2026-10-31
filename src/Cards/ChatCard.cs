@@ -35,7 +35,7 @@ namespace MirrorpondHUD.Cards
     /// 会挡住它身下的桌面点击（其余卡片不受影响）。
     /// </summary>
     public sealed class ChatCard : RichCardModuleBase, ICardHotkeySource, ICardHotkeyTarget,
-                                   ICardSettingsModule, ICardEditorSection, ICardSummary
+                                   ICardSettingsModule, ICardEditorSection, ICardSummary, ICardStyleAware
     {
         /// <summary>对话设置存在 <see cref="CardSettings.Extras"/> 里的键名。</summary>
         public const string SettingsKey = "chat";
@@ -100,6 +100,15 @@ namespace MirrorpondHUD.Cards
         public FrameworkElement CreateEditor(CardSettings config, Settings settings, Action onChanged)
         {
             return new ChatCardSettingsView(config, onChanged);
+        }
+
+        /// <summary>只换外观：面板就地重套样式，对话历史不丢。</summary>
+        public void ApplyStyle(FrameworkElement content, CardRenderContext context)
+        {
+            var view = content as ChatView;
+            if (view == null || context == null || context.Settings == null) return;
+
+            view.ApplyStyle(context.Settings.Style, context.Settings.Cli);
         }
 
         /// <inheritdoc />

@@ -4,10 +4,13 @@ using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
+using System.Windows.Controls;
+using System.Windows.Media;
 using MirrorpondHUD.Cards;
 using MirrorpondHUD.Core;
 using MirrorpondHUD.Media;
 using MirrorpondHUD.Ui;
+using MirrorpondHUD.Ui.Controls;
 
 namespace MirrorpondHUD
 {
@@ -215,6 +218,7 @@ namespace MirrorpondHUD
             bool stateStoreOk = false;
             bool renderOk = false;
             bool themeOk = false;
+            bool restyleOk = false;
             bool glassPolicyOk = false;
 
             try
@@ -658,10 +662,35 @@ namespace MirrorpondHUD
                 Log.Error("外观令牌自检异常", ex);
             }
 
+            try
+            {
+                // P2：CLI 卡片支持就地换肤，且换肤后已有文字按新前景重算（不重建控件）
+                bool cardsOk = CardRegistry.Get("chat") is ICardStyleAware
+                            && CardRegistry.Get("command") is ICardStyleAware;
+
+                var styleA = new StyleSettings { FontSize = 15, Foreground = "#E6EDF3", Padding = 14 };
+                var entry = new CliEntryPanel(styleA, new CliSettings(), System.Windows.Media.Color.FromRgb(0xE6, 0xED, 0xF3), 10);
+                TextBlock block = entry.AddText("hello", 0.72, false, 0, 0);
+
+                var styleB = new StyleSettings { FontSize = 20, Foreground = "#FFFFFF", Padding = 18 };
+                entry.ApplyStyle(styleB, System.Windows.Media.Color.FromRgb(0xFF, 0xFF, 0xFF), 14);
+
+                var color = ((SolidColorBrush)block.Foreground).Color;
+                bool entryOk = block.FontSize > 18
+                            && color.R == 0xFF
+                            && color.A == (byte)Math.Round(0.72 * 255);
+
+                restyleOk = cardsOk && entryOk;
+            }
+            catch (Exception ex)
+            {
+                Log.Error("CLI 换肤自检异常", ex);
+            }
+
             if (!(templateOk && unknownOk && collapseOk && thresholdOk && configOk && cardOk &&
                   keyNameOk && keyLimitOk && keyOverflowOk &&
                   commandOk && truncateOk && toolLabelOk && secretOk && chatHotkeyOk && settingsEditorOk &&
-                  stateStoreOk && renderOk && glassPolicyOk && themeOk)) failures++;
+                  stateStoreOk && renderOk && glassPolicyOk && themeOk && restyleOk)) failures++;
 
             Fix(sb, "逻辑自检", string.Format(
                 "模板={0} 未知占位符={1} 折叠={2} 阈值内展开={3} 配置读写={4} 卡片模块={11} 键名={5} 按键长度={6} 超长截断={7} 命令行={8} 行截断={9} 工具名={10} Key加密={12} 对话热键={13} 卡片设置={14} 状态存储={15} 渲染节流={16} 毛玻璃策略={17}",
@@ -685,6 +714,7 @@ namespace MirrorpondHUD
                 glassPolicyOk ? "OK" : "FAIL"));
 
             Fix(sb, "外观令牌", themeOk ? "OK（派生值 = 旧 alpha 常量，非法值已归一化）" : "FAIL");
+            Fix(sb, "CLI 换肤", restyleOk ? "OK（两张 CLI 卡片支持就地换肤，文字按新前景重算）" : "FAIL");
         }
 
         static bool RegisterIfSet(HotkeyManager hotkeys, string action, string combination)

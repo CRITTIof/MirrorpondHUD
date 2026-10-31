@@ -145,10 +145,17 @@ namespace MirrorpondHUD.Ui.Controls
     /// </summary>
     public sealed class CliEntryPanel : Border
     {
+        /// <summary>每段文字的原始参数：换肤时要按它重算颜色与字号。</summary>
+        sealed class TextInfo
+        {
+            public double Alpha;
+            public double SizeDelta;
+        }
+
         readonly ScrollViewer _scroller;
         readonly StackPanel _body;
-        readonly Color _foreground;
-        readonly double _fontSize;
+        Color _foreground;
+        double _fontSize;
 
         public CliEntryPanel(StyleSettings style, CliSettings cli, Color foreground, double corner)
         {
@@ -190,11 +197,39 @@ namespace MirrorpondHUD.Ui.Controls
                 LineHeight = Math.Max(_fontSize + 2, _fontSize * 1.5),
                 Foreground = CardPalette.Brush(_foreground, alpha),
                 FontWeight = bold ? FontWeights.SemiBold : FontWeights.Normal,
-                Margin = new Thickness(0, 0, 4, bottomMargin)
+                Margin = new Thickness(0, 0, 4, bottomMargin),
+                Tag = new TextInfo { Alpha = alpha, SizeDelta = sizeDelta }
             };
 
             _body.Children.Add(block);
             return block;
+        }
+
+        /// <summary>就地换肤：面板底色 / 描边 / 滑块 / 已有文字的颜色与字号，全部按新令牌重算。</summary>
+        public void ApplyStyle(StyleSettings style, Color foreground, double corner)
+        {
+            _foreground = foreground;
+            _fontSize = Math.Max(10, (style == null ? 15 : style.FontSize) - 1);
+
+            ThemeTokens tokens = ThemeResolver.Resolve(style);
+            Background = CardPalette.Brush(tokens.Panel);
+            BorderBrush = CardPalette.Brush(tokens.Border);
+            CornerRadius = new CornerRadius(Math.Max(3, corner - 3));
+            CliScrollBars.Apply(_scroller, tokens.Scrollbar, tokens.ScrollbarHot);
+
+            foreach (UIElement child in _body.Children)
+            {
+                var block = child as TextBlock;
+                if (block == null) continue;
+
+                var info = block.Tag as TextInfo;
+                double alpha = info == null ? 1.0 : info.Alpha;
+                double delta = info == null ? 0.0 : info.SizeDelta;
+
+                block.FontSize = _fontSize + delta;
+                block.LineHeight = Math.Max(_fontSize + 2, _fontSize * 1.5);
+                block.Foreground = CardPalette.Brush(_foreground, alpha);
+            }
         }
 
         public void ScrollToEnd()
@@ -221,13 +256,13 @@ namespace MirrorpondHUD.Ui.Controls
             new FontFamily("Cascadia Mono, Consolas, Microsoft YaHei UI");
 
         protected readonly Settings HostSettings;
-        protected readonly StyleSettings StyleSet;
-        protected readonly ThemeTokens Tokens;
+        protected StyleSettings StyleSet;
+        protected ThemeTokens Tokens;
         protected readonly CliSettings Cli;
-        protected readonly Color Foreground;
-        protected readonly double Corner;
-        protected readonly double Pad;
-        protected readonly double FontSize;
+        protected Color Foreground;
+        protected double Corner;
+        protected double Pad;
+        protected double FontSize;
         protected readonly CardTextBox Input;
 
         readonly StackPanel _records;
@@ -236,7 +271,14 @@ namespace MirrorpondHUD.Ui.Controls
         readonly TextBlock _badge;
         readonly TextBlock _prompt;
         readonly TextBlock _status;
+        readonly Border _headerHost;
+        readonly Border _rule;
+        readonly Border _recordHost;
+        readonly Border _inputHost;
         readonly List<CliEntryPanel> _entries = new List<CliEntryPanel>();
+
+        bool _inputReadOnly;
+        bool _statusError;
 
         protected CliPanelView(Settings settings, CliSettings cli)
         {
@@ -288,23 +330,23 @@ namespace MirrorpondHUD.Ui.Controls
             header.Children.Add(_title);
             header.Children.Add(_badge);
 
-            var headerHost = new Border
+            _headerHost = new Border
             {
                 Child = header,
                 Margin = new Thickness(Pad, Math.Max(6, Pad * 0.55), Pad, Math.Max(3, Pad * 0.3))
             };
-            Children.Add(headerHost);
-            SetRow(headerHost, 0);
+            Children.Add(_headerHost);
+            SetRow(_headerHost, 0);
 
             // 细横线：终端标题栏下面那条分隔线。
-            var rule = new Border
+            _rule = new Border
             {
                 Height = 1,
                 Background = CardPalette.Brush(Foreground, 0.14),
                 Margin = new Thickness(Pad, 0, Pad, Math.Max(4, Pad * 0.35))
             };
-            Children.Add(rule);
-            SetRow(rule, 1);
+            Children.Add(_rule);
+            SetRow(_rule, 1);
 
             // ---------- 记录区 ----------
             _records = new StackPanel { Orientation = Orientation.Vertical, Background = Brushes.Transparent };
@@ -323,13 +365,13 @@ namespace MirrorpondHUD.Ui.Controls
             };
             CliScrollBars.Apply(_recordView, Tokens.Scrollbar, Tokens.ScrollbarHot);
 
-            var recordHost = new Border
+            _recordHost = new Border
             {
                 Child = _recordView,
                 Margin = new Thickness(Pad, 0, Pad, Math.Max(4, Pad * 0.4))
             };
-            Children.Add(recordHost);
-            SetRow(recordHost, 2);
+            Children.Add(_recordHost);
+            SetRow(_recordHost, 2);
 
             // ---------- 输入行 ----------
             var inputGrid = new Grid();
@@ -377,13 +419,13 @@ namespace MirrorpondHUD.Ui.Controls
             inputGrid.Children.Add(_prompt);
             inputGrid.Children.Add(Input);
 
-            var inputHost = new Border
+            _inputHost = new Border
             {
                 Child = inputGrid,
                 Margin = new Thickness(Pad, 0, Pad, Math.Max(3, Pad * 0.3))
             };
-            Children.Add(inputHost);
-            SetRow(inputHost, 3);
+            Children.Add(_inputHost);
+            SetRow(_inputHost, 3);
 
             // ---------- 状态行 ----------
             _status = new TextBlock
@@ -398,6 +440,69 @@ namespace MirrorpondHUD.Ui.Controls
             Children.Add(_status);
             SetRow(_status, 4);
         }
+
+        // ==================== 就地换肤 ====================
+
+        /// <summary>
+        /// 只换外观、不重建：重新套用字体 / 颜色 / 内边距 / 圆角，所以对话历史与命令记录都还在。
+        /// 宿主在「只改了外观」时调用它（<c>ICardStyleAware</c>），而不是销毁整个面板。
+        /// </summary>
+        public void ApplyStyle(StyleSettings style, CliSettings cli)
+        {
+            StyleSet = style ?? new StyleSettings();
+            Tokens = ThemeResolver.Resolve(StyleSet);
+            Foreground = CardPalette.TryColor(StyleSet.Foreground, Color.FromRgb(0xE6, 0xED, 0xF3));
+            FontSize = Math.Max(10, StyleSet.FontSize - 1);
+            Pad = Math.Max(10, StyleSet.Padding * 0.85);
+            Corner = HostSettings == null ? 10 : HostSettings.Overlay.CornerRadius;
+
+            ApplyChrome();
+
+            foreach (CliEntryPanel entry in _entries)
+                entry.ApplyStyle(StyleSet, Foreground, Corner);
+
+            OnApplyStyle();
+        }
+
+        void ApplyChrome()
+        {
+            _title.Foreground = CardPalette.Brush(Foreground, 0.95);
+            _title.FontSize = FontSize + 1;
+
+            _badge.Foreground = CardPalette.Brush(Tokens.Muted);
+            _badge.FontSize = Math.Max(9, FontSize - 2);
+
+            _headerHost.Margin = new Thickness(Pad, Math.Max(6, Pad * 0.55), Pad, Math.Max(3, Pad * 0.3));
+            _rule.Background = CardPalette.Brush(Foreground, 0.14);
+            _rule.Margin = new Thickness(Pad, 0, Pad, Math.Max(4, Pad * 0.35));
+            _recordHost.Margin = new Thickness(Pad, 0, Pad, Math.Max(4, Pad * 0.4));
+            _inputHost.Margin = new Thickness(Pad, 0, Pad, Math.Max(3, Pad * 0.3));
+
+            CliScrollBars.Apply(_recordView, Tokens.Scrollbar, Tokens.ScrollbarHot);
+
+            _prompt.Foreground = CardPalette.Brush(Foreground, _inputReadOnly ? 0.35 : 0.8);
+            _prompt.FontSize = FontSize + 1;
+
+            Input.ApplyStyle(StyleSet, Corner);
+            Input.FontFamily = MonoFont;
+            Input.FontSize = FontSize + 1;
+            Input.Background = Brushes.Transparent;
+            Input.BorderThickness = new Thickness(0);
+            Input.Padding = new Thickness(2, 4, 2, 4);
+            Input.Foreground = CardPalette.Brush(Foreground, 0.95);
+
+            _status.FontSize = Math.Max(9, FontSize - 2);
+            _status.Foreground = CardPalette.Brush(
+                _statusError ? Color.FromRgb(0xE5, 0x7B, 0x6E) : Foreground, _statusError ? 1.0 : 0.5);
+            _status.Margin = new Thickness(Pad, 1, Pad, Math.Max(5, Pad * 0.55));
+
+            // 记录区高度上限跟着字号 / 内边距重算
+            double chrome = Pad * 2.4 + FontSize * 5.2;
+            _recordView.MaxHeight = Math.Max(60, Cli.MaxHeight - chrome);
+        }
+
+        /// <summary>子类自己的额外控件（如果有）在这里跟着换肤。</summary>
+        protected virtual void OnApplyStyle() { }
 
         // ==================== 给子类用的零件 ====================
 
@@ -428,12 +533,14 @@ namespace MirrorpondHUD.Ui.Controls
 
         protected void SetInputReadOnly(bool readOnly)
         {
+            _inputReadOnly = readOnly;
             Input.IsReadOnly = readOnly;
             _prompt.Foreground = CardPalette.Brush(Foreground, readOnly ? 0.35 : 0.8);
         }
 
         protected void SetStatus(string text, bool error)
         {
+            _statusError = error;
             _status.Text = text ?? "";
             _status.Foreground = CardPalette.Brush(
                 error ? Color.FromRgb(0xE5, 0x7B, 0x6E) : Foreground, error ? 1.0 : 0.5);

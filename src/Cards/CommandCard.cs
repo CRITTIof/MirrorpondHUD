@@ -17,7 +17,7 @@ namespace MirrorpondHUD.Cards
     /// 所以热键唤起它的时候宿主会把窗口提到前台、把焦点交给输入行。
     /// </summary>
     public sealed class CommandCard : RichCardModuleBase, ICardSettingsModule, ICardEditorSection,
-                                      ICardSettingsValidator, ICardSummary
+                                      ICardSettingsValidator, ICardSummary, ICardStyleAware
     {
         /// <summary>命令行设置存在 <see cref="CardSettings.Extras"/> 里的键名。</summary>
         public const string SettingsKey = "command";
@@ -96,6 +96,15 @@ namespace MirrorpondHUD.Cards
             if (dir.Length > 28) dir = "…" + dir.Substring(dir.Length - 27);
 
             return CommandRunner.ToolLabel(command) + " · " + dir;
+        }
+
+        /// <summary>只换外观：面板就地重套样式，命令记录不丢。</summary>
+        public void ApplyStyle(FrameworkElement content, CardRenderContext context)
+        {
+            var view = content as CommandView;
+            if (view == null || context == null || context.Settings == null) return;
+
+            view.ApplyStyle(context.Settings.Style, context.Settings.Cli);
         }
     }
 

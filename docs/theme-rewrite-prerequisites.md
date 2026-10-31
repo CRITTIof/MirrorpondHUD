@@ -60,6 +60,11 @@ Panel / Border / Muted 都已改读令牌。`Theme.xaml`（设置窗口浅色 ch
 
 **验收**：对话里先问几轮 → 改字号 / 强调色 → 应用：历史还在、输入框还是同一个、滚动条颜色跟着变。
 
+**状态（v2.9.1）**：✅ 已实现。`CliPanelView.ApplyStyle(style, cli)` 重套标题 / 徽标 / 分隔线 / 输入 / 状态 / 滚动条 /
+记录区高度；`CliEntryPanel.ApplyStyle` 重套内部面板与已有文字（每段文字的 alpha 与字号偏移存在 `Tag` 里）。
+`ChatCard` / `CommandCard` 已实现 `ICardStyleAware`，宿主走「只样式变 → 就地换肤」。
+**未做**：`MonoFont` 令牌还没变成实例级字体，换等宽字体仍需要重建。
+
 **风险**：中。`CliUi.cs` 是 500 行的公共件，子控件多；需要逐个确认“哪些颜色是构造期写的”。
 
 ### P3 主题文件（`.mptheme`）
