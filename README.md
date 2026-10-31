@@ -293,6 +293,7 @@ src/
   Ui/                    叠层窗口、绘制、毛玻璃（GlassBackdrop / GlassCapture）、设置窗口、托盘、热键、自启
 docs/                    设计文档与截图
 assets/keycaps/          ReiconFont 与映射文档
+tools/                   开发脚本（make_logo.py 生成多尺寸 logo.ico），不参与构建
 ```
 
 设计资料：
@@ -301,6 +302,7 @@ assets/keycaps/          ReiconFont 与映射文档
 - [docs/modularity-review.md](docs/modularity-review.md) — 模块化现状评审：扩展点盘点、P0 / P1 / P2 问题清单（含文件行号）与分阶段落地路线
 - [docs/glass-implementations.md](docs/glass-implementations.md) — 毛玻璃的两种实现（系统亚克力 / 截屏取样）：各自的毛病与实测数据，中英双语
 - [docs/theme-system.md](docs/theme-system.md) — 外观主题方案：`.mptheme` 单文件格式、字段映射、导入 / 导出与回滚流程（草案 + 三份示例主题）
+- [docs/theme-rewrite-prerequisites.md](docs/theme-rewrite-prerequisites.md) — 外观重写的前置：令牌层 / CLI 面板换肤 / 主题文件 / 设置页入口的分步计划与验收清单（附仓库历史文件审计）
 - [docs/theme-motion.md](docs/theme-motion.md) — 主题的动效与控件样式调研：启动动画参数化、出现 / 消失 / 让位动画、按钮面板滑块 token 与受控模板、设置页换肤（含分层窗口动画实测）
 - [docs/version-history.md](docs/version-history.md) — v2.4.1 → v2.8.1 每个版本改了什么、动了哪些文件（含实测数据与提交号）
 - 「热键」页：全局三个热键置顶；媒体卡片单独一组（播放 / 暂停、前进、后退、加速、减速），
