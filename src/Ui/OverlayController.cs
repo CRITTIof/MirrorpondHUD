@@ -25,7 +25,7 @@ namespace MirrorpondHUD.Ui
         MetricEngine _engine;
         KeyboardHook _hook;
         SettingsWindow _settingsWindow;
-        TrayIcon _tray;
+        TrayController _tray;
         HotkeyManager _hotkeys;
         HotkeyRouter _hotkeyRouter;
         DispatcherTimer _renderTimer;
@@ -39,9 +39,7 @@ namespace MirrorpondHUD.Ui
         readonly List<CardSlot> _cards = new List<CardSlot>();
         readonly CardLayoutCoordinator _layout;
         readonly OverlayIntro _intro;
-
-        CardSlot _commandCard;
-        bool _commandMode;
+        readonly CommandModeController _command;
 
         /// <summary>把控制器的公开 / 私有动作暴露给 HotkeyRouter，避免把 CardSlot 抬成公开契约。</summary>
         sealed class HotkeyHostAdapter : IHotkeyHost
@@ -75,6 +73,69 @@ namespace MirrorpondHUD.Ui
             }
         }
 
+        /// <summary>把控制器的状态与动作暴露给 TrayController。</summary>
+        sealed class TrayHostAdapter : ITrayHost
+        {
+            readonly OverlayController _owner;
+
+            public TrayHostAdapter(OverlayController owner)
+            {
+                _owner = owner;
+            }
+
+            public Settings Settings { get { return _owner._settings; } }
+            public bool OverlayVisible { get { return _owner._overlayVisible; } }
+
+            public string CommandHotkey
+            {
+                get
+                {
+                    CardSlot command = _owner.FindCommandCard();
+                    return command == null || command.Config == null ? "" : command.Config.Hotkey;
+                }
+            }
+
+            public void ToggleVisibility() { _owner.ToggleVisibility(); }
+            public void ShowSettings() { _owner.ShowSettings(); }
+            public void ToggleLock() { _owner.ToggleLock(); }
+            public void ToggleAutoStart() { _owner.ToggleAutoStart(); }
+            public void ToggleCommandLine() { _owner.ToggleCommandLine(); }
+            public void Exit() { _owner.Exit(); }
+        }
+
+        /// <summary>把控制器的显示 / 键盘 / 重绘动作暴露给 CommandModeController。</summary>
+        sealed class CommandHostAdapter : ICommandModeHost
+        {
+            readonly OverlayController _owner;
+
+            public CommandHostAdapter(OverlayController owner)
+            {
+                _owner = owner;
+            }
+
+            public IList<CardSlot> Cards { get { return _owner._cards; } }
+            public bool OverlayVisible { get { return _owner._overlayVisible; } }
+            public bool IntroRunning { get { return _owner._intro.IsRunning; } }
+
+            public void FinishIntro() { _owner._intro.Finish(); }
+
+            public void ShowOverlay()
+            {
+                _owner._overlayVisible = true;
+                _owner.RefreshVisibility();
+            }
+
+            public void ShowCard(CardSlot slot, string text) { _owner.ShowCard(slot, text); }
+            public void HideCard(CardSlot slot) { _owner.HideCard(slot); }
+            public void RenderNow() { _owner.RenderNow(); }
+            public void UpdateCommandInfo() { _owner.UpdateCommandInfo(); }
+
+            public void SetKeyboardSuppressed(bool suppressed)
+            {
+                if (_owner._hook != null) _owner._hook.Suppress = suppressed;
+            }
+        }
+
         public OverlayController(Settings settings, List<string> args)
         {
             _settings = settings;
@@ -84,6 +145,7 @@ namespace MirrorpondHUD.Ui
             _intro = new OverlayIntro(_cards, () => _settings, CardTemplate,
                                       slot => RenderCardText(slot), _layout.SyncHeight, _layout.Layout,
                                       RenderNow, Dispatcher.CurrentDispatcher);
+            _command = new CommandModeController(new CommandHostAdapter(this));
         }
 
         public Settings CurrentSettings { get { return _settings; } }
@@ -133,7 +195,7 @@ namespace MirrorpondHUD.Ui
                      "，全局热键=" + _settings.Hotkeys.ToggleOverlay + "/" + _settings.Hotkeys.OpenSettings +
                      "/" + _settings.Hotkeys.ToggleLock + "）");
 
-            ShowStartupBalloon();
+            _tray?.ShowStartupBalloon();
         }
 
         // ==================== 卡片 ====================
@@ -141,7 +203,7 @@ namespace MirrorpondHUD.Ui
         void CreateCards()
         {
             _cards.Clear();
-            _commandCard = null;
+            _command.Reset();
             _intro.Reset();
 
             foreach (CardSettings config in _settings.Cards)
@@ -410,7 +472,7 @@ namespace MirrorpondHUD.Ui
             {
                 bool show;
                 if (!_overlayVisible) show = false;
-                else if (slot.Module.IsInteractive) show = _commandMode && ReferenceEquals(slot, _commandCard);
+                else if (slot.Module.IsInteractive) show = _command.IsActive && ReferenceEquals(slot, _command.Card);
                 else show = slot.Config.Resident || slot.Summoned;
 
                 if (show && !slot.Shown)
@@ -590,51 +652,8 @@ namespace MirrorpondHUD.Ui
 
         void StartTray()
         {
-            _tray = new TrayIcon();
-            _tray.ToggleVisibility += ToggleVisibility;
-            _tray.OpenSettings += ShowSettings;
-            _tray.ToggleLock += ToggleLock;
-            _tray.ToggleAutoStart += ToggleAutoStart;
-            _tray.CommandLine += ToggleCommandLine;
-            _tray.Exit += Exit;
-
-            _tray.Visible = _settings.Behavior.TrayEnabled;
-            UpdateTray();
-
-            int left, top, right, bottom;
-            if (!_tray.Visible)
-            {
-                Log.Info("托盘图标：未启用");
-            }
-            else if (_tray.TryGetRect(out left, out top, out right, out bottom))
-            {
-                Log.Info("托盘图标：已显示，位置 " + left + "," + top + " - " + right + "," + bottom);
-            }
-            else
-            {
-                Log.Warn("托盘图标：已添加但未取得屏幕位置（Win11 默认收在“隐藏图标”里）");
-            }
-
-            // 托盘被安全策略拦掉时不要让用户“无处可点”，直接打开设置窗口
-            if (!_tray.Visible)
-            {
-                Application.Current.Dispatcher.BeginInvoke(new Action(ShowSettings), DispatcherPriority.Background);
-                Log.Warn("托盘不可用，已自动打开设置窗口作为兜底入口");
-            }
-        }
-
-        void ShowStartupBalloon()
-        {
-            if (_tray == null || !_tray.Visible) return;
-
-            var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1200) };
-            timer.Tick += (s, e) =>
-            {
-                timer.Stop();
-                _tray.ShowBalloon("镜潭一览已启动",
-                    "左键单击托盘图标，或按 " + _settings.Hotkeys.OpenSettings + " 打开设置");
-            };
-            timer.Start();
+            _tray = new TrayController(new TrayHostAdapter(this));
+            _tray.Start();
         }
 
         void StartActivationListener()
@@ -676,7 +695,7 @@ namespace MirrorpondHUD.Ui
             DateTime now = DateTime.UtcNow;
 
             // 交互卡（命令行）自己管刷新，靠下面循环里的 IsInteractive 跳过；
-            // 这里不能再按 _commandMode 整块返回，否则命令行一开，其它常驻卡片的文字就停更了。
+            // 这里不能再按命令行状态整块返回，否则命令行一开，其它常驻卡片的文字就停更了。
             foreach (CardSlot slot in _cards)
             {
                 if (!slot.Shown || slot.Module.IsInteractive) continue;
@@ -739,108 +758,12 @@ namespace MirrorpondHUD.Ui
 
         public void ToggleCommandLine()
         {
-            ToggleCommandLine(FindCommandCard());
-        }
-
-        void ToggleCommandLine(CardSlot slot)
-        {
-            if (slot == null || slot.Module == null || !slot.Module.IsInteractive)
-            {
-                Log.Info("没有可用的命令行卡片");
-                return;
-            }
-
-            if (_commandMode && ReferenceEquals(_commandCard, slot))
-            {
-                ExitCommandLine();
-                return;
-            }
-
-            if (_commandMode) ExitCommandLine();
-            if (_intro.IsRunning) _intro.Finish();
-
-            if (!_overlayVisible)
-            {
-                _overlayVisible = true;
-                RefreshVisibility();
-            }
-
-            EnterCommandLine(slot);
-        }
-
-        void EnterCommandLine(CardSlot slot)
-        {
-            _commandMode = true;
-            _commandCard = slot;
-
-            if (_hook != null) _hook.Suppress = true;
-
-            slot.Summoned = true;
-            ShowCard(slot, "");
-            slot.Window.EnsureTopmost();
-            slot.Window.ResetStableSize();
-
-            // 命令行面板是富内容（和 AI 对话同一套 CliPanelView）：开始一次新会话，再让窗口把前台和键盘焦点抢过来。
-            ICliFocusTarget target = slot.Content as ICliFocusTarget;
-            if (target != null)
-            {
-                try { target.Begin(); }
-                catch (Exception ex) { Log.Warn("命令行面板初始化失败: " + ex.Message); }
-            }
-
-            slot.Window.BeginCommandInput();
-
-            // 交互卡片自己解释自己的设置并给出日志摘要（宿主不再认识 CommandSettings）。
-            string summary = null;
-            var activation = slot.Module as ICardActivation;
-            if (activation != null)
-            {
-                try { summary = activation.OnActivated(slot.Config); }
-                catch (Exception ex) { Log.Warn("卡片呼出回调失败: " + ex.Message); }
-            }
-
-            string cardName = slot.Config == null ? "?" : slot.Config.Name;
-            Log.Info("快捷命令行已打开（卡片=" + cardName +
-                     (string.IsNullOrEmpty(summary) ? "" : "，" + summary) + "）");
+            _command.Toggle(FindCommandCard());
         }
 
         public void ExitCommandLine()
         {
-            if (!_commandMode) return;
-
-            _commandMode = false;
-
-            CardSlot slot = _commandCard;
-            _commandCard = null;
-
-            if (slot != null)
-            {
-                // 交互卡片先收自己的状态，再让面板收尾。
-                var activation = slot.Module as ICardActivation;
-                if (activation != null)
-                {
-                    try { activation.OnDeactivated(slot.Config); }
-                    catch (Exception ex) { Log.Warn("卡片收起回调失败: " + ex.Message); }
-                }
-
-                // 面板自己管着「还在跑的命令」和记录列表，收起前先让它收尾。
-                ICliFocusTarget target = slot.Content as ICliFocusTarget;
-                if (target != null)
-                {
-                    try { target.Cancel(); }
-                    catch (Exception ex) { Log.Warn("命令行收尾失败: " + ex.Message); }
-                }
-
-                slot.Window.EndCommandInput();
-                slot.Window.ResetStableSize();
-                slot.Summoned = false;
-                HideCard(slot);
-            }
-
-            if (_hook != null) _hook.Suppress = false;
-
-            RenderNow();
-            Log.Info("快捷命令行已关闭，命令与返回已清空");
+            _command.Exit();
         }
 
         // ==================== 操作 ====================
@@ -851,7 +774,7 @@ namespace MirrorpondHUD.Ui
 
             if (_overlayVisible)
             {
-                if (_commandMode) ExitCommandLine();
+                if (_command.IsActive) _command.Exit();
                 if (_intro.IsRunning) _intro.Finish();
                 _overlayVisible = false;
                 foreach (CardSlot slot in _cards) HideCard(slot);
@@ -864,12 +787,12 @@ namespace MirrorpondHUD.Ui
             }
 
             Log.Info("叠层可见=" + _overlayVisible);
-            UpdateTray();
+            _tray?.Update();
         }
 
         public void ToggleLock()
         {
-            if (_commandMode) ExitCommandLine();
+            if (_command.IsActive) _command.Exit();
             SetLocked(!_settings.Overlay.Locked);
         }
 
@@ -888,14 +811,14 @@ namespace MirrorpondHUD.Ui
             if (changed)
             {
                 SaveSettings();
-                UpdateTray();
+                _tray?.Update();
                 Log.Info("叠层锁定=" + locked);
             }
         }
 
         public void ShowSettings()
         {
-            if (_commandMode) ExitCommandLine();
+            if (_command.IsActive) _command.Exit();
 
             if (_settingsWindow == null)
             {
@@ -936,7 +859,7 @@ namespace MirrorpondHUD.Ui
 
         public void ApplySettings(Settings settings)
         {
-            if (_commandMode) ExitCommandLine();
+            if (_command.IsActive) _command.Exit();
 
             // 位置与锁定是运行时状态：只由拖动、F8 和托盘菜单改变。
             // 设置窗口里的坐标是打开窗口那一刻的快照，这里必须以实时值为准。
@@ -964,7 +887,7 @@ namespace MirrorpondHUD.Ui
 
             if (_hotkeyRouter != null) _hotkeyRouter.Register();
             ApplyAutoStart();
-            UpdateTray();
+            _tray?.Update();
             UpdateCommandInfo();
             RefreshVisibility();
             RenderNow();
@@ -1097,11 +1020,7 @@ namespace MirrorpondHUD.Ui
 
             foreach (CardSlot removed in existing.Values)
             {
-                if (ReferenceEquals(removed, _commandCard))
-                {
-                    _commandMode = false;
-                    _commandCard = null;
-                }
+                if (ReferenceEquals(removed, _command.Card)) _command.Reset();
 
                 DetachHost(removed);
                 ReleaseContent(removed);
@@ -1155,7 +1074,7 @@ namespace MirrorpondHUD.Ui
             _settings.Behavior.AutoStart = !_settings.Behavior.AutoStart;
             ApplyAutoStart();
             SaveSettings();
-            UpdateTray();
+            _tray?.Update();
         }
 
         // ==================== 热键 ====================
@@ -1167,7 +1086,7 @@ namespace MirrorpondHUD.Ui
 
             if (slot.Module.IsInteractive)
             {
-                ToggleCommandLine(slot);
+                _command.Toggle(slot);
                 return;
             }
 
@@ -1190,17 +1109,7 @@ namespace MirrorpondHUD.Ui
             }
 
             Log.Info("卡片「" + slot.Config.Name + "」" + (slot.Summoned ? "已呼出" : "已收起"));
-            UpdateTray();
-        }
-
-        void UpdateTray()
-        {
-            if (_tray == null) return;
-            _tray.Visible = _settings.Behavior.TrayEnabled;
-
-            CardSlot command = FindCommandCard();
-            _tray.SetCommandHotkey(command == null ? "" : command.Config.Hotkey);
-            _tray.Update(_overlayVisible, _settings.Overlay.Locked, _settings.Behavior.AutoStart);
+            _tray?.Update();
         }
 
         public void Exit()

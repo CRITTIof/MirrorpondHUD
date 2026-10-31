@@ -39,6 +39,8 @@
 | `src/Ui/CardLayoutCoordinator.cs` | 垂直堆叠、左右对齐、窗口高度变化合并与延迟布局 |
 | `src/Ui/OverlayIntro.cs` | 启动动画：欢迎语 / 内容逐字、停留、擦除、回到实时刷新 |
 | `src/Ui/HotkeyRouter.cs` | 全局热键 / 卡片呼出 / 卡片通用动作的注册、回退与分发 |
+| `src/Ui/TrayController.cs` | 托盘图标、菜单动作、命令热键同步、位置日志与启动气泡 |
+| `src/Ui/CommandModeController.cs` | 快捷命令行会话：交互卡进入 / 退出、激活回调、键盘抑制 |
 | `src/Ui/CardEditor.cs` | 设置页「内容」里的一张卡片设置卡（双向绑定，含每卡命令行 / 媒体 / AI 接口设置） |
 
 ## 2. 卡片接口
