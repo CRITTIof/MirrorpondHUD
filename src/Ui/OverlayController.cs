@@ -27,6 +27,7 @@ namespace MirrorpondHUD.Ui
         SettingsWindow _settingsWindow;
         TrayIcon _tray;
         HotkeyManager _hotkeys;
+        HotkeyRouter _hotkeyRouter;
         DispatcherTimer _renderTimer;
         EventWaitHandle _activation;
         Thread _activationThread;
@@ -41,6 +42,38 @@ namespace MirrorpondHUD.Ui
 
         CardSlot _commandCard;
         bool _commandMode;
+
+        /// <summary>把控制器的公开 / 私有动作暴露给 HotkeyRouter，避免把 CardSlot 抬成公开契约。</summary>
+        sealed class HotkeyHostAdapter : IHotkeyHost
+        {
+            readonly OverlayController _owner;
+
+            public HotkeyHostAdapter(OverlayController owner)
+            {
+                _owner = owner;
+            }
+
+            public Settings Settings { get { return _owner._settings; } }
+            public IList<CardSlot> Cards { get { return _owner._cards; } }
+            public bool TrayVisible { get { return _owner._tray != null && _owner._tray.Visible; } }
+
+            public void ToggleVisibility() { _owner.ToggleVisibility(); }
+            public void ShowSettings() { _owner.ShowSettings(); }
+            public void ToggleLock() { _owner.ToggleLock(); }
+            public CardSlot FindCard(string id) { return _owner.FindCard(id); }
+            public void ToggleCard(CardSlot slot) { _owner.ToggleCard(slot); }
+            public void SaveSettings() { _owner.SaveSettings(); }
+
+            public void ReloadSettings()
+            {
+                if (_owner._settingsWindow != null) _owner._settingsWindow.Reload(_owner._settings);
+            }
+
+            public void ShowBalloon(string title, string text)
+            {
+                if (_owner._tray != null) _owner._tray.ShowBalloon(title, text);
+            }
+        }
 
         public OverlayController(Settings settings, List<string> args)
         {
@@ -551,8 +584,8 @@ namespace MirrorpondHUD.Ui
         void StartHotkeys()
         {
             _hotkeys = new HotkeyManager();
-            _hotkeys.HotkeyPressed += OnHotkey;
-            RegisterHotkeys();
+            _hotkeyRouter = new HotkeyRouter(_hotkeys, new HotkeyHostAdapter(this));
+            _hotkeyRouter.Register();
         }
 
         void StartTray()
@@ -929,7 +962,7 @@ namespace MirrorpondHUD.Ui
             ConfigStore.Save(_settings);
             if (_engine != null) _engine.UpdateSettings(_settings);
 
-            RegisterHotkeys();
+            if (_hotkeyRouter != null) _hotkeyRouter.Register();
             ApplyAutoStart();
             UpdateTray();
             UpdateCommandInfo();
@@ -1127,221 +1160,6 @@ namespace MirrorpondHUD.Ui
 
         // ==================== 热键 ====================
 
-        void RegisterHotkeys()
-        {
-            if (_hotkeys == null) return;
-
-            // 先清空：设置里删掉的卡片不应该继续占用旧组合键。
-            _hotkeys.UnregisterAll();
-
-            var changed = new List<string>(4);
-
-            string toggle = RegisterOne(HotkeyManager.ActionToggleOverlay, _settings.Hotkeys.ToggleOverlay);
-            string open = RegisterOne(HotkeyManager.ActionOpenSettings, _settings.Hotkeys.OpenSettings);
-            string lockKey = RegisterOne(HotkeyManager.ActionToggleLock, _settings.Hotkeys.ToggleLock);
-
-            if (toggle != _settings.Hotkeys.ToggleOverlay)
-            {
-                changed.Add(_settings.Hotkeys.ToggleOverlay + " → " + toggle);
-                _settings.Hotkeys.ToggleOverlay = toggle;
-            }
-            if (open != _settings.Hotkeys.OpenSettings)
-            {
-                changed.Add(_settings.Hotkeys.OpenSettings + " → " + open);
-                _settings.Hotkeys.OpenSettings = open;
-            }
-            if (lockKey != _settings.Hotkeys.ToggleLock)
-            {
-                changed.Add(_settings.Hotkeys.ToggleLock + " → " + lockKey);
-                _settings.Hotkeys.ToggleLock = lockKey;
-            }
-
-            if (changed.Count > 0)
-            {
-                Log.Warn("部分热键被占用，已自动改用：" + string.Join("，", changed));
-                ConfigStore.Save(_settings);
-                if (_settingsWindow != null) _settingsWindow.Reload(_settings);
-                if (_tray != null)
-                    _tray.ShowBalloon("热键被占用，已自动改用", string.Join("  ", changed));
-            }
-
-            // 每张非常驻卡片一个呼出热键；相同组合键会合并成同一个注册，按下时同时呼出。
-            int failed = 0;
-            var changedCards = new List<string>(4);
-
-            foreach (CardSlot slot in _cards)
-            {
-                string action = HotkeyManager.CardAction(slot.Config.Id);
-                string combination = slot.Config.Resident ? "" : slot.Config.Hotkey;
-
-                if (string.IsNullOrWhiteSpace(combination))
-                {
-                    _hotkeys.Register(action, "");
-                    continue;
-                }
-
-                string registered = RegisterOne(action, combination);
-                if (!string.Equals(registered, combination, StringComparison.OrdinalIgnoreCase))
-                {
-                    // 被占用时退到 Ctrl+Alt+原键，并把实际生效的组合键写回卡片设置。
-                    slot.Config.Hotkey = registered;
-                    changedCards.Add(slot.Config.Name + " → " + registered);
-                }
-
-                if (string.IsNullOrWhiteSpace(registered))
-                {
-                    failed++;
-                    Log.Warn("卡片热键注册失败: " + slot.Config.Name + " " + combination);
-                }
-            }
-
-            if (changedCards.Count > 0)
-            {
-                Log.Warn("部分卡片热键被占用，已自动改用：" + string.Join("，", changedCards));
-                ConfigStore.Save(_settings);
-                if (_settingsWindow != null) _settingsWindow.Reload(_settings);
-            }
-
-            if (failed > 0 && _tray != null && _tray.Visible)
-            {
-                _tray.ShowBalloon("有 " + failed + " 张卡片的呼出热键注册失败",
-                    "组合键可能被其它程序占用，可在「内容」页换一个");
-            }
-
-            RegisterCardActionHotkeys();
-        }
-
-        /// <summary>卡片模块提供的通用热键（媒体卡的前进 / 后退 / 变速 / 播放暂停）。</summary>
-        void RegisterCardActionHotkeys()
-        {
-            var changed = new List<string>(4);
-
-            foreach (ICardModule module in CardRegistry.Modules)
-            {
-                var source = module as ICardHotkeySource;
-                if (source == null) continue;
-
-                bool used = false;
-                foreach (CardSlot slot in _cards)
-                {
-                    if (slot.Module != null && string.Equals(slot.Module.Kind, module.Kind, StringComparison.OrdinalIgnoreCase))
-                    {
-                        used = true;
-                        break;
-                    }
-                }
-                if (!used) continue;   // 没有这种卡片就不注册，免得占着组合键
-
-                foreach (CardHotkeyAction entry in source.HotkeyActions)
-                {
-                    string saved = _settings.Hotkeys.GetCardAction(entry.Action);
-                    if (string.IsNullOrWhiteSpace(saved)) saved = entry.DefaultHotkey;
-
-                    string registered = RegisterOne(entry.Action, saved);
-                    _settings.Hotkeys.SetCardAction(entry.Action, registered);
-
-                    if (!string.IsNullOrWhiteSpace(saved) &&
-                        !string.Equals(registered, saved, StringComparison.OrdinalIgnoreCase))
-                    {
-                        changed.Add(entry.Label + " " + saved + " → " + registered);
-                    }
-                }
-            }
-
-            if (changed.Count > 0)
-            {
-                Log.Warn("部分卡片通用热键被占用，已自动改用：" + string.Join("，", changed));
-                ConfigStore.Save(_settings);
-                if (_settingsWindow != null) _settingsWindow.Reload(_settings);
-                if (_tray != null)
-                    _tray.ShowBalloon("卡片热键被占用，已自动改用", string.Join("  ", changed));
-            }
-        }
-
-        /// <summary>优先注册配置的组合键；被占用时退一步用 Ctrl+Alt+原键。空白 = 不启用。</summary>
-        string RegisterOne(string action, string combination)
-        {
-            if (string.IsNullOrWhiteSpace(combination))
-            {
-                _hotkeys.Register(action, "");
-                return "";
-            }
-
-            if (_hotkeys.Register(action, combination))
-            {
-                Log.Info("热键 " + combination + " 注册成功");
-                return combination;
-            }
-
-            if (combination.IndexOf('+') < 0)
-            {
-                string fallback = "Ctrl+Alt+" + combination;
-                if (_hotkeys.Register(action, fallback))
-                {
-                    Log.Warn("热键 " + combination + " 被占用，改用 " + fallback);
-                    return fallback;
-                }
-            }
-
-            Log.Warn("热键注册失败，功能仍可通过托盘菜单使用: " + combination);
-            return combination;
-        }
-
-        void OnHotkey(string action)
-        {
-            switch (action)
-            {
-                case HotkeyManager.ActionToggleOverlay:
-                    ToggleVisibility();
-                    break;
-                case HotkeyManager.ActionOpenSettings:
-                    ShowSettings();
-                    break;
-                case HotkeyManager.ActionToggleLock:
-                    ToggleLock();
-                    break;
-                default:
-                    if (action.StartsWith("card:", StringComparison.Ordinal))
-                    {
-                        CardSlot slot = FindCard(action.Substring(5));
-                        if (slot != null) ToggleCard(slot);
-                    }
-                    else
-                    {
-                        ExecuteCardAction(action);
-                    }
-                    break;
-            }
-        }
-
-        /// <summary>把卡片模块的通用热键转发给每张同类卡片的富内容。</summary>
-        void ExecuteCardAction(string action)
-        {
-            if (string.IsNullOrEmpty(action)) return;
-
-            foreach (CardSlot slot in _cards)
-            {
-                var target = slot.Module as ICardHotkeyTarget;
-                var source = slot.Module as ICardHotkeySource;
-                if (target == null || source == null || slot.Content == null) continue;
-
-                bool known = false;
-                foreach (CardHotkeyAction entry in source.HotkeyActions)
-                {
-                    if (string.Equals(entry.Action, action, StringComparison.OrdinalIgnoreCase))
-                    {
-                        known = true;
-                        break;
-                    }
-                }
-
-                if (!known) continue;
-
-                try { target.ExecuteHotkey(action, slot.Content); }
-                catch (Exception ex) { Log.Warn("执行卡片热键失败: " + ex.Message); }
-            }
-        }
-
         /// <summary>非常驻卡片的呼出 / 收起。</summary>
         void ToggleCard(CardSlot slot)
         {
@@ -1414,6 +1232,7 @@ namespace MirrorpondHUD.Ui
 
             try { _engine?.Dispose(); } catch { }
             try { _hook?.Dispose(); } catch { }
+            try { _hotkeyRouter?.Dispose(); } catch { }
             try { _hotkeys?.Dispose(); } catch { }
             try { _tray?.Dispose(); } catch { }
 

@@ -38,6 +38,7 @@
 | `src/Ui/CardSlot.cs` | 单张卡片的运行时模型（配置 / 模块 / 窗口 / 富内容 / 签名）与 `CardHost` |
 | `src/Ui/CardLayoutCoordinator.cs` | 垂直堆叠、左右对齐、窗口高度变化合并与延迟布局 |
 | `src/Ui/OverlayIntro.cs` | 启动动画：欢迎语 / 内容逐字、停留、擦除、回到实时刷新 |
+| `src/Ui/HotkeyRouter.cs` | 全局热键 / 卡片呼出 / 卡片通用动作的注册、回退与分发 |
 | `src/Ui/CardEditor.cs` | 设置页「内容」里的一张卡片设置卡（双向绑定，含每卡命令行 / 媒体 / AI 接口设置） |
 
 ## 2. 卡片接口
