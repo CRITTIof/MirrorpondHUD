@@ -945,9 +945,18 @@ namespace MirrorpondHUD.Ui
 
             slot.Window.BeginCommandInput();
 
-            CommandSettings command = CommandOf(slot);
-            Log.Info("快捷命令行已打开（卡片=" + slot.Config.Name + " 工具=" + CommandRunner.ToolLabel(command) +
-                     "，目录=" + CommandRunner.ResolveWorkingDirectory(command) + "）");
+            // 交互卡片自己解释自己的设置并给出日志摘要（宿主不再认识 CommandSettings）。
+            string summary = null;
+            var activation = slot.Module as ICardActivation;
+            if (activation != null)
+            {
+                try { summary = activation.OnActivated(slot.Config); }
+                catch (Exception ex) { Log.Warn("卡片呼出回调失败: " + ex.Message); }
+            }
+
+            string cardName = slot.Config == null ? "?" : slot.Config.Name;
+            Log.Info("快捷命令行已打开（卡片=" + cardName +
+                     (string.IsNullOrEmpty(summary) ? "" : "，" + summary) + "）");
         }
 
         public void ExitCommandLine()
@@ -961,6 +970,14 @@ namespace MirrorpondHUD.Ui
 
             if (slot != null)
             {
+                // 交互卡片先收自己的状态，再让面板收尾。
+                var activation = slot.Module as ICardActivation;
+                if (activation != null)
+                {
+                    try { activation.OnDeactivated(slot.Config); }
+                    catch (Exception ex) { Log.Warn("卡片收起回调失败: " + ex.Message); }
+                }
+
                 // 面板自己管着「还在跑的命令」和记录列表，收起前先让它收尾。
                 ICliFocusTarget target = slot.Content as ICliFocusTarget;
                 if (target != null)
@@ -979,13 +996,6 @@ namespace MirrorpondHUD.Ui
 
             RenderNow();
             Log.Info("快捷命令行已关闭，命令与返回已清空");
-        }
-
-        /// <summary>命令行卡片自己的工具 / 目录 / 超时设置（存在卡片的 Extras 里，由模块解释）。</summary>
-        static CommandSettings CommandOf(CardSlot slot)
-        {
-            if (slot == null || slot.Config == null) return new CommandSettings();
-            return CommandCard.CommandOf(slot.Config);
         }
 
         // ==================== 启动动画 ====================
@@ -1183,10 +1193,24 @@ namespace MirrorpondHUD.Ui
             if (_settingsWindow == null)
             {
                 _settingsWindow = new SettingsWindow(_settings, ApplySettings, ApplyAnchor, ClearKeys);
+                if (_settingsWindow.LoadFailed)
+                {
+                    _settingsWindow.CloseForReal();
+                    _settingsWindow = null;
+                    MessageBox.Show(
+                        "无法读取当前设置，设置窗口没有打开（详情见日志）。\n" +
+                        "为避免把默认值写回 settings.json，本次不允许保存。",
+                        "MirrorpondHUD", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
             }
-            else
+            else if (!_settingsWindow.Reload(_settings))
             {
-                _settingsWindow.Reload(_settings);
+                MessageBox.Show(
+                    "无法读取当前设置，设置窗口没有刷新（详情见日志）。\n" +
+                    "为避免把默认值写回 settings.json，本次不允许保存。",
+                    "MirrorpondHUD", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
             }
 
             _settingsWindow.Show();

@@ -294,6 +294,9 @@ XAML 用三块 `Visibility` 面板切换（`src/Ui/SettingsWindow.xaml:190` / `:
 **小结**：7 条全部成立，无一条因 v2.5–v2.9 的重构而失效。本轮按你的要求只记录核验结果，不改代码；
 其中第 3、5、7 条仍建议在对应功能（新模块 / 插件化 / 设置页）真正动手时一并处理。
 
+> 后续：v2.9.3 已实现 **#7**（`SettingsWindow.TryClone` 失败禁止保存、不弹窗口）与 **#4**
+> （`ICardActivation` 激活契约，宿主不再引用 `CommandCard.CommandOf`）；其余 5 条维持原判断。
+
 ---
 
 ## 7. 落地路线

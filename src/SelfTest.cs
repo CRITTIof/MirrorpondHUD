@@ -223,6 +223,9 @@ namespace MirrorpondHUD
             bool glassPolicyOk = false;
             bool themeFileOk = false;
             bool themeRejectOk = false;
+            bool themeCatalogOk = false;
+            bool activationOk = false;
+            bool cloneGuardOk = false;
 
             try
             {
@@ -844,11 +847,63 @@ namespace MirrorpondHUD
                 Log.Error("主题文件校验自检异常", ex);
             }
 
+            try
+            {
+                // P4：三份示例主题以 EmbeddedResource 编进程序集，发布版不再依赖 docs 目录。
+                var catalog = ThemeCatalog.Load();
+                themeCatalogOk = catalog.Count >= 3
+                              && catalog.TrueForAll(p => p.Document != null && !string.IsNullOrWhiteSpace(p.Name));
+                if (!themeCatalogOk)
+                    Log.Warn("内置主题数量不足或解析失败: " + catalog.Count);
+            }
+            catch (Exception ex)
+            {
+                Log.Error("内置主题自检异常", ex);
+            }
+
+            try
+            {
+                // P1-10 / #4：交互卡片通过 ICardActivation 自己解释设置，宿主不再认识 CommandSettings。
+                var activation = CardRegistry.Get("command") as ICardActivation;
+                var config = new CardSettings
+                {
+                    Id = "selftest-command", Kind = "command", Name = "命令行",
+                    Extras = new Dictionary<string, object>()
+                };
+                string summary = activation == null ? null : activation.OnActivated(config);
+                activationOk = activation != null
+                            && !string.IsNullOrEmpty(summary)
+                            && summary.Contains("工具=") && summary.Contains("目录=");
+            }
+            catch (Exception ex)
+            {
+                Log.Error("卡片激活自检异常", ex);
+            }
+
+            try
+            {
+                // #7：克隆失败必须返回 false + null，绝不能拿 new Settings() 顶替（那会写默认值回盘）。
+                Settings badClone;
+                string badError;
+                bool guarded = !SettingsWindow.TryClone(null, out badClone, out badError) && badClone == null;
+
+                Settings goodClone;
+                string goodError;
+                bool works = SettingsWindow.TryClone(new Settings(), out goodClone, out goodError)
+                          && goodClone != null;
+
+                cloneGuardOk = guarded && works;
+            }
+            catch (Exception ex)
+            {
+                Log.Error("设置副本自检异常", ex);
+            }
+
             if (!(templateOk && unknownOk && collapseOk && thresholdOk && configOk && cardOk &&
                   keyNameOk && keyLimitOk && keyOverflowOk &&
                   commandOk && truncateOk && toolLabelOk && secretOk && chatHotkeyOk && settingsEditorOk &&
                   stateStoreOk && renderOk && glassPolicyOk && themeOk && restyleOk &&
-                  themeFileOk && themeRejectOk)) failures++;
+                  themeFileOk && themeRejectOk && themeCatalogOk && activationOk && cloneGuardOk)) failures++;
 
             Fix(sb, "逻辑自检", string.Format(
                 "模板={0} 未知占位符={1} 折叠={2} 阈值内展开={3} 配置读写={4} 卡片模块={11} 键名={5} 按键长度={6} 超长截断={7} 命令行={8} 行截断={9} 工具名={10} Key加密={12} 对话热键={13} 卡片设置={14} 状态存储={15} 渲染节流={16} 毛玻璃策略={17}",
@@ -875,6 +930,9 @@ namespace MirrorpondHUD
             Fix(sb, "CLI 换肤", restyleOk ? "OK（两张 CLI 卡片支持就地换肤，文字按新前景重算）" : "FAIL");
             Fix(sb, "主题文件", themeFileOk ? "OK（导出 → 解析 → 套用 → 再导出一致，数字透明度按前景派生）" : "FAIL");
             Fix(sb, "主题文件校验", themeRejectOk ? "OK（高版本 / 坏颜色 / 越界 / 缺 appearance 均拒绝，坏文件不动当前设置）" : "FAIL");
+            Fix(sb, "内置主题", themeCatalogOk ? "OK（已编进程序集并全部解析）" : "FAIL");
+            Fix(sb, "卡片激活", activationOk ? "OK（CommandCard 实现 ICardActivation，返回工具 / 目录摘要）" : "FAIL");
+            Fix(sb, "设置副本", cloneGuardOk ? "OK（克隆失败返回 null + 原因，不退回默认值）" : "FAIL");
         }
 
         static bool RegisterIfSet(HotkeyManager hotkeys, string action, string combination)

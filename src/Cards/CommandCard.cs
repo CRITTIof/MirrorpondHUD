@@ -17,7 +17,7 @@ namespace MirrorpondHUD.Cards
     /// 所以热键唤起它的时候宿主会把窗口提到前台、把焦点交给输入行。
     /// </summary>
     public sealed class CommandCard : RichCardModuleBase, ICardSettingsModule, ICardEditorSection,
-                                      ICardSettingsValidator, ICardSummary, ICardStyleAware
+                                      ICardSettingsValidator, ICardSummary, ICardStyleAware, ICardActivation
     {
         /// <summary>命令行设置存在 <see cref="CardSettings.Extras"/> 里的键名。</summary>
         public const string SettingsKey = "command";
@@ -54,6 +54,19 @@ namespace MirrorpondHUD.Cards
             command.Normalize();
             config.SetExtras(SettingsKey, command);
             return command;
+        }
+
+        /// <inheritdoc />
+        public string OnActivated(CardSettings config)
+        {
+            CommandSettings command = CommandOf(config);
+            return "工具=" + CommandRunner.ToolLabel(command) + "，目录=" + CommandRunner.ResolveWorkingDirectory(command);
+        }
+
+        /// <inheritdoc />
+        public void OnDeactivated(CardSettings config)
+        {
+            // 面板自己通过 ICliFocusTarget.Cancel 收尾（取消还在跑的命令），这里没有额外状态。
         }
 
         // ==================== 模块契约（P1-1 / P1-2） ====================

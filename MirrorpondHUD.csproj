@@ -18,7 +18,7 @@
     <PlatformTarget Condition="'$(RuntimeIdentifier)' == 'win-arm64'">arm64</PlatformTarget>
     <NoWarn>$(NoWarn);WFAC010</NoWarn>
     <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
-    <Version>2.9.2</Version>
+    <Version>2.9.3</Version>
     <Product>镜潭一览 (MirrorpondHUD)</Product>
     <AssemblyTitle>MirrorpondHUD</AssemblyTitle>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
@@ -41,6 +41,11 @@
     <Resource Include="assets\logo.ico" />
     <Resource Include="assets\logo-light.ico" />
     <Resource Include="assets\keycaps\ReiconFont-Regular.ttf" />
+  </ItemGroup>
+
+  <!-- 内置主题：docs/themes/*.mptheme 编进程序集，发布版不依赖 docs 目录。 -->
+  <ItemGroup>
+    <EmbeddedResource Include="docs\themes\*.mptheme" />
   </ItemGroup>
 
 </Project>

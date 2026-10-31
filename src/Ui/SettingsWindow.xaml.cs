@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
@@ -9,6 +10,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Markup;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using MirrorpondHUD.Cards;
 using MirrorpondHUD.Core;
 
@@ -24,6 +26,8 @@ namespace MirrorpondHUD.Ui
         readonly Action<double, double, int> _onPosition;
         readonly Action _onClearKeys;
 
+        readonly List<ThemePreset> _themes = new List<ThemePreset>();
+
         readonly List<CardEditor> _editors = new List<CardEditor>();
         readonly Dictionary<string, bool> _expanded = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
         readonly List<KeyValuePair<string, TextBox>> _cardHotkeyBoxes = new List<KeyValuePair<string, TextBox>>();
@@ -31,6 +35,8 @@ namespace MirrorpondHUD.Ui
         Settings _working;
         bool _suppress;
         bool _reallyClose;
+        bool _loadFailed;
+        bool _applyingTheme;
 
         public SettingsWindow(Settings live, Action<Settings> onApply,
                               Action<double, double, int> onPosition, Action onClearKeys)
@@ -45,6 +51,7 @@ namespace MirrorpondHUD.Ui
 
             HookEvents();
             BindNumberBoxes();
+            BuildThemeList();
             LoadUi(live);
         }
 
@@ -275,18 +282,33 @@ namespace MirrorpondHUD.Ui
             CursorBlinkCheck.Unchecked += (s, e) => UiChanged();
         }
 
-        public void Reload(Settings live)
+        public bool Reload(Settings live)
         {
-            LoadUi(live);
+            return LoadUi(live);
         }
 
-        void LoadUi(Settings s)
+        bool LoadUi(Settings s)
         {
             _suppress = true;
             try
             {
-                _working = Clone(s);
+                Settings working;
+                string cloneError;
+                if (!TryClone(s, out working, out cloneError))
+                {
+                    // 绝不能用 new Settings() 顶上：那会让用户看到全默认值，一点保存就把默认值写盘。
+                    _loadFailed = true;
+                    StatusText.Text = "读取当前设置失败：" + cloneError + "；已禁止保存，避免覆盖 settings.json";
+                    return false;
+                }
+
+                _loadFailed = false;
+                _working = working;
                 CardModel.Normalize(_working);
+
+                ThemeCombo.SelectedIndex = ThemeIndexOf(_working.Style.ThemeName);
+                ThemeNameText.Text = string.IsNullOrWhiteSpace(_working.Style.ThemeName)
+                    ? "自定义" : _working.Style.ThemeName;
 
                 BuildFontList();
                 _selectedFont = _allFonts.FirstOrDefault(
@@ -384,6 +406,8 @@ namespace MirrorpondHUD.Ui
 
             UpdateSwatches();
             RebuildCardList();
+            RenderThemePreview();
+            return true;
         }
 
         static int AlignmentIndex(string value)
@@ -947,7 +971,237 @@ namespace MirrorpondHUD.Ui
         void UiChanged()
         {
             if (_suppress) return;
+            if (!_applyingTheme) ClearThemeName();
             UpdateSwatches();
+            RenderThemePreview();
+        }
+
+        // ==================== 主题 ====================
+
+        void BuildThemeList()
+        {
+            _themes.Clear();
+            _themes.AddRange(ThemeCatalog.Load());
+
+            ThemeCombo.Items.Clear();
+            ThemeCombo.Items.Add("自定义（当前外观）");
+            foreach (ThemePreset preset in _themes) ThemeCombo.Items.Add(preset.Name);
+            if (ThemeCombo.SelectedIndex < 0) ThemeCombo.SelectedIndex = 0;
+        }
+
+        int ThemeIndexOf(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return 0;
+            for (int i = 0; i < _themes.Count; i++)
+                if (string.Equals(_themes[i].Name, name, StringComparison.OrdinalIgnoreCase)) return i + 1;
+            return 0;
+        }
+
+        /// <summary>手动改外观后主题名失效（显示「自定义」），避免显示成某个主题却已经不一致。</summary>
+        void ClearThemeName()
+        {
+            if (_working == null || string.IsNullOrEmpty(_working.Style.ThemeName)) return;
+
+            _working.Style.ThemeName = "";
+            ThemeNameText.Text = "自定义";
+            if (ThemeCombo.SelectedIndex != 0) ThemeCombo.SelectedIndex = 0;
+        }
+
+        void ThemeSelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_suppress || _applyingTheme || _working == null) return;
+
+            int index = ThemeCombo.SelectedIndex;
+            if (index <= 0 || index - 1 >= _themes.Count) return;
+
+            ThemePreset preset = _themes[index - 1];
+            ApplyThemeDocument(preset.Document, preset.Name);
+        }
+
+        void ApplyThemeDocument(ThemeDocument document, string name)
+        {
+            if (document == null || _working == null) return;
+
+            _applyingTheme = true;
+            try
+            {
+                Settings next;
+                string error;
+                if (!TryClone(_working, out next, out error))
+                {
+                    ThemeStatusText.Text = "套用主题失败：" + error;
+                    return;
+                }
+
+                document.ApplyTo(next);
+                next.Style.ThemeName = name ?? "";
+                next.Normalize();
+                CardModel.Normalize(next);
+                LoadUi(next);
+                ThemeStatusText.Text = "已套用「" + (string.IsNullOrEmpty(name) ? next.Style.ThemeName : name) +
+                                       "」，点“保存并应用”生效";
+            }
+            finally
+            {
+                _applyingTheme = false;
+            }
+        }
+
+        void ImportThemeClick(object sender, RoutedEventArgs e)
+        {
+            if (_working == null) return;
+
+            var dialog = new Microsoft.Win32.OpenFileDialog
+            {
+                Title = "导入主题",
+                Filter = "主题文件 (*.mptheme;*.json)|*.mptheme;*.json|所有文件 (*.*)|*.*"
+            };
+            if (dialog.ShowDialog(this) != true) return;
+
+            Settings applied;
+            string error;
+            if (!ThemeFile.TryImport(dialog.FileName, _working, out applied, out error))
+            {
+                ThemeStatusText.Text = "导入失败：" + error;
+                return;
+            }
+
+            applied.Style.ThemeName = Path.GetFileNameWithoutExtension(dialog.FileName);
+
+            _applyingTheme = true;
+            try
+            {
+                CardModel.Normalize(applied);
+                LoadUi(applied);
+                ThemeStatusText.Text = "已导入「" + applied.Style.ThemeName + "」，点“保存并应用”生效";
+            }
+            finally
+            {
+                _applyingTheme = false;
+            }
+        }
+
+        void ExportThemeClick(object sender, RoutedEventArgs e)
+        {
+            if (_working == null) return;
+
+            var dialog = new Microsoft.Win32.SaveFileDialog
+            {
+                Title = "导出当前外观",
+                Filter = "主题文件 (*.mptheme)|*.mptheme",
+                DefaultExt = ".mptheme",
+                FileName = string.IsNullOrWhiteSpace(_working.Style.ThemeName)
+                    ? "mirrorpond" : _working.Style.ThemeName
+            };
+            if (dialog.ShowDialog(this) != true) return;
+
+            Settings current;
+            try
+            {
+                current = ReadUi();   // 把还没失焦的输入收进来
+            }
+            catch (Exception ex)
+            {
+                ThemeStatusText.Text = "导出失败：" + ex.Message;
+                return;
+            }
+
+            string error;
+            if (!ThemeFile.TryExport(current, dialog.FileName, out error))
+            {
+                ThemeStatusText.Text = "导出失败：" + error;
+                return;
+            }
+
+            ThemeStatusText.Text = "已导出到 " + dialog.FileName;
+        }
+
+        void ResetThemeClick(object sender, RoutedEventArgs e)
+        {
+            if (_working == null) return;
+
+            _applyingTheme = true;
+            try
+            {
+                Settings next;
+                string error;
+                if (!TryClone(_working, out next, out error))
+                {
+                    ThemeStatusText.Text = "还原失败：" + error;
+                    return;
+                }
+
+                var defaults = new Settings();
+                next.Style = defaults.Style;
+                next.Overlay.CornerRadius = defaults.Overlay.CornerRadius;
+                next.Overlay.Shadow = defaults.Overlay.Shadow;
+                next.Cli = defaults.Cli;
+                next.Normalize();
+                CardModel.Normalize(next);
+                LoadUi(next);
+                ThemeStatusText.Text = "已还原默认外观，点“保存并应用”生效";
+            }
+            finally
+            {
+                _applyingTheme = false;
+            }
+        }
+
+        /// <summary>把外观控件的当前值抄进 _working，预览才能跟手（不触发卡片校验 / 加密等副作用）。</summary>
+        void SyncPreviewStyle()
+        {
+            if (_working == null) return;
+
+            StyleSettings style = _working.Style;
+            FontItem font = FontCombo.SelectedItem as FontItem ?? _selectedFont;
+            if (font != null && !string.IsNullOrWhiteSpace(font.Family)) style.FontFamily = font.Family;
+
+            style.FontSize = Math.Round(FontSizeSlider.Value);
+            style.IconScale = Math.Round(IconScaleSlider.Value, 2);
+            style.Bold = BoldCheck.IsChecked == true;
+            style.Foreground = (FgBox.Text ?? "").Trim();
+            style.Background = (BgBox.Text ?? "").Trim();
+            style.BackgroundOpacity = BgOpacitySlider.Value;
+            style.TextAlignment = AlignmentTag();
+            style.Padding = Math.Round(PaddingSlider.Value);
+            style.LineHeight = Math.Round(LineHeightSlider.Value);
+            style.TextOutline = OutlineCheck.IsChecked == true;
+            style.OutlineColor = (OutlineColorBox.Text ?? "").Trim();
+            style.OutlineThickness = Math.Round(OutlineSlider.Value, 2);
+
+            _working.Overlay.CornerRadius = Math.Round(CornerSlider.Value);
+            _working.Overlay.Shadow = ShadowCheck.IsChecked == true;
+        }
+
+        /// <summary>用 OverlaySurface 离屏渲染一张缩略卡：颜色、字体、圆角、投影、内边距都跟着主题走。</summary>
+        void RenderThemePreview()
+        {
+            if (ThemePreviewImage == null || _working == null) return;
+
+            try
+            {
+                SyncPreviewStyle();
+
+                const double width = 280;
+                var surface = new OverlaySurface();
+                surface.Apply(_working, "12:34  CPU 12.4%\nRAM 8.2G / 31.9G\n↓ 1.8 MB/s   ↑ 96 KB/s");
+                surface.Width = width;
+                surface.Measure(new Size(width, double.PositiveInfinity));
+                double height = Math.Max(60, surface.DesiredSize.Height);
+                surface.Arrange(new Rect(0, 0, width, height));
+                surface.UpdateLayout();
+
+                const double scale = 2;
+                var bitmap = new RenderTargetBitmap(
+                    (int)Math.Ceiling(width * scale), (int)Math.Ceiling(height * scale),
+                    96 * scale, 96 * scale, PixelFormats.Pbgra32);
+                bitmap.Render(surface);
+                ThemePreviewImage.Source = bitmap;
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("主题预览渲染失败: " + ex.Message);
+            }
         }
 
         void UpdateSwatches()
@@ -1294,6 +1548,12 @@ namespace MirrorpondHUD.Ui
 
         void SaveClick(object sender, RoutedEventArgs e)
         {
+            if (_loadFailed || _working == null)
+            {
+                StatusText.Text = "设置副本不可用，已禁止保存（请重开设置窗口；详情见日志）";
+                return;
+            }
+
             Settings s;
             try
             {
@@ -1317,11 +1577,25 @@ namespace MirrorpondHUD.Ui
             // 控制器会把实时锚点带回来，同步到界面，避免下次保存又写回旧坐标。
             SyncAnchor(s.Overlay.X, s.Overlay.Y, s.Overlay.Monitor);
 
-            _working = Clone(s);
-            CardModel.Normalize(_working);
-            RebuildCardList();
+            Settings next;
+            string cloneError;
+            if (TryClone(s, out next, out cloneError))
+            {
+                _loadFailed = false;
+                _working = next;
+                CardModel.Normalize(_working);
+            }
+            else
+            {
+                // 已经保存成功，只是刷新副本失败：保留旧副本，别把界面切成默认值。
+                _loadFailed = true;
+                Log.Error("保存后刷新设置副本失败: " + cloneError);
+            }
 
-            StatusText.Text = "已保存并应用（" + DateTime.Now.ToString("HH:mm:ss") + "）";
+            RebuildCardList();
+            StatusText.Text = _loadFailed
+                ? "已保存并应用，但刷新设置副本失败（详情见日志）"
+                : "已保存并应用（" + DateTime.Now.ToString("HH:mm:ss") + "）";
         }
 
         void ResetClick(object sender, RoutedEventArgs e)
@@ -1380,10 +1654,24 @@ namespace MirrorpondHUD.Ui
             Close();
         }
 
-        static Settings Clone(Settings source)
+        /// <summary>加载当前设置是否失败（失败时窗口不打开、保存被禁用）。</summary>
+        public bool LoadFailed { get { return _loadFailed; } }
+
+        /// <summary>克隆当前设置；失败返回 false（clone 为 null）。调用方必须拒绝继续，不能拿默认值顶上。</summary>
+        internal static bool TryClone(Settings source, out Settings clone, out string error)
         {
-            try { return Json.Deserialize<Settings>(Json.Serialize(source)); }
-            catch { return new Settings(); }
+            clone = null;
+            error = null;
+            try
+            {
+                clone = Json.Deserialize<Settings>(Json.Serialize(source));
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                Log.Error("设置副本克隆失败", ex);
+            }
+            return clone != null;
         }
     }
 }

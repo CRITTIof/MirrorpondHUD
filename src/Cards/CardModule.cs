@@ -159,6 +159,20 @@ namespace MirrorpondHUD.Cards
         void Drop(IDataObject data, FrameworkElement content);
     }
 
+    /// <summary>
+    /// 交互卡片（命令行；将来的画板 / 中转站）的呼出 / 收起回调。
+    /// 宿主只负责显示窗口、抢焦点；「进来之后怎么初始化、日志里写什么」由模块自己解释自己的设置，
+    /// 宿主不再认识 <c>CommandSettings</c> 这种具体类型。
+    /// </summary>
+    public interface ICardActivation
+    {
+        /// <summary>卡片被呼出、窗口与焦点就绪后调用；返回一句可写入日志的摘要（null = 不记录）。</summary>
+        string OnActivated(CardSettings config);
+
+        /// <summary>卡片收起前调用；模块可以在这里取消还在跑的任务（面板自己的收尾仍走 ICliFocusTarget）。</summary>
+        void OnDeactivated(CardSettings config);
+    }
+
     /// <summary>卡片模块的公共基类：只提供默认实现，子类覆盖需要的部分。</summary>
     public abstract class CardModuleBase : ICardModule
     {

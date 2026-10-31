@@ -107,6 +107,7 @@ namespace MirrorpondHUD.Core
             Style.Scrollbar = NormalizeColorToken(Style.Scrollbar, "");
             Style.ScrollbarHot = NormalizeColorToken(Style.ScrollbarHot, "");
             Style.MonoFont = (Style.MonoFont ?? "").Trim();
+            Style.ThemeName = (Style.ThemeName ?? "").Trim();
 
             // 卡片列表的结构由 CardModel.Normalize 处理（需要卡片注册表里的元数据）。
         }
@@ -392,6 +393,9 @@ namespace MirrorpondHUD.Core
 
         /// <summary>CLI 面板的等宽字体。空 = Cascadia Mono / Consolas。</summary>
         public string MonoFont = "";
+
+        /// <summary>当前主题名（导入 / 选中内置主题时写入；手动改外观后清空）。空 = 自定义。</summary>
+        public string ThemeName = "";
 
     }
 
