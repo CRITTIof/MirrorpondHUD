@@ -5,7 +5,7 @@
 >
 > 范围：`src/` 全部 C# 与 `docs/` 中仍在描述“现状”的段落；行号以 v2.9.4（`055b3f9`）为准。
 > 结论：**没有发现与 2.9.4 完全同源的未修问题**；另有 13 条独立遗留，其中 2 条属于正确性（S1 / S4）。
-> 修复进度：**S1 + S2 已在 v2.9.5 修，S3 + S4 已在 v2.9.6 修**；S7 + S12 排 v2.9.7；其余仍只记录。
+> 修复进度：**S1 + S2 已在 v2.9.5，S3 + S4 已在 v2.9.6，S7 + S12 已在 v2.9.7 修复**；其余仍只记录。
 
 ## 0. 结论摘要
 
@@ -17,12 +17,12 @@
 | S4 | `async void Send / RunCommand` 在 `try` 之前抛异常会直接崩进程 | 正确性 / 稳定性 | P1 | ✅ v2.9.6 |
 | S5 | `OverlaySurface.BrushCache` 无上限 | 资源 | P3 | 未修 |
 | S6 | `ButtonsCard` 不做就地换肤（构造期捕获 `Style`），外观一变就重建、丢掉演示状态 | 一致性 | P2 | 未修 |
-| S7 | AI 对话历史条数写死 `12`，与 `Cli.MaxEntries` 脱钩 | 行为 | P2 | 未修 |
+| S7 | AI 对话历史条数写死 `12`，与 `Cli.MaxEntries` 脱钩 | 行为 | P2 | ✅ v2.9.7 |
 | S8 | `Style.ThemeName` 进了样式签名，只改主题名也会触发全部卡片换肤 | 轻微抖动 | P3 | 未修 |
 | S9 | `.mptheme` 的数值范围与 `Settings.Normalize` 各写一份 | 漂移风险 | P3 | 未修 |
 | S10 | 评审文档仍说「CLI 面板换外观会重建」 | 文档过期 | P2 | ✅ v2.9.4 |
 | S11 | `OverlayController` / `SettingsWindow` 超过 1600 行 | 结构 | P3 | 未修 |
-| S12 | `FindCommandCard` 取“第一张交互卡”，第二张交互卡会被静默忽略 | 语义隐式 | P2 | 未修 |
+| S12 | `FindCommandCard` 取“第一张交互卡”，第二张交互卡会被静默忽略 | 语义隐式 | P2 | ✅ v2.9.7 |
 | S13 | `DesktopBackground` 只按路径缓存壁纸，同路径换图不会刷新 | 边缘 | P3 | 未修 |
 
 > 已知项（`modularity-review.md` §6.1 的 #1 / #3 / #5 / #6）不在本文重复：默认卡硬编码、迁移层按 Kind 分支、
@@ -140,6 +140,9 @@
 把 `MaxEntries` 调到 30 后：界面上保留 30 块问答，但发给模型的上下文只有最近 12 条，用户无法从设置里看出这个上限。
 **建议**：要么从 `Cli.MaxEntries` 推导（`MaxEntries * 2`），要么单独加「上下文条数」设置并在设置页写明。
 
+**修复（v2.9.7）**：`ContextMessageLimit = MaxEntries × 2`（至少 2 条），`TrimHistory` 改用它；
+默认上限从 6 轮变成 12 轮，与界面保留的记录数一致。
+
 ### S8 `ThemeName` 进入样式签名（P3）
 
 `StyleSignature()` 直接序列化整个 `StyleSettings`，其中包含 2.9.3 新增的 `Style.ThemeName`。
@@ -182,6 +185,9 @@ v2.9.1 起 CLI 面板已支持就地换肤，v2.9.4 补齐了 Settings 跟随与
 **建议**：要么把“命令行入口”绑定到具体动作（而不是第一张），要么在 `CardModel.Normalize` 里校验
 “最多一张 `IsInteractive`”，冲突时在设置页报错。后者更便宜。
 
+**修复（v2.9.7）**：`CardModel.CountInteractive` + `Normalize` 警告；设置页添加菜单置灰交互模块、
+`AddCard` 与 `ValidateSettings` 都拒绝第二张并列出名字。
+
 ### S13 壁纸缓存只看路径（P3）
 
 `DesktopBackground` 的静态缓存命中条件是“路径相同”（`_cachedPath`），不比较文件时间 / 大小。
@@ -223,3 +229,4 @@ grep -rn "仍回退重建\|构造期固化\|回退到重建" docs README.md
 |---|---|
 | v2.9.5 | S1 + S2：`ColorCode` 单一解析；非法颜色回落到 fallback（不再变白）；删除 6 处复制 |
 | v2.9.6 | S3 + S4：删 `_live` 死字段；`Send / RunCommand` 加 `async void` 顶层兜底 |
+| v2.9.7 | S7 + S12：对话上下文跟随 `Cli.MaxEntries`；最多一张交互卡（菜单 / AddCard / 校验三道） |

@@ -402,10 +402,18 @@ namespace MirrorpondHUD.Cards
             catch { }
         }
 
+        /// <summary>
+        /// 上下文保留多少条消息：一块记录（一轮问答）是两条（问 + 答），
+        /// 跟随「外观 → CLI 交互面板 → 最多保留」；至少 2 条，避免设成 1 时把问题也裁掉。
+        /// </summary>
+        internal static int ContextMessageLimit(int maxEntries)
+        {
+            return Math.Max(2, Math.Max(1, maxEntries) * 2);
+        }
+
         void TrimHistory()
         {
-            // 轮询模式最多保留最近 12 条（6 轮）；单次模式只会有一条。
-            const int maxMessages = 12;
+            int maxMessages = ContextMessageLimit(Cli.MaxEntries);
             while (_messages.Count > maxMessages) _messages.RemoveAt(0);
         }
 

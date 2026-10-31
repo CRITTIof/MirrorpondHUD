@@ -700,6 +700,11 @@ namespace MirrorpondHUD.Ui
                 });
 
                 var item = new MenuItem { Header = header, Tag = module };
+                if (module.IsInteractive && CardModel.CountInteractive(_working.Cards) > 0)
+                {
+                    item.IsEnabled = false;
+                    item.ToolTip = "只能有一张交互卡片（键盘独占）";
+                }
                 item.Click += (s, a) => AddCard((ICardModule)((MenuItem)s).Tag);
                 menu.Items.Add(item);
             }
@@ -712,6 +717,12 @@ namespace MirrorpondHUD.Ui
         void AddCard(ICardModule module)
         {
             if (module == null) return;
+
+            if (module.IsInteractive && CardModel.CountInteractive(_working.Cards) > 0)
+            {
+                StatusText.Text = "只能有一张交互卡片（键盘独占）：先删掉现有的命令行卡。";
+                return;
+            }
 
             CardSettings card = CardModel.Create(module, _working.Cards);
             if (card == null) return;
@@ -1505,6 +1516,15 @@ namespace MirrorpondHUD.Ui
         static string ValidateSettings(Settings s)
         {
             uint mods, vk;
+
+            int interactive = CardModel.CountInteractive(s.Cards);
+            if (interactive > 1)
+            {
+                string names = string.Join("、", s.Cards
+                    .Where(c => c != null && CardRegistry.Get(c.Kind).IsInteractive)
+                    .Select(c => c.Name));
+                return "只能有一张交互卡片（键盘独占），当前有 " + interactive + " 张：" + names;
+            }
 
             if (!string.IsNullOrWhiteSpace(s.Hotkeys.ToggleOverlay) &&
                 !HotkeyManager.TryParse(s.Hotkeys.ToggleOverlay, out mods, out vk))

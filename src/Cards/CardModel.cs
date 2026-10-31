@@ -66,6 +66,27 @@ namespace MirrorpondHUD.Cards
             }
 
             if (settings.Cards.Count == 0) settings.Cards = CreateDefaultCards();
+
+            int interactive = CountInteractive(settings.Cards);
+            if (interactive > 1)
+                Log.Warn("有 " + interactive + " 张交互卡片（键盘独占），F9 / 托盘 / 卡片菜单只会打开第一张");
+        }
+
+        /// <summary>
+        /// 数一数「键盘独占」的交互卡片（命令行；将来的画板 / 中转站若声明 IsInteractive 也算）。
+        /// 宿主目前只认第一张——设置页据此拦住第二张。
+        /// </summary>
+        public static int CountInteractive(IEnumerable<CardSettings> cards)
+        {
+            int count = 0;
+            if (cards == null) return 0;
+
+            foreach (CardSettings card in cards)
+            {
+                if (card == null) continue;
+                if (CardRegistry.Get(card.Kind).IsInteractive) count++;
+            }
+            return count;
         }
 
         /// <summary>全新配置的默认卡片：系统信息、时钟、按键（常驻）+ 命令行（F9）、媒体（F11）。</summary>

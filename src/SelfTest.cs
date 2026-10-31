@@ -227,6 +227,8 @@ namespace MirrorpondHUD
             bool activationOk = false;
             bool cloneGuardOk = false;
             bool restyleHostOk = false;
+            bool chatContextOk = false;
+            bool singleInteractiveOk = false;
 
             try
             {
@@ -955,12 +957,41 @@ namespace MirrorpondHUD
                 Log.Error("换肤跟随设置自检异常", ex);
             }
 
+            try
+            {
+                // 对话上下文跟随「CLI 交互面板 → 最多保留」：每轮两条，至少两条。
+                chatContextOk = ChatView.ContextMessageLimit(0) == 2
+                             && ChatView.ContextMessageLimit(1) == 2
+                             && ChatView.ContextMessageLimit(3) == 6
+                             && ChatView.ContextMessageLimit(30) == 60;
+            }
+            catch (Exception ex)
+            {
+                Log.Error("对话上下文自检异常", ex);
+            }
+
+            try
+            {
+                // 宿主只认第一张交互卡：默认配置正好一张；再加一张命令行应被数出来（设置页会拦住）。
+                var cards = CardModel.CreateDefaultCards();
+                bool one = CardModel.CountInteractive(cards) == 1;
+
+                cards.Add(new CardSettings { Id = "selftest-second-command", Kind = "command", Name = "第二张命令行" });
+                bool two = CardModel.CountInteractive(cards) == 2;
+
+                singleInteractiveOk = one && two;
+            }
+            catch (Exception ex)
+            {
+                Log.Error("交互卡唯一性自检异常", ex);
+            }
+
             if (!(templateOk && unknownOk && collapseOk && thresholdOk && configOk && cardOk &&
                   keyNameOk && keyLimitOk && keyOverflowOk &&
                   commandOk && truncateOk && toolLabelOk && secretOk && chatHotkeyOk && settingsEditorOk &&
                   stateStoreOk && renderOk && glassPolicyOk && themeOk && restyleOk &&
                   themeFileOk && themeRejectOk && themeCatalogOk && activationOk && cloneGuardOk &&
-                  restyleHostOk)) failures++;
+                  restyleHostOk && chatContextOk && singleInteractiveOk)) failures++;
 
             Fix(sb, "逻辑自检", string.Format(
                 "模板={0} 未知占位符={1} 折叠={2} 阈值内展开={3} 配置读写={4} 卡片模块={11} 键名={5} 按键长度={6} 超长截断={7} 命令行={8} 行截断={9} 工具名={10} Key加密={12} 对话热键={13} 卡片设置={14} 状态存储={15} 渲染节流={16} 毛玻璃策略={17}",
@@ -991,6 +1022,8 @@ namespace MirrorpondHUD
             Fix(sb, "卡片激活", activationOk ? "OK（CommandCard 实现 ICardActivation，返回工具 / 目录摘要）" : "FAIL");
             Fix(sb, "设置副本", cloneGuardOk ? "OK（克隆失败返回 null + 原因，不退回默认值）" : "FAIL");
             Fix(sb, "换肤跟随设置", restyleHostOk ? "OK（CLI 换肤跟随新 Settings 对象，底层圆角随重画更新）" : "FAIL");
+            Fix(sb, "对话上下文", chatContextOk ? "OK（每条记录两条消息，跟随 CLI 最多保留条数）" : "FAIL");
+            Fix(sb, "交互卡唯一", singleInteractiveOk ? "OK（默认一张；第二张会被设置页 / 校验拦住）" : "FAIL");
         }
 
         static bool RegisterIfSet(HotkeyManager hotkeys, string action, string combination)
