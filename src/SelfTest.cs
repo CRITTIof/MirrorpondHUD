@@ -214,6 +214,7 @@ namespace MirrorpondHUD
             bool settingsEditorOk = false;
             bool stateStoreOk = false;
             bool renderOk = false;
+            bool glassPolicyOk = false;
 
             try
             {
@@ -609,13 +610,30 @@ namespace MirrorpondHUD
                 Log.Error("渲染上下文自检异常", ex);
             }
 
+            try
+            {
+                // P2-1：毛玻璃实现选择是纯决策——设置 + 两块底板可用性 → 实现，窗口只按结果接线。
+                glassPolicyOk =
+                    GlassPolicy.Resolve(false, "Dwm", true, true) == GlassBackdropKind.None
+                 && GlassPolicy.Resolve(true, "Dwm", true, true) == GlassBackdropKind.DesktopAcrylic
+                 && GlassPolicy.Resolve(true, "Dwm", true, false) == GlassBackdropKind.SystemAcrylic
+                 && GlassPolicy.Resolve(true, "Dwm", false, false) == GlassBackdropKind.CompatCapture
+                 && GlassPolicy.Resolve(true, "System", true, true) == GlassBackdropKind.SystemAcrylic
+                 && GlassPolicy.Resolve(true, "System", false, true) == GlassBackdropKind.CompatCapture
+                 && GlassPolicy.Resolve(true, "Compat", true, true) == GlassBackdropKind.CompatCapture;
+            }
+            catch (Exception ex)
+            {
+                Log.Error("毛玻璃策略自检异常", ex);
+            }
+
             if (!(templateOk && unknownOk && collapseOk && thresholdOk && configOk && cardOk &&
                   keyNameOk && keyLimitOk && keyOverflowOk &&
                   commandOk && truncateOk && toolLabelOk && secretOk && chatHotkeyOk && settingsEditorOk &&
-                  stateStoreOk && renderOk)) failures++;
+                  stateStoreOk && renderOk && glassPolicyOk)) failures++;
 
             Fix(sb, "逻辑自检", string.Format(
-                "模板={0} 未知占位符={1} 折叠={2} 阈值内展开={3} 配置读写={4} 卡片模块={11} 键名={5} 按键长度={6} 超长截断={7} 命令行={8} 行截断={9} 工具名={10} Key加密={12} 对话热键={13} 卡片设置={14} 状态存储={15} 渲染节流={16}",
+                "模板={0} 未知占位符={1} 折叠={2} 阈值内展开={3} 配置读写={4} 卡片模块={11} 键名={5} 按键长度={6} 超长截断={7} 命令行={8} 行截断={9} 工具名={10} Key加密={12} 对话热键={13} 卡片设置={14} 状态存储={15} 渲染节流={16} 毛玻璃策略={17}",
                 templateOk ? "OK" : "FAIL",
                 unknownOk ? "OK" : "FAIL",
                 collapseOk ? "OK" : "FAIL",
@@ -632,7 +650,8 @@ namespace MirrorpondHUD
                 chatHotkeyOk ? "OK" : "FAIL",
                 settingsEditorOk ? "OK" : "FAIL",
                 stateStoreOk ? "OK" : "FAIL",
-                renderOk ? "OK" : "FAIL"));
+                renderOk ? "OK" : "FAIL",
+                glassPolicyOk ? "OK" : "FAIL"));
         }
 
         static bool RegisterIfSet(HotkeyManager hotkeys, string action, string combination)

@@ -5,7 +5,7 @@
 > 结论一句话：**契约层够用，宿主层有 5 处可直接修的问题，真正的扩展瓶颈在「设置模型 + 设置页」**——
 > 新增一张带设置项的卡片要改 5 个代码文件，其中 3 个是 700 ~ 1500 行的巨型文件。
 > 读法：P0 是能立刻动手的小修（不改架构），P1 是需要设计的重构，P2 是可选结构优化。
-> **实施状态：P0 五条全部完成（v2.5.0 + v2.7.1）；P1-1、P1-2、P1-3、P1-8、P1-11、P1-12 与拖放通道已实现（v2.6.1 ~ v2.7.0）；阶段 C 第一步（签名拆两维 + `ICardStyleAware`）已在 v2.8.0 落地；手工回归待做。**
+> **实施状态：P0 五条全部完成；P1-1/P1-2/P1-3/P1-8/P1-11/P1-12 与拖放通道完成（v2.6.1 ~ v2.7.0）；阶段 C 完成（v2.8.0 签名两维 + `ICardStyleAware`，v2.8.1 `GlassPolicy` + `IGlassBackdrop`）；手工回归待做。**
 
 ## 0. 评审方法
 
@@ -49,7 +49,7 @@ Input   → （无）
 | 「添加卡片」菜单 / 默认内容 / 热键页分组 | `src/Ui/SettingsWindow.xaml.cs:662`、`1270` 遍历 `CardRegistry.Modules` | ✅ 是 |
 | 卡片自己的通用热键 | `src/Cards/CardModule.cs:110` `ICardHotkeySource` / `ICardHotkeyTarget` | ✅ 是（粒度见 P1-6） |
 | 卡片自己的设置项 | 无 | ❌ 否，见 P1-1 |
-| 毛玻璃实现 | 无接口，`OverlayWindow` 里按字符串分派，见 `src/Ui/OverlayWindow.xaml.cs:365-472` | ❌ 否，见 P2-1 |
+| 毛玻璃实现 | `GlassPolicy` 纯决策 + `IGlassBackdrop` + 两块底板各自成类，见 `src/Ui/GlassBackdrops.cs` | ✅ 是（v2.8.1，见 P2-1） |
 | 采样指标 / 模板变量 | 无接口，`MetricEngine` 写死 + `Variables` 手写 | ❌ 否，见 P2-3 |
 
 ### 1.3 「新增一张带设置项的卡片」实际要动的地方
@@ -240,16 +240,15 @@ XAML 用三块 `Visibility` 面板切换（`src/Ui/SettingsWindow.xaml:190` / `:
 
 ## 5. P2：可选结构优化
 
-### P2-1 毛玻璃实现没有接口
+### P2-1 毛玻璃实现没有接口（已实施，v2.8.1）
 
-`src/Ui/OverlayWindow.xaml.cs` 里 73 处 `Backdrop` / `Glass` 提及，6 个手工生命周期方法
-（`RetireSystemBackdrop:365` / `RetireAcrylicBackdrop:374` / `UpdateSystemBackdrop:385` /
-`UpdateAcrylicBackdrop:421` / `HideBackdrops:472` / `CaptureGlass:554`），三种实现靠字符串
-（`Dwm` / `System` / 兼容）在两个方法里分派（`UpdateBackdrop:330`、`QueueDragFrame:661`）。
+`src/Ui/OverlayWindow.xaml.cs` 里原来是 73 处 `Backdrop` / `Glass` 提及、6 个手工生命周期方法，
+三种实现靠字符串（`Dwm` / `System` / 兼容）在两个方法里分派。
 
-**建议**：`IGlassBackdrop`（`Attach` / `Detach` / `Frame` / `Dispose`）+ 按 mode 取实现，
-`Retire*` 变成实现内部状态。这能顺带消灭「切换实现后旧底板滞留」这类 bug 的土壤
-（历史上修过一次：`40be56b`）。
+**已做**：`GlassPolicy`（纯决策，6 种组合可自检）+ `IGlassBackdrop`（`IsActive` / `IsUnavailable` / `Apply` / `Retire`）
++ 两块底板各自成类（`SystemAcrylicBackdrop` / `DesktopAcrylicBackdrop`，后者带走截屏排除的节流状态）。
+窗口只剩接线：按策略 Retire 不该用的、Apply 该用的；`BackdropActive` / `UpdateGlassCapture` / `QueueDragFrame` 改为查询底板状态。
+三种模式都跑过冒烟。
 
 ### P2-2 采样源写死在一个引擎里
 
@@ -487,7 +486,8 @@ XAML 用三块 `Visibility` 面板切换（`src/Ui/SettingsWindow.xaml:190` / `:
 1. **阶段 A（前置，现在）**：P1-1 `Extras` + P1-2 `ICardEditorSection`。
    三条路共同吃这个红利，越晚做返工越多。
 2. **阶段 B（能力补齐，已完成）**：P1-8 生命周期 / 服务 + `P1-11` 输入拆分 + `P1-12` 状态存储 + 拖放通道 —— v2.6.3 / v2.7.0。
-3. **阶段 C（外观重写前）**：签名拆两维 + `ApplyStyle` ✅ v2.8.0；P2-1 毛玻璃抽象 ⏳ 待做。
+3. **阶段 C（外观重写前，已完成）**：签名拆两维 + `ApplyStyle`（v2.8.0）；P2-1 毛玻璃抽象（v2.8.1）。
+   遗留：`CliPanelView` 的样式仍构造期固化，换外观会重建对话 / 命令行卡片（见 §8.2 边界）。
 4. **阶段 D（功能落地）**：文件中转站（A + B）→ 快捷画板（A + B + C）→ 外观重写（A + C + P2-1）。
 
 原 §7 的阶段 2（设置扩展点）优先级**上调**：它从“可选重构”变成“两条新功能的开工条件”。

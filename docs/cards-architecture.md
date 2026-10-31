@@ -20,6 +20,7 @@
 | `src/Cards/ChatCard.cs` / `ChatCardSettingsView.xaml(.cs)` | AI 对话卡；接口 / 模型 / Key 在 `Extras.chat`，设置区块由模块自己提供 |
 | `src/Cards/CardHost.cs` | 每卡宿主服务 `ICardHost`（状态目录、重画 / 布局请求）与生命周期 `ICardHostAware`（v2.7.0） |
 | `src/Core/CardStateStore.cs` | 每卡状态文件：`<settings.json 目录>\cards\<Id>\`，临时文件 + 替换的原子写，卡片 Id / 文件名都做路径校验 |
+| `src/Ui/GlassBackdrops.cs` | 毛玻璃实现选择：`GlassPolicy`（纯决策）+ `IGlassBackdrop` + 系统亚克力 / 桌面亚克力两块底板（v2.8.1） |
 | `src/Cards/ChatCard.cs` | AI 对话卡：和命令行卡同一套 CLI 面板（模型名 + `>` 输入行 + 每条问答一块小面板），单次 / 轮询走全局热键 |
 | `src/Ui/Controls/CliUi.cs` | CLI 面板公共件：面板骨架 `CliPanelView`、内部小面板 `CliEntryPanel`、卡片风格滑块 `CliScrollBars`、取色 `CardPalette` |
 | `src/Cards/ButtonsCard.cs` | 按钮演示卡：验证 `CardButton` / `CardTextBox` 这套卡片控件 |

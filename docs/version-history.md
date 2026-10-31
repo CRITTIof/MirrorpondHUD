@@ -1,4 +1,4 @@
-# 版本修改记录（2.4.1 → 2.8.0）
+# 版本修改记录（2.4.1 → 2.8.1）
 
 > 范围：本文只记录**这一轮接手后我做的版本**（v2.4.1 起）。v2.4.0 及更早是既有历史，不在本文档里。
 > 数据全部取自仓库真实提交（`git diff --shortstat <上一版>..<本版>`），文件行的 `+ / -` 就是实际增删行数。
@@ -23,7 +23,8 @@
 | v2.6.3 | 2026-10-31 | `7733b37` | 输入能力拆分（`HandlesOwnDrag`）+ 拖放通道（`ICardDropTarget`），为画板 / 中转站铺路 | 8 文件，+169 / −12 |
 | v2.7.0 | 2026-10-31 | `cba71fd` | 阶段 B 收尾：`ICardHost` 宿主服务与 `ICardHostAware` 生命周期；`CardStateStore` 每卡状态存储（原子写 + 路径校验） | 7 文件，+220 / −23，另新增 2 个源文件（165 行） |
 | v2.7.1 | 2026-10-31 | `3ab0fd0` | P0-5：一帧一份共享变量表 + 模块声明刷新间隔（时钟 1 s / 按键 250 ms / 系统信息每帧） | 9 文件，+194 / −32 |
-| v2.8.0 | 2026-10-31 | 本次提交 | 阶段 C 第一步：内容 / 样式签名拆两维；新增 `ICardStyleAware`，媒体卡支持「只换样式不重建」 | 9 文件，+179 / −33 |
+| v2.8.0 | 2026-10-31 | `9cbfbae` | 阶段 C 第一步：内容 / 样式签名拆两维；新增 `ICardStyleAware`，媒体卡支持「只换样式不重建」 | 9 文件，+179 / −33 |
+| v2.8.1 | 2026-10-31 | 本次提交 | 阶段 C 收尾：`GlassPolicy` 纯决策 + `IGlassBackdrop` 抽象，两块底板搬出窗口 | 7 文件，+126 / −161，另新增 1 个源文件（189 行） |
 
 ---
 
@@ -601,7 +602,44 @@ v2.6.0 只把**命令行卡**的设置搬进了 `CardSettings.Extras`，媒体�
 
 ---
 
-## 14. 不在版本里的东西
+## 14. v2.8.1（本次提交，未打标签）
+
+### 背景
+
+评审 P2-1：三种毛玻璃实现（系统亚克力 / 桌面亚克力 / 兼容取样）的**选择与生命周期都堆在 `OverlayWindow`**——
+`UpdateBackdrop` 里按字符串 if/else，配上一堆 `_systemActive` / `_acrylicActive` / `_lastExclude` 字段，
+新增一种材质只能继续往里加分支。
+
+### 改动
+
+1. **`GlassPolicy` 纯决策**（`src/Ui/GlassBackdrops.cs`）：输入「是否开毛玻璃 / 模式 / 两块底板的可用性」，
+   输出 `GlassBackdropKind`（None / SystemAcrylic / DesktopAcrylic / CompatCapture）。不碰窗口、不做 IO。
+2. **`IGlassBackdrop`**：`IsActive` / `IsUnavailable` / `Apply(window, out reason)` / `Retire(window)`。
+3. **两块底板各自成类**：
+   - `SystemAcrylicBackdrop`：持有 `GlassBackdrop`（accent 底板窗口），tint / follow / 复用 / 释放；
+   - `DesktopAcrylicBackdrop`：持有 `GlassFeed` 的接入、截屏排除节流（原来在窗口里的 `_lastExclude`）、
+     不可用标记。
+4. **窗口只做接线**：`UpdateBackdrop` 按策略结果先 Retire 不该用的、再 Apply 该用的；
+   `BackdropActive`、`UpdateGlassCapture`、`QueueDragFrame`、`ReleaseBackdrop` 改为查询两块底板的状态。
+5. **自检**新增「毛玻璃策略=OK」（6 种组合的决策表）。
+
+### 实测
+
+三种模式分别用 `--smoke 4 --smoke-visible` 跑过（改完再恢复原配置）：
+
+| 模式 | 日志 | 结果 |
+|---|---|---|
+| `Dwm`（桌面亚克力） | `毛玻璃背景已启用（桌面亚克力：截屏 + 模糊后画进卡片，卡片不进截图）` | ✅ 退出码 0 |
+| `System`（系统亚克力） | `毛玻璃改用系统亚克力底板` + `毛玻璃背景已启用（系统亚克力底板…）` | ✅ 退出码 0 |
+| `Compat`（兼容取样） | `毛玻璃背景已启用（15 帧/秒，模糊 5px）` | ✅ 退出码 0 |
+
+- `dotnet build -c Release`：0 警告 0 错误。
+- `--selftest`：**失败项 0**（`毛玻璃策略=OK`）。
+- 未覆盖：拖动时的补帧观感、切换实现后旧底板不滞留（需要肉眼确认，逻辑与改造前一致）。
+
+---
+
+## 15. 不在版本里的东西
 
 - 验收脚本、样张与测量脚本（`cmd-e2e.ps1`、`drag-glass.ps1`、`measure-*.py`、`shots/` 等）都在仓库外的 `hud-test/` 里，**没有提交**。
 - 发布：`main` 与标签已推送到 [github.com/CRITTIof/MirrorpondHUD](https://github.com/CRITTIof/MirrorpondHUD)；
@@ -610,7 +648,7 @@ v2.6.0 只把**命令行卡**的设置搬进了 `CardSettings.Extras`，媒体�
   v2.4.0 的 Release 已删除（tag `v2.4.0` 保留，历史仍可检出）。
 - 仓库追踪的文件共 89 个，`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
 
-## 15. 已知代价（跨版本）
+## 16. 已知代价（跨版本）
 
 - 桌面亚克力为了不拍到自己，会把卡片排除在截屏之外 —— 这个模式下截图 / 录屏里**看不到卡片**，观感只能靠肉眼与离屏渲染验证。
 - 兼容实现每帧对身后窗口做 `PrintWindow`，拖动时最多 ~21 帧/秒；要更高只能走桌面亚克力（DXGI）。
