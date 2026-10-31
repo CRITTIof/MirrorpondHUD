@@ -30,18 +30,18 @@ namespace MirrorpondHUD.Cards
                     continue;
                 }
 
-                // v2.1.1 起四种文字卡合并成「信息与文本」：旧 Kind 迁移成预设。
-                string legacy = (card.Kind ?? "").Trim().ToLowerInvariant();
-                if (legacy == "metrics" || legacy == "clock" || legacy == "keys" || legacy == "text")
+                // 旧版本用过的 Kind 由模块自己认领（信息与文本卡接管 metrics / clock / keys / text）；
+                // 别名对应旧预设名，先记进 Preset，再由模块的 InitializeCard 做归一化。
+                string legacyKind = (card.Kind ?? "").Trim().ToLowerInvariant();
+                ICardModule legacyModule;
+                if (CardRegistry.TryResolveAlias(legacyKind, out legacyModule))
                 {
-                    if (string.IsNullOrWhiteSpace(card.Preset)) card.Preset = legacy;
-                    card.Kind = "infotext";
+                    if (string.IsNullOrWhiteSpace(card.Preset)) card.Preset = legacyKind;
+                    card.Kind = legacyModule.Kind;
                 }
 
                 card.Kind = CardRegistry.ResolveKind(card.Kind);
                 ICardModule module = CardRegistry.Get(card.Kind);
-                if (module is InfoTextCard)
-                    card.Preset = InfoTextCard.InferPreset(card.Preset, card.Content);
 
                 if (string.IsNullOrWhiteSpace(card.Id) || ids.Contains(card.Id))
                     card.Id = NewId();

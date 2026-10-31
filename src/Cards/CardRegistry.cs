@@ -38,6 +38,35 @@ namespace MirrorpondHUD.Cards
             return TryGet(kind, out module) ? module.Kind : _modules[0].Kind;
         }
 
+        /// <summary>
+        /// 旧版本用过的 Kind（如 metrics / clock / keys / text）→ 现在接管它们的模块。
+        /// 别名由模块自己通过 <see cref="ICardLegacyAlias"/> 声明，宿主不再维护一份名单。
+        /// </summary>
+        public static bool TryResolveAlias(string kind, out ICardModule module)
+        {
+            module = null;
+
+            string key = (kind ?? "").Trim().ToLowerInvariant();
+            if (key.Length == 0) return false;
+
+            foreach (ICardModule candidate in _modules)
+            {
+                var alias = candidate as ICardLegacyAlias;
+                if (alias == null || alias.LegacyKinds == null) continue;
+
+                foreach (string item in alias.LegacyKinds)
+                {
+                    if (string.Equals(item, key, StringComparison.OrdinalIgnoreCase))
+                    {
+                        module = candidate;
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
         static Dictionary<string, ICardModule> BuildLookup()
         {
             var map = new Dictionary<string, ICardModule>(StringComparer.OrdinalIgnoreCase);

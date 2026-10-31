@@ -170,13 +170,14 @@ XAML 用三块 `Visibility` 面板切换（`src/Ui/SettingsWindow.xaml:190` / `:
 命令行卡的 8 个属性与 70 行 XAML 面板删掉，改由 `src/Cards/CommandCardEditor.cs` 提供，宿主只留一个 `ContentControl`。
 `CardEditor` 现在只画通用字段；媒体 / 对话面板在它们迁移到 `Extras` 时按同一方式移出。
 
-### P1-3 模型层认识具体模块
+### P1-3 模型层认识具体模块（已实施，v2.6.1）
 
-`src/Cards/CardModel.cs:43` 的 `if (module is InfoTextCard)`，`:33-38` 的 legacy Kind 映射，
-`:59-65` 硬编码三个子对象的 `Normalize()`。
+`src/Cards/CardModel.cs` 原来有 `if (module is InfoTextCard)`、硬编码的 legacy Kind 名单
+（metrics / clock / keys / text），以及三个子对象的 `Normalize()` 调用。
 
-**建议**：把「旧配置迁移」和「自身字段归一化」下沉成模块方法（`MigrateLegacy(CardSettings)` / `Normalize(CardSettings)`），
-`CardModel` 只保留 Id / 名称 / 间距 / 常驻这些通用规则。这样 P1-1 落地后 `CardModel` 不再随卡片类型增长。
+**已做**：新增 `ICardLegacyAlias`——模块自己声明接管过哪些旧 Kind，`CardRegistry.TryResolveAlias` 统一解析；
+预设反推搬进 `InfoTextCard.InitializeCard`。`CardModel` 现在只剩 Id / 名称 / 间距 / 常驻这些通用规则，
+不再认识任何具体模块。（`Media` / `Chat` 的 typed 归一化随 P1-1 的后续迁移一起下沉，见 §8.2。）
 
 ### P1-4 截图 / 文档生成认识具体实现
 

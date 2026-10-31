@@ -395,9 +395,29 @@ namespace MirrorpondHUD
                               && vars["weekday_zh"].ToString().StartsWith("星期", StringComparison.Ordinal)
                               && vars["weekday_en"].ToString().Length > 3;
 
+                // 旧 Kind 由模块自己认领（P1-3）：clock / text → infotext，预设按内容推断恢复
+                // （CardSettings.Preset 默认是 metrics，旧配置也靠内容匹配来认回 clock / text）
+                var legacySettings = new Settings();
+                legacySettings.Cards.Add(new CardSettings
+                {
+                    Id = "old-clock", Kind = "clock", Content = Settings.DefaultClockContent
+                });
+                legacySettings.Cards.Add(new CardSettings
+                {
+                    Id = "old-text", Kind = "text", Content = Settings.DefaultTextContent
+                });
+                CardModel.Normalize(legacySettings);
+
+                bool legacyOk = legacySettings.Cards.Count == 2
+                             && legacySettings.Cards[0].Kind == "infotext"
+                             && legacySettings.Cards[0].Preset == "clock"
+                             && legacySettings.Cards[1].Kind == "infotext"
+                             && legacySettings.Cards[1].Preset == "text";
+
                 cardOk = CardRegistry.Modules.Count >= 3
                          && CardRegistry.Get("media") is IRichCardModule
                          && CardRegistry.Get("infotext") is InfoTextCard
+                         && legacyOk
                          && settings.Cards.Count >= 1
                          && !string.IsNullOrWhiteSpace(clock)
                          && clock.IndexOf('{') < 0

@@ -1,9 +1,21 @@
 using System;
+using System.Collections.Generic;
 using System.Windows;
 using MirrorpondHUD.Core;
 
 namespace MirrorpondHUD.Cards
 {
+    /// <summary>
+    /// 模块声明自己接管过哪些**旧 Kind**（例如「信息与文本」卡接管 metrics / clock / keys / text）。
+    /// 配置里出现这些别名时，<see cref="CardModel"/> 把 Kind 归一到模块的 Kind，
+    /// 别名携带的子字段（如 Preset）由模块在 <see cref="ICardSettingsModule.InitializeCard"/> 里自己迁移。
+    /// </summary>
+    public interface ICardLegacyAlias
+    {
+        /// <summary>旧配置里可能出现的 Kind 值；只读，不要修改。</summary>
+        IList<string> LegacyKinds { get; }
+    }
+
     /// <summary>
     /// 模块自己的设置（数据面）：默认值、字段归一化都归模块管。
     /// 设置存在 <see cref="CardSettings.Extras"/> 里，键由模块自己定（命令行卡是 <c>command</c>）。

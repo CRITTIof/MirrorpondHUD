@@ -1,11 +1,11 @@
-# 版本修改记录（2.4.1 → 2.6.0）
+# 版本修改记录（2.4.1 → 2.6.1）
 
 > 范围：本文只记录**这一轮接手后我做的版本**（v2.4.1 起）。v2.4.0 及更早是既有历史，不在本文档里。
 > 数据全部取自仓库真实提交（`git diff --shortstat <上一版>..<本版>`），文件行的 `+ / -` 就是实际增删行数。
 > 版本状态：`main` 已推送到 GitHub；`v2.4.2`–`v2.4.5` 为附注标签（分别指向 `70343ef` / `aabe441` / `05857ce` / `f4b2b8b`），
 > v2.4.5 已发布 Release（附件为两个 requires-dotnet 单文件），v2.4.0 的 Release 已删除、其 tag 保留。
 > `v2.5.0` 为附注标签：**只在本地创建，尚未推送、也还没有 Release**。
-> `v2.6.0` 目前只有提交、**没有打标签**（配置结构升到 schema 5，建议先手工回归再发版）。
+> `v2.6.0`（schema 5）与 `v2.6.1`（P1-3）目前只有提交、**都没有打标签**；建议手工回归后再发版。
 
 ## 0. 总览
 
@@ -17,7 +17,8 @@
 | v2.4.4 | 2026-10-28 | `05857ce` | 模糊图改画进卡片内部，删掉底板窗口（修圆角外扩 / 顶部暗带）；模糊强度 / 帧率 / 取图方式进设置 | 9 文件，+1026 / −1503 |
 | v2.4.5 | 2026-10-30 | `f4b2b8b` | AI 对话与命令行统一成 CLI 交互面板（每条记录独立小面板与滑块）；图标按墨迹居中；拖动时玻璃跟手；主题方案文档 | 23 文件，+1647 / −668 |
 | v2.5.0 | 2026-10-30 | `c4e68e2` | 模块化评审文档；修命令行打开时其它卡片停更、富内容每次应用设置都重建、每卡一份整份配置副本 | 5 文件，+183 / −30，另新增 2 篇文档（500 + 582 行） |
-| v2.6.0 | 2026-10-30 | 本次提交 | 卡片设置搬进 `CardSettings.Extras`（schema 5）；模块自带设置区块与校验；命令行卡试点 | 15 文件，+470 / −306，另新增 2 个源文件（45 + 259 行） |
+| v2.6.0 | 2026-10-30 | `9c1bafa` | 卡片设置搬进 `CardSettings.Extras`（schema 5）；模块自带设置区块与校验；命令行卡试点 | 15 文件，+470 / −306，另新增 2 个源文件（45 + 259 行） |
+| v2.6.1 | 2026-10-31 | 本次提交 | P1-3：旧 Kind 别名与预设归一化下沉到模块，`CardModel` 不再认识 `InfoTextCard` | 10 文件，+146 / −22 |
 
 ---
 
@@ -342,7 +343,50 @@ AI 对话卡还是「输入框 + 聊天记录」的普通表单样式，Key 以�
 
 ---
 
-## 8. 不在版本里的东西
+## 8. v2.6.1（本次提交，未打标签）
+
+### 背景
+
+评审文档 P1-3：`CardModel.Normalize` 里还硬编码着旧 Kind 名单（`metrics` / `clock` / `keys` / `text`）
+和 `module is InfoTextCard` 判断，模型层因此认识具体模块——加一种卡片就要再改一次 `CardModel`。
+
+### 改动
+
+1. **新增 `ICardLegacyAlias`**（`src/Cards/CardSettingsModule.cs`）：模块自己声明接管过哪些旧 Kind；
+   `CardRegistry.TryResolveAlias` 统一解析，宿主不再维护名单。
+2. **`InfoTextCard` 实现该接口**（接管 metrics / clock / keys / text），并把「预设按内容反推」搬进
+   `InitializeCard`（`ICardSettingsModule` 的数据面契约）。
+3. **`CardModel.Normalize` 去掉具体类型判断**：改成「别名解析 → 模块 `InitializeCard`」，行为与旧版一致。
+4. **自检**新增旧 Kind 用例：`clock` / `text` → `infotext`，预设按内容恢复成 `clock` / `text`。
+5. **文档**：`cards-architecture.md` 补 `ICardLegacyAlias`；`modularity-review.md` 标记 P1-3 完成。
+
+### 一个容易踩的细节
+
+`CardSettings.Preset` 的默认值是 `metrics`，**不是空**。所以旧配置里 clock / keys / text 卡片的预设
+从来不是靠 Kind 直接赋值，而是靠「内容恰好等于某个预设的默认内容」反推（`InferPreset`）。
+本次只是把这段逻辑从宿主搬进模块，行为保持不变；正因如此，自检用例必须用**真实默认内容**才能验证。
+
+### 文件
+
+| 文件 | 行数 | 说明 |
+|---|---|---|
+| `src/Cards/CardSettingsModule.cs` | +12 / −0 | `ICardLegacyAlias` 契约 |
+| `src/Cards/CardRegistry.cs` | +29 / −0 | `TryResolveAlias` 统一解析旧 Kind |
+| `src/Cards/InfoTextCard.cs` | +19 / −1 | 认领旧 Kind，预设归一化进 `InitializeCard` |
+| `src/Cards/CardModel.cs` | +7 / −7 | 删掉硬编码名单与 `is InfoTextCard` |
+| `src/SelfTest.cs` | +20 / −0 | 旧 Kind 迁移用例 |
+| `MirrorpondHUD.csproj` | +1 / −1 | 版本号 2.6.0 → 2.6.1 |
+| `README.md` | +1 / −1 | 版本记录区间 |
+
+### 实测
+
+- `dotnet build -c Release`：**0 警告 0 错误**。
+- `--selftest`：**失败项 0**（`卡片模块=OK`，其中包含新增的旧 Kind 别名用例）。
+- 未覆盖：无新增运行时路径，本次只改启动期归一化逻辑。
+
+---
+
+## 9. 不在版本里的东西
 
 - 验收脚本、样张与测量脚本（`cmd-e2e.ps1`、`drag-glass.ps1`、`measure-*.py`、`shots/` 等）都在仓库外的 `hud-test/` 里，**没有提交**。
 - 发布：`main` 与标签已推送到 [github.com/CRITTIof/MirrorpondHUD](https://github.com/CRITTIof/MirrorpondHUD)；
@@ -351,7 +395,7 @@ AI 对话卡还是「输入框 + 聊天记录」的普通表单样式，Key 以�
   v2.4.0 的 Release 已删除（tag `v2.4.0` 保留，历史仍可检出）。
 - 仓库追踪的文件共 89 个，`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
 
-## 9. 已知代价（跨版本）
+## 10. 已知代价（跨版本）
 
 - 桌面亚克力为了不拍到自己，会把卡片排除在截屏之外 —— 这个模式下截图 / 录屏里**看不到卡片**，观感只能靠肉眼与离屏渲染验证。
 - 兼容实现每帧对身后窗口做 `PrintWindow`，拖动时最多 ~21 帧/秒；要更高只能走桌面亚克力（DXGI）。

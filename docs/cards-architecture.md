@@ -13,8 +13,8 @@
 | `src/Cards/RichCard.cs` | `IRichCardModule` / `RichCardModuleBase`：返回任意 WPF 内容的卡片契约（含 `NeedsMouseInput`） |
 | `src/Cards/CardRegistry.cs` | 反射扫描本程序集里所有 `ICardModule` 实现，按 `Order` 排序 |
 | `src/Cards/CardModel.cs` | 卡片列表的创建、补全、校验、名称去重 |
-| `src/Cards/CardSettingsModule.cs` | 卡片自己的设置三个契约：`ICardSettingsModule`（补默认 / 归一化）、`ICardEditorSection`（自带设置区块）、`ICardSettingsValidator`（自带校验） |
-| `src/Cards/InfoTextCard.cs` | 信息与文本卡：系统信息 / 时钟 / 按键 / 文本四个预设 |
+| `src/Cards/CardSettingsModule.cs` | 卡片自己的设置四个契约：`ICardSettingsModule`（补默认 / 归一化）、`ICardEditorSection`（自带设置区块）、`ICardSettingsValidator`（自带校验）、`ICardLegacyAlias`（认领旧 Kind，v2.6.1） |
+| `src/Cards/InfoTextCard.cs` | 信息与文本卡：系统信息 / 时钟 / 按键 / 文本四个预设；通过 `ICardLegacyAlias` 接管 metrics / clock / keys / text 四个旧 Kind |
 | `src/Cards/CommandCard.cs` / `CommandCardEditor.cs` | 命令行卡（富内容面板，见 §9）与它自己的设置区块；设置存在 `CardSettings.Extras.command` |
 | `src/Cards/MediaCard.cs` | 媒体卡：图片 / 动图 / 视频，文件与缩放参数在每张卡自己的 `Media` 里 |
 | `src/Cards/ChatCard.cs` | AI 对话卡：和命令行卡同一套 CLI 面板（模型名 + `>` 输入行 + 每条问答一块小面板），单次 / 轮询走全局热键 |
