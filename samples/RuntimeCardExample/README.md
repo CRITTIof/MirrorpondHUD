@@ -1,14 +1,15 @@
-# 运行时卡片示例（2.14.0）
+# 运行时卡片示例（2.14.3）
 
 这是 `plugins/cards/*.dll` 运行时插件的最小示例：一个只实现 `ICardModule` 的**文字卡** + `manifest.json`。
-2.14.0 的宿主支持影子复制、缺失插件占位卡、manifest 校验与 dev-only 文字卡热重载；生产默认仍是**重启生效**。
+2.14.x 的宿主支持影子复制、缺失插件占位卡、manifest 校验与 dev-only 文字卡热重载；生产默认仍是**重启生效**。
+2.14.1 起插件只引用独立的 `MirrorpondHUD.Contracts` 契约程序集，不再引用宿主 DLL。
 
 ## 构建
 
-先构建宿主，确保 `bin\Release\MirrorpondHUD.dll` 存在：
+示例插件只引用契约工程 `src/Contracts/MirrorpondHUD.Contracts.csproj`，构建它会自动构建 Contracts，
+因此**不需要先构建宿主**（运行宿主时才需要 `dotnet build -c Release`）：
 
 ```bat
-dotnet build -c Release
 dotnet build samples\RuntimeCardExample\RuntimeCardExample.csproj -c Release
 ```
 
@@ -44,6 +45,17 @@ copy samples\RuntimeCardExample\manifest.json bin\Release\plugins\cards\example-
 不再被宿主锁住：运行中可以覆盖 / 删除源 DLL，下一次启动（或 dev 热重载）使用新文件。
 
 然后在「设置 → 内容 → 添加卡片」里应看到「示例插件时钟」。添加后写入的 Kind 是 `example-clock`。
+
+## 旧插件兼容（2.14.1 起）
+
+- **新插件**：只引用 `src/Contracts/MirrorpondHUD.Contracts.csproj`（`Private=false`，不要把
+  `MirrorpondHUD.Contracts.dll` 复制进插件目录）。
+- **旧插件**：2.13.6 / 2.14.0 编译、仍引用 `MirrorpondHUD.dll` 的插件无需重编译；宿主 `src/TypeForwards.cs`
+  对契约类型做了 `TypeForwardedTo`，运行时仍解析到同一批 Type。
+- 插件 ALC 对宿主与 Contracts 两个程序集都返回 `null`，两者都由默认 ALC 提供，避免同一契约出现两份 Type。
+- `apiVersion` 仍是 `1`：2.14.x 只有加法（如可选 `ICardModuleLifetime`）与类型转发，没有破坏性契约变更。
+- `ThemeTokens` / `ThemeResolver` 自 2.14.3 起在 Contracts；其余 WPF 共享控件（`CardButton` / `CardList` 等）
+  仍在宿主，示例刻意不用任何宿主控件，只做纯文字卡。
 
 ## 开发热重载（`--plugin-dev`）
 
@@ -83,6 +95,7 @@ bin\Release\MirrorpondHUD.exe --plugin-dev
 
 - 生产默认仍是重启生效；热重载只在 `--plugin-dev` 下、且只对纯文字卡（本示例）提供。
 - 插件以当前用户权限运行，`AssemblyLoadContext` **不是安全沙箱**；只安装来源可信的本地插件。
-- 2.14.0 没有签名 / 哈希 / 白名单校验，影子复制与 manifest 校验只是可靠性措施，不改变信任模型。
+- 2.14.x 没有签名 / 哈希 / 白名单校验，影子复制与 manifest 校验只是可靠性措施，不改变信任模型。
 - 插件必须与宿主使用同一个 `net8.0-windows` / WPF 目标；`apiVersion` 目前只接受 `1`。
+- 插件工程引用 `MirrorpondHUD.Contracts`（不要复制契约 DLL）；旧插件引用宿主的二进制靠 `TypeForwardedTo` 继续加载。
 - 富内容卡（`IRichCardModule`）仍然只支持重启加载，不能热重载。

@@ -48,3 +48,5 @@ using MirrorpondHUD.Core;
 [assembly: TypeForwardedTo(typeof(ColorCode))]
 [assembly: TypeForwardedTo(typeof(Icons))]
 [assembly: TypeForwardedTo(typeof(Keycaps))]
+[assembly: TypeForwardedTo(typeof(MirrorpondHUD.Ui.ThemeTokens))]
+[assembly: TypeForwardedTo(typeof(MirrorpondHUD.Ui.ThemeResolver))]

@@ -1,4 +1,4 @@
-# 版本修改记录（2.4.1 → 2.14.0）
+# 版本修改记录（2.4.1 → 2.14.3）
 
 > 范围：本文只记录**这一轮接手后我做的版本**（v2.4.1 起）。v2.4.0 及更早是既有历史，不在本文档里。
 > 数据全部取自仓库真实提交（`git diff --shortstat <上一版>..<本版>`），文件行的 `+ / -` 就是实际增删行数。
@@ -6,8 +6,10 @@
 > v2.4.5 已发布 Release（附件为两个 requires-dotnet 单文件），v2.4.0 的 Release 已删除、其 tag 保留。
 > `v2.5.0`–`v2.9.2` 均为附注标签，**已随 2.9.2 的推送同步到远端**（`v2.6.0` = `9c1bafa`、`v2.6.1` = `d3ac63d`、
 > `v2.6.2` = `1b138e7`、`v2.9.2` = `754115e`）；`v2.4.1` 也已补推。`v2.9.3`–`v2.12.2` 已于 2.12.2 推送并发布 Release；`v2.13.0`–`v2.13.6` 目前只在本地 / 功能分支创建。
-> `v2.14.0` 只存在于本地功能分支 `feature/runtime-card-loading`（**未推送、未发布、未合并**）；
-> 本版本规模按提交前冻结工作区的 `git diff --shortstat` 计算（文档同步改动另计）。
+> `v2.14.0`–`v2.14.2` 只存在于本地功能分支 `feature/runtime-card-loading`（**未推送、未发布、未合并**），
+> 提交分别为 `dbe8207` / `730fd39` / `f67a255`；`v2.14.3` 为本次提交。
+> `v2.14.1` / `v2.14.2` 的规模用对应提交的 `git show --shortstat`；`v2.14.3` 按提交前工作区的
+> `git diff --shortstat` 计算（文档同步改动另计）。
 
 ## 0. 总览
 
@@ -52,6 +54,9 @@
 | v2.13.5 | 2026-11-01 | `7920969` | 2.13.4 审阅意见：中转站孤儿/合并、热键路由、Chat 快照、DPAPI/备份、版本号、Replace 回退、命令脱敏、解码器切换、媒体 Join | 20 文件，+1199 / −204 |
 | v2.13.6 | 2026-11-01 | 本次提交 | 功能分支 `feature/runtime-card-loading`：运行时卡片插件（manifest + ALC + 启动早期注入 + 示例插件 + 未知 Kind 保留） | 14 文件，+496 / −30 |
 | v2.14.0 | 2026-11-01 | 本次提交 | 运行时插件完善：影子复制、缺失插件「插件不可用」占位卡、manifest / Kind 校验与加载报告、`--plugin-dev` 纯文字卡热重载、延迟 ALC 弱引用验证、设置页引用释放、`publish.bat` 插件备份 | 10 文件，+865 / −98，另新增 2 个源文件（38 + 327 行） |
+| v2.14.1 | 2026-11-01 | `730fd39` | 方案 B 第一步：拆出独立 `MirrorpondHUD.Contracts` 契约程序集；宿主 `TypeForwardedTo` 兼容旧插件；插件 ALC 对宿主与 Contracts 都返回 `null`；示例插件改引 Contracts | 22 文件，+103 / −9（15 个契约源码文件原样迁出，另新增契约工程 / `TypeForwards.cs`） |
+| v2.14.2 | 2026-11-01 | `f67a255` | 方案 B 第二步：`ConfigStore.SettingsNormalizer` 委托注入 `CardModel.Normalize`，拆掉 Core→Cards 编译依赖，行为不变 | 4 文件，+20 / −6 |
+| v2.14.3 | 2026-11-01 | 本次提交 | 方案 B 收尾：版本 2.14.3；`ThemeTokens` / `ThemeResolver` 迁入 Contracts（宿主类型转发）；SelfTest 契约身份断言；最终验证 | 5 文件，+30 / −10（文档同步另计） |
 
 ---
 
@@ -1561,7 +1566,167 @@ bin\Release\MirrorpondHUD.exe --plugin-dev --smoke 90 --smoke-visible
 
 ---
 
-## 40. 不在版本里的东西
+## 40. v2.14.1（`730fd39`，功能分支 `feature/runtime-card-loading`）
+
+### 背景
+
+v2.13.6 / v2.14.0 的运行时插件走的是方案 A：插件直接引用 `MirrorpondHUD.dll`，宿主把整个公开面当契约。
+这能最快跑通链路，但契约 = 整个宿主，宿主内部重构就可能破坏插件，也无法同时支持多个宿主版本；
+扩展调研（`docs/runtime-card-extensions.md` §4.1）与模块化评审都建议长期走方案 B。本轮做方案 B 的第一步：
+把契约与 DTO 拆到独立程序集，并用类型转发保住旧插件的二进制。
+
+### 改动
+
+1. **新增 `MirrorpondHUD.Contracts` 契约程序集**：`net8.0-windows` + `UseWPF` 类库，命名空间保持不变
+   （`MirrorpondHUD.Cards` / `MirrorpondHUD.Core` / `MirrorpondHUD.Metrics` / `MirrorpondHUD.Text`），减少源码改动。迁出 15 个源码文件：
+   - Cards 契约：`CardHost` / `CardModule` / `CardSettingsModule` / `RichCard`
+     （`ICardModule` / `IRichCardModule` / `CardModuleBase` / `RichCardModuleBase` / `ICardHost` / `ICardSettingsModule` 等）；
+   - 设置与 DTO：`Settings`（含 `OverlaySettings` / `StyleSettings` / `CliSettings` / `DataSettings` / `BehaviorSettings` /
+     `HotkeySettings` / `CardActionHotkey` / `CommandSettings` / `MediaSettings` / `CardSettings` / `ChatSettings`）；
+   - 渲染上下文与采样：`CardRenderContext`、`MetricsSnapshot`（含 `DriveSample` / `NvidiaSample`）、`KeyHistory`；
+   - 模板与变量：`TemplateEngine` / `Variables` / `KeyNames`；
+   - 基础工具：`Log` / `Json` / `SecretStore` / `ColorCode` / `Icons` / `Keycaps`。
+2. **宿主引用与旧插件兼容**：宿主 csproj 改为 `ProjectReference` 契约工程，并排除 `src\Contracts\**` 的默认编译；
+   新增 `src/TypeForwards.cs`，对 43 个契约类型做 `TypeForwardedTo`。因此 2.13.6 / 2.14.0 编译、
+   `AssemblyRef` 仍指向 `MirrorpondHUD` 的旧插件二进制无需重编译即可加载，`typeof(ICardModule)` 与宿主仍是同一个 Type。
+3. **插件 ALC 同时对两个程序集放行**：`CardPluginLoadContext.Load` 对宿主 `MirrorpondHUD` 与契约
+   `MirrorpondHUD.Contracts` 都返回 `null`，两者都交给默认 ALC；插件自己的依赖仍走插件 ALC。
+4. **示例插件改引 Contracts**：`samples/RuntimeCardExample` 从 `HintPath` 引用宿主 DLL 改成对 `src/Contracts` 的
+   `ProjectReference`（`Private=false`，不把契约 DLL 复制进插件目录）。
+5. **ThemeCatalog 资源查找修正**：主题资源编在宿主程序集，`Settings` 迁出后原来的 `typeof(Settings).Assembly`
+   会指到 Contracts，改为 `typeof(ThemeCatalog).Assembly`。
+6. **可见性收口**：`Log` / `Json` 仍是 Contracts 内部实现，用 `InternalsVisibleTo("MirrorpondHUD")` 只向宿主开放；
+   WPF 共享控件与 `ThemeTokens` 留在宿主（`ThemeTokens` / `ThemeResolver` 在 2.14.3 迁入，见 §42）。
+
+### 文件
+
+| 文件 | 行数 | 说明 |
+|---|---|---|
+| `src/Contracts/MirrorpondHUD.Contracts.csproj` | +27 / 新增 | 契约程序集工程（WPF / net8.0-windows / 版本 2.14.1） |
+| `src/TypeForwards.cs` | +50 / 新增 | 43 个契约类型的宿主类型转发 |
+| `src/Contracts/...`（15 个文件） | 0 / 0 | 契约、设置 DTO、渲染上下文、采样、模板与基础工具原样迁出 |
+| `src/Cards/CardPluginLoader.cs` | +8 / −3 | 插件 ALC 对宿主 + Contracts 都返回 `null` |
+| `src/Core/ThemeCatalog.cs` | +2 / −1 | 主题资源改用 `typeof(ThemeCatalog).Assembly` |
+| `src/Contracts/AssemblyInfo.cs` | +4 / 新增 | `InternalsVisibleTo("MirrorpondHUD")` |
+| `MirrorpondHUD.csproj` | +9 / −1 | 引用 Contracts、排除其源码、版本 2.14.0 → 2.14.1 |
+| `samples/RuntimeCardExample/RuntimeCardExample.csproj` | +3 / −4 | 插件改引 Contracts 工程 |
+
+### 实测
+
+- `dotnet build MirrorpondHUD.csproj -c Release`：**0 警告 0 错误**；示例插件同样 0 / 0。
+- `--selftest`：**失败项 0**（占位卡等既有断言保持通过）。
+- 旧插件路径：2.13.6 / 2.14.0 编译、引用 `MirrorpondHUD.dll` 的插件二进制通过类型转发加载成功。
+- 新插件路径：只引用 `MirrorpondHUD.Contracts` 的示例插件加载成功（日志「已加载卡片插件 Example Clock 0.1.0 …」）。
+  两条路径均实测 selftest 通过。
+
+### 风险
+
+- **类型转发只增不减**：删除 / 改名 / 改签名一个已转发的类型，会让旧插件在加载时失败；必须提升 `apiVersion` 并给出迁移说明。
+- **两程序集版本要同步**：宿主与 Contracts 版本号保持一致（2.14.x），发布时不能只升一个。
+- **WPF 共享控件未拆**：`CardButton` / `CardList` / `CardInput` 等仍在宿主；插件若要用只能额外引用宿主，
+  回到方案 A 的耦合。`ThemeTokens` / `ThemeResolver` 在 2.14.3 才迁入 Contracts。
+- **契约内部实现边界**：`Log` / `Json` 仍靠 `InternalsVisibleTo` 给宿主用，不是稳定公开 API，插件不要直接依赖。
+
+---
+
+## 41. v2.14.2（`f67a255`，功能分支 `feature/runtime-card-loading`）
+
+### 背景
+
+方案 B 第一步只搬了类型，`ConfigStore`（Core 层）仍直接调 `CardModel.Normalize`（Cards 层）：
+每次 Load / Save 都要为卡片归一化反向引用 Cards，Core→Cards 的编译依赖还在，契约边界没有真正闭合。
+扩展文档的审计表把这条列为“拆契约前必须先解开的环”。
+
+### 改动
+
+1. **归一化钩子**：`ConfigStore` 新增 `public static Action<Settings> SettingsNormalizer` 与私有 `NormalizeCards`；
+   `Load`（正常 / 失败回退两条路径）与 `SaveCore`（`Save` 内部）里三处 `CardModel.Normalize(settings)` 改调钩子（钩子为空时跳过）。
+2. **宿主注入**：`App.OnStartup` 在插件加载、`CardRegistry.Initialize` 之后、第一次 `ConfigStore.Load` 之前
+   注入 `ConfigStore.SettingsNormalizer = CardModel.Normalize`。
+3. **行为不变**：卡片归一化（未知 Kind 保留、旧别名、默认字段）仍由 `CardModel` 完成；只是调用方向反转成
+   Core 提供委托、宿主注入。
+4. 自检在 2.14.3 的契约身份断言里检查 `ConfigStore.SettingsNormalizer != null`。
+
+### 文件
+
+| 文件 | 行数 | 说明 |
+|---|---|---|
+| `src/Core/ConfigStore.cs` | +16 / −4 | 去掉 `using MirrorpondHUD.Cards`，新增 `SettingsNormalizer` 委托与 `NormalizeCards` |
+| `src/App.xaml.cs` | +2 / 新增 | 启动早期注入 `CardModel.Normalize` |
+| `MirrorpondHUD.csproj` | +1 / −1 | 版本 2.14.1 → 2.14.2 |
+| `src/Contracts/MirrorpondHUD.Contracts.csproj` | +1 / −1 | 版本 2.14.1 → 2.14.2 |
+
+### 实测
+
+- `dotnet build MirrorpondHUD.csproj -c Release`：**0 警告 0 错误**。
+- `--selftest`：**失败项 0**。
+- 卡片归一化仍生效：损坏 / 迁移配置在 Load / Save 后的 Kind、旧别名与默认字段行为与 2.14.1 一致。
+
+### 风险
+
+- 静态可变委托是进程级状态：任何绕过 `App` 的测试宿主 / 工具都必须自己注入，否则卡片归一化被跳过。
+- 注入时机敏感：必须早于第一次 `ConfigStore.Load`，否则首次加载漏归一化；2.14.3 自检只断言“已注入”，不覆盖时序。
+- 委托指向宿主方法，不参与插件 ALC 隔离；插件不能依赖它。
+
+---
+
+## 42. v2.14.3（功能分支 `feature/runtime-card-loading`，本次提交）
+
+### 背景
+
+2.14.1 把契约 / DTO 搬进 `MirrorpondHUD.Contracts` 后，`ThemeTokens` / `ThemeResolver` 仍留在宿主的
+`src/Ui/ThemeTokens.cs`：插件拿得到 `StyleSettings` 却用不到令牌解析，而且 `ThemeResolver.Resolve` 依赖宿主的
+`OverlaySurface.ParseColor`，无法跟着契约走。本次把该文件整体迁入 Contracts（`ThemeResolver` 改用 Contracts 内
+`ColorCode.TryParse`），补上版本号与契约身份自检，并做最终验证。WPF 共享控件仍留宿主，方案 B 第二阶段不变。
+
+### 改动
+
+1. **ThemeTokens 迁入 Contracts**：`src/Ui/ThemeTokens.cs` → `src/Contracts/Ui/ThemeTokens.cs`，
+   `namespace MirrorpondHUD.Ui` 保持不变；`ThemeResolver.Resolve` 的 `OverlaySurface.ParseColor(...)` 改为
+   Contracts 内 `ColorCode.TryParse`（新增本地 `ParseColor` 帮助方法），去掉对宿主实现的依赖。
+2. **宿主类型转发**：`src/TypeForwards.cs` 增加 `ThemeTokens`、`ThemeResolver` 两个 `TypeForwardedTo`（累计 45 个），
+   旧二进制引用 `MirrorpondHUD.Ui.ThemeTokens` 时仍由默认 ALC 解析到 Contracts 里的同一个 Type。
+3. **版本号**：宿主 csproj 与 Contracts csproj 均为 **2.14.3**。
+4. **SelfTest 契约身份断言**：新增 `contractsOk`，断言 `ICardModule` / `CardRenderContext` / `Settings` 所在程序集是
+   `MirrorpondHUD.Contracts`、`CardRegistry` 是 `MirrorpondHUD`、且 `ConfigStore.SettingsNormalizer != null`，并入卡片自检。
+5. **最终验证**：构建 0 / 0、`--selftest` 失败项 0；旧插件（2.13.6 / 2.14.0 编译、引用宿主）与新示例插件
+   （只引用 Contracts）两条加载路径均实测通过。
+
+### 文件
+
+| 文件 | 行数 | 说明 |
+|---|---|---|
+| `src/Contracts/Ui/ThemeTokens.cs` | +15 / −8 | 从 `src/Ui/ThemeTokens.cs` 迁入；改用 Contracts 内 `ColorCode` |
+| `src/TypeForwards.cs` | +2 / 新增 | `ThemeTokens` / `ThemeResolver` 类型转发 |
+| `src/SelfTest.cs` | +11 / 新增 | 契约身份断言（程序集身份 + 归一化钩子） |
+| `MirrorpondHUD.csproj` | +1 / −1 | 版本 2.14.2 → 2.14.3 |
+| `src/Contracts/MirrorpondHUD.Contracts.csproj` | +1 / −1 | 版本 2.14.2 → 2.14.3 |
+
+文档同步更新：`README.md`、`docs/version-history.md`、`docs/runtime-card-extensions.md`、
+`docs/runtime-card-hot-reload.md`、`samples/RuntimeCardExample/README.md`（规模另计）。
+
+### 实测
+
+- `dotnet build MirrorpondHUD.csproj -c Release`：**0 警告 0 错误**；示例插件 0 / 0。
+- `--selftest`：**失败项 0**，含新增契约身份断言（2.14.3 冒烟日志 `版本=2.14.3.0`）。
+- 旧插件加载：2.13.6 / 2.14.0 编译、引用 `MirrorpondHUD.dll` 的二进制经 `TypeForwardedTo` 加载成功，selftest 通过。
+- 新插件加载：只引用 `MirrorpondHUD.Contracts` 的 `ExampleClockCard` 加载成功
+  （日志「已加载卡片插件 Example Clock 0.1.0」，模块数内置 6 + 外部 1）。
+- `--plugin-dev --smoke` 冒烟中示例插件经历热重载 / 模块替换，日志正常（`%TEMP%\contract-hot\mirrorpond.log`）。
+
+### 风险
+
+- **UiKit 共享控件未拆**：`CardButton` / `CardList` / `CardInput` / `CardHeader` / `CardDropOverlay` / `CardStatus` /
+  `CardTextBox` / `CliUi` 仍在宿主；插件要用这些控件只能额外引用宿主，方案 B 第二阶段再抽 `MirrorpondHUD.UiKit`。
+- **旧二进制兼容靠类型转发**：2.13.6 / 2.14.0 插件不需要重编译，但前提是契约类型继续以转发形式存在；
+  将来删类型 / 改签名必须先提升 `apiVersion`。
+- **ThemeTokens 迁移是二进制破坏点**：`ThemeTokens` / `ThemeResolver` 的物理程序集变了，靠宿主转发兼容；
+  直接 `typeof(ThemeTokens).Assembly` 做判断的第三方代码会看到 `MirrorpondHUD.Contracts`。
+- **版本一致性**：宿主与 Contracts 必须同为 2.14.3；若只升一个，自检的契约身份断言仍过，但发布包会混版本。
+
+---
+
+## 43. 不在版本里的东西
 
 - 验收脚本、样张与测量脚本（`cmd-e2e.ps1`、`drag-glass.ps1`、`measure-*.py`、`shots/` 等）都在仓库外的 `hud-test/` 里，**没有提交**。
 - 发布：`main` 与标签已推送到 [github.com/CRITTIof/MirrorpondHUD](https://github.com/CRITTIof/MirrorpondHUD)；
@@ -1570,7 +1735,7 @@ bin\Release\MirrorpondHUD.exe --plugin-dev --smoke 90 --smoke-visible
   更早的 Release 正文与附件保留原样，v2.4.0 的 Release 已删除（tag `v2.4.0` 保留，历史仍可检出）。
 - 仓库追踪的文件共 117 个，`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
 
-## 41. 已知代价（跨版本）
+## 44. 已知代价（跨版本）
 
 - 桌面亚克力为了不拍到自己，会把卡片排除在截屏之外 —— 这个模式下截图 / 录屏里**看不到卡片**，观感只能靠肉眼与离屏渲染验证。
 - 兼容实现每帧对身后窗口做 `PrintWindow`，拖动时最多 ~21 帧/秒；要更高只能走桌面亚克力（DXGI）。

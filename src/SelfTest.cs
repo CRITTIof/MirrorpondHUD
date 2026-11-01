@@ -574,11 +574,22 @@ namespace MirrorpondHUD
                                   && !missing.IsInteractive
                                   && missingText.IndexOf("插件不可用", StringComparison.Ordinal) >= 0;
 
+                // 2.14.1 方案 B：契约 / DTO 必须在独立 Contracts 程序集里；
+                // CardRegistry 等宿主实现仍在 MirrorpondHUD；归一化 hook 必须已注入。
+                string contractAssembly = typeof(ICardModule).Assembly.GetName().Name;
+                string hostAssembly = typeof(CardRegistry).Assembly.GetName().Name;
+                bool contractsOk = string.Equals(contractAssembly, "MirrorpondHUD.Contracts", StringComparison.Ordinal)
+                                && string.Equals(hostAssembly, "MirrorpondHUD", StringComparison.Ordinal)
+                                && typeof(CardRenderContext).Assembly == typeof(ICardModule).Assembly
+                                && typeof(Settings).Assembly == typeof(ICardModule).Assembly
+                                && ConfigStore.SettingsNormalizer != null;
+
                 cardOk = CardRegistry.Modules.Count >= 3
                          && CardRegistry.Get("media") is IRichCardModule
                          && CardRegistry.Get("infotext") is InfoTextCard
                          && legacyOk
                          && placeholderOk
+                         && contractsOk
                          && settings.Cards.Count >= 1
                          && !string.IsNullOrWhiteSpace(clock)
                          && clock.IndexOf('{') < 0

@@ -34,19 +34,26 @@ namespace MirrorpondHUD.Ui
         public static ThemeTokens Resolve(StyleSettings style)
         {
             StyleSettings s = style ?? new StyleSettings();
-            Color foreground = OverlaySurface.ParseColor(s.Foreground, Color.FromRgb(0xE6, 0xED, 0xF3));
+            Color foreground = ParseColor(s.Foreground, Color.FromRgb(0xE6, 0xED, 0xF3));
 
             return new ThemeTokens
             {
-                Accent = OverlaySurface.ParseColor(s.Accent, Color.FromRgb(0x2F, 0x6F, 0xEB)),
-                Danger = OverlaySurface.ParseColor(s.Danger, Color.FromRgb(0xD1, 0x43, 0x43)),
-                Muted = OverlaySurface.ParseColor(s.Muted, WithAlpha(foreground, 0.45)),
-                Border = OverlaySurface.ParseColor(s.Border, WithAlpha(foreground, 0.10)),
-                Panel = OverlaySurface.ParseColor(s.Panel, WithAlpha(foreground, 0.045)),
-                Scrollbar = OverlaySurface.ParseColor(s.Scrollbar, WithAlpha(foreground, 0.18)),
-                ScrollbarHot = OverlaySurface.ParseColor(s.ScrollbarHot, WithAlpha(foreground, 0.40)),
+                Accent = ParseColor(s.Accent, Color.FromRgb(0x2F, 0x6F, 0xEB)),
+                Danger = ParseColor(s.Danger, Color.FromRgb(0xD1, 0x43, 0x43)),
+                Muted = ParseColor(s.Muted, WithAlpha(foreground, 0.45)),
+                Border = ParseColor(s.Border, WithAlpha(foreground, 0.10)),
+                Panel = ParseColor(s.Panel, WithAlpha(foreground, 0.045)),
+                Scrollbar = ParseColor(s.Scrollbar, WithAlpha(foreground, 0.18)),
+                ScrollbarHot = ParseColor(s.ScrollbarHot, WithAlpha(foreground, 0.40)),
                 MonoFont = string.IsNullOrWhiteSpace(s.MonoFont) ? DefaultMonoFont : s.MonoFont.Trim()
             };
+        }
+
+        static Color ParseColor(string hex, Color fallback)
+        {
+            byte a, r, g, b;
+            if (!ColorCode.TryParse(hex, out a, out r, out g, out b)) return fallback;
+            return Color.FromArgb(a, r, g, b);
         }
 
         public static Color WithAlpha(Color color, double alpha)

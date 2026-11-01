@@ -1,18 +1,21 @@
-# 运行时卡片热重载（v2.14.0，dev-only 文字卡）
+# 运行时卡片热重载（v2.14.3 基线，dev-only 文字卡）
 
-> 状态：**2.14.0 已实现 dev-only 纯文字卡热重载**（启动参数 `--plugin-dev`）。
-> 生产默认仍是「重启生效」，设置页不提供热重载 / 卸载按钮；富内容卡拒绝热重载。
-> 基线：`feature/runtime-card-loading`（v2.13.6 为调研 / spike，v2.14.0 落地实现）。
+> 状态：**dev-only 纯文字卡热重载自 2.14.0 起可用**（启动参数 `--plugin-dev`）；2.14.3 基线的契约已在
+> 独立 `MirrorpondHUD.Contracts` 程序集里。生产默认仍是「重启生效」，设置页不提供热重载 / 卸载按钮；富内容卡拒绝热重载。
+> 基线：`feature/runtime-card-loading`（v2.13.6 调研 / spike，v2.14.0 落地实现；v2.14.1 拆 Contracts、
+> v2.14.2 拆 Core→Cards、v2.14.3 迁移 `ThemeTokens` / `ThemeResolver`）。
 > 结论先行：文字卡 dev 热重载可用；富 WPF 卡片在现有窗口 / 内容 / 设置页引用链下仍不建议热插拔；
 > `AssemblyLoadContext` 不是安全沙箱。独立风险复核见 `%TEMP%\hot-reload-review\report.md`，
 > 实测日志见 `%TEMP%\mp-hotreload-run\mirrorpond.log`。
 
 ---
 
-## 1. 实现概览（2.14.0）
+## 1. 实现概览（2.14.3 基线）
 
-| 层 | 2.14.0 实现 | 热重载行为 |
+| 层 | 2.14.3 基线实现 | 热重载行为 |
 |---|---|---|
+| 程序集边界 | 2.14.1 起契约 / DTO 在 `MirrorpondHUD.Contracts`；宿主通过 `ProjectReference` 引用，`TypeForwardedTo` 兼容旧插件；2.14.3 起 `ThemeTokens` / `ThemeResolver` 也在 Contracts | 插件只引用 Contracts；旧插件二进制引用宿主仍可加载 |
+| ALC 程序集例外 | `CardPluginLoadContext.Load` 对宿主 `MirrorpondHUD` 与契约 `MirrorpondHUD.Contracts` 都返回 `null` | 两者都由默认 ALC 提供，保证 `ICardModule` 等契约 Type 身份一致 |
 | 插件目录 | `<exe>/plugins/cards/<id>/` + `%LOCALAPPDATA%\MirrorpondHUD\plugins\cards\<id>/` | 两个根都会监听（不存在时自动创建），变化 700 ms debounce |
 | 加载 | `CardPluginLoader.LoadAll()`，每插件一个可收集 ALC；先影子复制再加载 | 每轮重新完整加载 + manifest / Kind 校验 |
 | 注册表 | `CardRegistry.Initialize` 启动快照 + `ReplaceExternal` | 换外部模块时保留内置模块，Kind 冲突抛错 |
@@ -26,6 +29,10 @@
 
 2.13.6 时加载器把 `CardPluginLoadContext` 放进静态 `_contexts` 列表保持存活，属于“重启生效”的实现，
 也意味着当时**无法**卸载；2.14.0 改成句柄列表，热重载和退出都会释放当前这批。
+
+2.14.1–2.14.3 的契约拆分不改变热重载的失败策略与能力面（仍只接受纯文字卡）：插件与宿主拿到的契约
+始终由默认 ALC 提供，旧插件二进制靠 `TypeForwardedTo` 解析到同一个 Type；拆分只是把契约从宿主程序集
+搬到了 `MirrorpondHUD.Contracts`。
 
 ---
 
@@ -79,7 +86,7 @@ WPF ResourceDictionary / pack URI ──► plugin assembly
 
 ---
 
-## 3. 实现与验收（2.14.0）
+## 3. 实现与验收（2.14.3 基线）
 
 ### 3.1 热重载流程
 
@@ -127,7 +134,12 @@ WPF ResourceDictionary / pack URI ──► plugin assembly
 
 ### 3.5 实测验收（2026-11-01）
 
-- `dotnet build -c Release`：**0 警告 0 错误**；`--selftest`：**失败项 0**（含占位卡断言）。
+- 2.14.3 基线：`dotnet build MirrorpondHUD.csproj -c Release`：**0 警告 0 错误**；`--selftest`：**失败项 0**，
+  含 2.14.3 新增的契约身份断言（`ICardModule` / `CardRenderContext` / `Settings` 在 `MirrorpondHUD.Contracts`，
+  `CardRegistry` 在 `MirrorpondHUD`，`ConfigStore.SettingsNormalizer != null`）。
+- 契约拆分回归（2.14.1）：旧插件（2.13.6 / 2.14.0 编译、引用宿主）经 `TypeForwardedTo` 加载，新示例插件
+  （只引用 Contracts）加载；两条路径均实测 `--selftest` 通过。
+- 2.14.0 原始验收（保留）：`dotnet build -c Release` **0 警告 0 错误**；`--selftest` **失败项 0**（含占位卡断言）。
 - 热重载 v1 → v2：覆盖测试插件（`Kind=hotreload-test`）的 DLL + manifest，日志依次出现
   「检测到插件目录变化，开始热重载」→「已加载卡片插件 Hot Reload Test …（文字卡，影子副本）」→
   「运行时插件模块已替换」→「插件热重载：已刷新 1 张卡片」→「插件热重载完成」；
@@ -143,7 +155,7 @@ WPF ResourceDictionary / pack URI ──► plugin assembly
 
 ## 4. 风险矩阵与决策
 
-| # | 风险 | 严重度 | 2.14.0 决策 | 当前残余 |
+| # | 风险 | 严重度 | 2.14.3 决策 | 当前残余 |
 |---|---|---|---|---|
 | R1 | ALC 卸载引用链（注册表 / 槽位 / 窗口 / 设置页 / 静态 / 退出顺序） | 高 | 先换注册表 + 槽位再 `Unload`；设置页 `ReleaseCardEditorsForPluginReload`；800 ms 定时器 + GC ×3 + 弱引用 | 部分轮次上下文延迟回收，未做 20 轮全回收 gate |
 | R2 | WPF 视觉树 / 资源 / BAML / Dispatcher 回调 | 高（富）/ 中（文字） | 富内容、交互、设置区块、旧别名一律拒绝；文字卡只换模块重画 | 富内容卡仍只能重启加载 |
@@ -158,7 +170,8 @@ WPF ResourceDictionary / pack URI ──► plugin assembly
 | R11 | 影子复制生产回归 | 中高 | 复制失败回退源目录（WARN）；启动清理旧缓存 | 全量复制、无文件大小 / 数量上限、无哈希 |
 | R12 | 发布 / 升级数据丢失 | 中高 | `publish.bat` 在清空 `bin\Release` 前后备份 / 恢复 `plugins` | 无 |
 | R13 | 测试可验证性 | 中 | 占位卡断言 + 日志验收 | 没有 `LoadAll(roots)` 测试注入点，依赖手工 / 日志验收 |
-| R14 | 文档 / 版本一致性 | 中 | 2.14.0 同步更新 README / version-history / 两篇 runtime 文档 / 示例 README | 已在本轮完成 |
+| R14 | 文档 / 版本一致性 | 中 | 2.14.3 同步更新 README / version-history / 两篇 runtime 文档 / 示例 README | 已在本轮完成 |
+| R15 | 契约程序集边界（TypeForwardedTo / 默认 ALC） | 中高 | 2.14.1–2.14.3 拆出 `MirrorpondHUD.Contracts`，loader 对宿主与 Contracts 都走默认 ALC；旧插件靠类型转发 | 删 / 改已转发类型会破坏旧二进制，需提升 `apiVersion`；WPF 共享控件（UiKit）未拆 |
 
 风险复核报告（`%TEMP%\hot-reload-review\report.md`）中的 P0-2（失败回滚）、P0-3（按插件回滚）、
 P1-4（完整能力白名单）、P1-5（监视重试 / rescan）、P1-11（`Extras` 纯化）仍未闭环，对应上表 R5–R8。
@@ -203,6 +216,11 @@ bin\Release\MirrorpondHUD.exe --plugin-dev --smoke 90 --smoke-visible
 - 文件监视没有稳定性等待 / IO 重试，`FileSystemWatcher.Error` 后只记日志、不重建；`dotnet build` 边写边触发时靠 debounce 缓解。
 - 插件加载在 UI 线程，坏插件构造函数可挂起启动；影子复制全量、无大小 / 数量上限，旧缓存靠下次启动清理。
 - `Extras` 若被插件类型实例（属性 DTO）钉住仍可能阻碍回收；插件 API 建议只放 JSON 原语 / public field。
+- **Contracts 拆分后 UiKit 仍未拆**：WPF 共享控件（`CardButton` / `CardList` / `CardInput` / `CardHeader` /
+  `CardDropOverlay` / `CardStatus` / `CardTextBox` / `CliUi`）仍在宿主，插件要用只能额外引用宿主；
+  `ThemeTokens` / `ThemeResolver` 已随 2.14.3 进 Contracts。
+- **旧二进制兼容靠类型转发**：2.13.6 / 2.14.0 插件靠宿主 `TypeForwardedTo` 继续加载；未来若删除 / 改名 /
+  改签名已转发类型，必须先提升 `apiVersion` 并提供迁移说明，否则旧插件会在加载时失败。
 
 ---
 
@@ -224,7 +242,10 @@ bin\Release\MirrorpondHUD.exe --plugin-dev --smoke 90 --smoke-visible
 - `src/Ui/PluginDevReloader.cs`（监听、debounce、安全与失败策略、延迟验证）
 - `src/Ui/OverlayController.cs`（`ReloadPluginCards` / `ReleaseContent`）
 - `src/Ui/SettingsWindow.xaml.cs`（`ReleaseCardEditorsForPluginReload` / `CloseForReal`）
-- `src/Cards/CardModule.cs`（`ICardModuleLifetime`）
+- `src/Contracts/Cards/CardModule.cs`（`ICardModuleLifetime`；2.14.1 起在 Contracts）
+- `src/TypeForwards.cs`（宿主对契约类型的 `TypeForwardedTo`，含 2.14.3 的 `ThemeTokens` / `ThemeResolver`）
+- `src/Contracts/MirrorpondHUD.Contracts.csproj`（独立契约程序集）
+- `src/Contracts/Ui/ThemeTokens.cs`（`ThemeTokens` / `ThemeResolver`，2.14.3 起在 Contracts）
 - [runtime-card-extensions.md](runtime-card-extensions.md)（安装、manifest、安全边界）
 - [samples/RuntimeCardExample/README.md](../samples/RuntimeCardExample/README.md)（示例插件与 dev 流程）
 - 独立风险复核：`%TEMP%\hot-reload-review\report.md`；实测日志：`%TEMP%\mp-hotreload-run\mirrorpond.log`

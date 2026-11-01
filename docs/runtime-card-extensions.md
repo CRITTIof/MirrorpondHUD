@@ -1,18 +1,24 @@
 # 运行时扩展卡片（`plugins/cards/*.dll`）
 
-> 状态：2.14.0 已把「可信本地插件 + 重启生效」做成生产路径，并在分支 `feature/runtime-card-loading` 上加入
-> dev-only 纯文字卡热重载（未推送、未发布、未合并）。
+> 状态：2.14.3 把「可信本地插件 + 重启生效」保持为生产路径，并完成方案 B 的核心契约拆分
+> （2.14.1 拆 `MirrorpondHUD.Contracts`、2.14.2 拆 Core→Cards、2.14.3 迁 `ThemeTokens`）；
+> 分支 `feature/runtime-card-loading` 上另有 dev-only 纯文字卡热重载（未推送、未发布、未合并）。
 > 已实现：`plugins/cards/<id>/manifest.json` + 独立可收集 ALC + `CardRegistry.Initialize` 启动早期注入；
 > 影子复制到 `%LOCALAPPDATA%\MirrorpondHUD\plugin-cache`（失败回退源目录）；缺失插件「插件不可用」占位卡
 > （保留 Kind / Content / Extras、不写回配置）；manifest 大小 / id / apiVersion / assembly / entryType / Kind 校验
 > （拒绝内置与旧别名 Kind）；加载报告与重复 id / Kind 拒绝；`--plugin-dev` 纯文字卡热重载（拒绝富内容 /
 > 交互 / 设置区块 / 旧别名）；设置页引用释放；示例见 `samples/RuntimeCardExample`。
-> 未实现：签名 / 哈希 / 白名单；富内容卡热重载；安全沙箱；插件市场 / 自动更新。生产 UI 不提供热插拔。
-> 基线：v2.12.2（文件级代码审计 + 现有模块化评审结论）；v2.13.6 完成 spike，2.14.0 补齐上述生产路径与 dev 热重载。
+> 已实现（方案 B，2.14.1–2.14.3）：独立 `MirrorpondHUD.Contracts` 契约程序集（15 个契约源码文件迁出）、
+> 宿主 `TypeForwardedTo` 兼容旧插件、插件 ALC 对宿主与 Contracts 都走默认 ALC、示例插件只引用 Contracts、
+> `ThemeTokens` / `ThemeResolver` 迁入 Contracts。
+> 未实现：签名 / 哈希 / 白名单；富内容卡热重载；安全沙箱；插件市场 / 自动更新；WPF 共享控件（UiKit）拆分。
+> 生产 UI 不提供热插拔。
+> 基线：v2.12.2（文件级代码审计 + 现有模块化评审结论）；v2.13.6 完成 spike，2.14.0 补齐生产路径与 dev 热重载，
+> 2.14.1–2.14.3 落地方案 B 的契约边界。
 > 结论先行：技术上可做，但**不能直接把 DLL 丢进一个目录就加载**。单程序集、静态 `CardRegistry` 与
 > “未知 Kind 回退默认卡”的归一化策略会分别带来契约版本、加载时序和配置丢失三个问题；2.14.0 已用
-> 「影子复制 + 占位卡 + 清单校验 + 加载报告」补上，但 `AssemblyLoadContext` 只解决加载与依赖隔离，
-> 不解决沙箱、卸载和契约演进。仍建议把插件当**可信本地扩展**，生产保持“重启生效”。
+> 「影子复制 + 占位卡 + 清单校验 + 加载报告」补上，2.14.1–2.14.3 再补齐契约边界，但 `AssemblyLoadContext`
+> 只解决加载与依赖隔离，不解决沙箱、卸载和契约演进。仍建议把插件当**可信本地扩展**，生产保持“重启生效”。
 
 ---
 
@@ -41,18 +47,20 @@
 
 | 事实 | 代码位置 | 对运行时插件的含义 |
 |---|---|---|
-| 单程序集：契约、所有卡片实现、宿主、WPF 控件都在 `MirrorpondHUD.dll` | `MirrorpondHUD.csproj`（唯一项目） | 没有“只给插件看的契约程序集”；插件要么引用整个宿主，要么先拆契约 |
+| 单程序集（2.12.2 基线）：契约、所有卡片实现、宿主、WPF 控件都在 `MirrorpondHUD.dll`；2.14.1 起契约 / DTO 已拆到 `MirrorpondHUD.Contracts`（见 §4.1） | `MirrorpondHUD.csproj`、`src/Contracts/MirrorpondHUD.Contracts.csproj` | 旧插件仍引用宿主（靠类型转发），新插件只引用 Contracts |
 | 注册表是静态只读列表，第一次使用时初始化 | `src/Cards/CardRegistry.cs:15` `static readonly List<ICardModule> _modules = Discover();` | 插件必须在 `CardRegistry` 第一次被访问前加载；运行中无法追加 / 卸载 |
 | 发现只扫当前程序集、要求 public 无参构造 | `src/Cards/CardRegistry.cs:81-101` | 不会扫目录；加载失败只写日志，不会出现在 UI |
 | `Modules` 暴露的是可变 `IList` | `src/Cards/CardRegistry.cs:19` | 插件 / 调用方可以改内部列表；需要改成不可变快照 |
 | 未知 Kind 会回退到 `_modules[0]` | `src/Cards/CardRegistry.cs:21-38`、`src/Cards/CardModel.cs:43` | 插件缺失时，配置里的 Kind 会被**改写成默认卡**，属于数据破坏 |
-| 归一化在 Core 层调用 Cards 层 | `src/Core/ConfigStore.cs:4`、`:69-70` 调 `CardModel.Normalize` | “Core 不认识卡片”已经破例；拆契约前必须先解开这个环 |
+| 归一化在 Core 层调用 Cards 层 | `src/Core/ConfigStore.cs:4`、`:69-70` 调 `CardModel.Normalize`（2.14.2 已改为 `SettingsNormalizer` 委托注入） | “Core 不认识卡片”的环已解开；宿主在启动早期注入归一化钩子 |
 | 卡片设置在 `Extras` 里按模块类型绑定 | `src/Core/Settings.cs:721-756`、`Json.BindNode<T>` | 插件类型不在时无法绑定；原始 JSON 必须原样保留，不能丢 |
 | 状态目录是 `<settings.json 所在目录>/cards/<cardId>` | `src/Core/CardStateStore.cs:18-25` | 与 README 里的 `cards/*.dll` 命名冲突；插件目录应另起 `plugins/` |
 | 添加卡片菜单直接遍历静态 `CardRegistry.Modules` | `src/Ui/SettingsWindow.xaml.cs:680-730` | 需要“加载失败 / 不兼容”的列表项与原因，而不是静默消失 |
 | 富内容契约直接出现 `FrameworkElement` | `src/Cards/RichCard.cs:12-53` | 契约程序集必须面向 WPF（`net8.0-windows` + `UseWPF`），插件必须能在 UI/STA 线程创建控件 |
 | 契约与实现没有 ApiVersion | `src/Cards/CardModule.cs` 全文 | 二进制不兼容时只能靠程序集版本 / 类型加载失败来发现 |
-| README 曾写“运行期插件暂未实现”（v2.12.2 调研基线时） | `README.md:281`、`README.md:416` | 本文是补这缺口的前置调研；2.14.0 已同步 README |
+| README 曾写“运行期插件暂未实现”（v2.12.2 调研基线时） | `README.md:281`、`README.md:416` | 本文是补这缺口的前置调研；2.14.0 已同步 README，2.14.1–2.14.3 再补契约程序集 / 类型转发说明 |
+
+§2 是 2.12.2 基线的代码审计（行号按当时源码）；表中标注了 2.14.x 的落地变化（契约程序集 / 归一化钩子），未标注的行是基线状态，部分已在后续版本变化，看现状以各节说明与源码为准。
 
 ### 2.1 已存在的结构性问题
 
@@ -87,10 +95,10 @@
 
 ### 4.1 程序集边界：先做 A，长期做 B
 
-当前契约（`ICardModule`、`IRichCardModule`、`ICardSettingsModule` 等）和所有 WPF 控件都在
-`MirrorpondHUD.dll` 里。有三种切法：
+当前契约（`ICardModule`、`IRichCardModule`、`ICardSettingsModule` 等）和 WPF 控件已经分成两部分：
+契约 / DTO 在 `MirrorpondHUD.Contracts`，WPF 共享控件与宿主实现仍在 `MirrorpondHUD.dll`。演进路径：
 
-#### 方案 A：宿主程序集就是契约（第一版可用）
+#### 方案 A：宿主程序集就是契约（2.13.6 / 2.14.0 的旧路径）
 
 - 插件直接引用 `MirrorpondHUD.dll`，实现 `CardModuleBase`；
 - 插件 ALC 对 `MirrorpondHUD` 程序集名返回 `null`，强制回落到默认 ALC，保证
@@ -99,39 +107,58 @@
 - 插件能直接使用 `CardButton`、`CardList`、`CardPalette` 等公开控件，开发体验最好；
 - 缺点：契约 = 整个宿主公开面；宿主内部重构可能破坏插件；无法支持多个宿主版本。
 
-**这是最短路径的 spike 方案，也是第一版可接受的折中。**
+2.14.1 起方案 A 只作为**旧插件兼容路径**保留：2.13.6 / 2.14.0 编译、引用宿主的插件通过宿主
+`TypeForwardedTo` 继续加载，新插件不再走这条路径。
 
-#### 方案 B：独立 `MirrorpondHUD.Contracts`（长期推荐）
+#### 方案 B：独立 `MirrorpondHUD.Contracts`（2.14.1 起已落地核心部分）
 
-把下面这些东西搬到独立程序集（命名空间可以保持不变，减少源码改动）：
+**状态：2.14.1 已实现 B 的核心程序集拆分，2.14.2 拆掉 Core→Cards 编译依赖，WPF UiKit 留待后续；
+`ThemeTokens` / `ThemeResolver` 已于 2.14.3 迁入 Contracts。**
+
+已迁到 Contracts 的内容（命名空间保持不变，减少源码改动）：
 
 - `ICardModule` / `IRichCardModule` / `CardModuleBase` / `RichCardModuleBase`；
 - `ICardSettingsModule` / `ICardEditorSection` / `ICardSettingsValidator` / `ICardSummary`；
 - `ICardStyleAware` / `ICardDropTarget` / `ICardDropFeedback` / `ICardHotkeySource/Target`；
 - `ICardHost` / `ICardHostAware` / `ICardActivation`；
-- `CardRenderContext` 以及它依赖的 DTO：`Settings` / `MetricsSnapshot` / `KeyHistory` /
-  `CardSettings`（或把它们抽成只读接口 + 可序列化 DTO）；
-- `CardHotkeyAction`、`ThemeTokens`、`StyleSettings` 等插件确实需要的公开类型。
+- `CardRenderContext` 以及它依赖的 DTO：`Settings` / `MetricsSnapshot` / `KeyHistory` / `CardSettings`；
+- `CardHotkeyAction`、`ThemeTokens` / `ThemeResolver`（2.14.3）、`StyleSettings` 等插件确实需要的公开类型；
+- 基础工具 `Log` / `Json`（Contracts 内部实现，`InternalsVisibleTo` 只向宿主开放）。
 
-宿主和插件都引用 `MirrorpondHUD.Contracts`；插件 ALC 对 contracts 程序集名返回 `null`，
-由默认 ALC 提供，保证类型身份一致。
+宿主和插件都引用 `MirrorpondHUD.Contracts`；插件 ALC 对宿主 `MirrorpondHUD` 与契约
+`MirrorpondHUD.Contracts` 两个程序集名都返回 `null`，由默认 ALC 提供，保证类型身份一致。
 
-代价：
+**插件构建方式（2.14.1 起）**：插件工程只引用 `src/Contracts/MirrorpondHUD.Contracts.csproj`（`Private=false`，
+不要复制 `MirrorpondHUD.Contracts.dll` 进插件目录），不再引用宿主 DLL。`dotnet build samples\RuntimeCardExample\RuntimeCardExample.csproj -c Release`
+会自动构建 Contracts。示例见 `samples/RuntimeCardExample`。
 
-- `ConfigStore` 不能再直接调 `CardModel.Normalize`（Core → Cards 的环要拆）；
-- WPF 控件（`CardButton` 等）要么留在宿主、插件额外引用宿主（回到 A），要么再抽一个
-  `MirrorpondHUD.UiKit` 给插件共用；
-- 这是一次真正的程序集重构，预估不是一两个下午能收口的。
+**兼容性与类型转发（2.14.1 起）**：契约类型虽然物理上搬到了 `MirrorpondHUD.Contracts`，但命名空间保持
+`MirrorpondHUD.Cards` / `MirrorpondHUD.Core` 不变，宿主 `src/TypeForwards.cs` 对 43 个契约类型做
+`TypeForwardedTo`（2.14.3 再补 `ThemeTokens` / `ThemeResolver`，累计 45 个）。因此 2.13.6 / 2.14.0 编译、
+`AssemblyRef` 指向 `MirrorpondHUD` 的旧插件二进制**无需重编译**即可加载，`typeof(ICardModule)` 仍与宿主同一个 Type。
+约束是**只增不减**：删除 / 改名 / 改签名一个已转发的类型会让旧插件加载失败，必须提升 `apiVersion` 并给出迁移说明。
+
+代价与剩余：
+
+- `ConfigStore` 不能再直接调 `CardModel.Normalize` —— 2.14.2 已用 `SettingsNormalizer` 委托注入解掉（Core 不再引用 Cards）；
+- WPF 共享控件（`CardButton` 等）仍在宿主：插件要用只能额外引用宿主（回到 A 的耦合），
+  或后续再抽一个 `MirrorpondHUD.UiKit` 给插件共用。`ThemeTokens` / `ThemeResolver` 已在 Contracts（2.14.3），
+  但 `CardButton` / `CardList` / `CardInput` / `CardHeader` / `CardDropOverlay` / `CardStatus` / `CardTextBox` / `CliUi`
+  仍留宿主，这是方案 B 第二阶段；
+- 两程序集版本必须同步发版（2.14.x），自检会断言契约类型的程序集身份。
 
 #### 方案 C：只给“数据型插件”的窄接口
 
 插件只返回字符串 / 简单图形 / 数据，不返回 `FrameworkElement`；这样契约可以很小，
 甚至可以放到独立进程。但它无法复用现有富卡片能力，只能作为另一条产品线。
 
-**建议：** 第一版用 A 做通链路；等插件生态出现、或宿主需要独立升级时，再做 B。
-不要一开始就为了“纯粹”把 UiKit 拆散。
+**建议：** 2.14.1–2.14.3 已完成 B 的核心拆分（契约程序集 + 拆 Core→Cards + ThemeTokens）；
+WPF 共享控件是否再拆成 UiKit，等插件生态真正需要时再做，不要为了“纯粹”把 UiKit 一次拆散。
 
 ### 4.2 插件目录与清单
+
+2.14.1 起插件工程只引用 `src/Contracts/MirrorpondHUD.Contracts.csproj`（`Private=false`），不引用宿主；
+`apiVersion` 仍为 1（2.14.x 只有加法与类型转发，没有破坏性契约变更）。插件目录、manifest 与校验规则不变。
 
 #### 目录
 
@@ -225,18 +252,21 @@ sealed class CardPluginLoadContext : AssemblyLoadContext
 {
     readonly AssemblyDependencyResolver _resolver;
     readonly string _hostAssemblyName;
+    readonly string _contractAssemblyName;
 
     public CardPluginLoadContext(string mainPath, string hostAssemblyName)
         : base("MirrorpondHUD.CardPlugin:" + Path.GetFileNameWithoutExtension(mainPath), isCollectible: true)
     {
         _resolver = new AssemblyDependencyResolver(mainPath);
         _hostAssemblyName = hostAssemblyName;
+        _contractAssemblyName = typeof(ICardModule).Assembly.GetName().Name;
     }
 
     protected override Assembly Load(AssemblyName name)
     {
-        // 契约 / 宿主必须由默认 ALC 提供，不能在插件 ALC 里再加载一份
-        if (string.Equals(name.Name, _hostAssemblyName, StringComparison.OrdinalIgnoreCase))
+        // 宿主与契约都必须由默认 ALC 提供，不能在插件 ALC 里再加载一份
+        if (string.Equals(name.Name, _hostAssemblyName, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(name.Name, _contractAssemblyName, StringComparison.OrdinalIgnoreCase))
             return null;
 
         string path = _resolver.ResolveAssemblyToPath(name);
@@ -250,7 +280,9 @@ sealed class CardPluginLoadContext : AssemblyLoadContext
 - **不要用 `Assembly.LoadFrom`**：它会锁文件、进入默认上下文，且不利于卸载；
 - 用 `LoadFromAssemblyPath` / `LoadFromStream`，配合 `AssemblyDependencyResolver`；
 - `AssemblyDependencyResolver` 需要插件的 `.deps.json`（类库项目默认会生成）；
-- 插件自己的依赖走插件 ALC；契约 / 宿主走默认 ALC；
+- 插件自己的依赖走插件 ALC；宿主与契约（`MirrorpondHUD` / `MirrorpondHUD.Contracts`）都走默认 ALC；
+- 2.14.1 起 `CardPluginLoadContext` 同时记录宿主与契约两个程序集名，`Load` 对两者都返回 `null`，
+  否则插件会拿到第二份 `ICardModule`，与宿主不是同一个 Type；
 - 加载前用 `MetadataLoadContext` 做一次只读预检（类型名、引用、ApiVersion），可以避免
   一上来就把坏 DLL 执行起来；预检不是安全边界，只是失败隔离；
 - 每个插件单独 try/catch，失败只影响该插件；设置页显示“加载失败 + 原因”。
@@ -279,6 +311,8 @@ card.Kind = CardRegistry.ResolveKind(card.Kind);   // 旧行为：未知 → _mo
 
 - `ApiVersion` 整数，宿主硬校验；不兼容直接拒绝加载；
 - 契约接口只做“加方法 / 加默认实现”的加法；改变已有签名必须提升 ApiVersion；
+- 契约类型搬迁沿用宿主 `TypeForwardedTo`（如 2.14.1 的 43 个、2.14.3 的 `ThemeTokens` / `ThemeResolver`），
+  旧插件二进制不重编译也能解析到同一个 Type；删除 / 改名已转发类型必须提升 `apiVersion`；
 - 不使用“靠运行时异常猜兼容”；
 - 设置页 / 日志里显示插件版本、宿主版本、拒绝原因。
 
@@ -297,7 +331,7 @@ card.Kind = CardRegistry.ResolveKind(card.Kind);   // 旧行为：未知 → _mo
 
 - 契约含 `FrameworkElement`，插件必须目标 `net8.0-windows` + `UseWPF`；
 - 插件 UI 在宿主 UI 线程创建；插件自己起线程要切回 `Dispatcher`；
-- 主题 / 字号 / 圆角通过宿主公开的 `StyleSettings` / `ThemeTokens` / `ApplyStyle` 契约拿；
+- 主题 / 字号 / 圆角通过公开契约 `StyleSettings` / `ThemeTokens` / `ApplyStyle` 拿；
   插件不要自己读注册表或硬编码颜色；
 - 插件 XAML 的 `pack://` URI、资源字典必须随插件程序集打包；宿主不要假设能解析插件的
   BAML 资源；
@@ -307,7 +341,7 @@ card.Kind = CardRegistry.ResolveKind(card.Kind);   // 旧行为：未知 → _mo
 
 ### 4.7 卸载与热重载
 
-2.14.0 的结论：**生产仍不做热插拔，dev 期只对纯文字卡开放热重载**（`--plugin-dev`）。
+2.14.0 的结论（2.14.1–2.14.3 的契约拆分不改变它）：**生产仍不做热插拔，dev 期只对纯文字卡开放热重载**（`--plugin-dev`）。
 ALC 卸载、引用链与实现验收见 [runtime-card-hot-reload.md](runtime-card-hot-reload.md)。
 
 生产边界：
@@ -339,7 +373,7 @@ dev 热重载（`--plugin-dev`，只接受纯文字卡）会：
 `AssemblyLoadContext` **不是安全沙箱**。插件代码以当前用户权限运行，能读写文件、访问网络、
 操作注册表、弹窗、伪造设置页。插件里返回的 WPF 控件也能画任意内容。
 
-2.14.0 现状：影子复制、占位卡、manifest 校验和加载报告都只是**可靠性**措施，不是安全措施；
+2.14.3 现状：影子复制、占位卡、manifest 校验和加载报告都只是**可靠性**措施，不是安全措施；2.14.1–2.14.3 的契约程序集拆分不改变信任模型；
 签名 / 哈希 / 白名单仍未实现，宿主也不校验插件来源。因此仍只建议加载用户明确安装、来源可信的本地插件，
 不要把“影子复制 + 清单校验”误解为可以加载不可信代码。
 
@@ -378,10 +412,12 @@ dev 热重载（`--plugin-dev`，只接受纯文字卡）会：
 **建议先做 P0–P2，不把 P4/P5 写进第一版承诺。** 这样能尽快验证“插件能不能用”，
 又不会在 WPF 卸载上无限投入。
 
-截至 2.14.0 的状态：P0 spike 与 P1 契约 / 注册表已在 2.13.6 落地；P2 的未知 Kind 保留、占位卡、
+截至 2.14.3 的状态：P0 spike 与 P1 契约 / 注册表已在 2.13.6 落地；P1 的「方案 A 还是 B」已在 2.14.1
+选定 B 并完成核心程序集拆分，2.14.2 拆掉 Core→Cards 编译依赖；P2 的未知 Kind 保留、占位卡、
 shadow copy、加载报告已在 2.14.0 落地（设置页暂只显示「插件不可用」，不展示插件状态 / 拒绝原因）。
 P3 未做：签名 / 哈希 / 白名单、x64 之外的平台验证。P4 只做了 dev-only 纯文字卡热重载
-（`--plugin-dev`），富内容卡不承诺；P5 未做。
+（`--plugin-dev`），富内容卡不承诺；P5 未做。方案 B 的 WPF 共享控件（UiKit）拆分留待后续；
+`ThemeTokens` / `ThemeResolver` 已在 2.14.3 进入 Contracts。
 
 ---
 
@@ -420,8 +456,9 @@ P3 未做：签名 / 哈希 / 白名单、x64 之外的平台验证。P4 只做�
 
 1. **信任模型**：只支持用户手动安装的可信插件，还是要做签名 / 白名单？如果要加载不可信代码，
    是否接受独立进程 + 数据型卡片的限制？
-2. **契约边界**：第一版走 A（宿主即契约）还是直接做 B（独立 Contracts）？A 快但锁版本；
-   B 干净但要拆 `ConfigStore` / UiKit。
+2. **契约边界**（2.14.1 已定）：选择 B（独立 `MirrorpondHUD.Contracts`）；2.14.1 完成核心程序集拆分、
+   2.14.2 拆掉 Core→Cards、2.14.3 把 `ThemeTokens` / `ThemeResolver` 迁入 Contracts。
+   WPF 共享控件（UiKit）仍未拆，留待后续阶段。
 3. **富卡片是否对插件开放**：如果只开放文字卡，契约可以小很多；如果开放 `IRichCardModule`，
    WPF、主题、卸载都会复杂。
 4. **插件目录**（2.14.0 已定）：便携 `<exe>/plugins/cards` 与用户级 `%LOCALAPPDATA%\MirrorpondHUD\plugins\cards`
@@ -439,9 +476,13 @@ P3 未做：签名 / 哈希 / 白名单、x64 之外的平台验证。P4 只做�
 ### 代码
 
 - 注册与发现：`src/Cards/CardRegistry.cs`
-- 契约：`src/Cards/CardModule.cs`、`src/Cards/RichCard.cs`、`src/Cards/CardSettingsModule.cs`、`src/Cards/CardHost.cs`
-- 配置归一化：`src/Cards/CardModel.cs`、`src/Core/ConfigStore.cs`
-- 设置与状态：`src/Core/Settings.cs`（`CardSettings.Extras`）、`src/Core/CardStateStore.cs`
+- 契约程序集：`src/Contracts/MirrorpondHUD.Contracts.csproj`；契约源码 `src/Contracts/Cards/`、`src/Contracts/Core/`、`src/Contracts/Ui/`、`src/Contracts/Metrics/`、`src/Contracts/Text/`
+- 契约：`src/Contracts/Cards/CardModule.cs`、`src/Contracts/Cards/RichCard.cs`、`src/Contracts/Cards/CardSettingsModule.cs`、`src/Contracts/Cards/CardHost.cs`
+- 类型转发（旧插件兼容）：`src/TypeForwards.cs`
+- 主题令牌（2.14.3 起在 Contracts）：`src/Contracts/Ui/ThemeTokens.cs`
+- 配置归一化：`src/Cards/CardModel.cs`、`src/Core/ConfigStore.cs`（`SettingsNormalizer` 注入在 `src/App.xaml.cs`）
+- 设置与状态：`src/Contracts/Core/Settings.cs`（`CardSettings.Extras`）、`src/Core/CardStateStore.cs`
+- 插件加载：`src/Cards/CardPluginLoader.cs`（宿主 / Contracts 走默认 ALC）
 - 设置页装配：`src/Ui/SettingsWindow.xaml.cs`
 - 既有评审：[modularity-review.md](modularity-review.md)（单程序集 / 命名空间环 / 静态注册表）
 
@@ -459,7 +500,8 @@ P3 未做：签名 / 哈希 / 白名单、x64 之外的平台验证。P4 只做�
 
 ## 9. 一句话总结
 
-2.14.0 已按「可信插件 + 重启生效 + 宿主版本锁定」把运行时扩展卡片做成生产路径：影子复制让源 DLL 可替换 /
-可删除，缺失插件显示占位卡且不改写配置，manifest / Kind 校验与加载报告让坏插件只影响自己；
-`--plugin-dev` 的纯文字卡热重载只是开发者工具，富内容卡、沙箱、签名 / 白名单仍未做。
+2.14.3 已按「可信插件 + 重启生效 + 独立契约程序集」把运行时扩展卡片做成生产路径：2.14.1 把契约 / DTO 拆到
+`MirrorpondHUD.Contracts` 并用 `TypeForwardedTo` 保住旧插件，2.14.2 拆掉 Core→Cards 编译依赖，2.14.3 把
+`ThemeTokens` / `ThemeResolver` 迁入 Contracts；影子复制、占位卡、manifest / Kind 校验与加载报告让坏插件只影响自己；
+`--plugin-dev` 的纯文字卡热重载只是开发者工具。WPF 共享控件（UiKit）、富内容卡热插拔、沙箱、签名 / 白名单仍未做。
 `AssemblyLoadContext` 只解决加载与依赖隔离，不解决沙箱、卸载和契约演进。
