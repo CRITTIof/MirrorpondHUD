@@ -1,10 +1,11 @@
-# 运行时卡片示例（2.14.5）
+# 运行时卡片示例（2.14.8）
 
 这是 `plugins/cards/*.dll` 运行时插件的最小示例：一个只实现 `ICardModule` 的**文字卡** + `manifest.json`。
-2.14.5 的宿主支持影子复制、缺失插件占位卡、manifest 校验与 dev-only 文字卡热重载；生产默认仍是**重启生效**。
+2.14.8 的宿主支持影子复制、缺失插件占位卡、manifest 校验与 dev-only 文字卡热重载；生产默认仍是**重启生效**。
 示例只引用独立的 `MirrorpondHUD.Contracts` 契约程序集，不引用宿主 DLL；需要 `CardButton` / `CardList` 等
 共享 WPF 控件时，再引用 `MirrorpondHUD.UiKit`。2.14.4 起插件 `apiVersion=2`，旧插件（2.14.3 及之前编译 /
-`apiVersion=1`）不再兼容。
+`apiVersion=1`）不再兼容。2.14.8 起 `MirrorpondHUD.Contracts` 只包含插件需要的通用契约（内置卡的
+`Command` / `Media` / `Chat` 设置 DTO、DPAPI `SecretStore`、内置默认内容已迁回宿主）。
 
 ## 构建
 
@@ -72,8 +73,8 @@ bin\Release\MirrorpondHUD.exe --plugin-dev
 - 宿主监听 `bin\Release\plugins\cards` 与 `%LOCALAPPDATA%\MirrorpondHUD\plugins\cards`，文件变化 700 ms 后自动重载；
 - 改完 DLL / `manifest.json` 保存即可，日志会出现「已加载卡片插件 …（文字卡，影子副本）」→
   「运行时插件模块已替换」→「已刷新 N 张卡片」→「插件热重载完成」；
-- 只支持**纯文字卡**（本示例满足）：一旦实现 `IRichCardModule`、`IsInteractive`、`ICardEditorSection`
-  或 `ICardLegacyAlias`，会被拒绝并提示重启；
+- 只支持**纯文字卡**（本示例满足）：一旦实现 `IRichCardModule`、`IsInteractive` 或 `ICardEditorSection`，
+  会被拒绝并提示重启；
 - 重载会关闭设置窗（未保存的编辑会丢），不改写配置；生产使用不要带 `--plugin-dev`，装 / 换插件后重启。
 
 ## 缺失插件与占位卡
@@ -86,13 +87,13 @@ bin\Release\MirrorpondHUD.exe --plugin-dev
 
 ## manifest 校验与 API version
 
-2.14.5 宿主会校验：
+2.14.8 宿主会校验：
 
 - `manifest.json` ≤ 256 KB；`id` ≤ 100 字符、只允许字母数字与 `.-_`；`apiVersion` 必须为 2；
   `assembly` 只接受裸 `.dll` 文件名；`entryType` 非空、不含空白；
 - 入口类型必须存在、非抽象 / 接口、实现 `ICardModule`，且有 public 无参构造；
-- 卡片 `Kind` ≤ 64 字符、只允许字母数字与 `.-_`，且不能与内置 Kind / 旧别名冲突
-  （`infotext` / `command` / `media` / `chat` / `dropstation` / `buttons` / `metrics` / `clock` / `keys` / `text`）；
+- 卡片 `Kind` ≤ 64 字符、只允许字母数字与 `.-_`，且不能与内置 Kind 冲突
+  （`infotext` / `command` / `media` / `chat` / `dropstation` / `buttons`；旧 Kind 别名已于 2.14.7 移除）；
 - 同批扫描中重复 `id` / 重复 `Kind` 会被拒绝。
 
 本示例的 `manifest.json` 满足这些约束：`version = 0.2.0`、`apiVersion = 2`、`Kind = example-clock`。
@@ -101,7 +102,7 @@ bin\Release\MirrorpondHUD.exe --plugin-dev
 
 - 生产默认仍是重启生效；热重载只在 `--plugin-dev` 下、且只对纯文字卡（本示例）提供。
 - 插件以当前用户权限运行，`AssemblyLoadContext` **不是安全沙箱**；只安装来源可信的本地插件。
-- 2.14.5 没有签名 / 哈希 / 白名单校验，影子复制与 manifest 校验只是可靠性措施，不改变信任模型。
+- 2.14.8 没有签名 / 哈希 / 白名单校验，影子复制与 manifest 校验只是可靠性措施，不改变信任模型。
 - 插件必须与宿主使用同一个 `net8.0-windows` / WPF 目标；`apiVersion` 目前只接受 `2`。
 - 插件工程引用 `MirrorpondHUD.Contracts`（要用共享控件时再加 `MirrorpondHUD.UiKit`），不要复制这两个 DLL；
   2.14.4 起旧插件不再兼容，需重编并升 `apiVersion=2`。

@@ -320,8 +320,8 @@ tools/                   开发脚本（make_logo.py 生成多尺寸 logo.ico）
 - [docs/review-p1-fixes.md](docs/review-p1-fixes.md) — 2.12.2 评审报告 P1-1..P1-10 的修复对照、验证与已知剩余
 - [docs/review-p2-fixes.md](docs/review-p2-fixes.md) — 2.12.2 评审报告中有实际影响的 P2 条目修复与未纳入项
 - [docs/review-2.13.4-fixes.md](docs/review-2.13.4-fixes.md) — 2.13.4 审阅意见的 P1/先修项修复、未纳入项与剩余风险
-- [docs/runtime-card-hot-reload.md](docs/runtime-card-hot-reload.md) — 运行时卡片热重载（2.14.0 起 dev-only 文字卡，2.14.5 基线）：实现与验收、风险矩阵、`--plugin-dev` 用法与残余风险
-- [docs/runtime-card-extensions.md](docs/runtime-card-extensions.md) — 运行时扩展卡片：`plugins/cards/*.dll`、影子复制、缺失占位卡、manifest / Kind 校验、`AssemblyLoadContext`、2.14.1–2.14.5 契约 / UiKit 程序集拆分与插件 API 2、安全边界
+- [docs/runtime-card-hot-reload.md](docs/runtime-card-hot-reload.md) — 运行时卡片热重载（2.14.0 起 dev-only 文字卡，2.14.8 基线）：实现与验收、风险矩阵、`--plugin-dev` 用法与残余风险
+- [docs/runtime-card-extensions.md](docs/runtime-card-extensions.md) — 运行时扩展卡片：`plugins/cards/*.dll`、影子复制、缺失占位卡、manifest / Kind 校验、`AssemblyLoadContext`、2.14.1–2.14.8 程序集拆分 / 契约瘦身与插件 API 2、安全边界
 - 「热键」页：全局三个热键置顶；媒体卡片单独一组（播放 / 暂停、前进、后退、加速、减速），
   由卡片模块自己声明，新增卡片类型可以注册自己的通用热键
 
