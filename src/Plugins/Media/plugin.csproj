@@ -12,7 +12,7 @@
     <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
-    <Version>2.16.0</Version>
+    <Version>2.17.0</Version>
     <Product>镜潭一览 (MirrorpondHUD) 内置卡片插件</Product>
     <NoWarn>$(NoWarn);WFAC010</NoWarn>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
