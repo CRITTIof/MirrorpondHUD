@@ -132,7 +132,7 @@ namespace MirrorpondHUD.Ui.Controls
         {
             StyleSettings s = style ?? new StyleSettings();
             ThemeTokens tokens = ThemeResolver.Resolve(s);
-            Color foreground = OverlaySurface.ParseColor(s.Foreground, Color.FromRgb(0xE6, 0xED, 0xF3));
+            Color foreground = CardPalette.TryColor(s.Foreground, Color.FromRgb(0xE6, 0xED, 0xF3));
 
             _list.FontFamily = CardPalette.ResolveFont(s.FontFamily);
             _list.FontSize = Math.Max(10, s.FontSize - 1);

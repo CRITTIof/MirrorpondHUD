@@ -79,7 +79,7 @@ namespace MirrorpondHUD.Ui.Controls
             if (style == null) return;
 
             ThemeTokens tokens = ThemeResolver.Resolve(style);
-            _foreground = OverlaySurface.ParseColor(style.Foreground, Color.FromRgb(0xE6, 0xED, 0xF3));
+            _foreground = CardPalette.TryColor(style.Foreground, Color.FromRgb(0xE6, 0xED, 0xF3));
             _accent = tokens.Accent;
             _danger = tokens.Danger;
 

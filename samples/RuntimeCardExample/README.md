@@ -1,8 +1,10 @@
-# 运行时卡片示例（2.14.3）
+# 运行时卡片示例（2.14.5）
 
 这是 `plugins/cards/*.dll` 运行时插件的最小示例：一个只实现 `ICardModule` 的**文字卡** + `manifest.json`。
-2.14.x 的宿主支持影子复制、缺失插件占位卡、manifest 校验与 dev-only 文字卡热重载；生产默认仍是**重启生效**。
-2.14.1 起插件只引用独立的 `MirrorpondHUD.Contracts` 契约程序集，不再引用宿主 DLL。
+2.14.5 的宿主支持影子复制、缺失插件占位卡、manifest 校验与 dev-only 文字卡热重载；生产默认仍是**重启生效**。
+示例只引用独立的 `MirrorpondHUD.Contracts` 契约程序集，不引用宿主 DLL；需要 `CardButton` / `CardList` 等
+共享 WPF 控件时，再引用 `MirrorpondHUD.UiKit`。2.14.4 起插件 `apiVersion=2`，旧插件（2.14.3 及之前编译 /
+`apiVersion=1`）不再兼容。
 
 ## 构建
 
@@ -12,6 +14,9 @@
 ```bat
 dotnet build samples\RuntimeCardExample\RuntimeCardExample.csproj -c Release
 ```
+
+如果插件要用共享 WPF 控件，在插件 csproj 里再加一个对
+`src/UiKit/MirrorpondHUD.UiKit.csproj` 的 `ProjectReference`（`Private=false`）；本示例不需要。
 
 ## 安装
 
@@ -36,7 +41,7 @@ copy samples\RuntimeCardExample\manifest.json bin\Release\plugins\cards\example-
 宿主会扫描**两个根目录**（存在即扫描）。启动 `bin\Release\MirrorpondHUD.exe`，日志应出现：
 
 ```text
-已加载卡片插件 Example Clock 0.1.0（Kind=example-clock，entry=RuntimeCardExample.ExampleClockCard，文字卡，影子副本）
+已加载卡片插件 Example Clock 0.2.0（Kind=example-clock，entry=RuntimeCardExample.ExampleClockCard，文字卡，影子副本）
 运行时插件加载完成：成功 1 个，失败 0 个（com.example.example-clock）
 已注册卡片模块 7 个（内置 6，运行时插件 1）
 ```
@@ -46,16 +51,17 @@ copy samples\RuntimeCardExample\manifest.json bin\Release\plugins\cards\example-
 
 然后在「设置 → 内容 → 添加卡片」里应看到「示例插件时钟」。添加后写入的 Kind 是 `example-clock`。
 
-## 旧插件兼容（2.14.1 起）
+## 旧插件兼容（2.14.4 起不再兼容）
 
-- **新插件**：只引用 `src/Contracts/MirrorpondHUD.Contracts.csproj`（`Private=false`，不要把
-  `MirrorpondHUD.Contracts.dll` 复制进插件目录）。
-- **旧插件**：2.13.6 / 2.14.0 编译、仍引用 `MirrorpondHUD.dll` 的插件无需重编译；宿主 `src/TypeForwards.cs`
-  对契约类型做了 `TypeForwardedTo`，运行时仍解析到同一批 Type。
-- 插件 ALC 对宿主与 Contracts 两个程序集都返回 `null`，两者都由默认 ALC 提供，避免同一契约出现两份 Type。
-- `apiVersion` 仍是 `1`：2.14.x 只有加法（如可选 `ICardModuleLifetime`）与类型转发，没有破坏性契约变更。
-- `ThemeTokens` / `ThemeResolver` 自 2.14.3 起在 Contracts；其余 WPF 共享控件（`CardButton` / `CardList` 等）
-  仍在宿主，示例刻意不用任何宿主控件，只做纯文字卡。
+- **2.14.4 起**：宿主删除了 `TypeForwardedTo` 兼容层，插件 `apiVersion` 从 1 升到 2。2.14.3 及之前编译、
+  仍引用宿主 `MirrorpondHUD.dll` 的旧插件**不能直接加载**：`apiVersion=1` 的 manifest 会被明确拒绝
+  （日志「卡片插件 API 版本不兼容: … api=1（宿主支持 2）」），旧二进制也会因类型解析失败被拒绝。
+  需要重编译：改引 `MirrorpondHUD.Contracts`（要用共享控件再加 `MirrorpondHUD.UiKit`），并把 manifest 的
+  `apiVersion` 改成 2、`version` 按插件自身升级。
+- **新插件**：引用 `src/Contracts/MirrorpondHUD.Contracts.csproj`；需要共享 WPF 控件时再加
+  `src/UiKit/MirrorpondHUD.UiKit.csproj`（`Private=false`），不要把这两个 DLL 复制进插件目录。
+- 插件 ALC 对宿主 / Contracts / UiKit 三个程序集都返回 `null`，三者都由默认 ALC 提供，避免同一类型出现两份。
+- 本示例 manifest：`version 0.2.0`、`apiVersion 2`、`Kind example-clock`。
 
 ## 开发热重载（`--plugin-dev`）
 
@@ -80,22 +86,23 @@ bin\Release\MirrorpondHUD.exe --plugin-dev
 
 ## manifest 校验与 API version
 
-2.14.0 宿主会校验：
+2.14.5 宿主会校验：
 
-- `manifest.json` ≤ 256 KB；`id` ≤ 100 字符、只允许字母数字与 `.-_`；`apiVersion` 必须为 1；
+- `manifest.json` ≤ 256 KB；`id` ≤ 100 字符、只允许字母数字与 `.-_`；`apiVersion` 必须为 2；
   `assembly` 只接受裸 `.dll` 文件名；`entryType` 非空、不含空白；
 - 入口类型必须存在、非抽象 / 接口、实现 `ICardModule`，且有 public 无参构造；
 - 卡片 `Kind` ≤ 64 字符、只允许字母数字与 `.-_`，且不能与内置 Kind / 旧别名冲突
   （`infotext` / `command` / `media` / `chat` / `dropstation` / `buttons` / `metrics` / `clock` / `keys` / `text`）；
 - 同批扫描中重复 `id` / 重复 `Kind` 会被拒绝。
 
-本示例的 `manifest.json` 满足这些约束：`apiVersion = 1`、`Kind = example-clock`。
+本示例的 `manifest.json` 满足这些约束：`version = 0.2.0`、`apiVersion = 2`、`Kind = example-clock`。
 
 ## 边界
 
 - 生产默认仍是重启生效；热重载只在 `--plugin-dev` 下、且只对纯文字卡（本示例）提供。
 - 插件以当前用户权限运行，`AssemblyLoadContext` **不是安全沙箱**；只安装来源可信的本地插件。
-- 2.14.x 没有签名 / 哈希 / 白名单校验，影子复制与 manifest 校验只是可靠性措施，不改变信任模型。
-- 插件必须与宿主使用同一个 `net8.0-windows` / WPF 目标；`apiVersion` 目前只接受 `1`。
-- 插件工程引用 `MirrorpondHUD.Contracts`（不要复制契约 DLL）；旧插件引用宿主的二进制靠 `TypeForwardedTo` 继续加载。
+- 2.14.5 没有签名 / 哈希 / 白名单校验，影子复制与 manifest 校验只是可靠性措施，不改变信任模型。
+- 插件必须与宿主使用同一个 `net8.0-windows` / WPF 目标；`apiVersion` 目前只接受 `2`。
+- 插件工程引用 `MirrorpondHUD.Contracts`（要用共享控件时再加 `MirrorpondHUD.UiKit`），不要复制这两个 DLL；
+  2.14.4 起旧插件不再兼容，需重编并升 `apiVersion=2`。
 - 富内容卡（`IRichCardModule`）仍然只支持重启加载，不能热重载。

@@ -688,6 +688,7 @@ namespace MirrorpondHUD.Cards
             readonly AssemblyDependencyResolver _resolver;
             readonly string _hostAssemblyName;
             readonly string _contractAssemblyName;
+            readonly string _uiKitAssemblyName;
 
             public CardPluginLoadContext(string pluginId, string mainAssemblyPath)
                 : base("MirrorpondHUD.CardPlugin:" + pluginId, true)
@@ -695,14 +696,15 @@ namespace MirrorpondHUD.Cards
                 _resolver = new AssemblyDependencyResolver(mainAssemblyPath);
                 _hostAssemblyName = typeof(CardRegistry).Assembly.GetName().Name;
                 _contractAssemblyName = typeof(ICardModule).Assembly.GetName().Name;
+                _uiKitAssemblyName = typeof(MirrorpondHUD.Ui.Controls.CardButton).Assembly.GetName().Name;
             }
 
             protected override Assembly Load(AssemblyName assemblyName)
             {
-                // 2.14.1 起契约在 MirrorpondHUD.Contracts；宿主 / 契约都必须走默认 ALC，
-                // 否则插件与宿主拿到的 ICardModule 会是两个不同的 Type。
+                // 宿主 / 契约 / UiKit 都必须走默认 ALC，否则插件与宿主拿到的类型会是两份。
                 if (string.Equals(assemblyName.Name, _hostAssemblyName, StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(assemblyName.Name, _contractAssemblyName, StringComparison.OrdinalIgnoreCase))
+                    string.Equals(assemblyName.Name, _contractAssemblyName, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(assemblyName.Name, _uiKitAssemblyName, StringComparison.OrdinalIgnoreCase))
                     return null;
 
                 string path = _resolver.ResolveAssemblyToPath(assemblyName);

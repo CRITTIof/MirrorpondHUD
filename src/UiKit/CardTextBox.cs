@@ -25,7 +25,7 @@ namespace MirrorpondHUD.Ui.Controls
         {
             if (style == null) return;
 
-            Color foreground = OverlaySurface.ParseColor(style.Foreground, Color.FromRgb(0xE6, 0xED, 0xF3));
+            Color foreground = CardPalette.TryColor(style.Foreground, Color.FromRgb(0xE6, 0xED, 0xF3));
 
             Foreground = new SolidColorBrush(foreground);
             CaretBrush = new SolidColorBrush(foreground);

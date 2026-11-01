@@ -248,9 +248,10 @@ build.bat          :: 只编译
 publish.bat        :: 生成 publish\ 下的四个单文件
 ```
 
-运行时插件（`plugins/cards`）不需要编译进宿主：插件工程只引用独立的契约工程
-`src/Contracts/MirrorpondHUD.Contracts.csproj`（构建插件时会自动带上 Contracts），
-不要把 `MirrorpondHUD.Contracts.dll` 复制进插件目录。示例：
+运行时插件（`plugins/cards`）不需要编译进宿主：插件工程引用契约工程
+`src/Contracts/MirrorpondHUD.Contracts.csproj`，需要共享 WPF 控件（`CardButton` 等）时
+再加 `src/UiKit/MirrorpondHUD.UiKit.csproj`（可选）；构建插件时会自动带上这两个工程，
+不要把 `MirrorpondHUD.Contracts.dll` / `MirrorpondHUD.UiKit.dll` 复制进插件目录。示例：
 
 ```bat
 dotnet build samples\RuntimeCardExample\RuntimeCardExample.csproj -c Release
@@ -286,7 +287,7 @@ dotnet build samples\RuntimeCardExample\RuntimeCardExample.csproj -c Release
   **设置 → 外观 → 高级（实验性）** 里可调。三条路的实测与选择建议见
   **[docs/glass-implementations.md](docs/glass-implementations.md)**。只想要半透明卡片的话，把「背景不透明度」
   调到 0.5–0.7 即可，没有额外开销
-- 运行期插件（`plugins/cards/*.dll`）：把可信本地插件放进 `plugins/cards/<id>/`（便携目录）或 `%LOCALAPPDATA%\MirrorpondHUD\plugins\cards\<id>/`（manifest + DLL），重启后出现在「添加卡片」。2.14.1 起插件只引用独立的 `MirrorpondHUD.Contracts` 契约程序集（不再引用宿主 DLL），2.13.6 / 2.14.0 编译的旧插件由宿主的类型转发继续兼容；`ThemeTokens` / `ThemeResolver` 自 2.14.3 起也在 Contracts，其余 WPF 共享控件（`CardButton` / `CardList` 等）仍留在宿主（方案 B 第二阶段）。2.14.0 起加载前会先把插件影子复制到 `%LOCALAPPDATA%\MirrorpondHUD\plugin-cache`（源目录不再被锁，可运行中覆盖 / 删除 DLL），manifest 校验大小 / id / apiVersion=1 / assembly / entryType / Kind（拒绝内置与旧别名 Kind）；插件缺失时卡片显示「插件不可用」占位并保留原 `Kind` / `Extras`，不写回配置；`publish.bat` 会备份 / 恢复 `bin\Release\plugins`。生产默认仍是重启生效；开发期可用 `--plugin-dev` 对纯文字卡热重载（富内容 / 交互卡 / 设置区块 / 旧别名拒绝，且会强制关闭设置窗）。示例见 [samples/RuntimeCardExample/README.md](samples/RuntimeCardExample/README.md)，设计与安全边界见 [docs/runtime-card-extensions.md](docs/runtime-card-extensions.md)，热重载细节见 [docs/runtime-card-hot-reload.md](docs/runtime-card-hot-reload.md)。`AssemblyLoadContext` 不是安全沙箱，只加载可信本地插件；加一种内置卡片仍可在 `src/Cards` 新增一个类——文字卡继承 `CardModuleBase`，
+- 运行期插件（`plugins/cards/*.dll`）：把可信本地插件放进 `plugins/cards/<id>/`（便携目录）或 `%LOCALAPPDATA%\MirrorpondHUD\plugins\cards\<id>/`（manifest + DLL），重启后出现在「添加卡片」。**2.14.5 起插件只引用独立的 `MirrorpondHUD.Contracts` 契约程序集，需要共享 WPF 控件（`CardButton` / `CardList` 等）时再引用 `MirrorpondHUD.UiKit`，不再引用宿主 DLL**；2.14.4 起插件 API 升到 2（`apiVersion=2`），旧插件（`apiVersion=1` 或仍引用宿主、2.14.3 及之前编译）会被明确拒绝加载，需要重编译。2.14.0 起加载前会先把插件影子复制到 `%LOCALAPPDATA%\MirrorpondHUD\plugin-cache`（源目录不再被锁，可运行中覆盖 / 删除 DLL），manifest 校验大小 / id / apiVersion=2 / assembly / entryType / Kind（拒绝内置与旧别名 Kind）；插件缺失时卡片显示「插件不可用」占位并保留原 `Kind` / `Extras`，不写回配置；`publish.bat` 会备份 / 恢复 `bin\Release\plugins`。生产默认仍是重启生效；开发期可用 `--plugin-dev` 对纯文字卡热重载（富内容 / 交互卡 / 设置区块 / 旧别名拒绝，且会强制关闭设置窗）。示例见 [samples/RuntimeCardExample/README.md](samples/RuntimeCardExample/README.md)，设计与安全边界见 [docs/runtime-card-extensions.md](docs/runtime-card-extensions.md)，热重载细节见 [docs/runtime-card-hot-reload.md](docs/runtime-card-hot-reload.md)。`AssemblyLoadContext` 不是安全沙箱，只加载可信本地插件；加一种内置卡片仍可在 `src/Cards` 新增一个类——文字卡继承 `CardModuleBase`，
   图片 / 视频这类富内容卡继承 `RichCardModuleBase`，宿主不用改
 
 ## 🗂️ 目录结构
@@ -315,12 +316,12 @@ tools/                   开发脚本（make_logo.py 生成多尺寸 logo.ico）
 - [docs/theme-motion.md](docs/theme-motion.md) — 主题的动效与控件样式调研：启动动画参数化、出现 / 消失 / 让位动画、按钮面板滑块 token 与受控模板、设置页换肤（含分层窗口动画实测）
 - [docs/legacy-audit.md](docs/legacy-audit.md) — 源码遗留审计：与 v2.9.4 同源的检查、13 条遗留（颜色解析 / 异步 void / 静态缓存 / 死字段等）与清理顺序
 - [docs/file-transfer-station.md](docs/file-transfer-station.md) — 文件中转站调研与设计：拖入 / 列表 / 引用与复制、状态持久化、拖出与锁定语义、M1–M3 路线
-- [docs/version-history.md](docs/version-history.md) — v2.4.1 → v2.14.3 每个版本改了什么、动了哪些文件（含实测数据与提交号）
+- [docs/version-history.md](docs/version-history.md) — v2.4.1 → v2.14.5 每个版本改了什么、动了哪些文件（含实测数据与提交号）
 - [docs/review-p1-fixes.md](docs/review-p1-fixes.md) — 2.12.2 评审报告 P1-1..P1-10 的修复对照、验证与已知剩余
 - [docs/review-p2-fixes.md](docs/review-p2-fixes.md) — 2.12.2 评审报告中有实际影响的 P2 条目修复与未纳入项
 - [docs/review-2.13.4-fixes.md](docs/review-2.13.4-fixes.md) — 2.13.4 审阅意见的 P1/先修项修复、未纳入项与剩余风险
-- [docs/runtime-card-hot-reload.md](docs/runtime-card-hot-reload.md) — 运行时卡片热重载（2.14.0 起 dev-only 文字卡，2.14.3 基线）：实现与验收、风险矩阵、`--plugin-dev` 用法与残余风险
-- [docs/runtime-card-extensions.md](docs/runtime-card-extensions.md) — 运行时扩展卡片：`plugins/cards/*.dll`、影子复制、缺失占位卡、manifest / Kind 校验、`AssemblyLoadContext`、2.14.1 契约程序集拆分与类型转发兼容、安全边界
+- [docs/runtime-card-hot-reload.md](docs/runtime-card-hot-reload.md) — 运行时卡片热重载（2.14.0 起 dev-only 文字卡，2.14.5 基线）：实现与验收、风险矩阵、`--plugin-dev` 用法与残余风险
+- [docs/runtime-card-extensions.md](docs/runtime-card-extensions.md) — 运行时扩展卡片：`plugins/cards/*.dll`、影子复制、缺失占位卡、manifest / Kind 校验、`AssemblyLoadContext`、2.14.1–2.14.5 契约 / UiKit 程序集拆分与插件 API 2、安全边界
 - 「热键」页：全局三个热键置顶；媒体卡片单独一组（播放 / 暂停、前进、后退、加速、减速），
   由卡片模块自己声明，新增卡片类型可以注册自己的通用热键
 
@@ -425,7 +426,7 @@ Everything is stored in `settings.json` next to the executable (`SchemaVersion: 
   screenshots or recordings** — a self-capturing window has to exclude itself. Measured numbers, the full list
   of flaws and how to choose: **[docs/glass-implementations.md](docs/glass-implementations.md)** (bilingual).
   If all you want is a translucent card, set *Background opacity* to 0.5–0.7 — it costs nothing
-- Runtime plugins (`plugins/cards/*.dll`): install a trusted local plugin under `plugins/cards/<id>/` (portable) or `%LOCALAPPDATA%\MirrorpondHUD\plugins\cards\<id>/` (manifest + DLL), restart, and it appears in *Add card*. Since 2.14.1 a plugin references only the standalone `MirrorpondHUD.Contracts` contract assembly (never the host DLL); plugins built against 2.13.6 / 2.14.0 keep loading through the host's type forwards. `ThemeTokens` / `ThemeResolver` have lived in Contracts since 2.14.3; the remaining WPF shared controls (`CardButton`, `CardList`, …) are still in the host (phase 2 of plan B). Since 2.14.0 the plugin is shadow-copied to `%LOCALAPPDATA%\MirrorpondHUD\plugin-cache` before loading (the source DLL is no longer locked, so it can be replaced / deleted while running); the manifest is validated (size / id / apiVersion=1 / assembly / entryType / Kind, built-in and legacy-alias Kinds rejected); a missing plugin keeps its `Kind` / `Extras` and renders a "plugin unavailable" placeholder instead of being rewritten; `publish.bat` backs up / restores `bin\Release\plugins`. Production still requires a restart; developers can pass `--plugin-dev` for text-card hot reload (rich / interactive / editor-section / legacy-alias plugins are rejected, and the settings window is force-closed). Example: [samples/RuntimeCardExample/README.md](samples/RuntimeCardExample/README.md); design and security notes: [docs/runtime-card-extensions.md](docs/runtime-card-extensions.md); hot reload: [docs/runtime-card-hot-reload.md](docs/runtime-card-hot-reload.md). The `AssemblyLoadContext` is not a sandbox — only trusted local plugins. Adding a built-in card is still one new class in `src/Cards` (text cards derive from `CardModuleBase`, rich cards from `RichCardModuleBase`)
+- Runtime plugins (`plugins/cards/*.dll`): install a trusted local plugin under `plugins/cards/<id>/` (portable) or `%LOCALAPPDATA%\MirrorpondHUD\plugins\cards\<id>/` (manifest + DLL), restart, and it appears in *Add card*. Since 2.14.5 a plugin references the standalone `MirrorpondHUD.Contracts` contract assembly, plus the optional `MirrorpondHUD.UiKit` assembly when it needs the shared WPF controls (`CardButton`, `CardList`, …); it never references the host DLL. Since 2.14.4 the plugin API is 2 (`apiVersion=2`), and old plugins (`apiVersion=1`, or built against the host before 2.14.4) are rejected with a clear log message and have to be rebuilt. Since 2.14.0 the plugin is shadow-copied to `%LOCALAPPDATA%\MirrorpondHUD\plugin-cache` before loading (the source DLL is no longer locked, so it can be replaced / deleted while running); the manifest is validated (size / id / apiVersion=2 / assembly / entryType / Kind, built-in and legacy-alias Kinds rejected); a missing plugin keeps its `Kind` / `Extras` and renders a "plugin unavailable" placeholder instead of being rewritten; `publish.bat` backs up / restores `bin\Release\plugins`. Production still requires a restart; developers can pass `--plugin-dev` for text-card hot reload (rich / interactive / editor-section / legacy-alias plugins are rejected, and the settings window is force-closed). Example: [samples/RuntimeCardExample/README.md](samples/RuntimeCardExample/README.md); design and security notes: [docs/runtime-card-extensions.md](docs/runtime-card-extensions.md); hot reload: [docs/runtime-card-hot-reload.md](docs/runtime-card-hot-reload.md). The `AssemblyLoadContext` is not a sandbox — only trusted local plugins. Adding a built-in card is still one new class in `src/Cards` (text cards derive from `CardModuleBase`, rich cards from `RichCardModuleBase`)
 
 ## Build
 
@@ -434,9 +435,10 @@ dotnet build MirrorpondHUD.csproj -c Release
 publish.bat        :: four self-contained / framework-dependent single-file builds
 ```
 
-Runtime plugins are not compiled into the host: a plugin project references only
-`src/Contracts/MirrorpondHUD.Contracts.csproj` (building the plugin brings Contracts along) and must not copy
-`MirrorpondHUD.Contracts.dll` into the plugin folder:
+Runtime plugins are not compiled into the host: a plugin project references
+`src/Contracts/MirrorpondHUD.Contracts.csproj` and, optionally, `src/UiKit/MirrorpondHUD.UiKit.csproj`
+for the shared WPF controls (building the plugin brings both along); it must not copy
+`MirrorpondHUD.Contracts.dll` / `MirrorpondHUD.UiKit.dll` into the plugin folder:
 
 ```bat
 dotnet build samples\RuntimeCardExample\RuntimeCardExample.csproj -c Release

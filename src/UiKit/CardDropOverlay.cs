@@ -66,8 +66,8 @@ namespace MirrorpondHUD.Ui.Controls
         {
             StyleSettings s = style ?? new StyleSettings();
             _tokens = ThemeResolver.Resolve(s);
-            _foreground = OverlaySurface.ParseColor(s.Foreground, Color.FromRgb(0xE6, 0xED, 0xF3));
-            _background = OverlaySurface.ParseColor(s.Background, Color.FromRgb(0x0D, 0x11, 0x17));
+            _foreground = CardPalette.TryColor(s.Foreground, Color.FromRgb(0xE6, 0xED, 0xF3));
+            _background = CardPalette.TryColor(s.Background, Color.FromRgb(0x0D, 0x11, 0x17));
             _corner = cornerRadius;
 
             _text.FontFamily = CardPalette.ResolveFont(s.FontFamily);

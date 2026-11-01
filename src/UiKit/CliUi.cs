@@ -19,7 +19,9 @@ namespace MirrorpondHUD.Ui.Controls
     {
         public static Color TryColor(string hex, Color fallback)
         {
-            return OverlaySurface.ParseColor(hex, fallback);
+            byte a, r, g, b;
+            if (!ColorCode.TryParse(hex, out a, out r, out g, out b)) return fallback;
+            return Color.FromArgb(a, r, g, b);
         }
 
         public static Color WithAlpha(Color color, double alpha)

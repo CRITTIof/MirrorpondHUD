@@ -1,4 +1,4 @@
-# 版本修改记录（2.4.1 → 2.14.3）
+# 版本修改记录（2.4.1 → 2.14.5）
 
 > 范围：本文只记录**这一轮接手后我做的版本**（v2.4.1 起）。v2.4.0 及更早是既有历史，不在本文档里。
 > 数据全部取自仓库真实提交（`git diff --shortstat <上一版>..<本版>`），文件行的 `+ / -` 就是实际增删行数。
@@ -6,10 +6,10 @@
 > v2.4.5 已发布 Release（附件为两个 requires-dotnet 单文件），v2.4.0 的 Release 已删除、其 tag 保留。
 > `v2.5.0`–`v2.9.2` 均为附注标签，**已随 2.9.2 的推送同步到远端**（`v2.6.0` = `9c1bafa`、`v2.6.1` = `d3ac63d`、
 > `v2.6.2` = `1b138e7`、`v2.9.2` = `754115e`）；`v2.4.1` 也已补推。`v2.9.3`–`v2.12.2` 已于 2.12.2 推送并发布 Release；`v2.13.0`–`v2.13.6` 目前只在本地 / 功能分支创建。
-> `v2.14.0`–`v2.14.2` 只存在于本地功能分支 `feature/runtime-card-loading`（**未推送、未发布、未合并**），
-> 提交分别为 `dbe8207` / `730fd39` / `f67a255`；`v2.14.3` 为本次提交。
-> `v2.14.1` / `v2.14.2` 的规模用对应提交的 `git show --shortstat`；`v2.14.3` 按提交前工作区的
-> `git diff --shortstat` 计算（文档同步改动另计）。
+> `v2.14.0`–`v2.14.4` 只存在于本地功能分支 `feature/runtime-card-loading`（**未推送、未发布、未合并**），
+> 提交分别为 `dbe8207` / `730fd39` / `f67a255` / `5f8933c` / `ef70cea`；`v2.14.5` 为本次提交。
+> `v2.14.1` / `v2.14.2` / `v2.14.4` 的规模用对应提交的 `git show --shortstat`；`v2.14.3` / `v2.14.5` 按提交前
+> 工作区的 `git diff --shortstat` 计算（文档同步改动另计）。
 
 ## 0. 总览
 
@@ -57,6 +57,8 @@
 | v2.14.1 | 2026-11-01 | `730fd39` | 方案 B 第一步：拆出独立 `MirrorpondHUD.Contracts` 契约程序集；宿主 `TypeForwardedTo` 兼容旧插件；插件 ALC 对宿主与 Contracts 都返回 `null`；示例插件改引 Contracts | 22 文件，+103 / −9（15 个契约源码文件原样迁出，另新增契约工程 / `TypeForwards.cs`） |
 | v2.14.2 | 2026-11-01 | `f67a255` | 方案 B 第二步：`ConfigStore.SettingsNormalizer` 委托注入 `CardModel.Normalize`，拆掉 Core→Cards 编译依赖，行为不变 | 4 文件，+20 / −6 |
 | v2.14.3 | 2026-11-01 | 本次提交 | 方案 B 收尾：版本 2.14.3；`ThemeTokens` / `ThemeResolver` 迁入 Contracts（宿主类型转发）；SelfTest 契约身份断言；最终验证 | 5 文件，+30 / −10（文档同步另计） |
+| v2.14.4 | 2026-11-01 | `ef70cea` | 删除宿主 `TypeForwards`，插件 API 升到 2：`apiVersion=1` 旧插件被明确拒绝、宿主不崩；示例 manifest 0.2.0 / apiVersion=2 | 5 文件，+5 / −57 |
+| v2.14.5 | 2026-11-01 | 本次提交 | 方案 B 程序集边界完成：拆出 `MirrorpondHUD.UiKit`（8 个共享 WPF 控件迁入、只依赖 Contracts），宿主 ProjectReference；插件 ALC 对宿主 / Contracts / UiKit 都走默认 ALC；三工程版本 2.14.5 | 11 文件，+23 / −14，另新增 2 个文件（UiKit 工程 31 行 + AssemblyInfo 4 行）；文档同步另计 |
 
 ---
 
@@ -1726,7 +1728,109 @@ v2.13.6 / v2.14.0 的运行时插件走的是方案 A：插件直接引用 `Mirr
 
 ---
 
-## 43. 不在版本里的东西
+## 43. v2.14.4（`ef70cea`，功能分支 `feature/runtime-card-loading`）
+
+### 背景
+
+2.14.1–2.14.3 用宿主 `TypeForwardedTo` 保住旧插件（2.13.6 / 2.14.0 编译、引用 `MirrorpondHUD.dll` 的二进制）：
+契约虽然搬到了 `MirrorpondHUD.Contracts`，旧二进制仍能解析到同一个 Type。但项目判断插件总量少、
+不以兼容性为目标，继续收紧边界更划算：删掉兼容层，把插件 API 从 1 升到 2，旧插件不再承诺可加载。
+
+### 改动
+
+1. **删除 `src/TypeForwards.cs`**（−52 行）：宿主不再对契约类型做 `TypeForwardedTo`；契约类型只存在于
+   `MirrorpondHUD.Contracts`，引用宿主 `MirrorpondHUD.dll` 的旧插件二进制不再保证可加载。
+2. **插件 API 升到 2**：`CardPluginLoader.SupportedApiVersion` 从 1 改为 2，`manifest.json` 的
+   `apiVersion` 必须为 2。`apiVersion=1` 的旧 manifest 会被明确拒绝，日志为
+   「卡片插件 API 版本不兼容: <id> api=1（宿主支持 2）」，只影响该插件、宿主照常启动。
+3. **示例 manifest 升版**：`version` 0.1.0 → 0.2.0，`apiVersion` 1 → 2。
+4. 版本号：宿主 csproj 与 Contracts csproj 从 2.14.3 → 2.14.4。
+
+### 文件
+
+| 文件 | 行数 | 说明 |
+|---|---|---|
+| `src/TypeForwards.cs` | 0 / −52 | 删除类型转发兼容层 |
+| `src/Cards/CardPluginLoader.cs` | +1 / −1 | `SupportedApiVersion` 1 → 2 |
+| `samples/RuntimeCardExample/manifest.json` | +2 / −2 | version 0.2.0、apiVersion 2 |
+| `MirrorpondHUD.csproj` | +1 / −1 | 版本 2.14.3 → 2.14.4 |
+| `src/Contracts/MirrorpondHUD.Contracts.csproj` | +1 / −1 | 版本 2.14.3 → 2.14.4 |
+
+### 实测
+
+- 构建通过；`--selftest`：**失败项 0**。
+- 新插件（只引用 Contracts、`apiVersion=2`）加载成功。
+- 旧插件（`apiVersion=1`、2.14.3 及之前编译）被明确拒绝：日志「卡片插件 API 版本不兼容: … api=1（宿主支持 2）」，
+  宿主不崩溃，其余插件与卡片不受影响。
+
+### 风险
+
+- **破坏性变更**：2.14.3 及之前编译的插件必须重编译（改为引用 Contracts）并把 `apiVersion` 改成 2，否则不加载；
+  这是有意的取舍（插件量少，不再维护类型转发兼容层）。
+- `TypeForwardedTo` 删除后，用 `typeof(...).Assembly` 判断程序集的第三方代码会直接看到
+  `MirrorpondHUD.Contracts`，不再有宿主转发兜底。
+- 插件 API 从 1 到 2 的迁移目前只有本文档与扩展文档说明，设置页 / 日志没有“请升级插件”的用户指引。
+
+---
+
+## 44. v2.14.5（功能分支 `feature/runtime-card-loading`，本次提交）
+
+### 背景
+
+2.14.1–2.14.4 已把契约 / DTO 拆到 Contracts、移除旧插件兼容层，但 8 个共享 WPF 控件
+（`CardButton` / `CardList` / `CardStatus` / `CardHeader` / `CardInput` / `CardTextBox` / `CardDropOverlay` / `CliUi`）
+仍留在宿主 `src/Ui/Controls`：插件想复用这些公开控件只能引用宿主，等于回到方案 A 的耦合。
+本轮把它们抽成独立 `MirrorpondHUD.UiKit`，方案 B 的主要程序集边界完成。
+
+### 改动
+
+1. **新增 `MirrorpondHUD.UiKit` 程序集**：`net8.0-windows` + `UseWPF` 类库，`ProjectReference` Contracts
+   （不引用宿主）；工程文件 `src/UiKit/MirrorpondHUD.UiKit.csproj`，版本 2.14.5。
+2. **8 个共享控件迁入**：`src/Ui/Controls/*.cs` → `src/UiKit/*.cs`，命名空间保持 `MirrorpondHUD.Ui.Controls`
+   不变；控件里的 `OverlaySurface.ParseColor(...)` 全部改用 `CardPalette.TryColor(...)`。
+3. **颜色解析去宿主依赖**：`CardPalette.TryColor`（`src/UiKit/CliUi.cs`）改为直接调用 Contracts 的
+   `ColorCode.TryParse`，不再依赖宿主 `OverlaySurface`；UiKit 只依赖 Contracts。
+4. **宿主引用 UiKit**：宿主 csproj 保持 `ProjectReference` Contracts，并新增 UiKit 引用，同时排除 `src\UiKit\**` 的默认编译。
+5. **内部可见性**：`src/UiKit/AssemblyInfo.cs` 用 `InternalsVisibleTo("MirrorpondHUD")` 让宿主卡片与自检
+   访问 `CliPanelView` 等内部绑定状态；插件侧只用公开控件 API。
+6. **插件 ALC 放行 UiKit**：`CardPluginLoadContext.Load` 除宿主 / Contracts 外，对 `MirrorpondHUD.UiKit`
+   也返回 `null`，由默认 ALC 提供，保证插件与宿主拿到同一份控件类型。
+7. 版本号：宿主 / Contracts / UiKit 三个 csproj 均为 2.14.5。
+
+### 文件
+
+| 文件 | 行数 | 说明 |
+|---|---|---|
+| `src/UiKit/MirrorpondHUD.UiKit.csproj` | 31 行 / 新增 | UiKit 类库工程（WPF / net8.0-windows / 引用 Contracts） |
+| `src/UiKit/AssemblyInfo.cs` | 4 行 / 新增 | `InternalsVisibleTo("MirrorpondHUD")` |
+| `src/UiKit/CardButton.cs` 等 8 个文件 | +11 / −9 | 从 `src/Ui/Controls` 迁入；颜色解析改用 `CardPalette.TryColor` / `ColorCode` |
+| `src/Cards/CardPluginLoader.cs` | +5 / −3 | 插件 ALC 对宿主 / Contracts / UiKit 都返回 `null` |
+| `MirrorpondHUD.csproj` | +6 / −1 | 引用 Contracts + UiKit、排除 UiKit 源码、版本 2.14.4 → 2.14.5 |
+| `src/Contracts/MirrorpondHUD.Contracts.csproj` | +1 / −1 | 版本 2.14.4 → 2.14.5 |
+
+文档同步更新：`README.md`、`docs/version-history.md`、`docs/runtime-card-extensions.md`、
+`docs/runtime-card-hot-reload.md`、`samples/RuntimeCardExample/README.md`（规模另计）。
+
+### 实测
+
+- `dotnet build MirrorpondHUD.csproj -c Release`：**0 警告 0 错误**（Contracts / UiKit / 宿主三工程）。
+- `--selftest`：**失败项 0**（共享控件、外观令牌等既有断言 OK）。
+- `--smoke 8 --minimized`：exit 0。
+- 显式引用 `MirrorpondHUD.UiKit` 的临时插件加载验证通过：插件只引用 Contracts + UiKit，UiKit 由默认
+  ALC 提供（宿主 ProjectReference 保证已加载），与宿主拿到同一份控件类型。
+
+### 风险
+
+- **控件二进制边界**：8 个控件换到 `MirrorpondHUD.UiKit`，插件的 `AssemblyRef` 从宿主变成 UiKit；
+  与 2.14.4 的 API 2 配套，旧插件本来就需要重编译。
+- **UiKit 插件加载只是临时验证**：用临时插件跑通了加载，尚未固化成示例 / 回归用例；
+  后续可补一个固定的 UiKit 示例插件。
+- **自检仍是宿主内断言**：`--selftest` 在宿主进程里跑，能验证控件行为与契约身份，不能替代插件 ALC 场景。
+- 版本三件套（宿主 / Contracts / UiKit）必须同步为 2.14.5，发布时不能只升一个。
+
+---
+
+## 45. 不在版本里的东西
 
 - 验收脚本、样张与测量脚本（`cmd-e2e.ps1`、`drag-glass.ps1`、`measure-*.py`、`shots/` 等）都在仓库外的 `hud-test/` 里，**没有提交**。
 - 发布：`main` 与标签已推送到 [github.com/CRITTIof/MirrorpondHUD](https://github.com/CRITTIof/MirrorpondHUD)；
@@ -1735,7 +1839,7 @@ v2.13.6 / v2.14.0 的运行时插件走的是方案 A：插件直接引用 `Mirr
   更早的 Release 正文与附件保留原样，v2.4.0 的 Release 已删除（tag `v2.4.0` 保留，历史仍可检出）。
 - 仓库追踪的文件共 117 个，`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
 
-## 44. 已知代价（跨版本）
+## 46. 已知代价（跨版本）
 
 - 桌面亚克力为了不拍到自己，会把卡片排除在截屏之外 —— 这个模式下截图 / 录屏里**看不到卡片**，观感只能靠肉眼与离屏渲染验证。
 - 兼容实现每帧对身后窗口做 `PrintWindow`，拖动时最多 ~21 帧/秒；要更高只能走桌面亚克力（DXGI）。
