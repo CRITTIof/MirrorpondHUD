@@ -291,7 +291,10 @@ card.Kind = CardRegistry.ResolveKind(card.Kind);   // 未知 → _modules[0].Kin
 
 ### 4.7 卸载与热重载
 
-第一版**不做**。原因：
+第一版**不做**。热插拔（ALC 卸载、引用链、仅文字卡 dev-only 原型）的进一步调研见
+[runtime-card-hot-reload.md](runtime-card-hot-reload.md)。
+
+主要原因：
 
 - `CardRegistry` 静态引用、WPF 视觉树、`Application.Current.Resources`、事件订阅、
   `DispatcherTimer`、`CardJobQueue`、`ShellIcons` 缓存、后台线程都可能持有插件程序集；

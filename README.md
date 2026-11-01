@@ -311,6 +311,7 @@ tools/                   开发脚本（make_logo.py 生成多尺寸 logo.ico）
 - [docs/review-p1-fixes.md](docs/review-p1-fixes.md) — 2.12.2 评审报告 P1-1..P1-10 的修复对照、验证与已知剩余
 - [docs/review-p2-fixes.md](docs/review-p2-fixes.md) — 2.12.2 评审报告中有实际影响的 P2 条目修复与未纳入项
 - [docs/review-2.13.4-fixes.md](docs/review-2.13.4-fixes.md) — 2.13.4 审阅意见的 P1/先修项修复、未纳入项与剩余风险
+- [docs/runtime-card-hot-reload.md](docs/runtime-card-hot-reload.md) — 运行时卡片热插拔调研：ALC 卸载、引用链、dev-only 文字卡原型与风险清单
 - [docs/runtime-card-extensions.md](docs/runtime-card-extensions.md) — 运行时扩展卡片调研：`plugins/cards/*.dll`、AssemblyLoadContext、契约边界、未知 Kind 保留、卸载与安全
 - 「热键」页：全局三个热键置顶；媒体卡片单独一组（播放 / 暂停、前进、后退、加速、减速），
   由卡片模块自己声明，新增卡片类型可以注册自己的通用热键
