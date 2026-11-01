@@ -23,7 +23,8 @@ namespace MirrorpondHUD.Core
         public static List<ThemePreset> Load()
         {
             var list = new List<ThemePreset>();
-            Assembly assembly = typeof(Settings).Assembly;
+            // 主题资源编进宿主程序集（不是 Contracts），这里不能用 Settings.Assembly。
+            Assembly assembly = typeof(ThemeCatalog).Assembly;
 
             foreach (string name in assembly.GetManifestResourceNames())
             {

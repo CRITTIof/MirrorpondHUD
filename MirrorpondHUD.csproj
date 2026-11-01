@@ -18,7 +18,7 @@
     <PlatformTarget Condition="'$(RuntimeIdentifier)' == 'win-arm64'">arm64</PlatformTarget>
     <NoWarn>$(NoWarn);WFAC010</NoWarn>
     <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
-    <Version>2.14.0</Version>
+    <Version>2.14.1</Version>
     <Product>镜潭一览 (MirrorpondHUD)</Product>
     <AssemblyTitle>MirrorpondHUD</AssemblyTitle>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
@@ -39,6 +39,14 @@
     <Compile Remove="samples\**\*.cs" />
     <Page Remove="samples\**\*.xaml" />
     <None Remove="samples\**\*" />
+    <!-- 契约 / DTO 已在独立程序集 MirrorpondHUD.Contracts 里。 -->
+    <Compile Remove="src\Contracts\**\*.cs" />
+    <Page Remove="src\Contracts\**\*.xaml" />
+    <None Remove="src\Contracts\**\*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="src\Contracts\MirrorpondHUD.Contracts.csproj" />
   </ItemGroup>
 
   <ItemGroup>

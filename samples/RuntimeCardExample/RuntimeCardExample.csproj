@@ -16,11 +16,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- 插件直接引用宿主程序集；运行时由默认 ALC 提供，不能再复制一份。 -->
-    <Reference Include="MirrorpondHUD">
-      <HintPath>..\..\bin\Release\MirrorpondHUD.dll</HintPath>
+    <!-- 2.14.1 起插件只引用契约程序集；运行时由默认 ALC 提供 Contracts，不能再复制一份。 -->
+    <ProjectReference Include="..\..\src\Contracts\MirrorpondHUD.Contracts.csproj">
       <Private>false</Private>
-    </Reference>
+    </ProjectReference>
   </ItemGroup>
 
 </Project>

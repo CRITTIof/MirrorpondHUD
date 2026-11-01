@@ -682,23 +682,28 @@ namespace MirrorpondHUD.Cards
             return string.IsNullOrWhiteSpace(value) ? "(未命名)" : value;
         }
 
-        /// <summary>宿主程序集必须由默认 ALC 提供；插件自己的依赖走插件 ALC。</summary>
+        /// <summary>宿主与契约程序集必须由默认 ALC 提供；插件自己的依赖走插件 ALC。</summary>
         sealed class CardPluginLoadContext : AssemblyLoadContext
         {
             readonly AssemblyDependencyResolver _resolver;
             readonly string _hostAssemblyName;
+            readonly string _contractAssemblyName;
 
             public CardPluginLoadContext(string pluginId, string mainAssemblyPath)
                 : base("MirrorpondHUD.CardPlugin:" + pluginId, true)
             {
                 _resolver = new AssemblyDependencyResolver(mainAssemblyPath);
                 _hostAssemblyName = typeof(CardRegistry).Assembly.GetName().Name;
+                _contractAssemblyName = typeof(ICardModule).Assembly.GetName().Name;
             }
 
             protected override Assembly Load(AssemblyName assemblyName)
             {
-                if (string.Equals(assemblyName.Name, _hostAssemblyName, StringComparison.OrdinalIgnoreCase))
-                    return null; // 走默认 ALC，保证契约 Type 身份一致
+                // 2.14.1 起契约在 MirrorpondHUD.Contracts；宿主 / 契约都必须走默认 ALC，
+                // 否则插件与宿主拿到的 ICardModule 会是两个不同的 Type。
+                if (string.Equals(assemblyName.Name, _hostAssemblyName, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(assemblyName.Name, _contractAssemblyName, StringComparison.OrdinalIgnoreCase))
+                    return null;
 
                 string path = _resolver.ResolveAssemblyToPath(assemblyName);
                 return path == null ? null : LoadFromAssemblyPath(path);
