@@ -1,4 +1,4 @@
-# DLL 卡片插件开发指南（2.18.0+）
+# DLL 卡片插件开发指南（2.19.0+）
 
 本文面向要在 MirrorpondHUD 里添加**运行时卡片插件**的开发者。插件是一个独立的 .NET 8 WPF 类库（DLL），
 通过 `plugins/cards/<id>/manifest.json` 被宿主加载，可以贡献文字卡或富内容卡，并复用宿主的设置页、
@@ -468,6 +468,59 @@ timeline.ApplyStyle(style, cornerRadius);
 - 直接修改 `Series` / `Values` 的 live List 不会自动重绘，改完调用 `SetValues` / `Add` / 重新赋值
   `Series` 或 `ApplyStyle` 触发 `InvalidateVisual`；
 - 2.18.0 仍没有“成功色”令牌，`CardTimelineTone.Success` 复用 Accent。
+
+### 6.5 浮层与交互（2.19.0 起在 UiKit）
+
+数据控件让卡片“好读”，浮层控件让卡片“能操作”。配合 `ICardActivation`（卡片呼出 / 收起）和
+`NeedsMouseInput`（关闭点击穿透），卡片可以从展示型升级成可操作的小应用。全部用卡片内 / 独立 Popup
+的主题化控件，不建议用系统 `MessageBox`。
+
+| 控件 | 主要 API | 用途 |
+|---|---|---|
+| `CardModal` | `Body` / `Show(host)` / `Close()` / `IsOpen` / `CloseOnBackdropClick` / `Closed` | 卡片内模态遮罩 + 居中面板；Esc / 点遮罩关闭 |
+| `CardDialog` | `Title` / `Message` / `Buttons`（Ok / OkCancel / YesNo）/ `Task<bool> ShowAsync(host)` / `DialogResult` | 确认、删除、表单前确认 |
+| `CardPopover` | `Content` / `ShowAt(target)` / `Close()` / `ApplyStyle` | 锚定详情面板 / 二级菜单 |
+| `CardTooltip` | `Text` / `DelayMs` / `Attach(target)` / `Detach()` | 截断文本、图标说明、悬停提示 |
+| `CardContextMenu` | `Add(text, action, shortcut, danger)` / `AddSeparator()` / `AddHeader()` / `ShowAt(target)` | 主题化右键菜单 |
+| `CardToast` | `CardToast.Show(host, text, tone, duration, actionText, action)` / `Dismiss()` | 非阻塞反馈：已复制、保存失败、可撤销 |
+
+```csharp
+using MirrorpondHUD.Ui.Controls;
+
+// 确认删除：卡片根 Grid 作为 host，模态层会盖住卡片内容
+var dialog = new CardDialog
+{
+    Title = "删除这张卡片？",
+    Message = "卡片配置与状态会一起删除，无法撤销。",
+    Buttons = CardDialogButtons.YesNo,
+    OkText = "删除",
+    CancelText = "取消"
+};
+dialog.ApplyStyle(context.Settings.Style, context.Settings.Overlay.CornerRadius);
+bool ok = await dialog.ShowAsync(this);   // this = 卡片内容的根 Panel
+
+// 非阻塞反馈
+CardToast.Show(this, "已复制 3 个文件路径", CardToastTone.Success, 2500);
+
+// 右键菜单
+var menu = new CardContextMenu();
+menu.Add("打开", () => OpenFile(), "Enter");
+menu.Add("复制路径", () => CopyPath());
+menu.AddSeparator();
+menu.Add("删除", () => DeleteFile(), null, danger: true);
+menu.ApplyStyle(context.Settings.Style, context.Settings.Overlay.CornerRadius);
+menu.ShowAt(targetElement);
+```
+
+说明：
+
+- `CardModal` / `CardDialog` 必须加在**卡片内容根 `Panel`**（Grid / StackPanel）里，才能覆盖内容区；
+- `CardPopover` / `CardTooltip` / `CardContextMenu` 是 WPF `Popup` / `ContextMenu`（独立 HWND），
+  目标元素必须已进入可视树；关闭 / 卡片销毁时要调 `Close()` / `Detach()` / `Dismiss()`，避免残留窗口和定时器；
+- `CardToast.Show` 会自动加入宿主、底部居中、按顺序向上堆叠并自动消失；点击 Action 只执行回调，不自动关闭；
+- `CardDialog` 的 Enter = 确认、Esc = 取消；重复 `ShowAsync` 返回同一个 Task，不会叠出第二层遮罩；
+- 浮层颜色 / 字体 / 圆角都走 `StyleSettings`，`CardContextMenu` 的条目是自绘模板，不使用系统白底；
+- 版本 2.19.0 不包含独立的成功色令牌，`CardToastTone.Success` 用内定的绿色，Warning 用内定黄色。
 
 ## 7. 宿主服务与状态
 

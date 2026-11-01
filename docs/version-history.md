@@ -10,10 +10,10 @@
 > `f67a255` / `5f8933c` / `ef70cea`，**未发布、未合并**）；`v2.14.5`（`a0fe549`）/ `v2.14.6`（`3e6abc6`）
 > 已推送到 `origin/feature/runtime-card-loading`；
 > `v2.14.7`（`abcbcec`）/ `v2.14.8`（`633e9d6`）已随文档同步提交 `d73d2ec` 推送到同一分支（未发布、未合并）；
-> `v2.14.9`（`aba873a`）已推送；`v2.15.0`（`78d3381`）已推送（文档同步提交 `2eba9b4`）；`v2.16.0`（代码 `6406d96`，文档同步 `d1fd414`）**已推送并快进合并到 `main`**；`v2.17.0`（`27b8bbd`）已提交到分支 `feature/data-core`；`v2.18.0`（`1e1c6ac`）为本次提交（同一分支，**尚未推送、未合并 main**），未打 tag、未发布 Release。
+> `v2.14.9`（`aba873a`）已推送；`v2.15.0`（`78d3381`）已推送（文档同步提交 `2eba9b4`）；`v2.16.0`（代码 `6406d96`，文档同步 `d1fd414`）**已推送并快进合并到 `main`**；`v2.17.0`（`27b8bbd`）/ `v2.18.0`（`1e1c6ac`）/ `v2.19.0`（`d21773c`）已提交到分支 `feature/data-core`，**尚未推送、未合并 main**，未打 tag、未发布 Release。
 > `v2.14.1` / `v2.14.2` / `v2.14.4` 的规模用对应提交的 `git show --shortstat`；`v2.14.3` / `v2.14.5` / `v2.14.6`
 > 按当时提交前工作区的 `git diff --shortstat` 计算；`v2.14.7` / `v2.14.8` 用对应提交的 `git show --shortstat`；
-> `v2.14.9` 用提交前工作区的 `git diff --shortstat -- MirrorpondHUD.csproj src`；`v2.15.0` 用 `git show --shortstat 78d3381`；`v2.16.0` 用 `git show --shortstat 6406d96`；`v2.17.0` 用 `git show --shortstat 27b8bbd`；`v2.18.0` 用 `git show --shortstat 1e1c6ac`（文档同步另计）。
+> `v2.14.9` 用提交前工作区的 `git diff --shortstat -- MirrorpondHUD.csproj src`；`v2.15.0` 用 `git show --shortstat 78d3381`；`v2.16.0` 用 `git show --shortstat 6406d96`；`v2.17.0` 用 `git show --shortstat 27b8bbd`；`v2.18.0` 用 `git show --shortstat 1e1c6ac`；`v2.19.0` 用 `git show --shortstat d21773c`（文档同步另计）。
 
 ## 0. 总览
 
@@ -71,6 +71,7 @@
 | v2.16.0 | 2026-11-01 | `6406d96` | 6 张内置卡全部 DLL 插件化（宿主内置 0）；新增宿主服务契约；UiKit 媒体控件化；插件 API 仍 2 | 60 文件，+1568 / −1557 |
 | v2.17.0 | 2026-11-01 | `27b8bbd` | 第二优先数据展示控件第一批：CardTable（虚拟化 / 排序 / 选中）、CardBadge、CardTag、CardMetricTile、CardGauge、CardProgressRing；版本三件套 + 6 插件同步 2.17.0 | 18 文件，+1315 / −17 |
 | v2.18.0 | 2026-11-01 | `1e1c6ac` | 第二优先第二批：CardSparkline / CardLineChart / CardBarChart / CardTree / CardTimeline；版本三件套 + 6 插件同步 2.18.0 | 19 文件，+2049 / −16 |
+| v2.19.0 | 2026-11-01 | `d21773c` | 第四优先浮层与交互：CardModal / CardDialog / CardPopover / CardTooltip / CardContextMenu / CardToast；toast 置顶修复；版本三件套 + 6 插件同步 2.19.0 | 18 文件，+1513 / −16 |
 
 ---
 
@@ -2348,7 +2349,47 @@ P2-4（占位文案）、P2-6（ALC 注释 / 旧别名日志）、P2-7（InferPr
 
 ---
 
-## 53. 不在版本里的东西
+## 53. v2.19.0（`d21773c`，分支 `feature/data-core`）
+
+### 背景
+
+数据展示控件解决了“卡片能读”，但确认删除、重命名、详情浮层、右键菜单、保存成功 / 失败反馈仍没有统一控件。
+2.19.0 补齐**第四优先：浮层与交互**，让 DLL 卡片在 `ICardActivation` + `NeedsMouseInput` 之上成为可操作的小应用。
+
+### 改动
+
+1. **CardModal / CardDialog**：`src/UiKit/CardOverlayControls.cs`。卡片内遮罩 + 居中主题面板；
+   `Show(host)` / `Close()` / `IsOpen` / `CloseOnBackdropClick` / `Closed`；CardDialog 支持
+   Ok / OkCancel / YesNo、`Task<bool> ShowAsync(host)`、Enter 确认 / Esc 取消、重复 Show 不叠加。
+2. **CardPopover / CardTooltip**：主题化 `Popup`，锚定目标显示；Tooltip 支持延时、Attach/Detach、
+   目标 Unloaded 自动解绑；目标未进入可视树时安全降级，不因 PointToScreen 抛异常。
+3. **CardContextMenu**：自绘 `MenuItem` 模板（透明底、悬停强调淡底、危险色、快捷键右对齐、分组标题），
+   菜单底板也是卡片底色，不使用系统白底。
+4. **CardToast**：主题化通知条，Tone / 时长 / 可行动作 / 自动淡出 / 手动 Dismiss / 多实例堆叠；
+   ZIndex 高于 CardModal，避免被模态遮罩压暗（集成预览时发现并修复）。
+5. **SelfTest**：新增 `CardOverlaySelfTest`（STA/UI 线程，Popup/ContextMenu 必须关闭，所有定时器在
+   Dismiss / Detach / 关闭时清理）；宿主 `--selftest` 新增「浮层 / 交互控件」一行。
+6. **版本**：宿主 / Contracts / UiKit / 6 个插件工程与 manifest 统一 2.19.0；插件 API 仍为 2（UiKit 加法）。
+
+### 验证
+
+- `dotnet build MirrorpondHUD.csproj -c Release`：0 警告 0 错误；
+- `--selftest`：失败项 0，「浮层 / 交互控件: OK（Modal / Dialog / Popover / Tooltip / ContextMenu / Toast）」；
+- 离屏预览：`bin/Release/overlays-preview.png`（760×520）确认 Dialog 与 Toast 的深色观感；
+- 6 个内置插件仍从 `plugins/cards` 加载成功。
+
+### 风险 / 未验证
+
+- Popover 只有打开淡入，`Close()` 立即关闭（为保证 HWND / 动画清理确定性，没有淡出动画）；
+- CardContextMenu 没有滚动条，超长菜单不会滚动；当前 API 面向少量条目；
+- Toast 底部居中依赖 Panel 的 Alignment 语义，Canvas 宿主需要套一层 Grid；
+- Toast 的 Action 点击只执行回调、不自动 Dismiss；自动消失才有淡出；
+- 未做真实鼠标点击 / 键盘焦点 / 多浮层层级的人工验收，只有离屏预览与自检；
+- 2.19.0 仍没有独立成功色令牌，Toast Success / Warning 使用内定颜色。
+
+---
+
+## 54. 不在版本里的东西
 
 - 验收脚本、样张与测量脚本（`cmd-e2e.ps1`、`drag-glass.ps1`、`measure-*.py`、`shots/` 等）都在仓库外的 `hud-test/` 里，**没有提交**。
 - 发布：`main` 与标签已推送到 [github.com/CRITTIof/MirrorpondHUD](https://github.com/CRITTIof/MirrorpondHUD)；
@@ -2357,7 +2398,7 @@ P2-4（占位文案）、P2-6（ALC 注释 / 旧别名日志）、P2-7（InferPr
   更早的 Release 正文与附件保留原样，v2.4.0 的 Release 已删除（tag `v2.4.0` 保留，历史仍可检出）。
 - 仓库追踪的文件共 117 个，`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
 
-## 54. 已知代价（跨版本）
+## 55. 已知代价（跨版本）
 
 - 桌面亚克力为了不拍到自己，会把卡片排除在截屏之外 —— 这个模式下截图 / 录屏里**看不到卡片**，观感只能靠肉眼与离屏渲染验证。
 - 兼容实现每帧对身后窗口做 `PrintWindow`，拖动时最多 ~21 帧/秒；要更高只能走桌面亚克力（DXGI）。
