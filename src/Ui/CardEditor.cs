@@ -34,8 +34,8 @@ namespace MirrorpondHUD.Ui
         }
 
         /// <summary>
-        /// 插件热重载 / 卸载前断开模块引用。WPF 的绑定引擎可能在窗口关闭后短暂保留
-        /// CardEditor / ListCollectionView；这些残留对象不能继续钉住插件 ALC。
+        /// 设置窗口关闭 / 退出时断开模块引用。WPF 的绑定引擎可能在窗口关闭后短暂保留
+        /// CardEditor / ListCollectionView；这些残留对象不能继续持有插件实例。
         /// </summary>
         public void ReleaseModule()
         {

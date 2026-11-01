@@ -1,7 +1,7 @@
 {
   "id": "builtin.dropstation",
   "name": "文件中转站",
-  "version": "2.19.0",
+  "version": "2.20.0",
   "apiVersion": 2,
   "entryType": "MirrorpondHUD.Cards.DropStationCard",
   "assembly": "MirrorpondHUD.Cards.DropStation.dll",

@@ -1,7 +1,7 @@
 {
   "id": "builtin.infotext",
   "name": "信息与文本",
-  "version": "2.19.0",
+  "version": "2.20.0",
   "apiVersion": 2,
   "entryType": "MirrorpondHUD.Cards.InfoTextCard",
   "assembly": "MirrorpondHUD.Cards.InfoText.dll",

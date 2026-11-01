@@ -37,13 +37,7 @@ namespace MirrorpondHUD.Cards
 
         internal AssemblyLoadContext Context { get; private set; }
 
-        /// <summary>只实现文字渲染、没有 WPF 富内容。--plugin-dev 热重载只接受这种插件。</summary>
-        /// <summary>随宿主分发的内置卡片插件（id 以 builtin. 开头）；不参与 --plugin-dev 热重载替换。</summary>
-        public bool IsBundled
-        {
-            get { return (Id ?? "").StartsWith("builtin.", StringComparison.OrdinalIgnoreCase); }
-        }
-
+        /// <summary>只实现文字渲染、没有 WPF 富内容（仅用于加载日志分类）。</summary>
         public bool IsTextOnly
         {
             get
@@ -60,7 +54,7 @@ namespace MirrorpondHUD.Cards
         }
     }
 
-    /// <summary>一次插件扫描的结果：成功加载的句柄 + 失败原因（用于启动日志和 dev 热重载的回滚判断）。</summary>
+    /// <summary>一次插件扫描的结果：成功加载的句柄 + 失败原因（仅用于启动日志与诊断）。</summary>
     internal sealed class CardPluginLoadReport
     {
         readonly List<CardPluginHandle> _handles;
@@ -179,17 +173,6 @@ namespace MirrorpondHUD.Cards
             }
         }
 
-        /// <summary>dev 热重载监听的目录（即使暂时不存在也返回；调用方负责创建/忽略）。</summary>
-        public static IList<string> WatchRoots()
-        {
-            var roots = new List<string>(2);
-            roots.Add(PortableRoot);
-            string local = LocalRoot;
-            if (local.Length > 0 && !string.Equals(local, PortableRoot, StringComparison.OrdinalIgnoreCase))
-                roots.Add(local);
-            return roots;
-        }
-
         static string ShadowRoot
         {
             get
@@ -234,7 +217,7 @@ namespace MirrorpondHUD.Cards
         }
 
         /// <summary>扫描插件目录并返回成功实例化的句柄；失败只记录，不阻止宿主启动。</summary>
-        public static CardPluginLoadReport LoadAll(bool includeBundled = true)
+        public static CardPluginLoadReport LoadAll()
         {
             var handles = new List<CardPluginHandle>();
             var errors = new List<string>();
@@ -272,12 +255,6 @@ namespace MirrorpondHUD.Cards
                     }
 
                     if (handle == null) continue;
-
-                    if (!includeBundled && handle.IsBundled)
-                    {
-                        Discard(handle);
-                        continue;
-                    }
 
                     if (!ids.Add(handle.Id))
                     {
@@ -426,8 +403,8 @@ namespace MirrorpondHUD.Cards
                 catch (Exception shadowEx)
                 {
                     // 影子复制失败（LocalAppData 不可写 / 杀软拦截 / 磁盘满）不能直接判插件无效；
-                    // 回退到源目录加载，但源 DLL 会被锁住，热重载 / 在线覆盖可能不可用。
-                    Log.Warn("插件影子复制失败，回退源目录加载（源 DLL 会被锁，热重载可能不可用）: " +
+                    // 回退到源目录加载，但源 DLL 会被锁住，在线覆盖 / 删除可能不可用。
+                    Log.Warn("插件影子复制失败，回退源目录加载（源 DLL 会被锁，在线覆盖可能不可用）: " +
                              id + ": " + shadowEx.Message);
                     TryDeleteDirectory(shadowDir);
                     shadowDir = null;

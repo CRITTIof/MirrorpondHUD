@@ -10,8 +10,8 @@ namespace MirrorpondHUD.Cards
     /// 按 Order 排好。设置页的「添加卡片」菜单、默认内容、渲染都从这里取，
     /// 宿主里不再出现 switch(kind)。
     ///
-    /// 运行时插件：<see cref="Initialize"/> 在启动早期把内置模块与插件模块合成一份只读快照；
-    /// <see cref="ReplaceExternal"/> 仅供 --plugin-dev 热重载在 UI 线程替换外部模块。
+    /// 运行时插件：<see cref="Initialize"/> 在启动早期把插件模块合成一份只读快照；
+    /// 替换 / 更新插件后重启宿主生效，运行期不提供热插拔。
     /// 未知 Kind 由 <see cref="Get"/> 返回「插件不可用」占位模块，不会把配置改写成默认卡。
     /// </summary>
     public static class CardRegistry
@@ -61,49 +61,6 @@ namespace MirrorpondHUD.Cards
                 Log.Info("已注册卡片模块 " + modules.Count + " 个（内置 " + (modules.Count - added) +
                          "，运行时插件 " + added + "）: " +
                          string.Join("、", modules.ConvertAll(m => m.Kind).ToArray()));
-            }
-        }
-
-        /// <summary>
-        /// 替换外部插件模块，保留内置模块。仅供 --plugin-dev 热重载使用。
-        /// 校验失败会抛异常且不改变当前注册表，调用方应保留旧模块。
-        /// </summary>
-        public static void ReplaceExternal(IEnumerable<ICardModule> external)
-        {
-            lock (Sync)
-            {
-                EnsureInitializedCore();
-
-                var modules = new List<ICardModule>(_builtins);
-                var kinds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                foreach (ICardModule module in _builtins)
-                    if (module != null) kinds.Add(module.Kind);
-
-                if (external != null)
-                {
-                    foreach (ICardModule module in external)
-                    {
-                        if (module == null)
-                            throw new InvalidOperationException("运行时插件模块为空");
-
-                        string kind = (module.Kind ?? "").Trim();
-                        if (kind.Length == 0)
-                            throw new InvalidOperationException("运行时插件模块 Kind 为空: " + module.GetType().FullName);
-
-                        if (!kinds.Add(kind))
-                            throw new InvalidOperationException("运行时插件卡片 Kind 重复或与内置模块冲突: " + kind);
-
-                        modules.Add(module);
-                    }
-                }
-
-                Sort(modules);
-                _modules = modules;
-                _lookup = BuildLookup(modules);
-                _placeholders.Clear();
-
-                Log.Info("运行时插件模块已替换：内置 " + _builtins.Count +
-                         "，外部 " + (modules.Count - _builtins.Count) + "，共 " + modules.Count + " 个");
             }
         }
 
