@@ -1,4 +1,4 @@
-# 版本修改记录（2.4.1 → 2.14.6）
+# 版本修改记录（2.4.1 → 2.14.8）
 
 > 范围：本文只记录**这一轮接手后我做的版本**（v2.4.1 起）。v2.4.0 及更早是既有历史，不在本文档里。
 > 数据全部取自仓库真实提交（`git diff --shortstat <上一版>..<本版>`），文件行的 `+ / -` 就是实际增删行数。
@@ -7,10 +7,12 @@
 > `v2.5.0`–`v2.9.2` 均为附注标签，**已随 2.9.2 的推送同步到远端**（`v2.6.0` = `9c1bafa`、`v2.6.1` = `d3ac63d`、
 > `v2.6.2` = `1b138e7`、`v2.9.2` = `754115e`）；`v2.4.1` 也已补推。`v2.9.3`–`v2.12.2` 已于 2.12.2 推送并发布 Release；`v2.13.0`–`v2.13.6` 目前只在本地 / 功能分支创建。
 > `v2.14.0`–`v2.14.4` 为功能分支 `feature/runtime-card-loading` 上的提交（分别为 `dbe8207` / `730fd39` /
-> `f67a255` / `5f8933c` / `ef70cea`，**未发布、未合并**）；`v2.14.5` 已推送到 `origin/feature/runtime-card-loading`
-> （`a0fe549`）；`v2.14.6` 为本次提交（提交后推送 `origin/feature/runtime-card-loading`）。
+> `f67a255` / `5f8933c` / `ef70cea`，**未发布、未合并**）；`v2.14.5`（`a0fe549`）/ `v2.14.6`（`3e6abc6`）
+> 已推送到 `origin/feature/runtime-card-loading`；`v2.14.7`（`abcbcec`）/ `v2.14.8`（`633e9d6`）与本文档一并推送
+> `origin/feature/runtime-card-loading`（未发布、未合并）。
 > `v2.14.1` / `v2.14.2` / `v2.14.4` 的规模用对应提交的 `git show --shortstat`；`v2.14.3` / `v2.14.5` / `v2.14.6`
-> 按提交前工作区的 `git diff --shortstat` 计算（文档同步改动另计）。
+> 按当时提交前工作区的 `git diff --shortstat` 计算；`v2.14.7` / `v2.14.8` 用对应提交的 `git show --shortstat`
+> （文档同步改动另计）。
 
 ## 0. 总览
 
@@ -61,6 +63,8 @@
 | v2.14.4 | 2026-11-01 | `ef70cea` | 删除宿主 `TypeForwards`，插件 API 升到 2：`apiVersion=1` 旧插件被明确拒绝、宿主不崩；示例 manifest 0.2.0 / apiVersion=2 | 5 文件，+5 / −57 |
 | v2.14.5 | 2026-11-01 | 本次提交 | 方案 B 程序集边界完成：拆出 `MirrorpondHUD.UiKit`（8 个共享 WPF 控件迁入、只依赖 Contracts），宿主 ProjectReference；插件 ALC 对宿主 / Contracts / UiKit 都走默认 ALC；三工程版本 2.14.5 | 11 文件，+23 / −14，另新增 2 个文件（UiKit 工程 31 行 + AssemblyInfo 4 行）；文档同步另计 |
 | v2.14.6 | 2026-11-01 | 本次提交 | 低风险清理：删 `CardPluginHandle.EntryType` 与 `SettingsMigration` 无调用重载；新增「插件引用宿主程序集」明确拒绝；过期注释 / 失效文档路径清理；版本 2.14.6 | 8 文件，+26 / −19（文档同步另计） |
+| v2.14.7 | 2026-11-01 | `abcbcec` | 删除旧 Kind 别名与旧 Schema 迁移（开发阶段无用户）：clock/metrics/keys/text 不再转 infotext，旧 Schema 按损坏处理 | 11 文件，+30 / −434 |
+| v2.14.8 | 2026-11-01 | `633e9d6` | Contracts 瘦身：内置卡设置 Command/Media/Chat、DPAPI SecretStore、默认内容迁回宿主，Contracts 只留通用契约 | 11 文件，+351 / −358（含新增 `BuiltInCardSettings.cs` 316 行、`CardDefaults.cs` 21 行） |
 
 ---
 
@@ -1915,7 +1919,138 @@ v2.13.6 / v2.14.0 的运行时插件走的是方案 A：插件直接引用 `Mirr
 
 ---
 
-## 46. 不在版本里的东西
+## 46. v2.14.7（`abcbcec`，功能分支 `feature/runtime-card-loading`）
+
+### 背景
+
+到 2.14.6 为止，项目一直保留两层历史兼容：旧 Kind 别名（`metrics` / `clock` / `keys` / `text` 自动转成
+`infotext`）与 `SettingsMigration` 的 0/1/2/3/4/5 旧 Schema 迁移。2.14.5 的 clean 审阅把它们列为「必须保留」，
+前提是“有用户”；但项目仍在开发阶段、没有用户，这两层兼容只会持续拖累结构演进。本轮按「无用户、可修改」
+直接把它们删掉，让旧配置失效。
+
+### 改动
+
+1. **删旧 Kind 别名链**：删除契约 `ICardLegacyAlias`（`src/Contracts/Cards/CardSettingsModule.cs`）、
+   `InfoTextCard.LegacyKinds`、`CardRegistry.TryResolveAlias`、`CardModel.Normalize` 的旧 Kind 归一；
+   `clock` / `metrics` / `keys` / `text` 不再自动改写成 `infotext`（未知 Kind 保留，显示「插件不可用」占位，
+   不写回配置）。
+2. **删旧 Schema 迁移**：`SettingsMigration` 移除 0/1/2/3/4/5 迁移与 `LegacySettings` / `LegacyCard` /
+   `LegacyHotkeys` / `UpgradeV2Command` / `UpgradeCardExtras` / `LooksLikeCurrentFormat` 等；
+   旧 `SchemaVersion` 直接按损坏处理（备份 `.broken-*` 后使用默认设置），当前 `SchemaVersion=6` 与
+   **缺版本号的当前格式**仍接受，更高版本仍只读。
+3. **插件保留 Kind 收紧**：`CardPluginLoader.ReservedKinds` 只保留 6 个内置 Kind，旧 Kind 别名从插件占用清单移除；
+   `PluginDevReloader` 去掉 `ICardLegacyAlias` 拒绝项。
+4. **SelfTest 更新**：删除旧 Kind 迁移用例；旧 `SchemaVersion=1` 的期望从“迁移成功”改为“按损坏拒绝
+   （`corrupted=true`、`needsSave=false`）”；缺口版本号 / 未来版本用例保留。
+5. 版本号：宿主 / Contracts / UiKit 三个 csproj 均为 2.14.7。
+
+### 文件
+
+| 文件 | 行数 | 说明 |
+|---|---|---|
+| `src/Core/SettingsMigration.cs` | +17 / −333 | 删除 0–5 旧 Schema 迁移与 legacy DTO / 升级辅助 |
+| `src/Cards/CardRegistry.cs` | 0 / −34 | 删除 `TryResolveAlias` 与 `Get` 的旧别名回退 |
+| `src/Contracts/Cards/CardSettingsModule.cs` | 0 / −11 | 删除 `ICardLegacyAlias` 契约 |
+| `src/Cards/InfoTextCard.cs` | +4 / −10 | 去掉 `LegacyKinds` 实现与旧 Kind 迁移注释 |
+| `src/Cards/CardModel.cs` | 0 / −10 | 删除旧 Kind → `infotext` 归一 |
+| `src/Cards/CardPluginLoader.cs` | +2 / −3 | `ReservedKinds` 去掉 4 个旧别名 |
+| `src/Ui/PluginDevReloader.cs` | 0 / −6 | 去掉 `ICardLegacyAlias` 拒绝项 |
+| `src/SelfTest.cs` | +4 / −24 | 删旧 Kind 用例；旧 Schema=1 期望改为按损坏拒绝 |
+| `MirrorpondHUD.csproj` | +1 / −1 | 版本 2.14.6 → 2.14.7 |
+| `src/Contracts/MirrorpondHUD.Contracts.csproj` | +1 / −1 | 版本 2.14.6 → 2.14.7 |
+| `src/UiKit/MirrorpondHUD.UiKit.csproj` | +1 / −1 | 版本 2.14.6 → 2.14.7 |
+
+### 实测
+
+- 构建：宿主 / Contracts / UiKit **0 警告 0 错误**。
+- `--selftest`：**失败项 0**（旧 Kind 用例已删除；旧 Schema=1 的期望改为按损坏拒绝并被覆盖）。
+- 行为由自检覆盖：旧 `SchemaVersion` 按损坏处理并回落默认设置；缺版本号当前格式仍接受；
+  `Kind=clock` 等旧 Kind 不再被改写成 `infotext`，而是按未知 Kind 显示占位卡。
+
+### 审阅发现与未处理项
+
+- 2.14.5 clean 审阅把旧 Kind 别名链与 SettingsMigration 旧迁移列为「必须保留」，前提是存在用户数据；
+  项目确认开发阶段无用户，本版直接删除、不再维护迁移层。将来若引入用户，需要另做导入 / 迁移工具。
+- 未处理：无用户迁移路径（这是有意的破坏性变更）；Contracts 瘦身留到 2.14.8。
+
+### 风险
+
+- **旧配置直接失效**：0/1/2/3/4/5 旧 Schema 与旧 Kind 配置不再兼容，启动时按损坏备份并回落到默认设置；
+  旧 Kind 卡片显示「插件不可用」占位，配置本身不被改写但不会自动恢复。
+- 删除迁移层后回退性差：如果未来需要兼容旧版本，得重新设计迁移 / 导入路径。
+- 旧 Kind 从插件保留清单移除后，插件理论上可以占用 `clock` 等 Kind；现有配置中的同名旧卡片会显示占位，
+  属开发阶段可接受的取舍。
+
+---
+
+## 47. v2.14.8（`633e9d6`，功能分支 `feature/runtime-card-loading`）
+
+### 背景
+
+2.14.5 审阅的 P1-1（契约边界污染）指出：`MirrorpondHUD.Contracts` 里混着内置卡专用内容——
+`CommandSettings` / `MediaSettings` / `ChatSettings`、DPAPI `SecretStore`、内置卡默认内容常量、
+`Settings.Normalize` 里的 chat 加密策略等。它们让插件 ABI 面被内置卡实现细节绑住。2.14.7 删掉旧配置兼容后，
+2.14.8 继续按「无用户、可修改」把这些内置实现迁回宿主，让 Contracts 只保留插件真正需要的通用契约。
+
+### 改动
+
+1. **内置卡设置迁回宿主**：`CommandSettings` / `MediaSettings` / `ChatSettings` 从
+   `src/Contracts/Core/Settings.cs` 迁到新文件 `src/Core/BuiltInCardSettings.cs`（命名空间保持 `MirrorpondHUD.Core`）。
+2. **DPAPI 迁回宿主**：`SecretStore` 从 `src/Contracts/Core/SecretStore.cs` 移到 `src/Core/SecretStore.cs`
+   （rename，0 行变化）；Contracts 不再包含密文实现。
+3. **默认内容迁回宿主**：4 个内置卡默认内容常量迁到新文件 `src/Cards/CardDefaults.cs`（internal）；
+   `CardModel` / `InfoTextCard` / `Ui/Catalog` / `Ui/Screenshots` 改用 `CardDefaults`。
+4. **Settings 只留通用配置**：`src/Contracts/Core/Settings.cs` 删除内置卡 DTO / 默认内容 / chat 加密遍历；
+   保留 `Settings` / `OverlaySettings` / `StyleSettings` / `CliSettings` / `DataSettings` / `BehaviorSettings` /
+   `HotkeySettings` / `CardActionHotkey` / `CardSettings`。`Settings.Normalize` 不再对任意卡片 `Extras` 做 chat
+   加密（对话卡自己的 `ChatCard.InitializeCard` / `ChatOf` 仍调用 `ChatSettings.Normalize`，DPAPI 仍生效）。
+5. **SelfTest / 版本**：旧 Schema=1 期望已在 2.14.7 改为按损坏拒绝（本版延续该预期）；版本号三工程均为 2.14.8。
+
+### 文件
+
+| 文件 | 行数 | 说明 |
+|---|---|---|
+| `src/Core/BuiltInCardSettings.cs` | +316 / 新增 | `CommandSettings` / `MediaSettings` / `ChatSettings` 迁回宿主 |
+| `src/Core/SecretStore.cs` | 0 / 0（rename） | DPAPI 从 `src/Contracts/Core/SecretStore.cs` 迁回 |
+| `src/Cards/CardDefaults.cs` | +21 / 新增 | 4 个内置卡默认内容常量 |
+| `src/Contracts/Core/Settings.cs` | 0 / −345 | 删除内置卡 DTO、默认内容与 chat 加密遍历 |
+| `src/Cards/CardModel.cs` | +3 / −3 | 默认内容改用 `CardDefaults` |
+| `src/Cards/InfoTextCard.cs` | +5 / −5 | 预设 / 默认内容改用 `CardDefaults` |
+| `src/Ui/Catalog.cs` | +2 / −1 | 预设面板内容改用 `CardDefaults` |
+| `src/Ui/Screenshots.cs` | +1 / −1 | 演示内容改用 `CardDefaults` |
+| `MirrorpondHUD.csproj` | +1 / −1 | 版本 2.14.7 → 2.14.8 |
+| `src/Contracts/MirrorpondHUD.Contracts.csproj` | +1 / −1 | 版本 2.14.7 → 2.14.8 |
+| `src/UiKit/MirrorpondHUD.UiKit.csproj` | +1 / −1 | 版本 2.14.7 → 2.14.8 |
+
+### 实测
+
+- 构建：宿主 / Contracts / UiKit **0 警告 0 错误**。
+- `--selftest`：**失败项 0**（旧 Schema=1 按损坏拒绝的预期已生效）。
+- `--smoke 8 --minimized`：exit 0。
+
+### 审阅发现与未处理项
+
+- P1-1「Contracts 只放插件需要的类型」已完成主要部分：Contracts 现在只有插件契约 / 通用 DTO（`Settings` 通用配置、
+  `CardSettings`、`MetricsSnapshot`、`KeyHistory`、`CardRenderContext`）、`ThemeTokens` / `ThemeResolver`、
+  `Log` / `Json` 内部实现与 `ColorCode` / `Icons` / `Keycaps` 等工具。
+- 仍留在 Contracts 的通用但偏宿主的类型：`Settings`（含 `Overlay` / `Style` / `Cli` / `Data` / `Behavior` / `Hotkey` /
+  `CardSettings`）与 `ThemeTokens` / `ThemeResolver`；如果继续收紧，需要单独公开面清单与 API 版本规划。
+- 审阅另列、本版未处理：插件 `Extras` 只支持 public field 序列化（属性值会静默丢失）、三工程版本分散 /
+  插件 ABI 无显式契约版本常量、`ReservedKinds` 硬编码 6 个内置 Kind（2.14.7 已去旧别名）、
+  `PluginManifest.author` 去留、`docs/*.md` 发布策略、single-file publish 下的插件加载未实测。
+- 兼容性结论：旧插件 2.14.4 起不兼容、插件 API=2；旧配置 2.14.7 起不兼容（旧 Kind / 旧 Schema 不再迁移）。
+
+### 风险
+
+- **程序集身份变化**：`CommandSettings` / `MediaSettings` / `ChatSettings` / `SecretStore` 从 Contracts 迁回宿主，
+  直接引用 Contracts 这些类型的第三方代码会编译失败；插件本就不应使用内置卡 DTO，属预期收缩。
+- **`Settings.Normalize` 不再清洗任意 `Extras` 的 chat 明文**：对话卡自己的 `InitializeCard` / `ChatOf` 仍做 DPAPI
+  归一化；若第三方把 chat DTO 塞进非 chat 卡，宿主不再兜底加密（当前无用户，可接受）。
+- 版本三件套（宿主 / Contracts / UiKit）必须同步为 2.14.8。
+
+---
+
+## 48. 不在版本里的东西
 
 - 验收脚本、样张与测量脚本（`cmd-e2e.ps1`、`drag-glass.ps1`、`measure-*.py`、`shots/` 等）都在仓库外的 `hud-test/` 里，**没有提交**。
 - 发布：`main` 与标签已推送到 [github.com/CRITTIof/MirrorpondHUD](https://github.com/CRITTIof/MirrorpondHUD)；
@@ -1924,7 +2059,7 @@ v2.13.6 / v2.14.0 的运行时插件走的是方案 A：插件直接引用 `Mirr
   更早的 Release 正文与附件保留原样，v2.4.0 的 Release 已删除（tag `v2.4.0` 保留，历史仍可检出）。
 - 仓库追踪的文件共 117 个，`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
 
-## 47. 已知代价（跨版本）
+## 49. 已知代价（跨版本）
 
 - 桌面亚克力为了不拍到自己，会把卡片排除在截屏之外 —— 这个模式下截图 / 录屏里**看不到卡片**，观感只能靠肉眼与离屏渲染验证。
 - 兼容实现每帧对身后窗口做 `PrintWindow`，拖动时最多 ~21 帧/秒；要更高只能走桌面亚克力（DXGI）。
