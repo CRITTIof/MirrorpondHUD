@@ -1,4 +1,4 @@
-# 版本修改记录（2.4.1 → 2.16.0）
+# 版本修改记录（2.4.1 → 2.20.0）
 
 > 范围：本文只记录**这一轮接手后我做的版本**（v2.4.1 起）。v2.4.0 及更早是既有历史，不在本文档里。
 > 数据全部取自仓库真实提交（`git diff --shortstat <上一版>..<本版>`），文件行的 `+ / -` 就是实际增删行数。
@@ -10,10 +10,10 @@
 > `f67a255` / `5f8933c` / `ef70cea`，**未发布、未合并**）；`v2.14.5`（`a0fe549`）/ `v2.14.6`（`3e6abc6`）
 > 已推送到 `origin/feature/runtime-card-loading`；
 > `v2.14.7`（`abcbcec`）/ `v2.14.8`（`633e9d6`）已随文档同步提交 `d73d2ec` 推送到同一分支（未发布、未合并）；
-> `v2.14.9`（`aba873a`）已推送；`v2.15.0`（`78d3381`）已推送（文档同步提交 `2eba9b4`）；`v2.16.0`（代码 `6406d96`，文档同步 `d1fd414`）**已推送并快进合并到 `main`**；`v2.17.0`（`27b8bbd`）/ `v2.18.0`（`1e1c6ac`）/ `v2.19.0`（`d21773c`）**已推送并快进合并到 `main`**，未打 tag、未发布 Release。
+> `v2.14.9`（`aba873a`）已推送；`v2.15.0`（`78d3381`）已推送（文档同步提交 `2eba9b4`）；`v2.16.0`（代码 `6406d96`，文档同步 `d1fd414`）**已推送并快进合并到 `main`**；`v2.17.0`（`27b8bbd`）/ `v2.18.0`（`1e1c6ac`）/ `v2.19.0`（`d21773c`）**已推送并快进合并到 `main`**；`v2.20.0`（代码 `d8f36ab`）为本次提交，**尚未推送 / 合并**，未打 tag、未发布 Release。
 > `v2.14.1` / `v2.14.2` / `v2.14.4` 的规模用对应提交的 `git show --shortstat`；`v2.14.3` / `v2.14.5` / `v2.14.6`
 > 按当时提交前工作区的 `git diff --shortstat` 计算；`v2.14.7` / `v2.14.8` 用对应提交的 `git show --shortstat`；
-> `v2.14.9` 用提交前工作区的 `git diff --shortstat -- MirrorpondHUD.csproj src`；`v2.15.0` 用 `git show --shortstat 78d3381`；`v2.16.0` 用 `git show --shortstat 6406d96`；`v2.17.0` 用 `git show --shortstat 27b8bbd`；`v2.18.0` 用 `git show --shortstat 1e1c6ac`；`v2.19.0` 用 `git show --shortstat d21773c`（文档同步另计）。
+> `v2.14.9` 用提交前工作区的 `git diff --shortstat -- MirrorpondHUD.csproj src`；`v2.15.0` 用 `git show --shortstat 78d3381`；`v2.16.0` 用 `git show --shortstat 6406d96`；`v2.17.0` 用 `git show --shortstat 27b8bbd`；`v2.18.0` 用 `git show --shortstat 1e1c6ac`；`v2.19.0` 用 `git show --shortstat d21773c`；`v2.20.0` 用 `git show --shortstat d8f36ab`（文档同步另计）。
 
 ## 0. 总览
 
@@ -72,6 +72,7 @@
 | v2.17.0 | 2026-11-01 | `27b8bbd` | 第二优先数据展示控件第一批：CardTable（虚拟化 / 排序 / 选中）、CardBadge、CardTag、CardMetricTile、CardGauge、CardProgressRing；版本三件套 + 6 插件同步 2.17.0 | 18 文件，+1315 / −17 |
 | v2.18.0 | 2026-11-01 | `1e1c6ac` | 第二优先第二批：CardSparkline / CardLineChart / CardBarChart / CardTree / CardTimeline；版本三件套 + 6 插件同步 2.18.0 | 19 文件，+2049 / −16 |
 | v2.19.0 | 2026-11-01 | `d21773c` | 第四优先浮层与交互：CardModal / CardDialog / CardPopover / CardTooltip / CardContextMenu / CardToast；toast 置顶修复；版本三件套 + 6 插件同步 2.19.0 | 18 文件，+1513 / −16 |
+| v2.20.0 | 2026-11-01 | `d8f36ab` | 移除卡片热插拔 / 热重载（`PluginDevReloader`、`--plugin-dev`、运行时注册表替换）；插件更新统一重启；根指南重写为自包含开发手册 | 24 文件，+32 / −767（文档同步另计） |
 
 ---
 
@@ -2389,7 +2390,50 @@ P2-4（占位文案）、P2-6（ALC 注释 / 旧别名日志）、P2-7（InferPr
 
 ---
 
-## 54. 不在版本里的东西
+## 54. v2.20.0（`d8f36ab`，分支 `feature/no-hot-reload`）
+
+### 背景
+
+热插拔 / 热重载从 2.14.0 起只是 dev-only 的文字卡工具，但它让宿主同时维护“启动生命周期”和“运行期替换生命周期”：
+`PluginDevReloader`、`--plugin-dev`、目录监听、`CardRegistry.ReplaceExternal`、`OverlayController.ReloadPluginCards`、
+设置窗强制关闭与编辑器引用释放，都是为这条路径服务的。项目决定不再使用热插拔，统一为“替换插件目录 + 重启宿主”，
+并重写根目录 DLL 卡片指南，让开发者 / agent 不读宿主源码也能完成插件。
+
+### 改动
+
+1. **删除热重载实现**：移除 `src/Ui/PluginDevReloader.cs`；`App` 删除 `_pluginDev` / `--plugin-dev` 启动分支与退出清理；
+   `OverlayController.ReloadPluginCards`、`SettingsWindow.ReleaseCardEditorsForPluginReload` 改为普通窗口关闭清理；
+   `CardRegistry.ReplaceExternal` 删除。
+2. **加载器收敛**：`CardPluginLoader` 删除 `WatchRoots` / `IsBundled` / `LoadAll(bool includeBundled)`，
+   只保留启动扫描；影子复制、manifest / Kind / id / apiVersion 校验、占位卡、加载报告不变；注释改为“重启生效”。
+3. **契约注释**：`ICardModuleLifetime.OnPluginUnloading` 明确只在宿主退出卸载 ALC 前调用；
+   插件更新 / 删除不再依赖运行期卸载。
+4. **根指南重写**：`DLL-CARD-PLUGIN-GUIDE.md` 从 675 行扩到 1150+ 行，新增外部 DLL 引用、完整 csproj / manifest、
+   完整契约签名速查、`CardSettings.Extras` 规则、UiKit 全控件索引、复制即用最小工程；删除全部热重载章节。
+5. **文档清理**：删除 `docs/runtime-card-hot-reload.md`；README / 运行时扩展文档 / 示例 README 统一为“重启生效”；
+   删除 `--plugin-dev`、`IsBundled`、`LoadAll(bool)`、`ReplaceExternal` 的现行说明；示例 README 更新到 2.20.0。
+6. **版本**：宿主 / Contracts / UiKit / 6 个插件工程与 manifest 统一 2.20.0；插件 API 仍为 2。
+
+### 验证
+
+- `dotnet build MirrorpondHUD.csproj -c Release`：0 警告 0 错误；
+- `--selftest`：失败项 0（数据控件 / 图表 / 时间线 / 浮层 / 插件自检全 OK）；
+- 6 个内置插件仍从 `plugins/cards` 加载成功；
+- 代码中不再有 `PluginDevReloader` / `--plugin-dev` / `ReplaceExternal` / `IsBundled` / `LoadAll(bool)` 引用；
+- 文档不再链接已删除的热重载文件；按根指南的“复制即用”模板在仓库外新建 `MyCard` 工程（只引用发布目录的
+  `MirrorpondHUD.Contracts.dll`），`dotnet build` 0 警告 0 错误，安装到 `plugins/cards/com.example.my-card` 后
+  重启宿主，日志确认「已加载卡片插件 我的卡片 1.0.0（Kind=my-card…）」且插件数 6→7。
+
+### 风险 / 未验证
+
+- 更新 / 安装 / 删除插件都要重启；没有开发期热重载，迭代反馈变慢（这是产品选择）；
+- 删除热重载后，插件开发必须反复 build + 覆盖 + 启动宿主；根指南已给出完整命令，但未做外部开发者的真实跟做验收；
+- 历史版本记录仍保留 2.14.0–2.19.0 的热重载历史描述（作为发布历史），但当前代码与指南不再提供该能力；
+- 根指南中的外部 `HintPath` 示例需要开发者按自己的宿主目录替换，未提供 NuGet / SDK 包。
+
+---
+
+## 55. 不在版本里的东西
 
 - 验收脚本、样张与测量脚本（`cmd-e2e.ps1`、`drag-glass.ps1`、`measure-*.py`、`shots/` 等）都在仓库外的 `hud-test/` 里，**没有提交**。
 - 发布：`main` 与标签已推送到 [github.com/CRITTIof/MirrorpondHUD](https://github.com/CRITTIof/MirrorpondHUD)；
@@ -2398,7 +2442,7 @@ P2-4（占位文案）、P2-6（ALC 注释 / 旧别名日志）、P2-7（InferPr
   更早的 Release 正文与附件保留原样，v2.4.0 的 Release 已删除（tag `v2.4.0` 保留，历史仍可检出）。
 - 仓库追踪的文件共 117 个，`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
 
-## 55. 已知代价（跨版本）
+## 56. 已知代价（跨版本）
 
 - 桌面亚克力为了不拍到自己，会把卡片排除在截屏之外 —— 这个模式下截图 / 录屏里**看不到卡片**，观感只能靠肉眼与离屏渲染验证。
 - 兼容实现每帧对身后窗口做 `PrintWindow`，拖动时最多 ~21 帧/秒；要更高只能走桌面亚克力（DXGI）。

@@ -1,12 +1,15 @@
-# DLL 卡片插件开发指南（2.19.0+）
+# DLL 卡片插件开发指南（2.20.0+）
 
 本文面向要在 MirrorpondHUD 里添加**运行时卡片插件**的开发者。插件是一个独立的 .NET 8 WPF 类库（DLL），
 通过 `plugins/cards/<id>/manifest.json` 被宿主加载，可以贡献文字卡或富内容卡，并复用宿主的设置页、
 热键、拖放、状态存储和 `MirrorpondHUD.UiKit` 里的主题化控件。
 
-> 当前插件 API 版本为 **2**（2.16.0 新增的宿主服务契约均为加法，旧插件无需改 manifest）。2.14.4 起不再兼容
-> 2.14.3 及更早编译的插件；旧插件必须重新编译并引用 `MirrorpondHUD.Contracts`。插件是**可信本地代码**，
-> `AssemblyLoadContext` 只是加载隔离，不是安全沙箱。
+> 当前插件 API 版本为 **2**。本文是自包含的制作指南：只读本文即可完成 DLL 卡片，不要求阅读宿主源码。
+> 2.14.4 起不再兼容 2.14.3 及更早编译的插件；旧插件必须重新编译并引用 `MirrorpondHUD.Contracts`。
+> 插件是**可信本地代码**，`AssemblyLoadContext` 只是加载隔离，不是安全沙箱。
+>
+> **2.20.0 起没有热插拔 / 热重载**：安装、更新、删除插件都通过替换插件目录并**重启宿主**生效；
+> 没有 `--plugin-dev`，没有插件目录监听，也没有运行期替换注册表。
 >
 > **2.16.0 起，6 张内置卡片本身就是 DLL 插件**（`src/Plugins/*`，manifest id `builtin.*`），宿主不再内置任何
 > `ICardModule`；你的用户插件和内置插件走同一条加载路径、同一套契约与宿主服务。
@@ -24,7 +27,7 @@
 对你的插件意味着：
 
 - 加载行为、影子复制、manifest 校验、ALC 隔离与内置插件完全一致；
-- 内置插件的 id 以 `builtin.` 开头（`CardPluginHandle.IsBundled`），`--plugin-dev` 不会热重载它们；
+- 内置插件与用户插件走同一条启动加载路径；替换后重启宿主生效；
 - 不要依赖「宿主里一定有某个内置卡片类型」——所有卡片（包括内置卡）都经由契约程序集交互；
 - 新增内置卡 = 在 `src/Plugins` 新增一个插件工程，不需要改宿主。
 
@@ -82,7 +85,58 @@
 `Private=false` 表示不要把 Contracts / UiKit 的 DLL 复制进插件目录——运行时由宿主的默认 ALC 提供。
 插件自己的第三方依赖可以正常复制到插件目录，由插件的可收集 ALC 加载。
 
-### 2.3 manifest.json
+如果插件工程不在宿主源码树里，也可以直接引用**宿主发布目录里的程序集**（不需要源码）：
+
+```xml
+<ItemGroup>
+  <Reference Include="MirrorpondHUD.Contracts">
+    <HintPath>C:\Path\To\MirrorpondHUD\MirrorpondHUD.Contracts.dll</HintPath>
+    <Private>false</Private>
+  </Reference>
+  <Reference Include="MirrorpondHUD.UiKit">
+    <HintPath>C:\Path\To\MirrorpondHUD\MirrorpondHUD.UiKit.dll</HintPath>
+    <Private>false</Private>
+  </Reference>
+</ItemGroup>
+```
+
+两种方式二选一即可。**不要把 `MirrorpondHUD.Contracts.dll` / `MirrorpondHUD.UiKit.dll` 复制进插件目录**：
+它们由宿主默认 ALC 提供；插件目录只放自己的 DLL、manifest 和必要的第三方依赖。
+
+宿主和插件必须使用同一个 `net8.0-windows` / WPF 运行时；不要用 `net8.0`（非 Windows）或另一套 WPF 版本。
+
+### 2.3 项目文件完整示例
+
+```xml
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <OutputType>Library</OutputType>
+    <Nullable>disable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>MyCard</AssemblyName>
+    <RootNamespace>MyCard</RootNamespace>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <DebugType>portable</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Contracts\MirrorpondHUD.Contracts.csproj">
+      <Private>false</Private>
+    </ProjectReference>
+    <ProjectReference Include="..\..\src\UiKit\MirrorpondHUD.UiKit.csproj">
+      <Private>false</Private>
+    </ProjectReference>
+  </ItemGroup>
+</Project>
+```
+
+（外部工程把两个 `ProjectReference` 换成上面的 `Reference` + `HintPath`；不需要 UiKit 时删掉 UiKit 引用。）
+
+
+### 2.4 manifest.json
 
 ```json
 {
@@ -127,6 +181,7 @@
 
 ```csharp
 using MirrorpondHUD.Cards;
+using MirrorpondHUD.Core;
 
 namespace MyCard
 {
@@ -168,6 +223,20 @@ namespace MyCard
 - `SupportsContent`：是否允许在设置页编辑内容模板；
 - `RefreshIntervalMs`：文字卡最小重画间隔。
 
+### 3.2 图标
+
+`Icon` 使用 ReiconFont 码位，推荐直接引用 `MirrorpondHUD.Core.Icons`：
+
+| 常量 | 用途 | 常量 | 用途 |
+|---|---|---|---|
+| `Icons.Terminal` | 命令行 | `Icons.Cpu` | CPU |
+| `Icons.Web` / `Icons.App` / `Icons.Game` | 通用应用 | `Icons.Gpu` / `Icons.Ram` / `Icons.Rom` | 硬件 |
+| `Icons.Folder` / `Icons.Txt` / `Icons.Image` | 文件 / 文本 / 图片 | `Icons.NetUp` / `Icons.NetDown` | 网络 |
+| `Icons.Agent` | AI / 对话 | `Icons.Volume` / `Icons.Microphone` | 音频 |
+| `Icons.Add` / `Icons.Search` / `Icons.Trash` / `Icons.Move` | 操作 | `Icons.Video` / `Icons.Clock` / `Icons.Play` / `Icons.PauseMedia` | 媒体 |
+
+也可以直接写任意 ReiconFont 码位（`""` 等）；不要用普通 Unicode emoji，宿主卡片字体里没有对应字形时会变成方框。
+
 ---
 
 ## 4. 富内容卡
@@ -175,6 +244,7 @@ namespace MyCard
 ```csharp
 using System.Windows;
 using MirrorpondHUD.Cards;
+using MirrorpondHUD.Core;
 
 namespace MyCard
 {
@@ -236,7 +306,12 @@ public override void InitializeCard(CardSettings config)
 ```
 
 > `MirrorpondHUD.Core.Json` 通过反射写 **public 字段**，不写属性。DTO 用自动属性会静默丢失。
-> 从磁盘读进来时 `Extras` 里是原始 JSON 节点，`ExtrasAs<T>` 会绑定成强类型并写回 `Extras<T>` 前先修改再 `SetExtras`。
+> 支持的类型：`string` / `bool` / 整数 / `double` / `float` / `decimal` / `enum`（存字符串）、
+> `List<T>` / `T[]`、`Dictionary<string, object>` 以及只含 public field 的嵌套 DTO。不要用 `DateTime`、
+> `Color`、WPF 控件等无法 JSON 往返的类型。
+>
+> 从磁盘读进来时 `Extras` 里是原始 JSON 节点；`ExtrasAs<T>` 返回绑定后的实例（可能是副本），
+> 修改后必须 `config.SetExtras(key, dto)` 写回，否则不会保存。
 
 ### 5.2 设置页 UI：`ICardEditorSection`
 
@@ -244,6 +319,7 @@ public override void InitializeCard(CardSettings config)
 using System;
 using System.Windows;
 using MirrorpondHUD.Cards;
+using MirrorpondHUD.Core;
 using MirrorpondHUD.Ui.Controls;
 
 public sealed class MyEditor : ICardEditorSection
@@ -287,6 +363,45 @@ public sealed class MyEditor : ICardEditorSection
 ---
 
 ## 6. `MirrorpondHUD.UiKit` 控件（表单 / 媒体 / 数据展示）
+
+`MirrorpondHUD.UiKit` 的控件都使用卡片外观令牌；内容控件在创建 / `ApplyStyle` 时调用：
+
+```csharp
+control.ApplyStyle(context.Settings.Style, context.Settings.Overlay.CornerRadius);
+```
+
+### 6.0 基础控件索引
+
+| 控件 | 常用 API | 用途 |
+|---|---|---|
+| `CardButton` | `new CardButton(text, CardButtonTone.Normal/Primary/Danger)`、`Text`、`Click`、`ApplyStyle` | 卡片内按钮 |
+| `CardTextBox` | `Text`、`KeyDown`、`ApplyStyle` | 单行输入框 |
+| `CardInput` | `Text`、`Placeholder`、`Submitted`、`TextChanged`、`Submit`、`Clear`、`FocusInput`、`SetError`、`ApplyStyle` | 带提交 / 错误态的输入行 |
+| `CardList` | `Items`、`ItemsSource`、`ItemTemplate`、`SelectedItem`、`SelectedItems`、`SelectionMode`、`ItemActivated`、`SetEmptyText`、`ApplyStyle(style, cli)` | 虚拟化列表 |
+| `CardStatus` | `SetText(text, CardStatusKind)`、`SetBusy`、`SetProgress`、`ApplyStyle` | 状态 / 进度 / 错误行 |
+| `CardHeader` | `Title`、`Badge`、`Actions.Add(text, click, tone, tooltip)`、`ApplyStyle` | 标题 + 动作按钮 |
+| `CardDropOverlay` | `Show(count|text, accepted)`、`Hide`、`ApplyStyle` | 拖入高亮层 |
+| `CardSlider` | `Value`、`Minimum`、`Maximum`、`Step`、`ValueChanged` | 数值滑块 |
+| `CardToggle` | `IsChecked`、`Checked` / `Unchecked` | 开关 |
+| `CardSelect` | `ItemsSource`、`SelectedItem`、`SelectedIndex`、`SelectionChanged` | 下拉 |
+| `CardNumberInput` | `Value`、`Minimum`、`Maximum`、`ValueChanged` | 数字输入 |
+| `CardColorPicker` | `Value`、`ValueChanged` | 颜色选择 |
+| `CardSegmentedControl` | `Items`、`SelectedIndex`、`SelectedItem`、`SelectionChanged` | 分段选择 |
+| `CardFormRow` / `CardSettingsForm` | `AddSlider` / `AddToggle` / `AddSelect` / `AddNumber` / `AddColor` / `AddSegmented` / `AddDescription` / `AddDivider` | 声明式设置表单 |
+| `CardMediaView` + `MediaSettings` | `Bind(settings)`、`Play/Pause`、`ShowPoster`、`HandleHotkey`、`ApplyStyle` | 图片 / 动图 / 视频 |
+| `CardTable` | `AddColumn` / `AddRow` / `ItemsSource` / `SortBy` / `SelectedItem` / `SelectionMode` / `ItemActivated` / `SetEmptyText` | 虚拟化表格 |
+| `CardBadge` / `CardTag` / `CardMetricTile` | `Text` / `Tone` / `Value` / `Trend` / `ApplyStyle` | 徽标 / 标签 / 指标块 |
+| `CardGauge` / `CardProgressRing` | `Value`、`Label`、`Unit`、`ValueFormat`、`ApplyStyle` | 仪表 / 圆环 |
+| `CardSparkline` / `CardLineChart` / `CardBarChart` | `SetValues` / `Series` / `Labels` / `ApplyStyle` | 趋势 / 折线 / 柱状 |
+| `CardTree` / `CardTimeline` | `AddRoot` / `Add` / `SelectedItem` / `ItemActivated` / `ApplyStyle` | 树 / 时间线 |
+| `CardModal` / `CardDialog` | `Show(host)` / `ShowAsync(host)` / `Close` / `ApplyStyle` | 卡片内模态 |
+| `CardPopover` / `CardTooltip` | `ShowAt(target)` / `Attach(target)` / `Close` / `Detach` | 浮层 / 悬停提示 |
+| `CardContextMenu` | `Add` / `AddSeparator` / `AddHeader` / `ShowAt(target)` / `ApplyStyle` | 右键菜单 |
+| `CardToast` | `CardToast.Show(host, text, tone, duration, actionText, action)` / `Dismiss` | 非阻塞通知 |
+
+控件全部在命名空间 `MirrorpondHUD.Ui.Controls`；媒体控件在
+`MirrorpondHUD.Ui.Controls.Media`（`CardMediaView` / `MediaSettings`）。
+
 
 所有表单控件都在 `MirrorpondHUD.Ui.Controls`，实现 `ICardFormControl`：
 
@@ -605,17 +720,31 @@ CLI 面板可实现 `IClifFocusTarget`（`CliPanelView` 已实现）。
 
 ---
 
-## 9. 生命周期与热重载
+## 9. 生命周期、重启与卸载
 
-2.16.0 起 `--plugin-dev` 的热重载只针对**用户**文字卡：内置插件（id `builtin.*`）不参与替换，改内置插件的代码
-需要重新构建 / 重启宿主。生产环境始终是「替换 DLL 后重启生效」。
+**没有热插拔 / 热重载。** 安装、替换、更新、删除插件都必须关闭宿主、替换
+`plugins/cards/<id>/`，再重新启动。宿主不会监听插件目录，也没有 `--plugin-dev`。
 
-- `ICardModuleLifetime.OnPluginUnloading()`：卸载插件 ALC 前调用，停线程/定时器、解绑静态事件；
-- 富内容卡建议在 `OnVisibilityChanged(content, false)` 暂停视频/动图；
-- `--plugin-dev`：开发期只对**用户纯文字卡**热重载（富内容/交互/设置区块插件会被拒绝并提示重启；内置插件不参与）；
-- 热重载时会关闭设置窗（未保存编辑会丢）；生产使用不要带 `--plugin-dev`，安装/更新插件后重启。
+生命周期约定：
 
----
+- 模块实例是**单例**，一张卡的富内容控件按卡片分别创建；不要把某张卡的 `ICardHost` /
+  `CardSettings` / 控件存进模块字段；
+- `ICardHostAware.Attach(host)` 在卡片创建 / 应用设置时调用，`Detach(host)` 在删卡 / 退出时调用；
+- 富内容控件实现 `IDisposable` 时，卡片销毁会调用 `Dispose()`；`OnVisibilityChanged(content, false)`
+  适合暂停视频 / 动图 / 轮询；
+- `ICardHost.RequestRender()` / `RequestLayout()` 通知宿主数据或尺寸变化；
+- 退出时宿主先调用 `ICardModuleLifetime.OnPluginUnloading()`，再请求卸载可收集 ALC。这里必须停掉
+  自己的线程 / 定时器、注销静态事件、释放文件句柄；否则 ALC 可能延迟回收；
+- 插件的 `Content` / `Extras` / 状态文件在重启后继续有效；不会因为插件缺失被宿主改写。
+
+更新插件的推荐步骤：
+
+1. 关闭宿主；
+2. 替换 `plugins/cards/<id>/` 下的 DLL / manifest / 依赖；
+3. 启动宿主，看日志确认新版本已加载；
+4. 如果新插件加载失败，旧配置仍保留，卡片显示「插件不可用」，修好后重启恢复。
+
+> 影子复制意味着宿主运行时可以覆盖源 DLL，但**新 DLL 只在下次启动时加载**；不要指望运行中生效。
 
 ## 10. 构建、安装、调试
 
@@ -642,7 +771,7 @@ copy MyCard\manifest.json bin\Release\plugins\cards\my-card\
 | `插件引用了宿主程序集` | 改引用 `MirrorpondHUD.Contracts`，不要引用 `MirrorpondHUD.dll` |
 | `API 版本不兼容 api=1（宿主支持 2）` | manifest 的 `apiVersion` 改为 2 |
 | `入口类型不存在` / `不符合 ICardModule 契约` | `entryType` / 基类 / public 无参构造不对 |
-| `Kind 重复 / 与其它插件冲突` | 注册表合并时后者被告警丢弃（启动）/ 抛错并保留旧模块（dev 重载）；换一个自己的 Kind |
+| `Kind 重复 / 与其它插件冲突` | 注册表启动合并时后者被告警丢弃；换一个自己的 Kind |
 | `assembly 字段非法` / `程序集不存在` | manifest 的 `assembly` 只能是裸 DLL 文件名且文件存在 |
 | `manifest.json 解析为空` / `读取失败` | JSON 格式或大小（≤256KB） |
 
@@ -656,13 +785,278 @@ copy MyCard\manifest.json bin\Release\plugins\cards\my-card\
 - 只加载**可信本地插件**；ALC 不是沙箱，插件可执行当前用户权限内的任意代码；
 - 签名/哈希/白名单目前未实现；
 - 插件 API 2：旧插件必须重编译；引用宿主的插件会被明确拒绝；
-- 插件热重载只支持纯文字卡；富内容卡、交互卡、自带 WPF 设置区块的插件需要重启；
 - 插件 DTO 必须使用 public field（`Json` 限制）；
-- 插件卸载时请实现 `ICardModuleLifetime`，否则自己的线程/静态事件可能阻止 ALC 回收。
+- 插件卸载只发生在宿主退出时；请实现 `ICardModuleLifetime` 停线程 / 解绑事件，避免 ALC 延迟回收；
+- 插件替换 / 更新后**重启宿主**生效；本项目不提供热插拔。
 
 ---
 
-## 12. 开发检查清单
+## 12. 契约签名速查（完整）
+
+这一节是制作插件时真正需要的公开 API；不需要打开宿主源码。所有类型在
+`MirrorpondHUD.Contracts`（命名空间 `MirrorpondHUD.Cards` / `MirrorpondHUD.Core` /
+`MirrorpondHUD.Ui`）或 `MirrorpondHUD.UiKit`（`MirrorpondHUD.Ui.Controls`）里。
+
+### 12.1 `ICardModule` / `CardModuleBase`
+
+```csharp
+public interface ICardModule
+{
+    string Kind { get; }
+    string DisplayName { get; }
+    string Icon { get; }
+    string DefaultContent { get; }
+    bool SupportsContent { get; }
+    bool IsInteractive { get; }
+    bool HandlesOwnDrag { get; }
+    bool DefaultResident { get; }
+    string DefaultHotkey { get; }
+    int Order { get; }
+    int RefreshIntervalMs(CardSettings config);
+    string Render(CardRenderContext context);
+}
+
+public abstract class CardModuleBase : ICardModule
+{
+    public abstract string Kind { get; }
+    public abstract string DisplayName { get; }
+    public abstract string Icon { get; }
+    public virtual string DefaultContent { get; }       // ""
+    public virtual bool SupportsContent { get; }        // true
+    public virtual bool IsInteractive { get; }          // false
+    public virtual bool HandlesOwnDrag { get; }         // false
+    public virtual bool DefaultResident { get; }        // true
+    public virtual string DefaultHotkey { get; }        // ""
+    public virtual int Order { get; }                   // 50
+    public virtual int RefreshIntervalMs(CardSettings config); // 0 = 每个渲染 tick
+    public abstract string Render(CardRenderContext context);
+}
+```
+
+### 12.2 富内容卡
+
+```csharp
+public interface IRichCardModule : ICardModule
+{
+    bool NeedsMouseInput { get; }
+    FrameworkElement CreateContent(CardRenderContext context);
+    void UpdateContent(FrameworkElement content, CardRenderContext context);
+    void OnVisibilityChanged(FrameworkElement content, bool visible);
+    void OnZOrderChanged(FrameworkElement content);
+}
+
+public abstract class RichCardModuleBase : CardModuleBase, IRichCardModule
+{
+    public override bool SupportsContent { get; }       // false
+    public virtual bool NeedsMouseInput { get; }        // false
+    public override string Render(CardRenderContext context); // ""
+    public abstract FrameworkElement CreateContent(CardRenderContext context);
+    public virtual void UpdateContent(...);             // 空实现
+    public virtual void OnVisibilityChanged(...);       // 空实现
+    public virtual void OnZOrderChanged(...);           // 空实现
+}
+```
+
+### 12.3 `CardRenderContext`
+
+```csharp
+public sealed class CardRenderContext
+{
+    public Settings Settings { get; }
+    public MetricsSnapshot Snapshot { get; }
+    public KeyHistory Keys { get; }          // 可能为 null
+    public CardSettings Config { get; }
+    public ICardHost Host { get; }           // 文字 / 截图路径为 null
+    public IDictionary<string, object> Variables { get; }
+    public string Render(string template);
+    public string RenderOrDefault(string defaultContent);
+}
+```
+
+### 12.4 `CardSettings` / `Extras`
+
+```csharp
+public sealed class CardSettings
+{
+    public string Id;          // 宿主生成的稳定标识
+    public string Kind;        // 模块 Kind
+    public string Name;
+    public bool Resident;
+    public string Hotkey;
+    public double Spacing;
+    public string Content;
+    public string Preset;      // 通用预设字段，模块可自用
+    public Dictionary<string, object> Extras;
+
+    public T ExtrasAs<T>(string key) where T : class, new();
+    public void SetExtras<T>(string key, T value) where T : class;
+}
+```
+
+`Settings` 里常用的只读参考字段：
+
+- `Settings.Style`：`StyleSettings`（`FontFamily` / `FontSize` / `Foreground` / `Accent` / `Danger` / `Padding` 等）
+- `Settings.Overlay.CornerRadius` / `Shadow` / `BackgroundOpacity` 等外观参数
+- `Settings.Cli`：CLI 面板尺寸（`MaxWidth` / `MaxHeight`）
+- `Settings.Data`：采样配置
+- `Settings.Hotkeys`：全局 / 卡片动作热键
+
+### 12.5 设置 / 编辑器 / 样式 / 生命周期
+
+```csharp
+public interface ICardSettingsModule
+{
+    void InitializeCard(CardSettings config);
+}
+
+public interface ICardEditorSection
+{
+    FrameworkElement CreateEditor(CardSettings config, Settings settings, Action onChanged);
+}
+
+public interface ICardEditorCommit
+{
+    void CommitPendingEdits();
+}
+
+public interface ICardSettingsValidator
+{
+    string Validate(CardSettings config);   // null = 通过
+}
+
+public interface ICardSummary
+{
+    string Summary(CardSettings config);
+}
+
+public interface ICardStyleAware
+{
+    void ApplyStyle(FrameworkElement content, CardRenderContext context);
+}
+
+public interface ICardModuleLifetime
+{
+    void OnPluginUnloading();
+}
+```
+
+### 12.6 宿主服务
+
+```csharp
+public interface ICardHostAware
+{
+    void Attach(ICardHost host);
+    void Detach(ICardHost host);
+}
+
+public interface ICardHost
+{
+    CardSettings Config { get; }
+    string StateDirectory { get; }
+    string ReadState(string fileName);
+    bool WriteState(string fileName, string text);
+    bool DeleteState(string fileName);
+    void RequestRender();
+    void RequestLayout();
+    bool SaveSettings();
+    ICardShellService Shell { get; }
+}
+
+public interface ICardShellService
+{
+    bool TryGetClipboardFiles(out string[] paths);
+    bool TrySetClipboardText(string text);
+    ImageSource GetFileIcon(string path, int size, bool extensionOnly);
+    DragDropEffects BeginDragFiles(FrameworkElement source, IList<string> paths, DragDropEffects allowed);
+    void OpenPath(string path);
+    void RevealPath(string path);
+}
+```
+
+### 12.7 热键 / 拖放 / 激活
+
+```csharp
+public sealed class CardHotkeyAction
+{
+    public CardHotkeyAction(string action, string label, string defaultHotkey);
+    public string Action { get; }
+    public string Label { get; }
+    public string DefaultHotkey { get; }
+}
+
+public interface ICardHotkeySource { IList<CardHotkeyAction> HotkeyActions { get; } }
+public interface ICardHotkeyTarget { void ExecuteHotkey(string action, FrameworkElement content); }
+
+public interface ICardDropTarget
+{
+    bool CanDrop(IDataObject data);
+    void Drop(IDataObject data, FrameworkElement content);
+}
+
+public interface ICardDropFeedback
+{
+    void OnDropStateChanged(FrameworkElement content, bool over, IDataObject data);
+}
+
+public interface ICardActivation
+{
+    string OnActivated(CardSettings config);
+    void OnDeactivated(CardSettings config);
+}
+```
+
+### 12.8 预设 / 截图 / 运行时设置合并 / 自检
+
+```csharp
+public sealed class CardPreset
+{
+    public CardPreset(string id, string label, string defaultContent, string icon);
+    public string Id { get; }
+    public string Label { get; }
+    public string DefaultContent { get; }
+    public string Icon { get; }
+    public bool EditableContent { get; set; }
+}
+
+public interface ICardPresetSource
+{
+    IList<CardPreset> Presets { get; }
+    string CurrentPreset(CardSettings config);
+    void ApplyPreset(CardSettings config, string presetId);
+}
+
+public interface ICardScreenshotProvider
+{
+    void PrepareScreenshot(FrameworkElement content);
+}
+
+public interface ICardRuntimeSettingsMerge
+{
+    void MergeRuntimeFields(CardSettings target, CardSettings live, CardSettings baseline);
+}
+
+public interface ICardSelfTest
+{
+    string RunSelfTest();   // null / 空串 = 通过
+}
+```
+
+### 12.9 采样与模板
+
+`CardRenderContext.Snapshot`（`MetricsSnapshot`）常用字段：
+
+- `CpuPercent` / `MemUsedGb` / `MemTotalGb` / `MemPercent`
+- `GpuAvailable` / `GpuPercent` / `GpuTempC` / `GpuPowerW` / `VramUsedMb` / `VramTotalMb`
+- `DiskPercent` / `DiskReadBps` / `DiskWriteBps`
+- `NetDownBps` / `NetUpBps` / `NetAdapter`
+
+`CardRenderContext.Variables` 支持模板变量（CPU / 内存 / GPU / 磁盘 / 网络 / 时间 / 日期 / 星期 / 运行时长 /
+主机名 / 用户名 / 按键历史 / 分区等）；`context.Render("{cpu:0.0}%")` 直接套用，`RenderOrDefault` 在
+`Config.Content` 为空时回退默认模板。
+
+---
+
+## 13. 开发检查清单
 
 - [ ] 目标 `net8.0-windows` + `UseWPF`，引用 Contracts（需要控件时加 UiKit），不引用宿主；
 - [ ] `manifest.json`：id / apiVersion=2 / entryType / assembly 正确；
@@ -672,4 +1066,101 @@ copy MyCard\manifest.json bin\Release\plugins\cards\my-card\
 - [ ] 线程/定时器在 `OnVisibilityChanged` / `ICardModuleLifetime` 里停止；
 - [ ] 不依赖当前用户配置迁移（2.14.7 起旧 Schema 不再迁移）；
 - [ ] 插件目录可被宿主影子复制，源 DLL 不锁定；
-- [ ] 在真实宿主里用日志验证加载、显示、设置保存、热键、重启。
+- [ ] 在真实宿主里用日志验证加载、显示、设置保存、热键；
+- [ ] 更新插件后重启验证新 DLL 生效；不要依赖热重载。
+
+---
+
+## 14. 复制即用：最小插件工程
+
+目录：
+
+```text
+MyCard/
+  MyCard.csproj
+  manifest.json
+  MyCardModule.cs
+```
+
+`MyCard.csproj`（把 `HintPath` 改成你的宿主发布目录；宿主必须已经构建过一次）：
+
+```xml
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <OutputType>Library</OutputType>
+    <Nullable>disable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>MyCard</AssemblyName>
+    <RootNamespace>MyCard</RootNamespace>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="MirrorpondHUD.Contracts">
+      <HintPath>C:\Path\To\MirrorpondHUD\MirrorpondHUD.Contracts.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+</Project>
+```
+
+`manifest.json`：
+
+```json
+{
+  "id": "com.example.my-card",
+  "name": "我的卡片",
+  "version": "1.0.0",
+  "apiVersion": 2,
+  "entryType": "MyCard.MyCardModule",
+  "assembly": "MyCard.dll",
+  "author": "example"
+}
+```
+
+`MyCardModule.cs`：
+
+```csharp
+using MirrorpondHUD.Cards;
+using MirrorpondHUD.Core;
+
+namespace MyCard
+{
+    public sealed class MyCardModule : CardModuleBase
+    {
+        public override string Kind { get { return "my-card"; } }
+        public override string DisplayName { get { return "我的卡片"; } }
+        public override string Icon { get { return Icons.Txt; } }
+        public override string DefaultContent { get { return "CPU {cpu:0.0}%"; } }
+        public override int Order { get { return 40; } }
+
+        public override string Render(CardRenderContext context)
+        {
+            return context.RenderOrDefault(DefaultContent);
+        }
+    }
+}
+```
+
+构建与安装：
+
+```bat
+dotnet build MyCard\MyCard.csproj -c Release
+mkdir <MirrorpondHUD>\plugins\cards\com.example.my-card
+copy MyCard\bin\Release\MyCard.dll <MirrorpondHUD>\plugins\cards\com.example.my-card\
+copy MyCard\manifest.json <MirrorpondHUD>\plugins\cards\com.example.my-card\
+```
+
+**重启**宿主的 `MirrorpondHUD.exe`；日志应出现：
+
+```text
+已加载卡片插件 我的卡片 1.0.0（Kind=my-card，entry=MyCard.MyCardModule，文字卡，影子副本）
+运行时插件加载完成：成功 1 个，失败 0 个（com.example.my-card）
+```
+
+然后在「设置 → 内容 → 添加卡片」里添加「我的卡片」。
+
+> 没有热重载：改完代码重新 build → 覆盖插件目录 → 重启宿主。
