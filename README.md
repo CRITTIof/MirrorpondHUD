@@ -215,9 +215,11 @@ mock-chat-1                                        [轮询]
       "Hotkey": "",
       "Spacing": 0,
       "Content": "{cpu_icon} CPU {cpu:0.0}%   {mem_icon} MEM {mem_pct:0}%",
-      "Command": { "Shell": "cmd", "WorkingDirectory": "", "TimeoutSeconds": 20 },
-      "Media": { "Path": "", "Fit": "Contain", "Width": 320, "Loop": true, "Muted": true,
-                 "Rounded": true, "Decoder": "Auto", "DecoderPath": "" }
+      "Extras": {
+        "command": { "Shell": "cmd", "WorkingDirectory": "", "TimeoutSeconds": 20 },
+        "media": { "Path": "", "Fit": "Contain", "Width": 320, "Loop": true, "Muted": true,
+                   "Rounded": true, "Decoder": "Auto", "DecoderPath": "" }
+      }
     }
   ]
 }
@@ -227,8 +229,8 @@ mock-chat-1                                        [轮询]
   更低的 SchemaVersion 会按损坏备份（`.broken-时间戳`）并使用默认设置；当前 6 与缺版本号的当前格式仍接受
 - `Cards` 的顺序就是叠层顺序；`Spacing` 是与上一张可见卡片的间距
 - `Resident=false` 的卡片必须有 `Hotkey`，否则保存时会提示
-- `Command` 属于每张命令行卡片：工具、自定义模板、工作目录、行截断、行数、超时
-- `Media` 属于每张媒体卡片：文件、缩放（`Contain` / `Cover` / `Fill` / `None`）、宽高、透明度、循环、自动播放、静音、倍速、圆角（`Rounded`）、解码器（`Decoder`：`Auto` / `BuiltIn` / `FFmpeg`）与自定义 `DecoderPath`
+- `Extras.command` 属于每张命令行卡片：工具、自定义模板、工作目录、行截断、行数、超时
+- `Extras.media` 属于每张媒体卡片：文件、缩放（`Contain` / `Cover` / `Fill` / `None`）、宽高、透明度、循环、自动播放、静音、倍速、圆角（`Rounded`）、解码器（`Decoder`：`Auto` / `BuiltIn` / `FFmpeg`）与自定义 `DecoderPath`
 - 外观（`Style`）是**全局**的：所有卡片共用字体、颜色、背景、图标倍率、毛玻璃等，卡片只负责内容与位置
 
 ## 🔨 编译
@@ -316,7 +318,7 @@ tools/                   开发脚本（make_logo.py 生成多尺寸 logo.ico）
 - [docs/theme-motion.md](docs/theme-motion.md) — 主题的动效与控件样式调研：启动动画参数化、出现 / 消失 / 让位动画、按钮面板滑块 token 与受控模板、设置页换肤（含分层窗口动画实测）
 - [docs/legacy-audit.md](docs/legacy-audit.md) — 源码遗留审计：与 v2.9.4 同源的检查、13 条遗留（颜色解析 / 异步 void / 静态缓存 / 死字段等）与清理顺序
 - [docs/file-transfer-station.md](docs/file-transfer-station.md) — 文件中转站调研与设计：拖入 / 列表 / 引用与复制、状态持久化、拖出与锁定语义、M1–M3 路线
-- [docs/version-history.md](docs/version-history.md) — v2.4.1 → v2.14.8 每个版本改了什么、动了哪些文件（含实测数据与提交号）
+- [docs/version-history.md](docs/version-history.md) — v2.4.1 → v2.14.9 每个版本改了什么、动了哪些文件（含实测数据与提交号）
 - [docs/review-p1-fixes.md](docs/review-p1-fixes.md) — 2.12.2 评审报告 P1-1..P1-10 的修复对照、验证与已知剩余
 - [docs/review-p2-fixes.md](docs/review-p2-fixes.md) — 2.12.2 评审报告中有实际影响的 P2 条目修复与未纳入项
 - [docs/review-2.13.4-fixes.md](docs/review-2.13.4-fixes.md) — 2.13.4 审阅意见的 P1/先修项修复、未纳入项与剩余风险
@@ -407,7 +409,7 @@ Images, bitmaps and animated GIFs are drawn inside the layered card window; vide
 
 ## Configuration
 
-Everything is stored in `settings.json` next to the executable (`SchemaVersion: 6`). There is no legacy migration in this development phase (since 2.14.7): configs with an older SchemaVersion are backed up as corrupted and replaced by defaults, while schema 6 and the current format without a version field are still accepted. `Cards[]` holds `Id`, `Kind`, `Name`, `Resident`, `Hotkey`, `Spacing`, `Content`, plus a per-card `Command` block (tool / template / working directory / truncation / timeout), a per-card `Media` block (file / fit / size / opacity / loop / mute / speed) and a per-card `Chat` block (base URL / model / encrypted key / mode / system prompt / timeout / width). The list order is the on-screen order; appearance stays global.
+Everything is stored in `settings.json` next to the executable (`SchemaVersion: 6`). There is no legacy migration in this development phase (since 2.14.7): configs with an older SchemaVersion are backed up as corrupted and replaced by defaults, while schema 6 and the current format without a version field are still accepted. `Cards[]` holds `Id`, `Kind`, `Name`, `Resident`, `Hotkey`, `Spacing`, `Content`, plus per-card `Extras.command` (tool / template / working directory / truncation / timeout), `Extras.media` (file / fit / size / opacity / loop / mute / speed) and `Extras.chat` (base URL / model / encrypted key / mode / system prompt / timeout / width). The list order is the on-screen order; appearance stays global.
 
 ## Known limitations
 

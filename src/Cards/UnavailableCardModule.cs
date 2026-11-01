@@ -28,7 +28,7 @@ namespace MirrorpondHUD.Cards
 
         string Message
         {
-            get { return "插件不可用：" + _kind + "\n重新安装插件并重启 MirrorpondHUD"; }
+            get { return "插件不可用：" + _kind + "\n请安装对应插件后重启 MirrorpondHUD（旧 Kind 已不再兼容）"; }
         }
 
         public override int RefreshIntervalMs(CardSettings config) { return 1000; }

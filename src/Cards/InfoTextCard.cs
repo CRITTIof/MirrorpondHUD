@@ -88,8 +88,8 @@ namespace MirrorpondHUD.Cards
         }
 
         /// <summary>
-        /// 合并前的四种老卡片迁移成 infotext 后，Preset 缺省会落成默认的 metrics；
-        /// 内容恰好是某个预设的默认内容时，把预设纠回那一个（老配置里时钟 / 按键 / 文本卡就能对上）。
+        /// 预设归一化：内容恰好等于某个预设的默认内容时，把预设纠回那一个；
+        /// 未知 / 空值归到系统信息。
         /// </summary>
         public static string InferPreset(string preset, string content)
         {

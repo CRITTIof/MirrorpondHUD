@@ -146,7 +146,7 @@ namespace MirrorpondHUD.Cards
     /// 插件加载前会复制到 <c>%LOCALAPPDATA%\MirrorpondHUD\plugin-cache</c> 再加载，
     /// 这样插件目录里的 DLL 不会被宿主锁住，可以随时覆盖 / 删除；下一次启动用新文件。
     ///
-    /// 契约版本先只支持 <see cref="SupportedApiVersion"/>；插件 ALC 对宿主程序集返回 null，
+    /// 契约版本先只支持 <see cref="SupportedApiVersion"/>；插件 ALC 对宿主 / Contracts / UiKit 程序集返回 null，
     /// 强制回落到默认 ALC，保证 <see cref="ICardModule"/> 是同一个 Type。
     /// 这不是安全沙箱：只加载用户明确安装的本地插件。
     /// </summary>
@@ -499,8 +499,8 @@ namespace MirrorpondHUD.Cards
 
                 if (ReservedKinds.Contains(kind))
                 {
-                    string error = label + ": Kind 与内置模块 / 旧别名冲突: " + kind;
-                    Log.Warn("卡片插件 Kind 与内置模块 / 旧别名冲突，已拒绝: " + kind + "（" + id + "）");
+                    string error = label + ": Kind 与内置模块冲突: " + kind;
+                    Log.Warn("卡片插件 Kind 与内置模块冲突，已拒绝: " + kind + "（" + id + "）");
                     errors.Add(error);
                     TryDiscardContext(context, shadowDir);
                     return null;

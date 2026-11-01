@@ -1,4 +1,4 @@
-# 版本修改记录（2.4.1 → 2.14.8）
+# 版本修改记录（2.4.1 → 2.14.9）
 
 > 范围：本文只记录**这一轮接手后我做的版本**（v2.4.1 起）。v2.4.0 及更早是既有历史，不在本文档里。
 > 数据全部取自仓库真实提交（`git diff --shortstat <上一版>..<本版>`），文件行的 `+ / -` 就是实际增删行数。
@@ -8,11 +8,12 @@
 > `v2.6.2` = `1b138e7`、`v2.9.2` = `754115e`）；`v2.4.1` 也已补推。`v2.9.3`–`v2.12.2` 已于 2.12.2 推送并发布 Release；`v2.13.0`–`v2.13.6` 目前只在本地 / 功能分支创建。
 > `v2.14.0`–`v2.14.4` 为功能分支 `feature/runtime-card-loading` 上的提交（分别为 `dbe8207` / `730fd39` /
 > `f67a255` / `5f8933c` / `ef70cea`，**未发布、未合并**）；`v2.14.5`（`a0fe549`）/ `v2.14.6`（`3e6abc6`）
-> 已推送到 `origin/feature/runtime-card-loading`；`v2.14.7`（`abcbcec`）/ `v2.14.8`（`633e9d6`）与本文档一并推送
-> `origin/feature/runtime-card-loading`（未发布、未合并）。
+> 已推送到 `origin/feature/runtime-card-loading`；
+> `v2.14.7`（`abcbcec`）/ `v2.14.8`（`633e9d6`）已随文档同步提交 `d73d2ec` 推送到同一分支（未发布、未合并）；
+> `v2.14.9` 为本次提交（基于 `d73d2ec`，与本文档一并推送 `origin/feature/runtime-card-loading`，未发布、未合并）。
 > `v2.14.1` / `v2.14.2` / `v2.14.4` 的规模用对应提交的 `git show --shortstat`；`v2.14.3` / `v2.14.5` / `v2.14.6`
-> 按当时提交前工作区的 `git diff --shortstat` 计算；`v2.14.7` / `v2.14.8` 用对应提交的 `git show --shortstat`
-> （文档同步改动另计）。
+> 按当时提交前工作区的 `git diff --shortstat` 计算；`v2.14.7` / `v2.14.8` 用对应提交的 `git show --shortstat`；
+> `v2.14.9` 用提交前工作区的 `git diff --shortstat -- MirrorpondHUD.csproj src`（文档同步另计）。
 
 ## 0. 总览
 
@@ -65,6 +66,7 @@
 | v2.14.6 | 2026-11-01 | 本次提交 | 低风险清理：删 `CardPluginHandle.EntryType` 与 `SettingsMigration` 无调用重载；新增「插件引用宿主程序集」明确拒绝；过期注释 / 失效文档路径清理；版本 2.14.6 | 8 文件，+26 / −19（文档同步另计） |
 | v2.14.7 | 2026-11-01 | `abcbcec` | 删除旧 Kind 别名与旧 Schema 迁移（开发阶段无用户）：clock/metrics/keys/text 不再转 infotext，旧 Schema 按损坏处理 | 11 文件，+30 / −434 |
 | v2.14.8 | 2026-11-01 | `633e9d6` | Contracts 瘦身：内置卡设置 Command/Media/Chat、DPAPI SecretStore、默认内容迁回宿主，Contracts 只留通用契约 | 11 文件，+351 / −358（含新增 `BuiltInCardSettings.cs` 316 行、`CardDefaults.cs` 21 行） |
+| v2.14.9 | 2026-11-01 | 本次提交 | 最终审阅修复：`CardSettings.Kind` 默认值 `metrics`→`infotext`、README 设置示例改 `Extras.command/media/chat`（P1×2）、旧迁移/旧 Kind 注释与 SelfTest 夹具清理（部分 P2）；版本 2.14.9 | 10 文件，+18 / −25（源码部分，文档同步另计） |
 
 ---
 
@@ -2050,7 +2052,85 @@ v2.13.6 / v2.14.0 的运行时插件走的是方案 A：插件直接引用 `Mirr
 
 ---
 
-## 48. 不在版本里的东西
+## 48. v2.14.9（功能分支 `feature/runtime-card-loading`，基于 `d73d2ec`，本次提交）
+
+### 背景
+
+2.14.8 的最终复核报告（`%TEMP%\review-clean\final.md`）结论：**55/55 PASS、无 P0**，
+但列出 P1 × 2（`CardSettings` 契约默认值/注释、README 配置块说明）与 P2 × 11（注释 / 文档 / 测试夹具残留）。
+本轮按“无用户、可修改”继续收尾，只修 P1 两项与部分低风险 P2，不改任何运行行为。
+
+### 改动
+
+1. **P1-1：`CardSettings` 契约修正**：`Kind` 默认值从已删除的 `"metrics"` 改为 `"infotext"`；删除残留的
+   “媒体卡片配置”旧注释（2.14.8 把 `MediaSettings` 迁回宿主时留下的），改为“卡片配置（宿主通用模型；插件卡片同样使用）”。
+2. **P1-2：README 设置示例对齐实际结构**：`settings.json` 示例从顶层 `Command` / `Media` 改为
+   `Extras.command` / `Extras.media`（英文段同步为 `Extras.command` / `Extras.media` / `Extras.chat`），
+   说明文字同步；自 2.14.0（schema 5/6）起这些块本来就在 `Extras` 里。
+3. **P2 注释 / 夹具清理**：
+   - `Settings.CurrentSchemaVersion` 注释改为“2.14.7 起不再迁移历史 Schema，旧文件按损坏备份后使用默认设置”；
+   - `ConfigStore` 保存注释去掉已删除的旧迁移描述，只保留明文 Key / 损坏恢复处理；
+   - `CommandSettings.Truncate` 注释改为当前语义（默认关、开启后按 `MaxLineChars` 截断，不再是“只为旧配置保留”）；
+   - `CardPluginLoader` 类注释补“宿主 / Contracts / UiKit 三程序集”，Kind 冲突错误与日志去掉“旧别名”措辞；
+   - `InfoTextCard.InferPreset` 注释改为当前用途（按内容纠回预设 / 未知归系统信息）；
+   - `UnavailableCardModule` 占位文案改为「插件不可用：<kind>，请安装对应插件后重启 MirrorpondHUD（旧 Kind 已不再兼容）」，
+     避免对已删除旧 Kind 给出“重新安装插件”的错误指引；
+   - `SelfTest` 夹具把已删除的旧 Kind（`text` / `metrics`）改为 `infotext`（需要时带 `Preset`），注释同步。
+4. 版本号：宿主 / Contracts / UiKit 三个 csproj 均为 2.14.9。
+
+### 文件
+
+| 文件 | 行数 | 说明 |
+|---|---|---|
+| `src/Contracts/Core/Settings.cs` | +3 / −8 | `CardSettings.Kind` 默认 `infotext`；删媒体卡注释、更新 Schema 注释 |
+| `src/Cards/CardPluginLoader.cs` | +3 / −3 | ALC 注释补 Contracts / UiKit；Kind 冲突日志去“旧别名” |
+| `src/Cards/InfoTextCard.cs` | +2 / −2 | `InferPreset` 注释更新 |
+| `src/Cards/UnavailableCardModule.cs` | +1 / −1 | 占位文案区分“插件缺失 / 未知类型” |
+| `src/Core/BuiltInCardSettings.cs` | +1 / −2 | `Truncate` 注释改为当前行为 |
+| `src/Core/ConfigStore.cs` | +1 / −2 | 保存注释去掉旧迁移描述 |
+| `src/SelfTest.cs` | +4 / −4 | 夹具旧 Kind `text` / `metrics` → `infotext`（+`Preset`） |
+| `MirrorpondHUD.csproj` | +1 / −1 | 版本 2.14.8 → 2.14.9 |
+| `src/Contracts/MirrorpondHUD.Contracts.csproj` | +1 / −1 | 版本 2.14.8 → 2.14.9 |
+| `src/UiKit/MirrorpondHUD.UiKit.csproj` | +1 / −1 | 版本 2.14.8 → 2.14.9 |
+
+文档同步更新：`README.md`（设置示例中英文 + 版本索引）、`docs/version-history.md`（另计；这些未计入上面的源码规模）。
+
+### 实测
+
+- 构建：宿主 / Contracts / UiKit **0 警告 0 错误**；示例插件 0 / 0。
+- `--selftest`：**失败项 0**。
+- `--smoke 8 --minimized`：exit 0。
+- 2.14.8 最终复核的 55/55 PASS 保留；2.14.9 只改默认值 / 注释 / 夹具 / 文档，不改变运行行为。
+
+### 审阅现状与剩余项
+
+最终复核报告（`%TEMP%\review-clean\final.md`）确认：无 P0；`ICardLegacyAlias` / `TryResolveAlias` /
+`LegacySettings` / `TypeForwardedTo` / `Settings.Default*Content` 等旧兼容路径在 `src` 已 0 处。
+2.14.9 已修 P1-1、P1-2，以及 P2-1（Schema 注释）、P2-2（ConfigStore 注释）、P2-3 的 `Truncate` 部分、
+P2-4（占位文案）、P2-6（ALC 注释 / 旧别名日志）、P2-7（InferPreset 注释）、P2-8 的 SelfTest 夹具部分。
+
+**未处理（留待后续）**：
+
+- P2-3 剩余：`ChatSettings.Width` / `AnswerLines` 的“只为旧配置保留”注释（字段在 schema 6 旧文件中仍可能出现）。
+- P2-5：`samples/RuntimeCardExample/README.md` 仍把 `ICardLegacyAlias` 列为热重载拒绝条件（该类型 2.14.7 已删）；
+  本次只允许改 README / version-history，示例 README 待下次同步。
+- P2-8 剩余：SelfTest 中“2.14.1 方案 B：契约 / DTO 必须在独立 Contracts 程序集”的注释仍需改成只断言契约类型在 Contracts。
+- P2-9：README 的 `docs/*.md` 链接在 clean 快照中不可达（独立仓库策略，需产品确认是否改完整 URL / 注明）。
+- P2-10：`AutoStart.CleanLegacy()` 每次启动清理改名前的注册表 Run 值（无害，可保留为防御）。
+- P2-11：审阅包中的 `bin/obj` 产物（`.gitignore` 已忽略，不影响仓库）。
+- 复核报告明确未验证：真实旧用户升级回放、未来 Schema（>6）文件级只读、网络 / 媒体端到端、UI 交互、
+  `--plugin-dev` 热重载、docs 独立仓库内容。
+
+### 风险
+
+- **契约默认值变化**：`CardSettings.Kind` 默认从 `"metrics"` 改为 `"infotext"`；依赖默认值的第三方代码现在会落到
+  `infotext`（而不是显示占位卡），更符合当前契约，但仍属默认行为变化。
+- 注释 / 文案 / 测试夹具改动不影响运行行为；旧插件与旧配置兼容性仍按 2.14.4 / 2.14.7 的结论（均不兼容，API=2）。
+- 版本三件套（宿主 / Contracts / UiKit）必须同步为 2.14.9。
+
+---
+
+## 49. 不在版本里的东西
 
 - 验收脚本、样张与测量脚本（`cmd-e2e.ps1`、`drag-glass.ps1`、`measure-*.py`、`shots/` 等）都在仓库外的 `hud-test/` 里，**没有提交**。
 - 发布：`main` 与标签已推送到 [github.com/CRITTIof/MirrorpondHUD](https://github.com/CRITTIof/MirrorpondHUD)；
@@ -2059,9 +2139,9 @@ v2.13.6 / v2.14.0 的运行时插件走的是方案 A：插件直接引用 `Mirr
   更早的 Release 正文与附件保留原样，v2.4.0 的 Release 已删除（tag `v2.4.0` 保留，历史仍可检出）。
 - 仓库追踪的文件共 117 个，`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
 
-## 49. 已知代价（跨版本）
+## 50. 已知代价（跨版本）
 
 - 桌面亚克力为了不拍到自己，会把卡片排除在截屏之外 —— 这个模式下截图 / 录屏里**看不到卡片**，观感只能靠肉眼与离屏渲染验证。
 - 兼容实现每帧对身后窗口做 `PrintWindow`，拖动时最多 ~21 帧/秒；要更高只能走桌面亚克力（DXGI）。
 - CLI 面板宽度不再按文字长度自动量宽（这是 2.4.5 的取舍：两块面板共用一套尺寸）。
-- 图标默认值从 1.45 改到 1.15，旧配置会被迁移一次；想更小 / 更大可在「外观 → 图标字号」调。
+- 图标默认值从 1.45 改到 1.15，更早版本的旧配置会被迁移一次（2.14.7 起迁移层已删除，此条只适用于 2.14.6 及之前）；想更小 / 更大可在「外观 → 图标字号」调。

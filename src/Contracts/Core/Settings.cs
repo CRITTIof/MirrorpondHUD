@@ -7,11 +7,7 @@ namespace MirrorpondHUD.Core
     public sealed class Settings
     {
         /// <summary>
-        /// 当前配置结构版本。0/1 是旧的单窗口配置，2 是「命令行设置全局」的初版卡片配置，
-        /// 都由 SettingsMigration 升级（3 起命令行工具、工作目录等属于每张命令行卡片）。
-        /// 4：图标倍率按「墨迹高度 / 文字高度」重新标定，旧的 1.45 偏大（图标比文字高 45%）。
-        /// 5：卡片自己的设置搬进 <see cref="CardSettings.Extras"/>（先迁命令行卡，旧的 Command 字段不再写盘）。
-        /// 6：媒体卡与 AI 对话卡的设置也搬进 Extras（Media / Chat 字段不再写盘）。
+        /// 当前配置结构版本。2.14.7 起不再迁移历史 Schema；旧文件按损坏备份后用默认设置。
         /// </summary>
         public const int CurrentSchemaVersion = 6;
         public int SchemaVersion = 0;
@@ -542,14 +538,13 @@ namespace MirrorpondHUD.Core
         public string Hotkey = "";
     }
 
-    /// <summary>媒体卡片（图片 / 动图 / 视频）的配置。</summary>
-    /// </summary>
+    /// <summary>卡片配置（宿主通用模型；插件卡片同样使用）。</summary>
     public sealed class CardSettings
     {
         /// <summary>稳定标识，删除 / 重排都不变，热键动作也挂在它上面。</summary>
         public string Id = "";
         /// <summary>卡片种类（CardRegistry 里的 Kind）。</summary>
-        public string Kind = "metrics";
+        public string Kind = "infotext";
         /// <summary>显示名称，允许重名。</summary>
         public string Name = "";
         /// <summary>常驻：叠层显示时一直在屏幕上；关闭后需要用热键呼出。</summary>

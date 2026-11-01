@@ -12,8 +12,7 @@ namespace MirrorpondHUD.Core
         /// <summary>工作目录；空 = 用户主目录。</summary>
         public string WorkingDirectory = "";
         /// <summary>
-        /// 旧版「超长单行截断」开关。命令行面板改成会换行的内部小面板之后已经没有设置项了，
-        /// 默认关掉（换行比截断更可读）；字段留着只是为了旧配置能读进来。
+        /// 超长单行截断开关。默认关（换行比截断更可读），开启后仍按 <see cref="MaxLineChars"/> 截断。
         /// </summary>
         public bool Truncate = false;
         /// <summary>截断后单行保留的字符数（只在 <see cref="Truncate"/> 为 true 时生效）。</summary>

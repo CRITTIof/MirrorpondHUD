@@ -377,7 +377,7 @@ namespace MirrorpondHUD
                 };
                 settings.Cards.Add(new CardSettings
                 {
-                    Id = "self", Kind = "text", Name = "自检", Content = "x{cpu}", Resident = true, Spacing = 16
+                    Id = "self", Kind = "infotext", Preset = "text", Name = "自检", Content = "x{cpu}", Resident = true, Spacing = 16
                 });
                 var commandCard = new CardSettings
                 {
@@ -411,7 +411,7 @@ namespace MirrorpondHUD
                 configOk = back != null
                            && back.Cards != null && back.Cards.Count == 3
                            && back.Cards[0].Content == "x{cpu}"
-                           && back.Cards[0].Kind == "text"
+                           && back.Cards[0].Kind == "infotext"
                            && Math.Abs(back.Style.FontSize - 21) < 0.001
                            && Math.Abs(back.Style.IconScale - 1.35) < 0.001
                            && Math.Abs(back.Overlay.X - 123.5) < 0.001
@@ -479,7 +479,7 @@ namespace MirrorpondHUD
 
                 // 非 chat Kind 的卡片里残留 chat Extras 时，Normalize 也要把明文字段加密。
                 var oddSettings = new Settings();
-                var oddCard = new CardSettings { Id = "odd", Kind = "metrics", Name = "杂项" };
+                var oddCard = new CardSettings { Id = "odd", Kind = "infotext", Name = "杂项" };
                 oddCard.SetExtras("chat", new ChatSettings { ApiKey = "sk-odd-plain" });
                 oddSettings.Cards.Add(oddCard);
                 oddSettings.Normalize();
@@ -1218,7 +1218,7 @@ namespace MirrorpondHUD
                 var host = new TestCardHost();
                 var context = new CardRenderContext(
                     new Settings(), new MetricsSnapshot(), null,
-                    new CardSettings { Id = "host-test", Kind = "text" }, null, host);
+                    new CardSettings { Id = "host-test", Kind = "infotext" }, null, host);
 
                 contextHostOk = ReferenceEquals(context.Host, host);
             }

@@ -167,8 +167,7 @@ namespace MirrorpondHUD.Core
                 LastLoadWarning = "设置归一化失败，已使用默认设置；原文件已备份为 .broken-*。";
             }
 
-            // 旧版单窗口配置 / 初版多卡片配置：迁移后立刻落盘，避免每次启动重复迁移。
-            // 旧版明文 API Key 同理：Normalize 已经把它换成 dpapi:…。
+            // 明文 Key 迁移 / 损坏恢复后立刻落盘，避免每次启动重复处理。
             // 从 .bak 恢复时不要再把损坏的主文件复制回 .bak；明文 Key 迁移时不生成含明文的旧备份。
             if (!LastLoadReadOnly)
             {
