@@ -237,6 +237,7 @@ namespace MirrorpondHUD
             bool singleInteractiveOk = false;
             bool widgetsOk = false;
             bool widgets2Ok = false;
+            bool formControlsOk = false;
             bool contextHostOk = false;
             bool jobQueueOk = false;
             bool shellOk = false;
@@ -1214,6 +1215,34 @@ namespace MirrorpondHUD
 
             try
             {
+                // UiKit 表单控件：滑块 / 开关 / 下拉 / 数字 / 颜色 / 分段 + 声明式表单。
+                var style = new StyleSettings { FontSize = 14, Foreground = "#E6EDF3" };
+                var form = new CardSettingsForm();
+                var slider = form.AddSlider("音量", 0, 100, 42);
+                var toggle = form.AddToggle("启用", true);
+                var select = form.AddSelect("模式", new[] { "A", "B" }, "B");
+                var number = form.AddNumber("数量", 7, 1, 10);
+                var color = form.AddColor("颜色", "#FF2F6FEB");
+                var segment = form.AddSegmented("布局", "横向", "纵向");
+                form.AddDescription("说明文字");
+                form.AddDivider();
+                form.ApplyStyle(style, 10);
+
+                formControlsOk = Math.Abs(slider.Value - 42) < 0.01
+                               && toggle.IsChecked == true
+                               && select.SelectedItem == "B"
+                               && Math.Abs(number.Value - 7) < 0.01
+                               && color.Value == "#FF2F6FEB"
+                               && segment.SelectedIndex == 0
+                               && form.Children.Count >= 8;
+            }
+            catch (Exception ex)
+            {
+                Log.Error("表单控件自检异常", ex);
+            }
+
+            try
+            {
                 // 2.10.2：富内容的渲染上下文要把这张卡片的 ICardHost 透传给内容控件。
                 var host = new TestCardHost();
                 var context = new CardRenderContext(
@@ -1587,7 +1616,7 @@ namespace MirrorpondHUD
                   commandOk && commandP2Ok && truncateOk && toolLabelOk && secretOk && chatUrlOk && chatHotkeyOk && settingsEditorOk &&
                   stateStoreOk && renderOk && glassPolicyOk && themeOk && restyleOk &&
                   themeFileOk && themeRejectOk && themeCatalogOk && activationOk && cloneGuardOk &&
-                  restyleHostOk && chatContextOk && singleInteractiveOk && widgetsOk && widgets2Ok &&
+                  restyleHostOk && chatContextOk && singleInteractiveOk && widgetsOk && widgets2Ok && formControlsOk &&
                   contextHostOk && jobQueueOk && shellOk && stationOk)) failures++;
 
             Fix(sb, "逻辑自检", string.Format(
@@ -1629,6 +1658,7 @@ namespace MirrorpondHUD
             Fix(sb, "交互卡唯一", singleInteractiveOk ? "OK（默认一张；第二张会被设置页 / 校验拦住）" : "FAIL");
             Fix(sb, "共享控件", widgetsOk ? "OK（CardList 空态/计数/选中；CardStatus 忙碌/进度/错误）" : "FAIL");
             Fix(sb, "共享控件（交互）", widgets2Ok ? "OK（Header 按钮可点；Input 提交；DropOverlay 显隐）" : "FAIL");
+            Fix(sb, "表单控件", formControlsOk ? "OK（Slider / Toggle / Select / Number / Color / Segmented / Form）" : "FAIL");
             Fix(sb, "渲染上下文", contextHostOk ? "OK（富内容创建上下文透传 ICardHost）" : "FAIL");
             Fix(sb, "后台任务", jobQueueOk ? "OK（串行队列：成功 / 失败 / 取消）" : "FAIL");
             Fix(sb, "Shell / 拖出", shellOk ? "OK（图标缓存一致；缩略图不挂；拖出阈值/空输入）" : "FAIL");
