@@ -154,7 +154,7 @@ namespace MirrorpondHUD.Cards
     /// </summary>
     internal static class CardPluginLoader
     {
-        public const int SupportedApiVersion = 1;
+        public const int SupportedApiVersion = 2;
         const int MaxManifestBytes = 256 * 1024;
 
         /// <summary>内置模块与旧 Kind 别名占用的标识；插件不能用它们，否则配置归一化会被别名抢走。</summary>
