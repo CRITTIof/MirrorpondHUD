@@ -127,21 +127,55 @@ namespace MirrorpondHUD.Ui
     {
         bool _active;
         bool _unavailable;
+        bool _permanent;
+        int _failures;
+        DateTime _failedAt = DateTime.MinValue;
+        long _healthyAtFailure;
         DateTime _lastExclude = DateTime.MinValue;
 
         public bool IsActive { get { return _active; } }
 
-        public bool IsUnavailable { get { return _unavailable; } }
+        /// <summary>
+        /// 这块底板还能不能用。失败分两种：
+        /// 1) 环境本身不支持（远程桌面）—— 一直不可用，等设置重新应用；
+        /// 2) 取样连续全黑（锁屏 / 切换显示器 / 瞬间读不到屏幕）—— 冷却几秒后自动再试，
+        ///    期间只要别的卡片恢复正常取样就立刻重试。以前这里是「一次失败永久跳过」，
+        ///    一次瞬态黑屏就能把单张卡永远钉在系统亚克力上，直到用户改设置。
+        /// </summary>
+        public bool IsUnavailable
+        {
+            get
+            {
+                if (!_unavailable) return false;
+                if (_permanent) return true;
+                if (GlassFeed.HealthyRounds != _healthyAtFailure) return false;  // 取样已恢复：马上重试
+                return (DateTime.UtcNow - _failedAt).TotalSeconds < RetrySeconds;
+            }
+        }
+
+        /// <summary>3s / 6s / 12s / 15s 封顶：环境真读不到屏幕时不来回抖，恢复后最多 15 秒内回到桌面亚克力。</summary>
+        double RetrySeconds
+        {
+            get { return Math.Min(15.0, 3.0 * Math.Pow(2, Math.Max(1, Math.Min(_failures, 5)) - 1)); }
+        }
 
         public bool Apply(OverlayWindow window, out string reason)
         {
             reason = null;
-            if (_unavailable) return false;
+
+            if (_unavailable)
+            {
+                if (IsUnavailable) return false;        // 还在冷却：让系统亚克力继续顶着
+                // 失败之后屏幕取样恢复过，说明只是瞬态；从头开始计失败次数。
+                if (GlassFeed.HealthyRounds != _healthyAtFailure) _failures = 0;
+                _unavailable = false;
+            }
 
             string why;
             if (!GlassFeed.IsAvailable(out why))
             {
                 _unavailable = true;
+                _permanent = true;
                 reason = why;
                 return false;
             }
@@ -174,16 +208,22 @@ namespace MirrorpondHUD.Ui
             GlassFeed.ExcludeFromCapture(window, false);
         }
 
-        /// <summary>取样连续全黑时由窗口标记；之后再选到它就直接跳过。</summary>
+        /// <summary>整叠取样全黑时由窗口标记：冷却一段时间再试，而不是永久放弃。</summary>
         public void MarkUnavailable()
         {
             _unavailable = true;
+            _failedAt = DateTime.UtcNow;
+            _healthyAtFailure = GlassFeed.HealthyRounds;
+            if (_failures < int.MaxValue) _failures++;
         }
 
-        /// <summary>设置变了就再给它一次机会。</summary>
+        /// <summary>设置变了就重置失败历史，再给它一次机会。</summary>
         public void ResetAvailability()
         {
             _unavailable = false;
+            _permanent = false;
+            _failures = 0;
+            _failedAt = DateTime.MinValue;
         }
     }
 }

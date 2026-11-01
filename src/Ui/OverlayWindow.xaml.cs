@@ -118,7 +118,16 @@ namespace MirrorpondHUD.Ui
             };
             _topmostTimer.Tick += (s, args) =>
             {
-                if (_settings.Overlay.Topmost && IsVisible) EnsureTopmost();
+                if (_settings.Overlay.Topmost && IsVisible)
+                {
+                    EnsureTopmost();            // 内部会重摆底板
+                }
+                else if (IsVisible && _settings.Style.Acrylic)
+                {
+                    // 非置顶时也要给一次机会：桌面亚克力因瞬态黑屏失败过以后，
+                    // 冷却结束靠这里自动重试，而不是等用户改设置。
+                    UpdateBackdrop();
+                }
             };
             _topmostTimer.Start();
         }

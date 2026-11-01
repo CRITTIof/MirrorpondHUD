@@ -79,10 +79,18 @@ namespace MirrorpondHUD.Ui
         static bool _frameSourceTried;
         static DateTime _frameSourceIdle = DateTime.MinValue;
 
-        static int _blankFrames;
+        /// <summary>整叠卡片连续「全黑」的轮数。只有整轮所有能取到画面的卡片都黑才计一轮，见 <see cref="CaptureAll"/>。</summary>
+        static int _blankRounds;
+
+        /// <summary>至少有一张卡拿到非黑画面的轮数。桌面亚克力失败后靠它判断屏幕取样是否已经恢复。</summary>
+        static long _healthyRounds;
+
         static int _gdiWarnedFps;
         static int _gdiRounds;
         static bool _pushed;
+
+        /// <summary>只增不减：给「失败后还要不要重试桌面亚克力」做环境恢复判断。</summary>
+        public static long HealthyRounds { get { return _healthyRounds; } }
 
         // ==================== 挂接 / 参数 ====================
 
@@ -301,7 +309,11 @@ namespace MirrorpondHUD.Ui
                 if (t + h > bottom) bottom = t + h;
             }
 
-            if (count == 0) return;
+            if (count == 0)
+            {
+                _blankRounds = 0;
+                return;
+            }
 
             int width = right - left;
             int height = bottom - top;
@@ -352,7 +364,46 @@ namespace MirrorpondHUD.Ui
                          + "取图方式换成「GPU 加速」可以降到 1 ms/轮");
             }
 
-            foreach (Target target in snapshot) Render(target, left, top);
+            int rendered = 0;
+            int black = 0;
+            foreach (Target target in snapshot) Render(target, left, top, ref rendered, ref black);
+
+            // 保险丝：只有「这一轮所有能取到画面的卡片全是黑的」才计一轮，连续 3 轮才判定读不到屏幕。
+            // 以前每张卡各自累加一个全局计数器：一轮里连续三张移出屏幕的卡片就能误判成
+            // 「连续 3 帧全黑」，把第 3 张卡单独弹回系统亚克力（迭代顺序决定哪张倒霉）。
+            if (rendered == 0)
+            {
+                _blankRounds = 0;
+                return;
+            }
+
+            if (black < rendered)
+            {
+                _blankRounds = 0;
+                _healthyRounds++;
+                return;
+            }
+
+            if (++_blankRounds < 3) return;
+            _blankRounds = 0;
+            ReportUnavailable(snapshot,
+                "整叠卡片连续 3 轮取样全黑：当前环境读不到屏幕内容（截屏被拦截 / 锁屏 / 屏幕关闭）");
+        }
+
+        /// <summary>
+        /// 整叠卡片都读不到画面：这是环境问题，不是某一张卡的问题，
+        /// 所以让所有窗口一起退到系统亚克力（或兼容实现），不能只让迭代顺序里的第 N 张卡单独掉级。
+        /// </summary>
+        static void ReportUnavailable(Target[] snapshot, string reason)
+        {
+            foreach (Target target in snapshot)
+            {
+                Action<string> handler = target.OnUnavailable;
+                if (handler == null) continue;
+
+                try { handler(reason); }
+                catch (Exception ex) { Log.Warn("取样失败回调出错: " + ex.Message); }
+            }
         }
 
         static bool TryGetScreenRect(OverlayWindow card, out int left, out int top, out int width, out int height)
@@ -388,11 +439,33 @@ namespace MirrorpondHUD.Ui
             top = (int)Math.Round(origin.Y);
             width = (int)Math.Round(w * scaleX);
             height = (int)Math.Round(h * scaleY);
-            return width >= 4 && height >= 4;
+            if (width < 4 || height < 4) return false;
+
+            // 卡片完全在屏幕内才取样。拖到屏幕外时那里没有任何像素：负的源坐标会让 GDI
+            // 只填一部分取样图（或者干脆不填），屏幕外那张卡就读到全零 —— 这正是
+            // 「拖动时单张卡突然退回系统亚克力」的触发源。跳过以后玻璃停在最后一帧，
+            // 卡片回到屏幕内立刻恢复，也不再喂给全黑保险丝。
+            return IsFullyOnScreen(left, top, width, height);
+        }
+
+        const int SmXVirtualScreen = 76;
+        const int SmYVirtualScreen = 77;
+        const int SmCxVirtualScreen = 78;
+        const int SmCyVirtualScreen = 79;
+
+        static bool IsFullyOnScreen(int left, int top, int width, int height)
+        {
+            int x = GetSystemMetrics(SmXVirtualScreen);
+            int y = GetSystemMetrics(SmYVirtualScreen);
+            int w = GetSystemMetrics(SmCxVirtualScreen);
+            int h = GetSystemMetrics(SmCyVirtualScreen);
+            if (w <= 0 || h <= 0) return true;      // 取不到虚拟屏尺寸时不拦
+
+            return left >= x && top >= y && left + width <= x + w && top + height <= y + h;
         }
 
         /// <summary>从共享的屏幕图里取自己这一块，缩小 + 模糊，然后交给卡片画出来。</summary>
-        static void Render(Target target, int originLeft, int originTop)
+        static void Render(Target target, int originLeft, int originTop, ref int rendered, ref int black)
         {
             int left, top, width, height;
             if (!TryGetScreenRect(target.Window, out left, out top, out width, out height)) return;
@@ -403,8 +476,9 @@ namespace MirrorpondHUD.Ui
             if (!EnsureSurface(target, w, h)) return;
 
             SetStretchBltMode(target.MemoryDc, Halftone);
-            StretchBlt(target.MemoryDc, 0, 0, w, h, _sharedDc, left - originLeft, top - originTop,
-                       width, height, Srccopy);
+            if (!StretchBlt(target.MemoryDc, 0, 0, w, h, _sharedDc, left - originLeft, top - originTop,
+                            width, height, Srccopy))
+                return;     // 这一轮没取到就跳过，别把上一次的残留当成取样结果
 
             var buffer = new byte[w * h * 4];
             Marshal.Copy(target.Bits, buffer, 0, buffer.Length);
@@ -413,7 +487,9 @@ namespace MirrorpondHUD.Ui
             GlassCapture.BoxBlur(buffer, w, h, _blurRadius, false);
 
             if (Diagnose) LogSample(buffer, w, h);
-            CheckUsable(target, buffer, w, h);
+
+            rendered++;
+            if (IsBlackFrame(buffer, w, h)) black++;
 
             // 和上一次真正画出去的那一帧几乎一样就不动 WPF：静置时背景没变，重画只是白费。
             if (SameAsLastFrame(target, buffer, w, h)) return;
@@ -645,28 +721,18 @@ namespace MirrorpondHUD.Ui
         // ==================== 保险 ====================
 
         /// <summary>
-        /// 连续几帧取样全黑，说明这个模式在当前环境里读不到背景（截屏被安全策略拦截 / 屏幕本来就是黑的 /
-        /// DC 状态异常）。退回是正确选择 —— 卡片会被放回截屏里，改走系统亚克力或兼容实现。
+        /// 这一块取样是不是全黑。整轮全黑才计入保险丝（见 <see cref="CaptureAll"/>），
+        /// 单张卡后面的内容本来就是黑的不能算环境失败。
         /// </summary>
-        static void CheckUsable(Target target, byte[] buffer, int w, int h)
+        static bool IsBlackFrame(byte[] buffer, int w, int h)
         {
-            if (target.OnUnavailable == null) return;
+            if (w * h == 0) return true;
 
             long sum = 0;
             for (int i = 0; i + 2 < buffer.Length; i += 4)
                 sum += (buffer[i] + 2 * buffer[i + 1] + buffer[i + 2]) / 4;
 
-            long mean = w * h == 0 ? 0 : sum / (w * h);
-
-            if (mean > 2) { _blankFrames = 0; return; }
-            if (++_blankFrames < 3) return;
-
-            _blankFrames = 0;
-            Action<string> handler = target.OnUnavailable;
-            if (handler == null) return;
-
-            try { handler("底板连续 3 帧取样全黑：当前环境读不到屏幕内容（截屏被拦截或屏幕本来就是黑的）"); }
-            catch (Exception ex) { Log.Warn("取样失败回调出错: " + ex.Message); }
+            return sum / (w * h) <= 2;
         }
 
         // ==================== 诊断 ====================
