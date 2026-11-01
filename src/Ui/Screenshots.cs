@@ -9,7 +9,6 @@ using System.Windows.Threading;
 using MirrorpondHUD.Cards;
 using MirrorpondHUD.Core;
 using MirrorpondHUD.Ui.Controls;
-using MirrorpondHUD.Media;
 
 namespace MirrorpondHUD.Ui
 {
@@ -131,10 +130,8 @@ namespace MirrorpondHUD.Ui
                         var view = rich.CreateContent(new CardRenderContext(settings, snap, keys, card));
                         if (view == null) continue;
 
-                        var mediaView = view as MediaView;
-                        string mediaPath = MediaCard.MediaOf(card).Path;
-                        if (mediaView != null && MediaView.IsVideoPath(mediaPath))
-                            mediaView.ShowPoster(mediaPath);
+                        var screenshot = module as ICardScreenshotProvider;
+                        if (screenshot != null) screenshot.PrepareScreenshot(view);
 
                         // CLI 面板（AI 对话 / 命令行）平时空着，只有提问 / 跑命令才有记录；
                         // MIRRORPOND_CLI_DEMO=1 时塞两条样张，才能检查内部小面板和它们自己的滑块。
@@ -373,7 +370,19 @@ namespace MirrorpondHUD.Ui
                     Name = "文件中转站",
                     Extras = new Dictionary<string, object>()
                 };
-                var stationView = new StationView(settings, stationConfig, null);
+                FrameworkElement stationView = null;
+                var stationModule = CardRegistry.Get("dropstation") as IRichCardModule;
+                if (stationModule != null)
+                {
+                    try
+                    {
+                        stationView = stationModule.CreateContent(
+                            new CardRenderContext(settings, null, null, stationConfig, null));
+                    }
+                    catch (Exception ex) { Log.Warn("截图创建中转站内容失败: " + ex.Message); }
+                }
+                if (stationView == null)
+                    stationView = new TextBlock { Text = "（文件中转站插件不可用）", Foreground = Brushes.Gray };
 
                 var stationCard = new Border
                 {

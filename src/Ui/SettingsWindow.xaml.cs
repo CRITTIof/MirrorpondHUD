@@ -1765,24 +1765,16 @@ namespace MirrorpondHUD.Ui
 
                 card.Hotkey = MergeRuntimeValue(card.Hotkey, baselineCard.Hotkey, liveCard.Hotkey);
 
-                // Chat 模式只有热键会绕过设置窗直接改 live；非 chat 卡不碰 Extras，避免写脏。
-                if (!string.Equals(card.Kind, "chat", StringComparison.OrdinalIgnoreCase)) continue;
+                // 卡片自己的运行时字段（对话模式等）由模块声明合并规则，宿主不认 Kind / Extras。
+                ICardModule module;
+                var merge = CardRegistry.TryGet(card.Kind, out module)
+                    ? module as ICardRuntimeSettingsMerge
+                    : null;
+                if (merge == null) continue;
 
-                string liveMode = ChatModeOf(liveCard);
-                string targetMode = ChatModeOf(card);
-                if (!SameRuntimeValue(targetMode, ChatModeOf(baselineCard))) continue;  // 用户改过模式
-                if (SameRuntimeValue(targetMode, liveMode)) continue;
-
-                ChatCard.ChatOf(card).Mode = liveMode;
+                try { merge.MergeRuntimeFields(card, liveCard, baselineCard); }
+                catch (Exception ex) { Log.Warn("合并卡片运行时字段失败(" + card.Name + "): " + ex.Message); }
             }
-        }
-
-        /// <summary>读卡片 Extras 里的 Chat 模式；调用方已限定 chat 卡，不会给别的卡写 Extras。</summary>
-        static string ChatModeOf(CardSettings card)
-        {
-            if (card == null) return "";
-            ChatSettings chat = card.ExtrasAs<ChatSettings>(ChatCard.SettingsKey);
-            return chat == null ? "" : ChatSettings.NormalizeMode(chat.Mode);
         }
 
         /// <summary>

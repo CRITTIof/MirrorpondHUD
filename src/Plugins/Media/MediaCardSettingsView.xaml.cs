@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using MirrorpondHUD.Core;
-using MirrorpondHUD.Media;
+using MirrorpondHUD.Ui.Controls.Media;
 
 namespace MirrorpondHUD.Cards
 {

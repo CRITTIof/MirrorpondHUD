@@ -25,6 +25,7 @@ namespace MirrorpondHUD.Ui
         readonly List<CardPluginUnloadProbe> _pendingProbes = new List<CardPluginUnloadProbe>();
         readonly DispatcherTimer _debounce;
         DispatcherTimer _verifyTimer;
+        readonly List<CardPluginHandle> _bundled = new List<CardPluginHandle>();
         List<CardPluginHandle> _handles;
         bool _reloading;
         bool _disposed;
@@ -36,7 +37,11 @@ namespace MirrorpondHUD.Ui
             if (handles != null)
             {
                 foreach (CardPluginHandle handle in handles)
-                    if (handle != null) _handles.Add(handle);
+                {
+                    if (handle == null) continue;
+                    if (handle.IsBundled) _bundled.Add(handle);
+                    else _handles.Add(handle);
+                }
             }
 
             _debounce = new DispatcherTimer(DispatcherPriority.Background)
@@ -140,7 +145,9 @@ namespace MirrorpondHUD.Ui
             {
                 Log.Info("检测到插件目录变化，开始热重载");
 
-                CardPluginLoadReport report = CardPluginLoader.LoadAll();
+                // 内置卡片插件不参与开发期热重载：它们始终由启动时那一批句柄提供，
+                // 只重新加载用户自己放进插件目录的文字卡。
+                CardPluginLoadReport report = CardPluginLoader.LoadAll(false);
                 if (report.HasErrors)
                 {
                     Log.Warn("插件热重载放弃：本次扫描有 " + report.Errors.Count +
@@ -168,7 +175,7 @@ namespace MirrorpondHUD.Ui
 
                 try
                 {
-                    CardRegistry.ReplaceExternal(SelectModules(report.Handles));
+                    CardRegistry.ReplaceExternal(SelectModules(_bundled, report.Handles));
                 }
                 catch (Exception ex)
                 {
@@ -289,12 +296,19 @@ namespace MirrorpondHUD.Ui
             if (probe != null) probe.Verify(false);
         }
 
-        static IEnumerable<ICardModule> SelectModules(IEnumerable<CardPluginHandle> handles)
+        static IEnumerable<ICardModule> SelectModules(IEnumerable<CardPluginHandle> bundled,
+                                                      IEnumerable<CardPluginHandle> user)
         {
             var modules = new List<ICardModule>();
-            foreach (CardPluginHandle handle in handles)
+            if (bundled != null)
             {
-                if (handle != null && handle.Module != null) modules.Add(handle.Module);
+                foreach (CardPluginHandle handle in bundled)
+                    if (handle != null && handle.Module != null) modules.Add(handle.Module);
+            }
+            if (user != null)
+            {
+                foreach (CardPluginHandle handle in user)
+                    if (handle != null && handle.Module != null) modules.Add(handle.Module);
             }
             return modules;
         }

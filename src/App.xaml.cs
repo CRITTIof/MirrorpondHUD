@@ -197,7 +197,7 @@ namespace MirrorpondHUD
             // 第二实例在互斥检查处就会退出，此时 _plugins 还是 null，不能走这里的清理日志。
             if (_plugins != null)
             {
-                try { CardRegistry.ReplaceExternal(new List<ICardModule>()); } catch { }
+                try { CardRegistry.ClearExternal(); } catch { }
                 try { _pluginDev?.UnloadCurrent(); } catch { }
                 try { CardPluginLoader.Unload(_plugins); } catch { }
             }

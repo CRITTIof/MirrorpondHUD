@@ -10,7 +10,6 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using MirrorpondHUD.Core;
-using MirrorpondHUD.Ui;
 using MirrorpondHUD.Ui.Controls;
 
 namespace MirrorpondHUD.Cards
@@ -35,7 +34,8 @@ namespace MirrorpondHUD.Cards
     /// 会挡住它身下的桌面点击（其余卡片不受影响）。
     /// </summary>
     public sealed class ChatCard : RichCardModuleBase, ICardHotkeySource, ICardHotkeyTarget,
-                                   ICardSettingsModule, ICardEditorSection, ICardSummary, ICardStyleAware
+                                   ICardSettingsModule, ICardEditorSection, ICardSummary, ICardStyleAware,
+                                   ICardSelfTest, ICardRuntimeSettingsMerge
     {
         /// <summary>对话设置存在 <see cref="CardSettings.Extras"/> 里的键名。</summary>
         public const string SettingsKey = "chat";
@@ -80,11 +80,9 @@ namespace MirrorpondHUD.Cards
         /// <summary>
         /// P1-5：宿主只在「内容签名没变」时调这里（改卡片名 / 热键 / 间距，或应用设置后换掉
         /// 配置对象树）。视图必须跟着换成宿主当前这棵对象树，否则它会长期捏着旧的
-        /// <see cref="Settings"/> / <see cref="ChatSettings"/>；之后按热键切模式时整份
-        /// <c>ConfigStore.Save</c> 会把用户刚保存的新名字 / 新热键 / 新外观回滚成旧值。
-        ///
-        /// 宿主没有公开「保存设置」入口（<see cref="ICardHost"/> 只有状态文件与重绘；加方法会改
-        /// public 契约并牵动所有实现），所以走评审给的另一条路：刷新视图引用，让写回落在当前树上。
+        /// <see cref="Settings"/> / <see cref="ChatSettings"/>；之后按热键切模式时保存整份配置
+        /// 会把用户刚保存的新名字 / 新热键 / 新外观回滚成旧值。2.16.0 起宿主提供
+        /// <see cref="ICardHost.SaveSettings"/>，视图只刷新引用，写回落在当前树上。
         /// </summary>
         public override void UpdateContent(FrameworkElement content, CardRenderContext context)
         {
@@ -120,6 +118,31 @@ namespace MirrorpondHUD.Cards
         public FrameworkElement CreateEditor(CardSettings config, Settings settings, Action onChanged)
         {
             return new ChatCardSettingsView(config, onChanged);
+        }
+
+        /// <summary>设置窗保存时只合并用户没改过的对话模式（热键切换会绕过设置窗直接写 live）。</summary>
+        public void MergeRuntimeFields(CardSettings target, CardSettings live, CardSettings baseline)
+        {
+            if (target == null || live == null || baseline == null) return;
+
+            string liveMode = ChatSettings.NormalizeMode(ChatOf(live).Mode);
+            string targetMode = ChatSettings.NormalizeMode(ChatOf(target).Mode);
+            string baselineMode = ChatSettings.NormalizeMode(ChatOf(baseline).Mode);
+            if (!string.Equals(targetMode, baselineMode, StringComparison.OrdinalIgnoreCase)) return;
+            if (string.Equals(targetMode, liveMode, StringComparison.OrdinalIgnoreCase)) return;
+
+            ChatOf(target).Mode = liveMode;
+        }
+
+        public string RunSelfTest()
+        {
+            if (ChatSettings.NormalizeMode("polling") != "Context") return "轮询模式归一化失败";
+            if (ChatSettings.NormalizeMode("") != "Single") return "空模式没有归一到单次";
+            var chat = new ChatSettings { BaseUrl = " https://example.com/v1/ ", TimeoutSeconds = 999 };
+            chat.Normalize();
+            if (chat.BaseUrl != "https://example.com/v1") return "BaseUrl 归一化失败";
+            if (chat.TimeoutSeconds != 300) return "超时时间没有夹紧";
+            return null;
         }
 
         /// <summary>只换外观：面板就地重套样式，对话历史不丢。</summary>
@@ -391,8 +414,9 @@ namespace MirrorpondHUD.Cards
             chat.Mode = _config.Mode;   // 把模式写进当前树，再保存这一份
             _config = chat;
 
-            try { ConfigStore.Save(live); }
-            catch (Exception ex) { Log.Warn("保存对话模式失败: " + ex.Message); }
+            if (_host == null) return;
+            if (!_host.SaveSettings())
+                Log.Warn("保存对话模式失败：宿主拒绝了配置写入");
         }
 
         /// <summary>在当前 Settings 里找这张对话卡的配置；找不到返回 null（旧视图，不能写盘）。</summary>

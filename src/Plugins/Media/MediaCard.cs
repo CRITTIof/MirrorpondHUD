@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Windows;
 using MirrorpondHUD.Core;
-using MirrorpondHUD.Media;
+using MirrorpondHUD.Ui.Controls.Media;
 
 namespace MirrorpondHUD.Cards
 {
@@ -16,7 +16,7 @@ namespace MirrorpondHUD.Cards
     /// </summary>
     public sealed class MediaCard : RichCardModuleBase, ICardHotkeySource, ICardHotkeyTarget,
                                     ICardSettingsModule, ICardEditorSection, ICardSettingsValidator,
-                                    ICardSummary, ICardStyleAware
+                                    ICardSummary, ICardStyleAware, ICardScreenshotProvider, ICardSelfTest
     {
         /// <summary>媒体设置存在 <see cref="CardSettings.Extras"/> 里的键名。</summary>
         public const string SettingsKey = "media";
@@ -42,7 +42,7 @@ namespace MirrorpondHUD.Cards
 
         public void ExecuteHotkey(string action, FrameworkElement content)
         {
-            var view = content as MediaView;
+            var view = content as CardMediaView;
             if (view != null) view.HandleHotkey(action);
         }
 
@@ -52,7 +52,7 @@ namespace MirrorpondHUD.Cards
                 ? context.Settings.Overlay.CornerRadius
                 : 10;
 
-            var view = new MediaView()
+            var view = new CardMediaView()
                 .WithCornerRadius(radius)
                 .WithStyle(context == null ? null : context.Settings.Style);
 
@@ -62,13 +62,13 @@ namespace MirrorpondHUD.Cards
 
         public override void UpdateContent(FrameworkElement content, CardRenderContext context)
         {
-            var view = content as MediaView;
+            var view = content as CardMediaView;
             if (view != null) view.Bind(Media(context));
         }
 
         public override void OnVisibilityChanged(FrameworkElement content, bool visible)
         {
-            var view = content as MediaView;
+            var view = content as CardMediaView;
             if (view == null) return;
             if (visible) view.Play();
             else view.Pause();
@@ -76,7 +76,7 @@ namespace MirrorpondHUD.Cards
 
         public override void OnZOrderChanged(FrameworkElement content)
         {
-            var view = content as MediaView;
+            var view = content as CardMediaView;
             if (view != null) view.RaiseVideo();
         }
 
@@ -114,7 +114,7 @@ namespace MirrorpondHUD.Cards
         /// <summary>主题 / 字号 / 圆角变了：就地换肤，视频不重启、动图不回第一帧。</summary>
         public void ApplyStyle(FrameworkElement content, CardRenderContext context)
         {
-            var view = content as MediaView;
+            var view = content as CardMediaView;
             if (view == null || context == null) return;
 
             view.ApplyStyle(context.Settings == null ? null : context.Settings.Style,
@@ -139,6 +139,29 @@ namespace MirrorpondHUD.Cards
             string name = System.IO.Path.GetFileName(path);
             if (string.IsNullOrEmpty(name)) name = path;
             return name.Length > 28 ? "…" + name.Substring(name.Length - 27) : name;
+        }
+
+        /// <summary>文档截图：视频没有真实子窗口，先让媒体控件画出 ffmpeg 解出的第一帧。</summary>
+        public void PrepareScreenshot(FrameworkElement content)
+        {
+            var view = content as CardMediaView;
+            if (view == null) return;
+            string path = view.MediaPath;
+            if (!string.IsNullOrWhiteSpace(path) && CardMediaView.IsVideoPath(path))
+                view.ShowPoster(path);
+        }
+
+        public string RunSelfTest()
+        {
+            var media = new MediaSettings();
+            media.Path = "  \"a b.mp4\"  ";
+            media.Fit = "cover";
+            media.Decoder = "mediafoundation";
+            media.Normalize();
+            if (media.Path != "a b.mp4") return "媒体路径没有去掉引号 / 空白";
+            if (media.Fit != "Cover" || media.Decoder != "BuiltIn") return "媒体设置归一化失败";
+            if (!CardMediaView.IsVideoPath("x.MKV")) return "扩展名判断失败";
+            return null;
         }
     }
 }

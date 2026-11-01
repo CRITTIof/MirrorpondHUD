@@ -12,7 +12,6 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using MirrorpondHUD.Cards;
 using MirrorpondHUD.Core;
-using MirrorpondHUD.Media;
 using MirrorpondHUD.Ui;
 using MirrorpondHUD.Ui.Controls;
 
@@ -214,35 +213,22 @@ namespace MirrorpondHUD
             bool keyNameOk = false;
             bool keyLimitOk = false;
             bool keyOverflowOk = false;
-            bool commandOk = false;
-            bool commandP2Ok = false;
-            bool truncateOk = false;
-            bool toolLabelOk = false;
             bool secretOk = false;
-            bool chatUrlOk = false;
-            bool chatHotkeyOk = false;
-            bool settingsEditorOk = false;
             bool stateStoreOk = false;
             bool renderOk = false;
             bool themeOk = false;
-            bool restyleOk = false;
             bool glassPolicyOk = false;
             bool themeFileOk = false;
             bool themeRejectOk = false;
             bool themeCatalogOk = false;
-            bool activationOk = false;
             bool cloneGuardOk = false;
-            bool restyleHostOk = false;
-            bool chatContextOk = false;
             bool singleInteractiveOk = false;
             bool widgetsOk = false;
             bool widgets2Ok = false;
             bool formControlsOk = false;
             bool contextHostOk = false;
-            bool jobQueueOk = false;
             bool shellOk = false;
-            bool stationOk = false;
-
+            bool pluginSelfTestOk = false;
             try
             {
                 var vars = new Dictionary<string, object> { { "cpu", 23.44 }, { "n", 5 } };
@@ -256,6 +242,7 @@ namespace MirrorpondHUD
             {
                 Log.Error("模板自检异常", ex);
             }
+
 
             try
             {
@@ -275,6 +262,7 @@ namespace MirrorpondHUD
             {
                 Log.Error("按键折叠自检异常", ex);
             }
+
 
             try
             {
@@ -299,400 +287,6 @@ namespace MirrorpondHUD
                 Log.Error("按键长度自检异常", ex);
             }
 
-            try
-            {
-                var command = new CommandSettings { Shell = "cmd" };
-                CommandResult result = CommandRunner.Run(command, "echo overlay-selftest", CancellationToken.None);
-                commandOk = !result.Failed && !result.TimedOut &&
-                            result.Output != null &&
-                            result.Output.IndexOf("overlay-selftest", StringComparison.Ordinal) >= 0;
-                if (!commandOk)
-                    Log.Warn("命令行自检输出异常: failed=" + result.Failed + " timedout=" + result.TimedOut +
-                             " out=[" + result.Output + "] err=[" + result.Error + "]");
-            }
-            catch (Exception ex)
-            {
-                Log.Error("命令行自检异常", ex);
-            }
-
-            try
-            {
-                var limit = new CommandSettings { Truncate = true, MaxLineChars = 10 };
-                var noLimit = new CommandSettings { Truncate = false, MaxLineChars = 10 };
-                truncateOk = CommandRunner.TruncateLine("0123456789ABCDEF", limit) == "…6789ABCDEF"
-                          && CommandRunner.TruncateLine("short", limit) == "short"
-                          && CommandRunner.TruncateLine("0123456789ABCDEF", noLimit) == "0123456789ABCDEF";
-            }
-            catch (Exception ex)
-            {
-                Log.Error("命令行截断自检异常", ex);
-            }
-
-            try
-            {
-                // P2-5/P2-6：尾部保留 N 行、截断提示、完整命令不落日志。
-                var tailSettings = new CommandSettings { MaxLines = 2, Truncate = true, MaxLineChars = 100 };
-                var tailResult = new CommandResult { Output = "a\nb\nc", ExitCode = 0 };
-                bool tailOk = CommandRunner.FormatOutput(tailResult, tailSettings) == "b\nc";
-
-                var truncatedResult = new CommandResult { Output = "x", OutputTruncated = true, ExitCode = 0 };
-                bool noteOk = CommandRunner.FormatOutput(truncatedResult, tailSettings)
-                    .IndexOf("输出已截断", StringComparison.Ordinal) >= 0;
-
-                string redacted = CommandRunner.DescribeCommand("curl -H \"Authorization: Bearer sk-secret\"");
-                bool redactOk = redacted.IndexOf("sk-secret", StringComparison.Ordinal) < 0
-                             && redacted.IndexOf("***", StringComparison.Ordinal) >= 0;
-
-                commandP2Ok = tailOk && noteOk && redactOk;
-            }
-            catch (Exception ex)
-            {
-                Log.Error("命令行安全自检异常", ex);
-            }
-
-            try
-            {
-                var custom = new CommandSettings
-                {
-                    Shell = "custom",
-                    CustomShell = "\"C:\\Program Files\\PowerShell\\7\\pwsh.exe\" -NoProfile -Command {cmd}"
-                };
-
-                toolLabelOk = CommandRunner.ToolLabel(new CommandSettings { Shell = "cmd" }) == "CMD"
-                           && CommandRunner.ToolLabel(new CommandSettings { Shell = "powershell" }) == "PWSH"
-                           && CommandRunner.ToolLabel(custom) == "PWSH"
-                           && CommandRunner.BuildPrompt(new CommandSettings { Shell = "cmd" }).StartsWith("[CMD] [", StringComparison.Ordinal);
-            }
-            catch (Exception ex)
-            {
-                Log.Error("命令行提示符自检异常", ex);
-            }
-
-            try
-            {
-                var settings = new Settings
-                {
-                    Style = { FontSize = 21, IconScale = 1.35 },
-                    Overlay = { X = 123.5, Locked = false },
-                    Data = { DiskDrives = new List<string> { "C:\\" } }
-                };
-                settings.Cards.Add(new CardSettings
-                {
-                    Id = "self", Kind = "infotext", Preset = "text", Name = "自检", Content = "x{cpu}", Resident = true, Spacing = 16
-                });
-                var commandCard = new CardSettings
-                {
-                    Id = "cmd", Kind = "command", Name = "自检命令行", Resident = false, Hotkey = "F9"
-                };
-                commandCard.SetExtras(CommandCard.SettingsKey, new CommandSettings
-                {
-                    Shell = "pwsh", MaxLineChars = 77, Truncate = false, WorkingDirectory = "C:\\Temp"
-                });
-                settings.Cards.Add(commandCard);
-
-                var mediaCard = new CardSettings
-                {
-                    Id = "media", Kind = "media", Name = "自检媒体", Resident = false, Hotkey = "F11"
-                };
-                mediaCard.SetExtras(MediaCard.SettingsKey, new MediaSettings
-                {
-                    Path = "C:\\demo.png", Fit = "Cover", Width = 480, Muted = false,
-                    Rounded = false, Decoder = "FFmpeg", DecoderPath = "C:\\ffmpeg.exe"
-                });
-                settings.Cards.Add(mediaCard);
-
-                Settings back = Json.Deserialize<Settings>(Json.Serialize(settings));
-                CommandSettings backCommand = back == null || back.Cards == null || back.Cards.Count < 2
-                    ? new CommandSettings()
-                    : back.Cards[1].ExtrasAs<CommandSettings>(CommandCard.SettingsKey);
-                MediaSettings backMedia = back == null || back.Cards == null || back.Cards.Count < 3
-                    ? new MediaSettings()
-                    : back.Cards[2].ExtrasAs<MediaSettings>(MediaCard.SettingsKey);
-
-                configOk = back != null
-                           && back.Cards != null && back.Cards.Count == 3
-                           && back.Cards[0].Content == "x{cpu}"
-                           && back.Cards[0].Kind == "infotext"
-                           && Math.Abs(back.Style.FontSize - 21) < 0.001
-                           && Math.Abs(back.Style.IconScale - 1.35) < 0.001
-                           && Math.Abs(back.Overlay.X - 123.5) < 0.001
-                           && back.Overlay.Locked == false
-                           && back.Data.DiskDrives.Count == 1
-                           && backCommand.Shell == "pwsh"
-                           && backCommand.MaxLineChars == 77
-                           && backCommand.Truncate == false
-                           && backCommand.WorkingDirectory == "C:\\Temp"
-                           && backMedia.Path == "C:\\demo.png"
-                           && backMedia.Fit == "Cover"
-                           && Math.Abs(backMedia.Width - 480) < 0.001
-                           && backMedia.Muted == false
-                           && backMedia.Rounded == false
-                           && backMedia.Decoder == "FFmpeg"
-                           && backMedia.DecoderPath == "C:\\ffmpeg.exe"
-                           && MediaSettings.NormalizeDecoder("mediafoundation") == "BuiltIn"
-                           && MediaSettings.NormalizeDecoder("ffmpeg.exe") == "FFmpeg"
-                           && MediaSettings.NormalizeDecoder("whatever") == "Auto";
-            }
-            catch (Exception ex)
-            {
-                Log.Error("配置往返自检异常", ex);
-            }
-
-            try
-            {
-                // P1：顶层块被写成 null 也不能 NRE；损坏 JSON 要标记 corrupted，旧 schema 才算迁移。
-                Settings nullBlocks = Json.Deserialize<Settings>(
-                    "{\"SchemaVersion\":6,\"Style\":null,\"Overlay\":null,\"Cli\":null," +
-                    "\"Data\":null,\"Behavior\":null,\"Hotkeys\":null,\"Cards\":null}");
-                nullBlocks.Normalize();
-                bool nullOk = nullBlocks.Style != null
-                           && nullBlocks.Overlay != null
-                           && nullBlocks.Cli != null
-                           && nullBlocks.Data != null
-                           && nullBlocks.Behavior != null
-                           && nullBlocks.Hotkeys != null
-                           && nullBlocks.Cards != null;
-
-                bool needsSave;
-                bool corrupted;
-                Settings broken = SettingsMigration.Load("{\"SchemaVersion\":6,", out needsSave, out corrupted);
-                bool brokenOk = corrupted && !needsSave && broken != null;
-
-                Settings old = SettingsMigration.Load("{\"SchemaVersion\":1,\"Cards\":[]}",
-                                                      out needsSave, out corrupted);
-                bool oldOk = corrupted && !needsSave && old != null;
-
-                // 缺版本号的当前格式仍接受；旧 Schema 已不再迁移，直接按损坏处理。
-                Settings unversioned = SettingsMigration.Load(
-                    "{\"Cards\":[{\"Id\":\"c1\",\"Kind\":\"chat\",\"Name\":\"对话\"}]}",
-                    out needsSave, out corrupted);
-                bool unversionedOk = !corrupted && needsSave && unversioned.Cards.Count == 1
-                                  && unversioned.Cards[0].Kind == "chat";
-
-                bool futureFlag;
-                Settings future = SettingsMigration.Load("{\"SchemaVersion\":999,\"Cards\":[]}",
-                                                         out needsSave, out corrupted, out futureFlag);
-                bool futureOk = !corrupted && futureFlag && !needsSave && future != null;
-
-                Settings overflow = SettingsMigration.Load("{\"SchemaVersion\":1e300,\"Cards\":[]}",
-                                                           out needsSave, out corrupted, out futureFlag);
-                bool overflowOk = corrupted && !needsSave;
-
-                // 非 chat Kind 的卡片里残留 chat Extras 时，Normalize 也要把明文字段加密。
-                var oddSettings = new Settings();
-                var oddCard = new CardSettings { Id = "odd", Kind = "infotext", Name = "杂项" };
-                oddCard.SetExtras("chat", new ChatSettings { ApiKey = "sk-odd-plain" });
-                oddSettings.Cards.Add(oddCard);
-                oddSettings.Normalize();
-                ChatSettings oddChat = ChatCard.ChatOf(oddCard);
-                bool oddOk = SecretStore.IsProtected(oddChat.ApiKey);
-
-                // 插件卸载 / 未安装时，CardModel.Normalize 不能把未知 Kind 改成默认卡。
-                var unknownSettings = new Settings();
-                unknownSettings.Cards.Add(new CardSettings
-                {
-                    Id = "plugin-missing", Kind = "example-clock", Name = "插件卡", Content = "插件内容",
-                    Extras = new Dictionary<string, object> { { "plugin", "keep" } }
-                });
-                CardModel.Normalize(unknownSettings);
-                bool unknownKindOk = unknownSettings.Cards.Count == 1
-                                  && unknownSettings.Cards[0].Kind == "example-clock"
-                                  && unknownSettings.Cards[0].Content == "插件内容"
-                                  && unknownSettings.Cards[0].Extras.ContainsKey("plugin");
-
-                string atomicId = "selftest-atomic-" + Guid.NewGuid().ToString("N");
-                string atomicDir = CardStateStore.DirectoryFor(atomicId);
-                bool atomicOk = false;
-                try
-                {
-                    CardStateStore.Write(atomicId, "state.json", "{\"v\":1}");
-                    CardStateStore.Write(atomicId, "state.json", "{\"v\":2}");
-                    string main = Path.Combine(atomicDir, "state.json");
-                    string current = CardStateStore.Read(atomicId, "state.json");
-                    File.WriteAllText(main, "{bad");
-                    string corruptRecovered = CardStateStore.Read(atomicId, "state.json");
-                    File.Delete(main);
-                    string recovered = CardStateStore.Read(atomicId, "state.json");
-                    atomicOk = current == "{\"v\":2}"
-                            && corruptRecovered == "{\"v\":1}"
-                            && recovered == "{\"v\":1}";
-                }
-                finally
-                {
-                    try { if (Directory.Exists(atomicDir)) Directory.Delete(atomicDir, true); } catch { }
-                }
-
-                configRepairOk = nullOk && brokenOk && oldOk && unversionedOk
-                              && futureOk && overflowOk && oddOk && unknownKindOk && atomicOk;
-            }
-            catch (Exception ex)
-            {
-                Log.Error("配置修复自检异常", ex);
-            }
-
-            try
-            {
-                var settings = new Settings();
-                settings.Normalize();
-                CardModel.Normalize(settings);
-
-                string clock = CardRegistry.Get("infotext").Render(
-                    new CardRenderContext(settings, Screenshots.DemoSnapshot(), null,
-                                          new CardSettings { Kind = "infotext", Preset = "clock", Content = "{time}" }));
-
-                var vars = Variables.Build(Screenshots.DemoSnapshot(), settings, null);
-                bool weekdayOk = vars.ContainsKey("weekday_zh") && vars.ContainsKey("weekday_en")
-                              && vars["weekday_zh"].ToString().StartsWith("星期", StringComparison.Ordinal)
-                              && vars["weekday_en"].ToString().Length > 3;
-
-                // 插件卸载 / 未安装：Get 必须返回按原 Kind 渲染的占位模块，
-                // 而不是把卡片绑到默认模块（否则界面会显示一张假的默认卡）。
-                ICardModule missing = CardRegistry.Get("selftest-missing-plugin");
-                string missingText = missing.Render(new CardRenderContext(
-                    settings, Screenshots.DemoSnapshot(), null,
-                    new CardSettings { Kind = "selftest-missing-plugin" }));
-                bool placeholderOk = missing.Kind == "selftest-missing-plugin"
-                                  && missing.DisplayName == "插件不可用"
-                                  && !missing.IsInteractive
-                                  && missingText.IndexOf("插件不可用", StringComparison.Ordinal) >= 0;
-
-                // 2.14.1 方案 B：契约 / DTO 必须在独立 Contracts 程序集里；
-                // CardRegistry 等宿主实现仍在 MirrorpondHUD；归一化 hook 必须已注入。
-                string contractAssembly = typeof(ICardModule).Assembly.GetName().Name;
-                string hostAssembly = typeof(CardRegistry).Assembly.GetName().Name;
-                bool contractsOk = string.Equals(contractAssembly, "MirrorpondHUD.Contracts", StringComparison.Ordinal)
-                                && string.Equals(hostAssembly, "MirrorpondHUD", StringComparison.Ordinal)
-                                && typeof(CardRenderContext).Assembly == typeof(ICardModule).Assembly
-                                && typeof(Settings).Assembly == typeof(ICardModule).Assembly
-                                && ConfigStore.SettingsNormalizer != null;
-
-                cardOk = CardRegistry.Modules.Count >= 3
-                         && CardRegistry.Get("media") is IRichCardModule
-                         && CardRegistry.Get("infotext") is InfoTextCard
-                         && placeholderOk
-                         && contractsOk
-                         && settings.Cards.Count >= 1
-                         && !string.IsNullOrWhiteSpace(clock)
-                         && clock.IndexOf('{') < 0
-                         && weekdayOk;
-            }
-            catch (Exception ex)
-            {
-                Log.Error("卡片模块自检异常", ex);
-            }
-
-            try
-            {
-                const string secret = "sk-selftest-0123456789";
-
-                string stored = SecretStore.Protect(secret);
-                string plain;
-                bool roundTrip = SecretStore.IsProtected(stored)
-                              && SecretStore.TryUnprotect(stored, out plain)
-                              && plain == secret;
-
-                // 落盘的东西里不能有明文 Key
-                var chat = new ChatSettings { Model = "selftest-model" };
-                chat.SetApiKey(secret);
-
-                var chatCardSettings = new CardSettings { Id = "chat", Kind = "chat", Name = "自检对话" };
-                chatCardSettings.SetExtras(ChatCard.SettingsKey, chat);
-
-                var settings = new Settings();
-                settings.Cards.Add(chatCardSettings);
-
-                string json = Json.Serialize(settings);
-                bool notPlain = json.IndexOf(secret, StringComparison.Ordinal) < 0
-                             && json.IndexOf(SecretStore.Prefix, StringComparison.Ordinal) > 0;
-
-                Settings back = Json.Deserialize<Settings>(json);
-                ChatSettings backChat = back == null || back.Cards == null || back.Cards.Count < 1
-                    ? new ChatSettings()
-                    : back.Cards[0].ExtrasAs<ChatSettings>(ChatCard.SettingsKey);
-
-                bool usable = back != null && back.Cards != null && back.Cards.Count == 1
-                           && backChat.HasApiKey
-                           && backChat.PlainApiKey == secret;
-
-                // 旧配置里的明文 Key：Normalize 之后变密文，而且还能用
-                var legacy = new ChatSettings { ApiKey = secret };
-                legacy.Normalize();
-
-                // 设置页区块：已存 Key 时不回显、只显示提示；输入新 Key 并提交后收起
-                var uiCard = new CardSettings { Id = "chat-ui", Kind = "chat", Name = "自检对话" };
-                var editor = new ChatCardSettingsView(uiCard, null);
-
-                bool uiHidden = editor.ChatApiKey.Length == 0
-                             && editor.ChatApiKeyPlaceholderVisibility == System.Windows.Visibility.Visible
-                             && editor.ChatApiKeyClearVisibility == System.Windows.Visibility.Collapsed;
-
-                ChatCard.ChatOf(uiCard).SetApiKey(secret);
-                var withKey = new ChatCardSettingsView(uiCard, null);
-                bool uiMasked = withKey.ChatApiKey.Length == 0
-                             && withKey.ChatApiKeyPlaceholder == ChatSettings.KeyPlaceholder
-                             && withKey.ChatApiKeyPlaceholderVisibility == System.Windows.Visibility.Visible
-                             && withKey.ChatApiKeyClearVisibility == System.Windows.Visibility.Visible;
-
-                withKey.ChatApiKey = "sk-typed-123";
-                bool uiTyping = withKey.ChatApiKey == "sk-typed-123"
-                             && withKey.ChatApiKeyPlaceholderVisibility == System.Windows.Visibility.Collapsed;
-
-                withKey.CommitChatApiKey();
-                ChatSettings committed = ChatCard.ChatOf(uiCard);
-                bool uiCommit = withKey.ChatApiKey.Length == 0
-                             && committed.PlainApiKey == "sk-typed-123"
-                             && SecretStore.IsProtected(committed.ApiKey);
-
-                secretOk = roundTrip && notPlain && usable
-                        && SecretStore.IsProtected(legacy.ApiKey)
-                        && legacy.PlainApiKey == secret
-                        && uiHidden && uiMasked && uiTyping && uiCommit;
-
-                // P1-10：有 Key 时只允许 https / 本机回环；http 公网与非 http 协议拒绝。
-                chatUrlOk = ChatView.IsSafeEndpoint("https://api.example.com/v1", true)
-                         && !ChatView.IsSafeEndpoint("http://api.example.com/v1", true)
-                         && ChatView.IsSafeEndpoint("http://127.0.0.1:8080/v1", true)
-                         && ChatView.IsSafeEndpoint("http://localhost:11434/v1", true)
-                         && ChatView.IsSafeEndpoint("http://example.com/v1", false)
-                         && !ChatView.IsSafeEndpoint("ftp://example.com/v1", false);
-            }
-            catch (Exception ex)
-            {
-                Log.Error("Key 加密自检异常", ex);
-            }
-
-            try
-            {
-                var chatCard = new ChatCard();
-                uint mods, vk;
-
-                chatHotkeyOk = HotkeyManager.TryParse(ChatCard.DefaultModeHotkey, out mods, out vk) && vk != 0
-                            && chatCard.HotkeyActions != null
-                            && chatCard.HotkeyActions.Count == 2
-                            && chatCard.HotkeyActions[0].Action == ChatCard.ActionToggleMode
-                            && chatCard is ICardHotkeyTarget
-                            && chatCard.NeedsMouseInput;
-            }
-            catch (Exception ex)
-            {
-                Log.Error("对话热键自检异常", ex);
-            }
-
-            try
-            {
-                // 模块自己的设置（P1-1 / P1-2）：命令行卡把设置写进 Extras，并给出自己的设置区块。
-                var editorCard = new CardSettings { Id = "cmd-ui", Kind = "command", Name = "自检命令行" };
-                var commandEditor = new CardEditor(editorCard, new CommandCard(), new Settings(), true);
-
-                settingsEditorOk = commandEditor.SettingsSection != null
-                                && commandEditor.SettingsSectionVisibility == System.Windows.Visibility.Visible
-                                && editorCard.Extras.ContainsKey(CommandCard.SettingsKey)
-                                && editorCard.ExtrasAs<CommandSettings>(CommandCard.SettingsKey).Shell == "cmd";
-            }
-            catch (Exception ex)
-            {
-                Log.Error("卡片设置区块自检异常", ex);
-            }
 
             try
             {
@@ -720,47 +314,6 @@ namespace MirrorpondHUD
                 Log.Error("卡片状态存储自检异常", ex);
             }
 
-            try
-            {
-                // P0-5：一帧一份变量表（同一个字典实例被复用）+ 模块自己声明刷新节奏
-                var shared = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
-                {
-                    { "time", "12:34:56" },
-                    { "cpu", 1.0 }
-                };
-
-                var context = new CardRenderContext(new Settings(), Screenshots.DemoSnapshot(), null,
-                                                    new CardSettings { Kind = "infotext", Preset = "clock", Content = "{time}" },
-                                                    shared);
-
-                bool sharedUsed = ReferenceEquals(context.Variables, shared)
-                               && context.Render("{time}") == "12:34:56";
-
-                ICardModule infotext = CardRegistry.Get("infotext");
-                bool cadenceOk = infotext.RefreshIntervalMs(new CardSettings { Kind = "infotext", Preset = "clock" }) == 1000
-                              && infotext.RefreshIntervalMs(new CardSettings { Kind = "infotext", Preset = "keys" }) == 250
-                              && infotext.RefreshIntervalMs(new CardSettings { Kind = "infotext", Preset = "metrics" }) == 0;
-
-                // 阶段 C：媒体卡支持就地换肤（样式变化不重建，视频不重启）
-                bool styleAwareOk = CardRegistry.Get("media") is ICardStyleAware;
-
-                try
-                {
-                    var mediaView = new MediaView();
-                    mediaView.ApplyStyle(new StyleSettings { FontSize = 20, Foreground = "#FFFFFF", Padding = 16 }, 14);
-                }
-                catch (Exception ex)
-                {
-                    styleAwareOk = false;
-                    Log.Error("媒体卡换肤自检异常", ex);
-                }
-
-                renderOk = sharedUsed && cadenceOk && styleAwareOk;
-            }
-            catch (Exception ex)
-            {
-                Log.Error("渲染上下文自检异常", ex);
-            }
 
             try
             {
@@ -778,6 +331,7 @@ namespace MirrorpondHUD
             {
                 Log.Error("毛玻璃策略自检异常", ex);
             }
+
 
             try
             {
@@ -821,30 +375,6 @@ namespace MirrorpondHUD
                 Log.Error("外观令牌自检异常", ex);
             }
 
-            try
-            {
-                // P2：CLI 卡片支持就地换肤，且换肤后已有文字按新前景重算（不重建控件）
-                bool cardsOk = CardRegistry.Get("chat") is ICardStyleAware
-                            && CardRegistry.Get("command") is ICardStyleAware;
-
-                var styleA = new StyleSettings { FontSize = 15, Foreground = "#E6EDF3", Padding = 14 };
-                var entry = new CliEntryPanel(styleA, new CliSettings(), System.Windows.Media.Color.FromRgb(0xE6, 0xED, 0xF3), 10);
-                TextBlock block = entry.AddText("hello", 0.72, false, 0, 0);
-
-                var styleB = new StyleSettings { FontSize = 20, Foreground = "#FFFFFF", Padding = 18 };
-                entry.ApplyStyle(styleB, System.Windows.Media.Color.FromRgb(0xFF, 0xFF, 0xFF), 14);
-
-                var color = ((SolidColorBrush)block.Foreground).Color;
-                bool entryOk = block.FontSize > 18
-                            && color.R == 0xFF
-                            && color.A == (byte)Math.Round(0.72 * 255);
-
-                restyleOk = cardsOk && entryOk;
-            }
-            catch (Exception ex)
-            {
-                Log.Error("CLI 换肤自检异常", ex);
-            }
 
             try
             {
@@ -965,6 +495,7 @@ namespace MirrorpondHUD
                 Log.Error("主题文件自检异常", ex);
             }
 
+
             try
             {
                 string error;
@@ -1010,6 +541,7 @@ namespace MirrorpondHUD
                 Log.Error("主题文件校验自检异常", ex);
             }
 
+
             try
             {
                 // P4：三份示例主题以 EmbeddedResource 编进程序集，发布版不再依赖 docs 目录。
@@ -1024,24 +556,6 @@ namespace MirrorpondHUD
                 Log.Error("内置主题自检异常", ex);
             }
 
-            try
-            {
-                // P1-10 / #4：交互卡片通过 ICardActivation 自己解释设置，宿主不再认识 CommandSettings。
-                var activation = CardRegistry.Get("command") as ICardActivation;
-                var config = new CardSettings
-                {
-                    Id = "selftest-command", Kind = "command", Name = "命令行",
-                    Extras = new Dictionary<string, object>()
-                };
-                string summary = activation == null ? null : activation.OnActivated(config);
-                activationOk = activation != null
-                            && !string.IsNullOrEmpty(summary)
-                            && summary.Contains("工具=") && summary.Contains("目录=");
-            }
-            catch (Exception ex)
-            {
-                Log.Error("卡片激活自检异常", ex);
-            }
 
             try
             {
@@ -1062,61 +576,6 @@ namespace MirrorpondHUD
                 Log.Error("设置副本自检异常", ex);
             }
 
-            try
-            {
-                // 回归：保存设置后宿主会换成新的 Settings 对象。ApplyStyle 必须整份跟随，
-                // 否则 CLI 卡片的圆角 / 宽度会一直读构造期那份旧配置（媒体卡同理，底层由 RefreshSurface 重画）。
-                var before = new Settings
-                {
-                    Style = new StyleSettings { FontSize = 15, Padding = 14, Foreground = "#E6EDF3" },
-                    Overlay = new OverlaySettings { CornerRadius = 10 },
-                    Cli = new CliSettings { MaxWidth = 460 }
-                };
-                var after = new Settings
-                {
-                    Style = new StyleSettings
-                    {
-                        FontSize = 20, Padding = 18, Foreground = "#FF0000",
-                        MonoFont = "Consolas, Microsoft YaHei UI"
-                    },
-                    Overlay = new OverlaySettings { CornerRadius = 24 },
-                    Cli = new CliSettings { MaxWidth = 540 }
-                };
-
-                var view = new CommandView(before, new CommandSettings());
-                view.ApplyStyle(after);
-
-                bool followsHost = ReferenceEquals(view.BoundSettings, after)
-                                && Math.Abs(view.BoundCorner - 24) < 0.01
-                                && Math.Abs(view.Width - 540) < 0.01
-                                && view.BoundMono.IndexOf("Consolas", StringComparison.OrdinalIgnoreCase) >= 0;
-
-                // 富内容卡片的底色 / 圆角由 OverlaySurface 画：重画后文字与圆角都要跟着新设置。
-                var surface = new OverlaySurface();
-                surface.Apply(before, "hello");
-                surface.Apply(after, surface.Text);
-                bool surfaceOk = surface.Text == "hello"
-                              && Math.Abs(surface.CornerRadius.TopLeft - 24) < 0.01;
-
-                restyleHostOk = followsHost && surfaceOk;
-            }
-            catch (Exception ex)
-            {
-                Log.Error("换肤跟随设置自检异常", ex);
-            }
-
-            try
-            {
-                // 对话上下文跟随「CLI 交互面板 → 最多保留」：每轮两条，至少两条。
-                chatContextOk = ChatView.ContextMessageLimit(0) == 2
-                             && ChatView.ContextMessageLimit(1) == 2
-                             && ChatView.ContextMessageLimit(3) == 6
-                             && ChatView.ContextMessageLimit(30) == 60;
-            }
-            catch (Exception ex)
-            {
-                Log.Error("对话上下文自检异常", ex);
-            }
 
             try
             {
@@ -1133,6 +592,7 @@ namespace MirrorpondHUD
             {
                 Log.Error("交互卡唯一性自检异常", ex);
             }
+
 
             try
             {
@@ -1168,6 +628,7 @@ namespace MirrorpondHUD
             {
                 Log.Error("共享控件自检异常", ex);
             }
+
 
             try
             {
@@ -1213,6 +674,7 @@ namespace MirrorpondHUD
                 Log.Error("共享控件（交互）自检异常", ex);
             }
 
+
             try
             {
                 // UiKit 表单控件：滑块 / 开关 / 下拉 / 数字 / 颜色 / 分段 + 声明式表单。
@@ -1241,6 +703,7 @@ namespace MirrorpondHUD
                 Log.Error("表单控件自检异常", ex);
             }
 
+
             try
             {
                 // 2.10.2：富内容的渲染上下文要把这张卡片的 ICardHost 透传给内容控件。
@@ -1256,58 +719,6 @@ namespace MirrorpondHUD
                 Log.Error("渲染上下文 Host 自检异常", ex);
             }
 
-            try
-            {
-                // 2.10.2：串行任务队列——成功 / 失败 / 取消三种结局都要落到正确的状态。
-                using (var queue = new CardJobQueue(1))
-                {
-                    var okJob = queue.Enqueue("ok", (ct, progress) =>
-                    {
-                        progress.Report(0.5);
-                        progress.Report(1.0);
-                        return Task.CompletedTask;
-                    });
-
-                    var failJob = queue.Enqueue("fail", (ct, progress) =>
-                    {
-                        throw new InvalidOperationException("boom");
-                    });
-
-                    var cancelJob = queue.Enqueue("cancel", (ct, progress) => Task.Delay(500, ct));
-                    cancelJob.Cancel();
-
-                    bool finished = Task.WaitAll(
-                        new[] { okJob.Task, failJob.Task, cancelJob.Task }, 3000);
-
-                    jobQueueOk = finished
-                              && okJob.State == CardJobState.Succeeded
-                              && Math.Abs(okJob.Progress - 1.0) < 0.001
-                              && failJob.State == CardJobState.Failed
-                              && failJob.Error == "boom"
-                              && cancelJob.State == CardJobState.Canceled;
-                }
-
-                // P2-10：已完成任务只保留有限条数；Dispose 时 in-flight 不再抛 ObjectDisposedException。
-                using (var many = new CardJobQueue(1))
-                {
-                    var tasks = new List<Task>();
-                    for (int i = 0; i < 20; i++)
-                        tasks.Add(many.Enqueue("done-" + i, (ct, p) => Task.CompletedTask).Task);
-                    Task.WaitAll(tasks.ToArray(), 5000);
-                    jobQueueOk &= many.Jobs.Count <= 16;
-                }
-
-                var disposing = new CardJobQueue(1);
-                var inFlight = disposing.Enqueue("slow", (ct, p) => Task.Delay(300, ct));
-                disposing.Dispose();
-                bool disposedCleanly = inFlight.Task.Wait(3000)
-                                    && inFlight.State == CardJobState.Canceled;
-                jobQueueOk &= disposedCleanly;
-            }
-            catch (Exception ex)
-            {
-                Log.Error("后台任务队列自检异常", ex);
-            }
 
             try
             {
@@ -1330,340 +741,285 @@ namespace MirrorpondHUD
                 Log.Error("Shell / 拖出自检异常", ex);
             }
 
+
             try
             {
-                // 2.11.0 文件中转站：模块能力、设置归一化 / 校验、拖放判定。
-                var module = CardRegistry.Get("dropstation");
-                var config = new CardSettings
+                // 配置层：默认卡片 / JSON 往返（含通用 Extras）/ 顶层 null 块 / 旧 Schema 按损坏 / 未来版本只读 / 未知 Kind 保留。
+                var defaults = new Settings();
+                defaults.Normalize();
+                CardModel.Normalize(defaults);
+                bool defaultsOk = defaults.Cards.Count == 5
+                               && defaults.Cards[0].Kind == "infotext"
+                               && defaults.Cards[0].Preset == "metrics"
+                               && !string.IsNullOrWhiteSpace(defaults.Cards[0].Content);
+
+                var source = new Settings();
+                var card = new CardSettings
                 {
-                    Id = "selftest-station", Kind = "dropstation", Name = "文件中转站",
-                    Extras = new Dictionary<string, object>()
+                    Id = "selftest-config", Kind = "infotext", Name = "自检卡",
+                    Preset = "clock", Content = "{time}", Spacing = 16
                 };
-
-                StationSettings station = DropStationCard.StationOf(config);
-                station.Mode = "copy";
-                station.Directory = "";
-                station.MaxEntries = 0;
-                station.Normalize();
-                config.SetExtras(DropStationCard.SettingsKey, station);
-
-                bool normalizeOk = station.Mode == "Copy" && station.MaxEntries == 1;
-
-                var validator = module as ICardSettingsValidator;
-                string emptyDirError = validator == null ? "no validator" : validator.Validate(config);
-                bool validateOk = !string.IsNullOrEmpty(emptyDirError) && emptyDirError.Contains("接收目录");
-
-                var data = new DataObject(DataFormats.FileDrop, new[] { "a.txt" });
-                bool dropOk = (module as ICardDropTarget) != null && ((ICardDropTarget)module).CanDrop(data);
-                bool feedbackOk = module is ICardDropFeedback;
-
-                var editorSource = module as ICardEditorSection;
-                FrameworkElement editor = editorSource == null
-                    ? null
-                    : editorSource.CreateEditor(config, new Settings(), () => { });
-
-                var viewHost = new TestCardHost();
-                var viewConfig = new CardSettings
+                card.Extras["command"] = new Dictionary<string, object>
                 {
-                    Id = "selftest-station-view", Kind = "dropstation", Name = "文件中转站",
-                    Extras = new Dictionary<string, object>()
+                    { "Shell", "cmd" }, { "TimeoutSeconds", 20 }
                 };
-                var view = new StationView(new Settings(), viewConfig, viewHost);
+                source.Cards.Add(card);
+                Settings roundTrip = Json.Deserialize<Settings>(Json.Serialize(source));
+                bool roundTripOk = roundTrip != null && roundTrip.Cards != null && roundTrip.Cards.Count == 1
+                                && roundTrip.Cards[0].Id == "selftest-config"
+                                && roundTrip.Cards[0].Kind == "infotext"
+                                && roundTrip.Cards[0].Preset == "clock"
+                                && roundTrip.Cards[0].Content == "{time}"
+                                && roundTrip.Cards[0].Extras.ContainsKey("command");
 
-                string temp = Path.GetTempFileName();
-                view.HandleDrop(new[] { temp });
-                bool added = view.ItemCountForTest == 1 && !string.IsNullOrEmpty(viewHost.LastWrittenState);
+                Settings nullBlocks = Json.Deserialize<Settings>(
+                    "{\"SchemaVersion\":6,\"Style\":null,\"Overlay\":null,\"Cli\":null," +
+                    "\"Data\":null,\"Behavior\":null,\"Hotkeys\":null,\"Cards\":null}");
+                nullBlocks.Normalize();
+                bool nullOk = nullBlocks.Style != null && nullBlocks.Overlay != null && nullBlocks.Cli != null
+                           && nullBlocks.Data != null && nullBlocks.Behavior != null
+                           && nullBlocks.Hotkeys != null && nullBlocks.Cards != null;
 
-                view.HandleDrop(new[] { temp });
-                bool dedupe = view.ItemCountForTest == 1;
+                configOk = defaultsOk && roundTripOk && nullOk;
 
-                view.HandleDrop(new[] { temp + ".missing" });
-                bool missingRejected = view.ItemCountForTest == 1;
-                try { File.Delete(temp); } catch { }
+                bool needsSave;
+                bool corrupted;
+                bool futureFlag;
+                Settings broken = SettingsMigration.Load("{\"SchemaVersion\":6,", out needsSave, out corrupted);
+                bool brokenOk = corrupted && !needsSave && broken != null;
 
-                // M2：移动模式归一化 / 校验 / 摘要，冲突命名，真实复制与移动，丢失项清理。
-                station.Mode = "move";
-                station.Directory = "";
-                station.Normalize();
-                config.SetExtras(DropStationCard.SettingsKey, station);
-                bool moveNormalizeOk = station.Mode == "Move";
-                string moveError = validator == null ? "no validator" : validator.Validate(config);
-                bool moveValidateOk = !string.IsNullOrEmpty(moveError) && moveError.Contains("接收目录");
+                Settings oldSchema = SettingsMigration.Load("{\"SchemaVersion\":1,\"Cards\":[]}", out needsSave, out corrupted);
+                bool oldOk = corrupted && !needsSave && oldSchema != null;
 
-                string uniqueDir = Path.Combine(Path.GetTempPath(), "mhud-station-unique-" + Guid.NewGuid().ToString("N"));
-                bool uniqueOk = false;
-                bool moveSummaryOk = false;
+                Settings unversioned = SettingsMigration.Load(
+                    "{\"Cards\":[{\"Id\":\"c1\",\"Kind\":\"infotext\",\"Name\":\"文本\"}]}",
+                    out needsSave, out corrupted);
+                bool unversionedOk = !corrupted && needsSave && unversioned.Cards.Count == 1
+                                  && unversioned.Cards[0].Kind == "infotext";
+
+                Settings future = SettingsMigration.Load("{\"SchemaVersion\":999,\"Cards\":[]}",
+                                                          out needsSave, out corrupted, out futureFlag);
+                bool futureOk = !corrupted && futureFlag && !needsSave && future != null;
+
+                Settings overflow = SettingsMigration.Load("{\"SchemaVersion\":1e300,\"Cards\":[]}",
+                                                           out needsSave, out corrupted, out futureFlag);
+                bool overflowOk = corrupted && !needsSave;
+
+                // 未知 Kind（例如插件卸载）：保留原配置，不改写成默认卡。
+                var unknownSettings = new Settings();
+                unknownSettings.Cards.Add(new CardSettings
+                {
+                    Id = "plugin-missing", Kind = "example-clock", Name = "插件卡", Content = "插件内容",
+                    Extras = new Dictionary<string, object> { { "plugin", "keep" } }
+                });
+                CardModel.Normalize(unknownSettings);
+                bool unknownKindOk = unknownSettings.Cards.Count == 1
+                                  && unknownSettings.Cards[0].Kind == "example-clock"
+                                  && unknownSettings.Cards[0].Content == "插件内容"
+                                  && unknownSettings.Cards[0].Extras.ContainsKey("plugin");
+
+                // 状态存储：原子写、损坏回退 .bak、拒绝路径穿越、删除。
+                string atomicId = "selftest-atomic-" + Guid.NewGuid().ToString("N");
+                string atomicDir = CardStateStore.DirectoryFor(atomicId);
+                bool atomicOk = false;
                 try
                 {
-                    Directory.CreateDirectory(uniqueDir);
-                    File.WriteAllText(Path.Combine(uniqueDir, "a.txt"), "x");
-                    File.WriteAllText(Path.Combine(uniqueDir, "a (2).txt"), "x");
-                    Directory.CreateDirectory(Path.Combine(uniqueDir, "My.Folder"));
-                    uniqueOk = Path.GetFileName(StationView.UniqueTarget(uniqueDir, "a.txt")) == "a (3).txt"
-                               && Path.GetFileName(StationView.UniqueTarget(uniqueDir, "My.Folder", true)) == "My.Folder (2)";
-
-                    station.Directory = uniqueDir;
-                    station.Normalize();
-                    config.SetExtras(DropStationCard.SettingsKey, station);
-                    var summarySource = module as ICardSummary;
-                    string summary = summarySource == null ? "" : summarySource.Summary(config);
-                    moveSummaryOk = summary.StartsWith("移动", StringComparison.Ordinal);
+                    CardStateStore.Write(atomicId, "state.json", "{\"v\":1}");
+                    CardStateStore.Write(atomicId, "state.json", "{\"v\":2}");
+                    string main = Path.Combine(atomicDir, "state.json");
+                    bool current = CardStateStore.Read(atomicId, "state.json") == "{\"v\":2}";
+                    File.WriteAllText(main, "{bad");
+                    bool recoveredFromBak = CardStateStore.Read(atomicId, "state.json") == "{\"v\":1}";
+                    bool rejected = CardStateStore.Write(atomicId, "..\\escape.txt", "x") == false
+                                 && CardStateStore.Read(atomicId, "..\\escape.txt") == null;
+                    bool deleted = CardStateStore.Delete(atomicId, "state.json");
+                    bool gone = CardStateStore.Read(atomicId, "state.json") == null;
+                    atomicOk = current && recoveredFromBak && rejected && deleted && gone;
                 }
                 finally
                 {
-                    try { Directory.Delete(uniqueDir, true); } catch { }
+                    try { if (Directory.Exists(atomicDir)) Directory.Delete(atomicDir, true); } catch { }
                 }
 
-                bool transferOk = true;
-                foreach (string mode in new[] { "Copy", "Move" })
-                {
-                    string transferDir = Path.Combine(Path.GetTempPath(), "mhud-station-" + mode + "-" + Guid.NewGuid().ToString("N"));
-                    string transferSource = Path.Combine(Path.GetTempPath(), "mhud-station-src-" + Guid.NewGuid().ToString("N") + ".bin");
-                    try
-                    {
-                        Directory.CreateDirectory(transferDir);
-                        File.WriteAllBytes(transferSource, new byte[256 * 1024]);
-
-                        var transferConfig = new CardSettings
-                        {
-                            Id = "selftest-transfer-" + mode, Kind = "dropstation", Name = "文件中转站",
-                            Extras = new Dictionary<string, object>()
-                        };
-                        StationSettings transferStation = DropStationCard.StationOf(transferConfig);
-                        transferStation.Mode = mode;
-                        transferStation.Directory = transferDir;
-                        transferStation.Normalize();
-                        transferConfig.SetExtras(DropStationCard.SettingsKey, transferStation);
-
-                        var transferView = new StationView(new Settings(), transferConfig, new TestCardHost());
-                        transferView.HandleDrop(new[] { transferSource });
-                        bool finished = PumpUntil(() => !transferView.CopyBusyForTest, 5000);
-                        string stored = transferView.FirstStoredPathForTest;
-
-                        bool targetOk = finished && !string.IsNullOrEmpty(stored) && File.Exists(stored)
-                                        && new FileInfo(stored).Length == 256 * 1024;
-                        bool sourceOk = mode == "Move" ? !File.Exists(transferSource) : File.Exists(transferSource);
-                        transferOk = transferOk && targetOk && sourceOk;
-                    }
-                    finally
-                    {
-                        try { if (File.Exists(transferSource)) File.Delete(transferSource); } catch { }
-                        try { Directory.Delete(transferDir, true); } catch { }
-                    }
-                }
-
-                bool folderOk = true;
-                foreach (string mode in new[] { "Copy", "Move" })
-                {
-                    string folderRoot = Path.Combine(Path.GetTempPath(), "mhud-folder-src-" + mode + "-" + Guid.NewGuid().ToString("N"));
-                    string folderReceive = Path.Combine(Path.GetTempPath(), "mhud-folder-dst-" + mode + "-" + Guid.NewGuid().ToString("N"));
-                    try
-                    {
-                        Directory.CreateDirectory(Path.Combine(folderRoot, "sub"));
-                        Directory.CreateDirectory(Path.Combine(folderRoot, "empty"));
-                        File.WriteAllText(Path.Combine(folderRoot, "root.txt"), "r");
-                        File.WriteAllText(Path.Combine(folderRoot, "sub", "child.txt"), "c");
-                        Directory.CreateDirectory(folderReceive);
-
-                        var folderConfig = new CardSettings
-                        {
-                            Id = "selftest-folder-" + mode, Kind = "dropstation", Name = "文件中转站",
-                            Extras = new Dictionary<string, object>()
-                        };
-                        StationSettings folderStation = DropStationCard.StationOf(folderConfig);
-                        folderStation.Mode = mode;
-                        folderStation.Directory = folderReceive;
-                        folderStation.Normalize();
-                        folderConfig.SetExtras(DropStationCard.SettingsKey, folderStation);
-
-                        var folderView = new StationView(new Settings(), folderConfig, new TestCardHost());
-                        folderView.HandleDrop(new[] { folderRoot });
-                        bool finished = PumpUntil(() => !folderView.CopyBusyForTest, 5000);
-                        string stored = folderView.FirstStoredPathForTest;
-
-                        bool targetOk = finished && Directory.Exists(stored)
-                                        && File.Exists(Path.Combine(stored, "root.txt"))
-                                        && File.Exists(Path.Combine(stored, "sub", "child.txt"))
-                                        && Directory.Exists(Path.Combine(stored, "empty"));
-                        bool sourceOk = mode == "Move" ? !Directory.Exists(folderRoot) : Directory.Exists(folderRoot);
-                        folderOk = folderOk && targetOk && sourceOk;
-                    }
-                    finally
-                    {
-                        try { Directory.Delete(folderRoot, true); } catch { }
-                        try { Directory.Delete(folderReceive, true); } catch { }
-                    }
-                }
-
-                string referenceFolder = Path.Combine(Path.GetTempPath(), "mhud-folder-ref-" + Guid.NewGuid().ToString("N"));
-                try
-                {
-                    Directory.CreateDirectory(referenceFolder);
-                    var referenceConfig = new CardSettings
-                    {
-                        Id = "selftest-folder-ref", Kind = "dropstation", Name = "文件中转站",
-                        Extras = new Dictionary<string, object>()
-                    };
-                    var referenceView = new StationView(new Settings(), referenceConfig, new TestCardHost());
-                    referenceView.HandleDrop(new[] { referenceFolder });
-                    folderOk = folderOk && referenceView.ItemCountForTest == 1
-                               && referenceView.FirstIsDirectoryForTest;
-                }
-                finally
-                {
-                    try { Directory.Delete(referenceFolder, true); } catch { }
-                }
-
-                string missingFile = Path.GetTempFileName();
-                string goneFile = missingFile + ".gone";
-                bool missingCleanupOk = false;
-                try
-                {
-                    var missingHost = new TestCardHost();
-                    var missingState = new StationState
-                    {
-                        Items = new List<StationItem>
-                        {
-                            new StationItem { Id = "keep", Path = missingFile, Name = Path.GetFileName(missingFile), AddedUtc = "x" },
-                            new StationItem { Id = "gone", Path = goneFile, Name = Path.GetFileName(goneFile), AddedUtc = "x" }
-                        }
-                    };
-                    missingHost.WriteState("items.json", Json.Serialize(missingState));
-
-                    var missingConfig = new CardSettings
-                    {
-                        Id = "selftest-station-missing", Kind = "dropstation", Name = "文件中转站",
-                        Extras = new Dictionary<string, object>()
-                    };
-                    var missingView = new StationView(new Settings(), missingConfig, missingHost);
-                    int before = missingView.ItemCountForTest;
-                    missingView.RemoveMissing();
-
-                    var autoHost = new TestCardHost();
-                    autoHost.WriteState("items.json", Json.Serialize(missingState));
-                    var autoConfig = new CardSettings
-                    {
-                        Id = "selftest-station-auto", Kind = "dropstation", Name = "文件中转站",
-                        Extras = new Dictionary<string, object>()
-                    };
-                    StationSettings autoStation = DropStationCard.StationOf(autoConfig);
-                    autoStation.AutoRemoveMissing = true;
-                    autoConfig.SetExtras(DropStationCard.SettingsKey, autoStation);
-                    var autoView = new StationView(new Settings(), autoConfig, autoHost);
-
-                    bool autoCleanOk = autoView.ItemCountForTest == 1
-                                       && !string.IsNullOrEmpty(autoHost.LastWrittenState);
-                    missingCleanupOk = before == 2 && missingView.ItemCountForTest == 1
-                                       && !string.IsNullOrEmpty(missingHost.LastWrittenState)
-                                       && autoCleanOk;
-                }
-                finally
-                {
-                    try { File.Delete(missingFile); } catch { }
-                }
-
-                bool searchOk = false;
-                string searchDir = Path.Combine(Path.GetTempPath(), "mhud-station-search-" + Guid.NewGuid().ToString("N"));
-                try
-                {
-                    Directory.CreateDirectory(searchDir);
-                    string alpha = Path.Combine(searchDir, "alpha.txt");
-                    string beta = Path.Combine(searchDir, "beta.txt");
-                    File.WriteAllText(alpha, "a");
-                    File.WriteAllText(beta, "b");
-
-                    var searchConfig = new CardSettings
-                    {
-                        Id = "selftest-station-search", Kind = "dropstation", Name = "文件中转站",
-                        Extras = new Dictionary<string, object>()
-                    };
-                    var searchView = new StationView(new Settings(), searchConfig, new TestCardHost());
-                    searchView.HandleDrop(new[] { alpha, beta });
-
-                    bool addedTwo = searchView.VisibleCountForTest == 2;
-                    searchView.SelectAllForTest();
-                    bool multiSelected = searchView.SelectedCountForTest == 2;
-                    searchView.SetSearchForTest("alpha");
-                    bool filtered = searchView.VisibleCountForTest == 1
-                                    && searchView.BadgeForTest == "1/2 个文件"
-                                    && searchView.SelectedCountForTest == 1;
-                    searchView.SetSearchForTest("");
-                    bool cleared = searchView.VisibleCountForTest == 2
-                                   && searchView.SelectedCountForTest == 1;
-                    searchView.SetSearchForTest("no-such-file");
-                    bool none = searchView.VisibleCountForTest == 0
-                                && searchView.BadgeForTest == "0/2 个文件";
-
-                    searchOk = addedTwo && multiSelected && filtered && cleared && none;
-                }
-                finally
-                {
-                    try { Directory.Delete(searchDir, true); } catch { }
-                }
-
-                stationOk = normalizeOk && validateOk && dropOk && feedbackOk &&
-                            editor != null && added && dedupe && missingRejected &&
-                            moveNormalizeOk && moveValidateOk && moveSummaryOk &&
-                            uniqueOk && transferOk && folderOk && missingCleanupOk && searchOk;
+                configRepairOk = brokenOk && oldOk && unversionedOk && futureOk && overflowOk
+                              && unknownKindOk && atomicOk;
             }
             catch (Exception ex)
             {
-                Log.Error("文件中转站自检异常", ex);
+                Log.Error("配置修复自检异常", ex);
             }
 
+            try
+            {
+                // 契约边界：插件 API 在 Contracts；宿主实现与配置归一化钩子仍在宿主程序集。
+                bool contractsOk = string.Equals(typeof(ICardModule).Assembly.GetName().Name, "MirrorpondHUD.Contracts", StringComparison.Ordinal)
+                                && typeof(CardRenderContext).Assembly == typeof(ICardModule).Assembly
+                                && typeof(Settings).Assembly == typeof(ICardModule).Assembly
+                                && typeof(SecretStore).Assembly == typeof(ICardModule).Assembly
+                                && string.Equals(typeof(CardRegistry).Assembly.GetName().Name, "MirrorpondHUD", StringComparison.Ordinal)
+                                && ConfigStore.SettingsNormalizer != null;
+
+                // 注册表：6 个内置卡片插件必须全部注册；Kind 唯一且元数据完整。
+                string[] requiredKinds = { "infotext", "command", "media", "chat", "dropstation", "buttons" };
+                IList<ICardModule> modules = CardRegistry.Modules;
+                var kinds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var missing = new List<string>();
+                bool metadataOk = true;
+                foreach (ICardModule module in modules)
+                {
+                    if (module == null) { metadataOk = false; continue; }
+                    string kind = (module.Kind ?? "").Trim();
+                    if (kind.Length == 0 || !kinds.Add(kind)) metadataOk = false;
+                    if (string.IsNullOrWhiteSpace(module.DisplayName) || string.IsNullOrWhiteSpace(module.Icon)) metadataOk = false;
+                }
+                foreach (string required in requiredKinds)
+                    if (!kinds.Contains(required)) missing.Add(required);
+                bool registryOk = modules.Count >= requiredKinds.Length && missing.Count == 0 && metadataOk;
+
+                // 未知 Kind 必须有占位模块（保留 Kind、不可交互、给出提示）。
+                ICardModule missingModule = CardRegistry.Get("selftest-missing-plugin");
+                string missingText = missingModule.Render(new CardRenderContext(
+                    new Settings(), Screenshots.DemoSnapshot(), null,
+                    new CardSettings { Kind = "selftest-missing-plugin" }));
+                bool placeholderOk = missingModule.Kind == "selftest-missing-plugin"
+                                  && missingModule.DisplayName == "插件不可用"
+                                  && !missingModule.IsInteractive
+                                  && missingText.IndexOf("插件不可用", StringComparison.Ordinal) >= 0;
+
+                // 宿主默认内容模板仍可用（CardDefaults 保留在宿主）。
+                bool cardDefaultsOk = CardDefaults.MetricsContent.IndexOf("{cpu", StringComparison.Ordinal) >= 0
+                                   && CardDefaults.ClockContent.IndexOf("{time", StringComparison.Ordinal) >= 0
+                                   && CardDefaults.KeysContent.IndexOf("{keys", StringComparison.Ordinal) >= 0
+                                   && CardDefaults.TextContent.IndexOf("{host", StringComparison.Ordinal) >= 0;
+
+                // 默认卡片：3 张信息文本 + 命令行 + 媒体，且交互卡只有 1 张。
+                var defaultCards = CardModel.CreateDefaultCards();
+                var defaultKinds = new List<string>();
+                foreach (CardSettings item in defaultCards) defaultKinds.Add(item.Kind);
+                bool defaultCardsOk = defaultCards.Count == 5
+                                   && defaultKinds.FindAll(k => k == "infotext").Count == 3
+                                   && defaultKinds.Contains("command") && defaultKinds.Contains("media")
+                                   && CardModel.CountInteractive(defaultCards) == 1;
+
+                cardOk = contractsOk && registryOk && placeholderOk && cardDefaultsOk && defaultCardsOk;
+            }
+            catch (Exception ex)
+            {
+                Log.Error("卡片注册表自检异常", ex);
+            }
+
+            try
+            {
+                // 通用插件自检：宿主不认具体卡片类型，遍历实现 ICardSelfTest 的模块。
+                var failuresText = new List<string>();
+                int tested = 0;
+                foreach (ICardModule module in CardRegistry.Modules)
+                {
+                    var selfTest = module as ICardSelfTest;
+                    if (selfTest == null) continue;
+                    tested++;
+                    try
+                    {
+                        string result = selfTest.RunSelfTest();
+                        if (!string.IsNullOrWhiteSpace(result))
+                            failuresText.Add(module.Kind + ": " + result);
+                    }
+                    catch (Exception ex)
+                    {
+                        failuresText.Add(module.Kind + ": " + ex.Message);
+                    }
+                }
+                pluginSelfTestOk = tested >= 6 && failuresText.Count == 0;
+                string pluginSelfTestText = tested + " 个模块自检通过 / " + failuresText.Count + " 个失败";
+                if (failuresText.Count > 0)
+                    pluginSelfTestText += "（" + string.Join("；", failuresText.ToArray()) + "）";
+                Fix(sb, "插件自检", pluginSelfTestText);
+            }
+            catch (Exception ex)
+            {
+                Log.Error("插件自检异常", ex);
+            }
+
+            try
+            {
+                // 字符串加密：DPAPI 往返；明文不落盘（SecretStore 在契约程序集，插件与宿主共用）。
+                const string secret = "sk-selftest-0123456789";
+                string stored = SecretStore.Protect(secret);
+                string plain;
+                secretOk = SecretStore.IsProtected(stored)
+                        && stored.StartsWith(SecretStore.Prefix, StringComparison.Ordinal)
+                        && SecretStore.TryUnprotect(stored, out plain)
+                        && plain == secret
+                        && !SecretStore.IsProtected(secret);
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Key 加密自检异常", ex);
+            }
+
+            try
+            {
+                // 渲染上下文：一帧一份变量表（同一个字典实例被复用）+ 富内容宿主透传 + 模块刷新节奏。
+                var shared = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase) { { "cpu", 23.44 } };
+                var config = new CardSettings { Id = "selftest-context", Kind = "infotext", Preset = "metrics" };
+                var host = new TestCardHost { Config = config };
+                var context = new CardRenderContext(new Settings(), Screenshots.DemoSnapshot(), null, config, shared, host);
+                bool sharedUsed = ReferenceEquals(context.Variables, shared)
+                               && context.Render("CPU {cpu:0.0}%") == "CPU 23.4%";
+                bool hostPassed = ReferenceEquals(context.Host, host);
+                bool cadenceOk = true;
+                foreach (ICardModule module in CardRegistry.Modules)
+                {
+                    if (module == null) { cadenceOk = false; continue; }
+                    if (module.RefreshIntervalMs(new CardSettings { Kind = module.Kind }) < 0) cadenceOk = false;
+                }
+                renderOk = sharedUsed && hostPassed && cadenceOk;
+            }
+            catch (Exception ex)
+            {
+                Log.Error("渲染上下文自检异常", ex);
+            }
+
+
             if (!(templateOk && unknownOk && collapseOk && thresholdOk && configOk && configRepairOk && cardOk &&
-                  keyNameOk && keyLimitOk && keyOverflowOk &&
-                  commandOk && commandP2Ok && truncateOk && toolLabelOk && secretOk && chatUrlOk && chatHotkeyOk && settingsEditorOk &&
-                  stateStoreOk && renderOk && glassPolicyOk && themeOk && restyleOk &&
-                  themeFileOk && themeRejectOk && themeCatalogOk && activationOk && cloneGuardOk &&
-                  restyleHostOk && chatContextOk && singleInteractiveOk && widgetsOk && widgets2Ok && formControlsOk &&
-                  contextHostOk && jobQueueOk && shellOk && stationOk)) failures++;
+                  keyNameOk && keyLimitOk && keyOverflowOk && stateStoreOk && renderOk &&
+                  glassPolicyOk && themeOk && themeFileOk && themeRejectOk && themeCatalogOk && cloneGuardOk &&
+                  singleInteractiveOk && widgetsOk && widgets2Ok && formControlsOk && contextHostOk &&
+                  shellOk && secretOk && pluginSelfTestOk))
+                failures++;
 
             Fix(sb, "逻辑自检", string.Format(
-                "模板={0} 未知占位符={1} 折叠={2} 阈值内展开={3} 配置读写={4} 卡片模块={11} 键名={5} 按键长度={6} 超长截断={7} 命令行={8} 行截断={9} 工具名={10} Key加密={12} 对话热键={13} 卡片设置={14} 状态存储={15} 渲染节流={16} 毛玻璃策略={17}",
+                "模板={0} 未知占位符={1} 折叠={2} 阈值内展开={3} 配置读写={4} 卡片模块={5} 键名={6} 按键长度={7} 超长截断={8} 状态存储={9} 渲染节流={10} 毛玻璃策略={11}",
                 templateOk ? "OK" : "FAIL",
                 unknownOk ? "OK" : "FAIL",
                 collapseOk ? "OK" : "FAIL",
                 thresholdOk ? "OK" : "FAIL",
                 configOk ? "OK" : "FAIL",
+                cardOk ? "OK" : "FAIL",
                 keyNameOk ? "OK" : "FAIL",
                 keyLimitOk ? "OK" : "FAIL",
                 keyOverflowOk ? "OK" : "FAIL",
-                commandOk ? "OK" : "FAIL",
-                truncateOk ? "OK" : "FAIL",
-                toolLabelOk ? "OK" : "FAIL",
-                cardOk ? "OK" : "FAIL",
-                secretOk ? "OK" : "FAIL",
-                chatHotkeyOk ? "OK" : "FAIL",
-                settingsEditorOk ? "OK" : "FAIL",
                 stateStoreOk ? "OK" : "FAIL",
                 renderOk ? "OK" : "FAIL",
                 glassPolicyOk ? "OK" : "FAIL"));
 
             Fix(sb, "外观令牌", themeOk ? "OK（派生值 = 旧 alpha 常量，非法值回落而不是变白）" : "FAIL");
-            Fix(sb, "命令安全", commandP2Ok
-                ? "OK（尾部保留 N 行 / 截断提示 / 日志脱敏）" : "FAIL");
-            Fix(sb, "CLI 换肤", restyleOk ? "OK（两张 CLI 卡片支持就地换肤，文字按新前景重算）" : "FAIL");
             Fix(sb, "配置修复", configRepairOk
-                ? "OK（null 判空 / 损坏标记 / 旧 schema / 状态 .bak 回退）" : "FAIL");
-            Fix(sb, "接口安全", chatUrlOk
-                ? "OK（带 Key 强制 https；仅回环允许 http；非 http 拒绝）" : "FAIL");
+                ? "OK（null 判空 / 损坏标记 / 旧 Schema 按损坏 / 未来版本只读 / 未知 Kind 保留 / 状态 .bak 回退）" : "FAIL");
             Fix(sb, "主题文件", themeFileOk ? "OK（导出 → 解析 → 套用 → 再导出一致，数字透明度按前景派生）" : "FAIL");
             Fix(sb, "主题文件校验", themeRejectOk ? "OK（高版本 / 坏颜色 / 越界 / 缺 appearance 均拒绝，坏文件不动当前设置）" : "FAIL");
             Fix(sb, "内置主题", themeCatalogOk ? "OK（已编进程序集并全部解析）" : "FAIL");
-            Fix(sb, "卡片激活", activationOk ? "OK（CommandCard 实现 ICardActivation，返回工具 / 目录摘要）" : "FAIL");
             Fix(sb, "设置副本", cloneGuardOk ? "OK（克隆失败返回 null + 原因，不退回默认值）" : "FAIL");
-            Fix(sb, "换肤跟随设置", restyleHostOk ? "OK（CLI 换肤跟随新 Settings 对象，底层圆角随重画更新）" : "FAIL");
-            Fix(sb, "对话上下文", chatContextOk ? "OK（每条记录两条消息，跟随 CLI 最多保留条数）" : "FAIL");
             Fix(sb, "交互卡唯一", singleInteractiveOk ? "OK（默认一张；第二张会被设置页 / 校验拦住）" : "FAIL");
             Fix(sb, "共享控件", widgetsOk ? "OK（CardList 空态/计数/选中；CardStatus 忙碌/进度/错误）" : "FAIL");
             Fix(sb, "共享控件（交互）", widgets2Ok ? "OK（Header 按钮可点；Input 提交；DropOverlay 显隐）" : "FAIL");
             Fix(sb, "表单控件", formControlsOk ? "OK（Slider / Toggle / Select / Number / Color / Segmented / Form）" : "FAIL");
             Fix(sb, "渲染上下文", contextHostOk ? "OK（富内容创建上下文透传 ICardHost）" : "FAIL");
-            Fix(sb, "后台任务", jobQueueOk ? "OK（串行队列：成功 / 失败 / 取消）" : "FAIL");
-            Fix(sb, "Shell / 拖出", shellOk ? "OK（图标缓存一致；缩略图不挂；拖出阈值/空输入）" : "FAIL");
-            Fix(sb, "文件中转站", stationOk ? "OK（模块能力 / 设置 / 复制移动 / 文件夹递归 / 搜索 / 丢失清理）" : "FAIL");
+            Fix(sb, "Key 加密", secretOk ? "OK（DPAPI 往返；明文不落盘）" : "FAIL");
+            Fix(sb, "卡片注册", cardOk ? "OK（6 个内置 Kind 齐全；契约在 Contracts；未知 Kind 占位）" : "FAIL");
+            Fix(sb, "Shell / 拖出", shellOk ? "OK（图标缓存一致；空输入安全）" : "FAIL");
         }
+
 
         static bool RegisterIfSet(HotkeyManager hotkeys, string action, string combination)
         {
@@ -1742,6 +1098,8 @@ namespace MirrorpondHUD
 
             public void RequestRender() { }
             public void RequestLayout() { }
+            public bool SaveSettings() { return true; }
+            public ICardShellService Shell { get { return null; } }
         }
     }
 }

@@ -13,7 +13,7 @@ namespace MirrorpondHUD.Cards
     /// Key 永远不会回显：输入框里只是草稿，失焦或点「清除」时才提交；
     /// 真正的密文存在 <c>CardSettings.Extras["chat"]</c>（DPAPI）。
     /// </summary>
-    public partial class ChatCardSettingsView : UserControl, INotifyPropertyChanged
+    public partial class ChatCardSettingsView : UserControl, INotifyPropertyChanged, ICardEditorCommit
     {
         readonly ChatSettings _chat;
         readonly Action _onChanged;
@@ -73,6 +73,8 @@ namespace MirrorpondHUD.Cards
         }
 
         /// <summary>把输入框里的 Key 加密存下（失焦时调用）；空 = 保持原来的 Key 不动。</summary>
+        public void CommitPendingEdits() { CommitChatApiKey(); }
+
         public void CommitChatApiKey()
         {
             string text = (_apiKeyDraft ?? "").Trim();

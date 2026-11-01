@@ -104,19 +104,19 @@ namespace MirrorpondHUD.Cards
                 new CardSettings
                 {
                     Id = NewId(), Kind = "infotext", Preset = "metrics",
-                    Name = InfoTextCard.LabelFor("metrics"),
+                    Name = "信息与文本 · 系统信息",
                     Resident = true, Spacing = 0, Content = CardDefaults.MetricsContent
                 },
                 new CardSettings
                 {
                     Id = NewId(), Kind = "infotext", Preset = "clock",
-                    Name = InfoTextCard.LabelFor("clock"),
+                    Name = "信息与文本 · 时钟",
                     Resident = true, Spacing = 12, Content = CardDefaults.ClockContent
                 },
                 new CardSettings
                 {
                     Id = NewId(), Kind = "infotext", Preset = "keys",
-                    Name = InfoTextCard.LabelFor("keys"),
+                    Name = "信息与文本 · 按键",
                     Resident = true, Spacing = 12, Content = CardDefaults.KeysContent
                 },
                 new CardSettings

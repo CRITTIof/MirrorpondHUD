@@ -139,9 +139,6 @@ namespace MirrorpondHUD.Core
                 Log.Warn("设置来自更高 SchemaVersion，只读加载");
             }
 
-            // 必须在 Normalize 之前检测：Normalize 会把明文 Key 就地加密，之后就看不出来了。
-            bool plainKey = HasPlainApiKey(settings);
-
             try
             {
                 settings.Normalize();
@@ -152,7 +149,6 @@ namespace MirrorpondHUD.Core
                 Log.Error("设置归一化失败，使用默认设置", ex);
                 TryBackupBroken();
                 settings = new Settings();
-                plainKey = false;
                 try
                 {
                     settings.Normalize();
@@ -167,72 +163,16 @@ namespace MirrorpondHUD.Core
                 LastLoadWarning = "设置归一化失败，已使用默认设置；原文件已备份为 .broken-*。";
             }
 
-            // 明文 Key 迁移 / 损坏恢复后立刻落盘，避免每次启动重复处理。
-            // 从 .bak 恢复时不要再把损坏的主文件复制回 .bak；明文 Key 迁移时不生成含明文的旧备份。
+            // 损坏恢复后立刻落盘，避免每次启动重复处理。
+            // 从 .bak 恢复时不要再把损坏的主文件复制回 .bak。
             if (!LastLoadReadOnly)
             {
-                bool keepBackup = !(plainKey || recovered);
-                if (migrated || plainKey || recovered || corrupted || empty)
-                {
-                    if (Save(settings, keepBackup))
-                    {
-                        // 保存成功后再清洗旧备份：先删后保存会在磁盘满/占用时丢掉唯一恢复副本。
-                        ScrubPlaintextArtifacts();
-                    }
-                }
+                bool keepBackup = !recovered;
+                if (migrated || recovered || corrupted || empty)
+                    Save(settings, keepBackup);
             }
 
             return settings;
-        }
-
-        /// <summary>保存成功后清洗旧 `.bak` / `.broken-*` / `.tmp` 里残留的明文 Key。</summary>
-        static void ScrubPlaintextArtifacts()
-        {
-            string file = Path;
-            string dir = System.IO.Path.GetDirectoryName(file);
-            if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) return;
-
-            string name = System.IO.Path.GetFileName(file);
-            try
-            {
-                foreach (string candidate in Directory.EnumerateFiles(dir, name + "*"))
-                {
-                    if (string.Equals(candidate, file, StringComparison.OrdinalIgnoreCase)) continue;
-
-                    string suffix = candidate.Substring(file.Length);
-                    bool artifact = suffix == ".bak" || suffix == ".tmp" ||
-                                    suffix.StartsWith(".broken-", StringComparison.OrdinalIgnoreCase);
-                    if (!artifact) continue;
-
-                    if (!ContainsPlaintextApiKey(candidate)) continue;
-
-                    File.Delete(candidate);
-                    Log.Warn("已删除含明文 API Key 的旧设置文件: " + System.IO.Path.GetFileName(candidate));
-                }
-            }
-            catch (Exception ex)
-            {
-                Log.Warn("清洗旧设置备份失败: " + ex.Message);
-            }
-        }
-
-        static bool ContainsPlaintextApiKey(string path)
-        {
-            try
-            {
-                string text = File.ReadAllText(path, Encoding.UTF8);
-                if (string.IsNullOrWhiteSpace(text)) return false;
-
-                bool needsSave;
-                bool corrupted;
-                bool future;
-                Settings old = SettingsMigration.Load(text, out needsSave, out corrupted, out future);
-                return !corrupted && old != null && HasPlainApiKey(old);
-            }
-            catch
-            {
-                return false;
-            }
         }
 
         static bool TryReadSettings(string file, out Settings settings, out bool migrated,
@@ -299,23 +239,6 @@ namespace MirrorpondHUD.Core
                 Log.Warn("读取设置备份失败: " + ex.Message);
                 return false;
             }
-        }
-
-        /// <summary>配置文件里还有明文的 AI Key（2.4.0 及更早的版本是明文存的）。</summary>
-        static bool HasPlainApiKey(Settings settings)
-        {
-            if (settings == null || settings.Cards == null) return false;
-
-            foreach (CardSettings card in settings.Cards)
-            {
-                if (card == null) continue;
-
-                ChatSettings chat = card.ExtrasAs<ChatSettings>("chat");
-                if (string.IsNullOrEmpty(chat.ApiKey)) continue;
-                if (!SecretStore.IsProtected(chat.ApiKey)) return true;
-            }
-
-            return false;
         }
 
         public static bool Save(Settings settings)

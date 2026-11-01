@@ -3,7 +3,6 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using MirrorpondHUD.Core;
-using MirrorpondHUD.Ui;
 using MirrorpondHUD.Ui.Controls;
 
 namespace MirrorpondHUD.Cards
@@ -20,7 +19,7 @@ namespace MirrorpondHUD.Cards
     /// 卡片声明 <see cref="NeedsMouseInput"/>，所以宿主不会给这张卡开点击穿透——
     /// 代价是它会挡住身下的桌面点击，这也正是「交互卡片」这个方向的边界。
     /// </summary>
-    public sealed class ButtonsCard : RichCardModuleBase
+    public sealed class ButtonsCard : RichCardModuleBase, ICardSelfTest
     {
         public override string Kind { get { return "buttons"; } }
         public override string DisplayName { get { return "按钮演示（实验）"; } }
@@ -32,6 +31,13 @@ namespace MirrorpondHUD.Cards
         {
             Settings settings = context == null ? null : context.Settings;
             return new ButtonsView(settings);
+        }
+
+        public string RunSelfTest()
+        {
+            var view = CreateContent(new CardRenderContext(new Settings(), null, null,
+                                     new CardSettings { Kind = "buttons" })) as StackPanel;
+            return view != null && view.Children.Count > 0 ? null : "按钮演示没有生成内容";
         }
     }
 
@@ -53,7 +59,7 @@ namespace MirrorpondHUD.Cards
         {
             _style = settings == null ? new StyleSettings() : settings.Style;
             _corner = settings == null ? 10 : settings.Overlay.CornerRadius;
-            _foreground = OverlaySurface.ParseColor(_style.Foreground, Color.FromRgb(0xE6, 0xED, 0xF3));
+            _foreground = CardPalette.TryColor(_style.Foreground, Color.FromRgb(0xE6, 0xED, 0xF3));
             _pad = Math.Max(10, _style.Padding * 0.85);
 
             Width = 340;

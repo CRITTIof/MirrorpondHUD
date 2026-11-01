@@ -1,0 +1,9 @@
+{
+  "id": "builtin.chat",
+  "name": "AI 对话",
+  "version": "2.16.0",
+  "apiVersion": 2,
+  "entryType": "MirrorpondHUD.Cards.ChatCard",
+  "assembly": "MirrorpondHUD.Cards.Chat.dll",
+  "author": "MirrorpondHUD"
+}

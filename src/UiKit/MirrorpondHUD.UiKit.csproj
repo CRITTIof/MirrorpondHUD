@@ -3,6 +3,8 @@
   <PropertyGroup>
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
+    <!-- 动图解码用 System.Drawing.Bitmap；WPF 工程通过 WinForms 开关拿到桌面框架引用。 -->
+    <UseWindowsForms>true</UseWindowsForms>
     <OutputType>Library</OutputType>
     <AssemblyName>MirrorpondHUD.UiKit</AssemblyName>
     <RootNamespace>MirrorpondHUD</RootNamespace>
@@ -12,7 +14,7 @@
     <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
-    <Version>2.15.0</Version>
+    <Version>2.16.0</Version>
     <Product>镜潭一览 (MirrorpondHUD) UiKit</Product>
     <AssemblyTitle>MirrorpondHUD.UiKit</AssemblyTitle>
     <NoWarn>$(NoWarn);WFAC010</NoWarn>

@@ -38,6 +38,12 @@ namespace MirrorpondHUD.Cards
         internal AssemblyLoadContext Context { get; private set; }
 
         /// <summary>只实现文字渲染、没有 WPF 富内容。--plugin-dev 热重载只接受这种插件。</summary>
+        /// <summary>随宿主分发的内置卡片插件（id 以 builtin. 开头）；不参与 --plugin-dev 热重载替换。</summary>
+        public bool IsBundled
+        {
+            get { return (Id ?? "").StartsWith("builtin.", StringComparison.OrdinalIgnoreCase); }
+        }
+
         public bool IsTextOnly
         {
             get
@@ -155,12 +161,6 @@ namespace MirrorpondHUD.Cards
         public const int SupportedApiVersion = 2;
         const int MaxManifestBytes = 256 * 1024;
 
-        /// <summary>内置模块占用的标识；插件不能与内置卡片 Kind 冲突。</summary>
-        static readonly HashSet<string> ReservedKinds = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "infotext", "command", "media", "chat", "dropstation", "buttons"
-        };
-
         /// <summary>便携插件根目录（exe 同目录）。</summary>
         public static string PortableRoot
         {
@@ -234,7 +234,7 @@ namespace MirrorpondHUD.Cards
         }
 
         /// <summary>扫描插件目录并返回成功实例化的句柄；失败只记录，不阻止宿主启动。</summary>
-        public static CardPluginLoadReport LoadAll()
+        public static CardPluginLoadReport LoadAll(bool includeBundled = true)
         {
             var handles = new List<CardPluginHandle>();
             var errors = new List<string>();
@@ -272,6 +272,12 @@ namespace MirrorpondHUD.Cards
                     }
 
                     if (handle == null) continue;
+
+                    if (!includeBundled && handle.IsBundled)
+                    {
+                        Discard(handle);
+                        continue;
+                    }
 
                     if (!ids.Add(handle.Id))
                     {
@@ -492,15 +498,6 @@ namespace MirrorpondHUD.Cards
                 {
                     string error = label + ": 模块 Kind 非法或为空";
                     Log.Warn("卡片插件 Kind 非法: " + Safe(kind) + "（" + id + "）");
-                    errors.Add(error);
-                    TryDiscardContext(context, shadowDir);
-                    return null;
-                }
-
-                if (ReservedKinds.Contains(kind))
-                {
-                    string error = label + ": Kind 与内置模块冲突: " + kind;
-                    Log.Warn("卡片插件 Kind 与内置模块冲突，已拒绝: " + kind + "（" + id + "）");
                     errors.Add(error);
                     TryDiscardContext(context, shadowDir);
                     return null;

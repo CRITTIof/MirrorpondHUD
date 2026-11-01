@@ -6,10 +6,10 @@ using System.Text;
 using System.Threading.Tasks;
 using MirrorpondHUD.Core;
 
-namespace MirrorpondHUD.Media
+namespace MirrorpondHUD.Ui.Controls.Media
 {
     /// <summary>在机器上找到的一个解码器 / 播放器。</summary>
-    internal sealed class DecoderInfo
+    public sealed class DecoderInfo
     {
         /// <summary>显示名：FFmpeg / ffprobe / mpv / VLC。</summary>
         public string Kind = "";
@@ -39,7 +39,7 @@ namespace MirrorpondHUD.Media
     /// 实际用的就是它；mpv / VLC 只作为「机器上装了什么」的信息列出来。
     /// 结果缓存 5 分钟，避免每次打开设置页都去启动进程问版本。
     /// </summary>
-    internal static class Decoders
+    public static class Decoders
     {
         static readonly object Gate = new object();        // 只保护缓存字段
         static readonly object ProbeLock = new object();   // 串行化「真正跑进程」的探测

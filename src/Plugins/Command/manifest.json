@@ -1,0 +1,9 @@
+{
+  "id": "builtin.command",
+  "name": "命令行",
+  "version": "2.16.0",
+  "apiVersion": 2,
+  "entryType": "MirrorpondHUD.Cards.CommandCard",
+  "assembly": "MirrorpondHUD.Cards.Command.dll",
+  "author": "MirrorpondHUD"
+}

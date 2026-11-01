@@ -9,6 +9,11 @@ settings.json.broken-*
 
 # 运行时卡片插件（用户本地安装，不跟仓库）
 plugins/
+# 仓库内自带卡片插件源码：src/Plugins 不跟用户的 plugins/ 目录混淆
+!src/Plugins/
+!src/Plugins/**
+src/Plugins/**/bin/
+src/Plugins/**/obj/
 
 # 源码说明文档放在独立仓库里，不随主仓库发布
 docs/source/

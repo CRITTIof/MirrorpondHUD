@@ -49,6 +49,7 @@ namespace MirrorpondHUD.Ui
     internal sealed class CardHost : ICardHost
     {
         readonly OverlayController _owner;
+        readonly CardShellService _shell = new CardShellService();
 
         public CardHost(OverlayController owner, CardSettings config)
         {
@@ -77,6 +78,16 @@ namespace MirrorpondHUD.Ui
         public bool DeleteState(string fileName)
         {
             return CardStateStore.Delete(CardId, fileName);
+        }
+
+        public bool SaveSettings()
+        {
+            return ConfigStore.Save(_owner.CurrentSettings);
+        }
+
+        public ICardShellService Shell
+        {
+            get { return _shell; }
         }
 
         public void RequestRender()

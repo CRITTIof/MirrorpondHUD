@@ -4,7 +4,6 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using MirrorpondHUD.Core;
-using MirrorpondHUD.Ui;
 using MirrorpondHUD.Ui.Controls;
 
 namespace MirrorpondHUD.Cards
@@ -17,7 +16,8 @@ namespace MirrorpondHUD.Cards
     /// 所以热键唤起它的时候宿主会把窗口提到前台、把焦点交给输入行。
     /// </summary>
     public sealed class CommandCard : RichCardModuleBase, ICardSettingsModule, ICardEditorSection,
-                                      ICardSettingsValidator, ICardSummary, ICardStyleAware, ICardActivation
+                                      ICardSettingsValidator, ICardSummary, ICardStyleAware, ICardActivation,
+                                      ICardSelfTest
     {
         /// <summary>命令行设置存在 <see cref="CardSettings.Extras"/> 里的键名。</summary>
         public const string SettingsKey = "command";
@@ -109,6 +109,20 @@ namespace MirrorpondHUD.Cards
             if (dir.Length > 28) dir = "…" + dir.Substring(dir.Length - 27);
 
             return CommandRunner.ToolLabel(command) + " · " + dir;
+        }
+
+        public string RunSelfTest()
+        {
+            var settings = new CommandSettings();
+            settings.Shell = "powershell";
+            settings.Normalize();
+            if (CommandRunner.ToolLabel(settings) != "PWSH") return "PowerShell 工具名不是 PWSH";
+            if (!CommandRunner.BuildPrompt(settings).StartsWith("[PWSH] [", StringComparison.Ordinal))
+                return "命令行提示符格式不对";
+            var result = new CommandResult { Output = "a\nb\nc", ExitCode = 0 };
+            if (CommandRunner.FormatOutput(result, new CommandSettings { MaxLines = 2 }) != "b\nc")
+                return "命令行输出尾部截断不对";
+            return null;
         }
 
         /// <summary>只换外观：面板就地重套样式，命令记录不丢。</summary>

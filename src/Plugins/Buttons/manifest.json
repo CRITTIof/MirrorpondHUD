@@ -1,0 +1,9 @@
+{
+  "id": "builtin.buttons",
+  "name": "按钮演示（实验）",
+  "version": "2.16.0",
+  "apiVersion": 2,
+  "entryType": "MirrorpondHUD.Cards.ButtonsCard",
+  "assembly": "MirrorpondHUD.Cards.Buttons.dll",
+  "author": "MirrorpondHUD"
+}

@@ -26,22 +26,23 @@ namespace MirrorpondHUD.Cards
     /// 用卡片自己的 `Preset` 选择预设。四种预设都是模板渲染，所以内容、占位符、
     /// 图标倍率、描边等文字能力完全一致。
     /// </summary>
-    public sealed class InfoTextCard : CardModuleBase, ICardSettingsModule
+    public sealed class InfoTextCard : CardModuleBase, ICardSettingsModule,
+                                    ICardPresetSource, ICardSelfTest
     {
         static readonly List<InfoTextPreset> PresetList = new List<InfoTextPreset>
         {
-            new InfoTextPreset("metrics", "系统信息", CardDefaults.MetricsContent, Icons.Cpu),
-            new InfoTextPreset("clock", "时钟", CardDefaults.ClockContent, Icons.Clock),
-            new InfoTextPreset("keys", "按键", CardDefaults.KeysContent, Icons.TabHotkey),
-            new InfoTextPreset("text", "文本信息", CardDefaults.TextContent, Icons.Txt)
+            new InfoTextPreset("metrics", "系统信息", InfoTextDefaults.MetricsContent, Icons.Cpu),
+            new InfoTextPreset("clock", "时钟", InfoTextDefaults.ClockContent, Icons.Clock),
+            new InfoTextPreset("keys", "按键", InfoTextDefaults.KeysContent, Icons.TabHotkey),
+            new InfoTextPreset("text", "文本信息", InfoTextDefaults.TextContent, Icons.Txt)
         };
 
-        public static IList<InfoTextPreset> Presets { get { return PresetList; } }
+        public static IList<InfoTextPreset> AllPresets { get { return PresetList; } }
 
         public override string Kind { get { return "infotext"; } }
         public override string DisplayName { get { return "信息与文本"; } }
         public override string Icon { get { return Icons.Txt; } }
-        public override string DefaultContent { get { return CardDefaults.MetricsContent; } }
+        public override string DefaultContent { get { return InfoTextDefaults.MetricsContent; } }
         public override int Order { get { return 0; } }
 
         /// <summary>
@@ -74,6 +75,39 @@ namespace MirrorpondHUD.Cards
         {
             string preset = NormalizePreset(context == null || context.Config == null ? null : context.Config.Preset);
             return context.RenderOrDefault(DefaultFor(preset));
+        }
+
+        // ==================== 预设契约 / 自检 ====================
+
+        static readonly IList<CardPreset> ContractPresets = PresetList.ConvertAll(p =>
+        {
+            var preset = new CardPreset(p.Id, p.Label, p.DefaultContent, p.Icon);
+            preset.EditableContent = p.Id != "keys";
+            return preset;
+        });
+
+        public IList<CardPreset> Presets { get { return ContractPresets; } }
+
+        public string CurrentPreset(CardSettings config)
+        {
+            return NormalizePreset(config == null ? null : config.Preset);
+        }
+
+        public void ApplyPreset(CardSettings config, string presetId)
+        {
+            if (config == null) return;
+            string id = NormalizePreset(presetId);
+            config.Preset = id;
+            config.Content = DefaultFor(id);
+        }
+
+        public string RunSelfTest()
+        {
+            if (NormalizePreset("nope") != "metrics") return "未知预设没有归一到系统信息";
+            if (InferPreset("clock", InfoTextDefaults.MetricsContent) != "metrics") return "默认内容没有纠正预设";
+            if (DefaultFor("keys") != InfoTextDefaults.KeysContent) return "按键预设默认内容不一致";
+            if (ContractPresets.Count != 4) return "预设契约数量不是 4";
+            return null;
         }
 
         /// <summary>未知 / 空的预设一律归到系统信息。</summary>

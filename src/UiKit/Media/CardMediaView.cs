@@ -8,7 +8,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using MirrorpondHUD.Core;
 
-namespace MirrorpondHUD.Media
+namespace MirrorpondHUD.Ui.Controls.Media
 {
     /// <summary>
     /// 媒体控件：一张卡片里的图片 / 位图 / 动图 / 视频，全部由这一个 Grid 承载。
@@ -23,7 +23,7 @@ namespace MirrorpondHUD.Media
     ///   视频放在一个跟随卡片位置的不透明子窗口里）；
     /// · 选了 ffmpeg 或系统解不开时交给 <see cref="FfmpegPlayer"/>，逐帧画回卡片里。
     /// </summary>
-    public sealed class MediaView : Grid, IDisposable
+    public sealed class CardMediaView : Grid, IDisposable
     {
         static readonly string[] VideoExtensions =
         {
@@ -66,7 +66,7 @@ namespace MirrorpondHUD.Media
         double _clipRadius = -1;
         bool _disposed;
 
-        public MediaView()
+        public CardMediaView()
         {
             ClipToBounds = true;
             SnapsToDevicePixels = true;
@@ -191,7 +191,13 @@ namespace MirrorpondHUD.Media
         public string LoadedPath { get { return _loadedPath; } }
         public bool HasVideo { get { return _videoWindow != null || _player != null || _pendingVideo != null; } }
 
-        public MediaView WithCornerRadius(double radius)
+        /// <summary>当前绑定的媒体路径（截图 / 自检读取用；空 = 没选文件）。</summary>
+        public string MediaPath
+        {
+            get { return _settings == null ? "" : (_settings.Path ?? ""); }
+        }
+
+        public CardMediaView WithCornerRadius(double radius)
         {
             _cornerRadius = Math.Max(0, Math.Min(60, radius));
             ApplyClip();
@@ -199,7 +205,7 @@ namespace MirrorpondHUD.Media
         }
 
         /// <summary>用全局外观（字体 / 颜色 / 内边距）画文件名与进度条，和文字卡片保持一致。</summary>
-        public MediaView WithStyle(StyleSettings style)
+        public CardMediaView WithStyle(StyleSettings style)
         {
             _style = style;
             ApplyChrome();

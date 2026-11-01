@@ -11,7 +11,7 @@ namespace MirrorpondHUD.Core
     /// 极简 JSON 读写。只服务于配置文件的“对象 / 数组 / 字符串 / 数字 / 布尔 / null”，
     /// 不引入任何第三方依赖，也不依赖 .NET 版本特性。
     /// </summary>
-    internal static class Json
+    public static class Json
     {
         // =============================== 序列化 ===============================
 

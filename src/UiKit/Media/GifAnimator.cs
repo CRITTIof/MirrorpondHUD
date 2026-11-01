@@ -9,7 +9,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using MirrorpondHUD.Core;
 
-namespace MirrorpondHUD.Media
+namespace MirrorpondHUD.Ui.Controls.Media
 {
     /// <summary>
     /// 动图（GIF）播放器：用 GDI+ 逐帧取出已经合成好的画面（WPF 自带的解码器对局部帧处理不完整），

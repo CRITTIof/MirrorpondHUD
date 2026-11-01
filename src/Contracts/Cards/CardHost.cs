@@ -30,6 +30,15 @@ namespace MirrorpondHUD.Cards
 
         /// <summary>请求宿主重新布局（内容尺寸变了，例如列表变长）。</summary>
         void RequestLayout();
+
+        /// <summary>
+        /// 把当前整棵设置树写回磁盘（卡片运行期改了 <see cref="Config"/> 的 Extras 时用，
+        /// 例如对话卡切换单次 / 轮询）。返回是否写成功；配置只读 / 写失败都会返回 false。
+        /// </summary>
+        bool SaveSettings();
+
+        /// <summary>宿主 Shell 能力（剪贴板 / 图标 / 拖出 / 打开文件）。</summary>
+        ICardShellService Shell { get; }
     }
 
     /// <summary>

@@ -89,22 +89,8 @@ namespace MirrorpondHUD.Ui
         {
             if (!_sectionCreated || _section == null) return;
 
-            foreach (ChatCardSettingsView chat in FindChildren<ChatCardSettingsView>(_section))
-                chat.CommitChatApiKey();
-        }
-
-        static IEnumerable<T> FindChildren<T>(DependencyObject root) where T : DependencyObject
-        {
-            int count = VisualTreeHelper.GetChildrenCount(root);
-            for (int i = 0; i < count; i++)
-            {
-                DependencyObject child = VisualTreeHelper.GetChild(root, i);
-
-                var match = child as T;
-                if (match != null) yield return match;
-
-                foreach (T nested in FindChildren<T>(child)) yield return nested;
-            }
+            var commit = _section as ICardEditorCommit;
+            if (commit != null) commit.CommitPendingEdits();
         }
 
         public string Icon
@@ -112,7 +98,8 @@ namespace MirrorpondHUD.Ui
             get
             {
                 if (_module == null) return Icons.Txt;
-                return IsInfoText ? InfoTextCard.IconFor(_config.Preset) : _module.Icon;
+                CardPreset preset = CurrentPreset;
+                return preset != null && !string.IsNullOrEmpty(preset.Icon) ? preset.Icon : _module.Icon;
             }
         }
 
@@ -121,44 +108,60 @@ namespace MirrorpondHUD.Ui
             get
             {
                 if (_module == null) return "插件不可用";
-                return IsInfoText
-                    ? _module.DisplayName + " · " + InfoTextCard.LabelFor(_config.Preset)
-                    : _module.DisplayName;
+                CardPreset preset = CurrentPreset;
+                return preset == null ? _module.DisplayName : _module.DisplayName + " · " + preset.Label;
             }
         }
 
-        bool IsInfoText
+        ICardPresetSource PresetSource
         {
-            get { return _module != null && _module.Kind == "infotext"; }
+            get { return _module as ICardPresetSource; }
+        }
+
+        CardPreset CurrentPreset
+        {
+            get
+            {
+                ICardPresetSource source = PresetSource;
+                if (source == null) return null;
+
+                string current = source.CurrentPreset(_config);
+                foreach (CardPreset preset in source.Presets)
+                {
+                    if (string.Equals(preset.Id, current, StringComparison.OrdinalIgnoreCase)) return preset;
+                }
+                return source.Presets.Count == 0 ? null : source.Presets[0];
+            }
         }
 
         public Visibility PresetVisibility
         {
-            get { return IsInfoText ? Visibility.Visible : Visibility.Collapsed; }
+            get { return PresetSource == null ? Visibility.Collapsed : Visibility.Visible; }
         }
 
         public int PresetIndex
         {
             get
             {
-                IList<InfoTextPreset> presets = InfoTextCard.Presets;
-                string current = InfoTextCard.NormalizePreset(_config.Preset);
-                for (int i = 0; i < presets.Count; i++)
+                ICardPresetSource source = PresetSource;
+                if (source == null) return 0;
+
+                string current = source.CurrentPreset(_config);
+                for (int i = 0; i < source.Presets.Count; i++)
                 {
-                    if (presets[i].Id == current) return i;
+                    if (string.Equals(source.Presets[i].Id, current, StringComparison.OrdinalIgnoreCase)) return i;
                 }
                 return 0;
             }
             set
             {
-                IList<InfoTextPreset> presets = InfoTextCard.Presets;
-                if (value < 0 || value >= presets.Count) return;
+                ICardPresetSource source = PresetSource;
+                if (source == null || value < 0 || value >= source.Presets.Count) return;
 
-                string next = presets[value].Id;
-                if (InfoTextCard.NormalizePreset(_config.Preset) == next) return;
+                string next = source.Presets[value].Id;
+                if (string.Equals(source.CurrentPreset(_config), next, StringComparison.OrdinalIgnoreCase)) return;
 
-                _config.Preset = next;
-                _config.Content = "";   // 换预设回到该预设的默认内容，避免串模板
+                source.ApplyPreset(_config, next);
 
                 Raise("PresetIndex");
                 Raise("KindLabel");
@@ -216,8 +219,8 @@ namespace MirrorpondHUD.Ui
             get
             {
                 if (_module == null || !_module.SupportsContent) return Visibility.Collapsed;
-                if (IsInfoText && InfoTextCard.NormalizePreset(_config.Preset) == "keys") return Visibility.Collapsed;
-                return Visibility.Visible;
+                CardPreset preset = CurrentPreset;
+                return preset != null && !preset.EditableContent ? Visibility.Collapsed : Visibility.Visible;
             }
         }
 

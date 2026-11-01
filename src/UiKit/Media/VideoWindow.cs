@@ -5,9 +5,9 @@ using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Media;
 using MirrorpondHUD.Core;
-using MirrorpondHUD.Ui;
 
-namespace MirrorpondHUD.Media
+
+namespace MirrorpondHUD.Ui.Controls.Media
 {
     /// <summary>
     /// 视频卡片专用的"视频窗"。
@@ -102,9 +102,9 @@ namespace MirrorpondHUD.Media
                     IntPtr hwnd = new WindowInteropHelper(_window).Handle;
                     if (hwnd == IntPtr.Zero) return;
 
-                    int ex = Native.GetExStyle(hwnd);
-                    ex |= Native.WsExTransparent | Native.WsExNoActivate | Native.WsExToolWindow;
-                    Native.SetExStyle(hwnd, ex);
+                    int ex = MediaNative.GetExStyle(hwnd);
+                    ex |= MediaNative.WsExTransparent | MediaNative.WsExNoActivate | MediaNative.WsExToolWindow;
+                    MediaNative.SetExStyle(hwnd, ex);
                 };
 
                 _window.Show();

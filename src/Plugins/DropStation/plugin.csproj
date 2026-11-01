@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <OutputType>Library</OutputType>
+    <AssemblyName>MirrorpondHUD.Cards.DropStation</AssemblyName>
+    <RootNamespace>MirrorpondHUD.Cards</RootNamespace>
+    <Nullable>disable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+    <Version>2.16.0</Version>
+    <Product>镜潭一览 (MirrorpondHUD) 内置卡片插件</Product>
+    <NoWarn>$(NoWarn);WFAC010</NoWarn>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <DebugType>portable</DebugType>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <Optimize>true</Optimize>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Contracts / UiKit 由宿主默认 ALC 提供，插件目录不重复带一份。 -->
+    <ProjectReference Include="../../Contracts/MirrorpondHUD.Contracts.csproj" Private="false" />
+    <ProjectReference Include="../../UiKit/MirrorpondHUD.UiKit.csproj" Private="false" />
+  </ItemGroup>
+
+</Project>

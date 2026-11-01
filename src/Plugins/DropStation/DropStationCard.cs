@@ -10,7 +10,6 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using MirrorpondHUD.Core;
-using MirrorpondHUD.Ui;
 using MirrorpondHUD.Ui.Controls;
 
 namespace MirrorpondHUD.Cards
@@ -27,7 +26,7 @@ namespace MirrorpondHUD.Cards
     /// </summary>
     public sealed class DropStationCard : RichCardModuleBase,
         ICardSettingsModule, ICardEditorSection, ICardSettingsValidator,
-        ICardSummary, ICardStyleAware, ICardDropTarget, ICardDropFeedback
+        ICardSummary, ICardStyleAware, ICardDropTarget, ICardDropFeedback, ICardSelfTest
     {
         public const string SettingsKey = "dropstation";
 
@@ -99,6 +98,18 @@ namespace MirrorpondHUD.Cards
         {
             var view = content as StationView;
             if (view != null && context != null) view.ApplyStyle(context.Settings);
+        }
+
+        public string RunSelfTest()
+        {
+            var config = new CardSettings { Id = "dropstation", Kind = "dropstation" };
+            var station = StationOf(config);
+            station.Mode = "Copy";
+            station.MaxEntries = 1;
+            station.Normalize();
+            if (station.Mode != "Copy" || station.MaxEntries != 1) return "中转站设置归一化失败";
+            if (string.IsNullOrEmpty(Validate(config))) return "空接收目录应当校验失败";
+            return null;
         }
 
         public bool CanDrop(IDataObject data)
@@ -210,6 +221,11 @@ namespace MirrorpondHUD.Cards
     /// <summary>中转站的内容控件：标题、列表、拖入高亮、状态行。</summary>
     internal sealed class StationView : Grid, IDisposable
     {
+        static bool ShouldStartDrag(Point origin, Point current)
+        {
+            return Math.Abs(current.X - origin.X) >= 4 || Math.Abs(current.Y - origin.Y) >= 4;
+        }
+
         const string StateFile = "items.json";
 
         /// <summary>写 items.json 的串行锁：新旧视图的完成回调不会交错读改写同一份文件（P1-6）。</summary>
@@ -365,7 +381,7 @@ namespace MirrorpondHUD.Cards
         public void ApplyStyle(Settings settings)
         {
             _settings = settings ?? _settings;
-            _foreground = OverlaySurface.ParseColor(_settings.Style.Foreground, Color.FromRgb(0xE6, 0xED, 0xF3));
+            _foreground = CardPalette.TryColor(_settings.Style.Foreground, Color.FromRgb(0xE6, 0xED, 0xF3));
 
             CliSettings cli = _settings.Cli ?? new CliSettings();
             Width = Math.Max(240, cli.MaxWidth);
@@ -436,7 +452,7 @@ namespace MirrorpondHUD.Cards
         void PasteFromClipboard()
         {
             string[] paths;
-            if (!ClipboardService.TryGetFiles(out paths) || paths == null || paths.Length == 0)
+            if (_host == null || !_host.Shell.TryGetClipboardFiles(out paths) || paths == null || paths.Length == 0)
             {
                 SetStatus("剪贴板里没有文件。", CardStatusKind.Warning);
                 return;
@@ -622,7 +638,7 @@ namespace MirrorpondHUD.Cards
                 VerticalAlignment = VerticalAlignment.Center
             };
             if (_station.ShowIcons)
-                icon.Source = ShellIcons.GetIcon(item.IsDirectory ? item.DisplayPath : item.Name, 16, !item.IsDirectory);
+                icon.Source = _host == null ? null : _host.Shell.GetFileIcon(item.IsDirectory ? item.DisplayPath : item.Name, 16, !item.IsDirectory);
             grid.Children.Add(icon);
 
             string name = string.IsNullOrEmpty(item.Name) ? item.DisplayPath : item.Name;
@@ -768,7 +784,7 @@ namespace MirrorpondHUD.Cards
             if (_dragItem == null || e.LeftButton != MouseButtonState.Pressed) return;
 
             Point point = e.GetPosition(_list.Inner);
-            if (!DragSource.ShouldStart(_dragOrigin, point)) return;
+            if (!ShouldStartDrag(_dragOrigin, point)) return;
 
             StationItem item = _dragItem;
             _dragItem = null;
@@ -790,7 +806,7 @@ namespace MirrorpondHUD.Cards
             }
 
             e.Handled = true;
-            DragDropEffects effect = DragSource.BeginFiles(_list, paths, DragDropEffects.Copy);
+            DragDropEffects effect = _host == null ? DragDropEffects.None : _host.Shell.BeginDragFiles(_list, paths, DragDropEffects.Copy);
             if (effect == DragDropEffects.None)
                 SetStatus("拖出已取消", CardStatusKind.Normal);
             else if (paths.Count == 1)
@@ -932,7 +948,7 @@ namespace MirrorpondHUD.Cards
                 return;
             }
 
-            try { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); }
+            try { if (_host != null) _host.Shell.OpenPath(path); }
             catch (Exception ex) { SetStatus("打开失败：" + ex.Message, CardStatusKind.Error); }
         }
 
@@ -943,7 +959,7 @@ namespace MirrorpondHUD.Cards
             string path = item.DisplayPath;
             if (!item.PathExists()) return;
 
-            try { Process.Start("explorer.exe", "/select,\"" + path + "\""); }
+            try { if (_host != null) _host.Shell.RevealPath(path); }
             catch (Exception ex) { SetStatus("定位失败：" + ex.Message, CardStatusKind.Error); }
         }
 
@@ -955,7 +971,7 @@ namespace MirrorpondHUD.Cards
             var lines = new List<string>();
             foreach (StationItem item in selected) lines.Add(item.DisplayPath);
 
-            bool ok = ClipboardService.TrySetText(string.Join(Environment.NewLine, lines));
+            bool ok = _host != null && _host.Shell.TrySetClipboardText(string.Join(Environment.NewLine, lines));
             SetStatus(ok
                     ? (selected.Count > 1 ? selected.Count + " 条路径已复制" : "路径已复制")
                     : "复制路径失败（剪贴板被占用）",
@@ -1063,7 +1079,7 @@ namespace MirrorpondHUD.Cards
             try
             {
                 Directory.CreateDirectory(directory);
-                Process.Start("explorer.exe", "\"" + directory + "\"");
+                if (_host != null) _host.Shell.OpenPath(directory);
             }
             catch (Exception ex)
             {
@@ -1521,9 +1537,7 @@ namespace MirrorpondHUD.Cards
         bool WriteStateJson(StationState state)
         {
             string json = Json.Serialize(state);
-            return _host != null
-                ? _host.WriteState(StateFile, json)
-                : CardStateStore.Write(_config.Id, StateFile, json);
+            return _host != null && _host.WriteState(StateFile, json);
         }
 
         static bool SamePath(string a, string b)
@@ -1537,9 +1551,7 @@ namespace MirrorpondHUD.Cards
         {
             try
             {
-                string json = _host != null
-                    ? _host.ReadState(StateFile)
-                    : CardStateStore.Read(_config.Id, StateFile);
+                string json = _host == null ? null : _host.ReadState(StateFile);
                 if (string.IsNullOrEmpty(json)) return null;
 
                 return Json.Deserialize<StationState>(json);

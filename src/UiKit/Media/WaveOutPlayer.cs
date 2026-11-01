@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using MirrorpondHUD.Core;
 
-namespace MirrorpondHUD.Media
+namespace MirrorpondHUD.Ui.Controls.Media
 {
     /// <summary>
     /// 极简 PCM 播放器：给 ffmpeg 解码出来的音频用。

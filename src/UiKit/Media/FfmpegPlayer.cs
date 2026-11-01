@@ -10,7 +10,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using MirrorpondHUD.Core;
 
-namespace MirrorpondHUD.Media
+namespace MirrorpondHUD.Ui.Controls.Media
 {
     /// <summary>一个视频的基本信息（ffmpeg 探测出来）。</summary>
     internal sealed class VideoInfo

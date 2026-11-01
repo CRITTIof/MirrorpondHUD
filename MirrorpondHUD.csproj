@@ -18,7 +18,7 @@
     <PlatformTarget Condition="'$(RuntimeIdentifier)' == 'win-arm64'">arm64</PlatformTarget>
     <NoWarn>$(NoWarn);WFAC010</NoWarn>
     <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
-    <Version>2.15.0</Version>
+    <Version>2.16.0</Version>
     <Product>镜潭一览 (MirrorpondHUD)</Product>
     <AssemblyTitle>MirrorpondHUD</AssemblyTitle>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
@@ -47,12 +47,74 @@
     <Compile Remove="src\UiKit\**\*.cs" />
     <Page Remove="src\UiKit\**\*.xaml" />
     <None Remove="src\UiKit\**\*" />
+    <!-- 内置卡片都是独立 DLL 插件，不编进宿主。 -->
+    <Compile Remove="src\Plugins\**\*.cs" />
+    <Page Remove="src\Plugins\**\*.xaml" />
+    <None Remove="src\Plugins\**\*" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="src\Contracts\MirrorpondHUD.Contracts.csproj" />
     <ProjectReference Include="src\UiKit\MirrorpondHUD.UiKit.csproj" />
   </ItemGroup>
+
+  <!--
+    内置卡片插件：作为独立工程构建，但不把输出引用进宿主程序集。
+    构建 / 发布后复制到 <exe>/plugins/cards/<id>/，由 CardPluginLoader 走普通运行时插件路径加载。
+  -->
+  <ItemGroup>
+    <ProjectReference Include="src\Plugins\InfoText\plugin.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="src\Plugins\Buttons\plugin.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="src\Plugins\Command\plugin.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="src\Plugins\Chat\plugin.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="src\Plugins\Media\plugin.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="src\Plugins\DropStation\plugin.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <BundledCardPluginFile Include="src\Plugins\InfoText\bin\$(Configuration)\MirrorpondHUD.Cards.InfoText.dll">
+      <PluginId>builtin.infotext</PluginId>
+    </BundledCardPluginFile>
+    <BundledCardPluginFile Include="src\Plugins\Buttons\bin\$(Configuration)\MirrorpondHUD.Cards.Buttons.dll">
+      <PluginId>builtin.buttons</PluginId>
+    </BundledCardPluginFile>
+    <BundledCardPluginFile Include="src\Plugins\Command\bin\$(Configuration)\MirrorpondHUD.Cards.Command.dll">
+      <PluginId>builtin.command</PluginId>
+    </BundledCardPluginFile>
+    <BundledCardPluginFile Include="src\Plugins\Chat\bin\$(Configuration)\MirrorpondHUD.Cards.Chat.dll">
+      <PluginId>builtin.chat</PluginId>
+    </BundledCardPluginFile>
+    <BundledCardPluginFile Include="src\Plugins\Media\bin\$(Configuration)\MirrorpondHUD.Cards.Media.dll">
+      <PluginId>builtin.media</PluginId>
+    </BundledCardPluginFile>
+    <BundledCardPluginFile Include="src\Plugins\DropStation\bin\$(Configuration)\MirrorpondHUD.Cards.DropStation.dll">
+      <PluginId>builtin.dropstation</PluginId>
+    </BundledCardPluginFile>
+    <BundledCardPluginManifest Include="src\Plugins\InfoText\manifest.json"><PluginId>builtin.infotext</PluginId></BundledCardPluginManifest>
+    <BundledCardPluginManifest Include="src\Plugins\Buttons\manifest.json"><PluginId>builtin.buttons</PluginId></BundledCardPluginManifest>
+    <BundledCardPluginManifest Include="src\Plugins\Command\manifest.json"><PluginId>builtin.command</PluginId></BundledCardPluginManifest>
+    <BundledCardPluginManifest Include="src\Plugins\Chat\manifest.json"><PluginId>builtin.chat</PluginId></BundledCardPluginManifest>
+    <BundledCardPluginManifest Include="src\Plugins\Media\manifest.json"><PluginId>builtin.media</PluginId></BundledCardPluginManifest>
+    <BundledCardPluginManifest Include="src\Plugins\DropStation\manifest.json"><PluginId>builtin.dropstation</PluginId></BundledCardPluginManifest>
+  </ItemGroup>
+
+  <Target Name="CopyBundledCardPlugins" AfterTargets="Build" Condition="'$(DesignTimeBuild)' != 'true'">
+    <Copy SourceFiles="@(BundledCardPluginFile)"
+          DestinationFiles="@(BundledCardPluginFile->'$(OutDir)plugins\cards\%(PluginId)\%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(BundledCardPluginManifest)"
+          DestinationFiles="@(BundledCardPluginManifest->'$(OutDir)plugins\cards\%(PluginId)\manifest.json')"
+          SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="CopyBundledCardPluginsToPublish" AfterTargets="Publish" Condition="'$(PublishDir)' != ''">
+    <Copy SourceFiles="@(BundledCardPluginFile)"
+          DestinationFiles="@(BundledCardPluginFile->'$(PublishDir)plugins\cards\%(PluginId)\%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(BundledCardPluginManifest)"
+          DestinationFiles="@(BundledCardPluginManifest->'$(PublishDir)plugins\cards\%(PluginId)\manifest.json')"
+          SkipUnchangedFiles="true" />
+  </Target>
 
   <ItemGroup>
     <Resource Include="assets\logo.ico" />

@@ -9,7 +9,7 @@ namespace MirrorpondHUD.Core
     /// 不可写时退到 %LOCALAPPDATA%\MirrorpondHUD，最后退到临时目录。
     /// 可用环境变量 MIRRORPONDHUD_LOG 指定绝对路径。
     /// </summary>
-    internal static class Log
+    public static class Log
     {
         static readonly object Gate = new object();
         static string _path;

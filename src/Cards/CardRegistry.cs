@@ -107,6 +107,20 @@ namespace MirrorpondHUD.Cards
             }
         }
 
+        /// <summary>
+        /// 退出时静默摘掉插件模块引用（不写「外部 0」这种日志）；只保留启动时发现的内置模块。
+        /// </summary>
+        public static void ClearExternal()
+        {
+            lock (Sync)
+            {
+                EnsureInitializedCore();
+                _modules = new List<ICardModule>(_builtins);
+                _lookup = BuildLookup(_modules);
+                _placeholders.Clear();
+            }
+        }
+
         public static ICardModule Get(string kind)
         {
             EnsureInitialized();
@@ -115,7 +129,8 @@ namespace MirrorpondHUD.Cards
             if (TryGet(kind, out module)) return module;
 
             string key = (kind ?? "").Trim();
-            if (key.Length == 0) return _modules[0];
+            if (key.Length == 0)
+                return _modules.Count == 0 ? new UnavailableCardModule("infotext") : _modules[0];
 
             lock (Sync)
             {
@@ -145,7 +160,9 @@ namespace MirrorpondHUD.Cards
             EnsureInitialized();
             string trimmed = (kind ?? "").Trim();
             ICardModule module;
-            return TryGet(trimmed, out module) ? module.Kind : (trimmed.Length == 0 ? _modules[0].Kind : trimmed);
+            if (TryGet(trimmed, out module)) return module.Kind;
+            if (trimmed.Length > 0) return trimmed;
+            return _modules.Count == 0 ? "infotext" : _modules[0].Kind;
         }
 
         static void EnsureInitialized()
