@@ -1,4 +1,4 @@
-# DLL 卡片插件开发指南（2.17.0+）
+# DLL 卡片插件开发指南（2.18.0+）
 
 本文面向要在 MirrorpondHUD 里添加**运行时卡片插件**的开发者。插件是一个独立的 .NET 8 WPF 类库（DLL），
 通过 `plugins/cards/<id>/manifest.json` 被宿主加载，可以贡献文字卡或富内容卡，并复用宿主的设置页、
@@ -417,6 +417,57 @@ ring.ApplyStyle(style, cornerRadius);
 - 排序默认按 `CardTableItem.Cells[i]` 或列 `SortKey` 比较，点表头会切换升/降序并触发 `SortChanged`；
 - `CardTable` / `CardGauge` / `CardProgressRing` 都是 UiKit 控件，不依赖宿主；`CardBadge` / `CardTag` / `CardMetricTile` 可放在任意卡片内容里；
 - 这些控件 2.17.0 只做数据展示，交互浮层（Dialog / Popover / ContextMenu / Toast）在后续版本补齐。
+
+### 6.4 图表 / 树 / 时间线（2.18.0 起在 UiKit）
+
+面向历史采样、流量、行情、进程树、命令历史、任务时间线。全部控件都实现
+`ApplyStyle(StyleSettings style, double cornerRadius)`，并且是自绘 `FrameworkElement`
+或主题化 ItemsControl，不依赖宿主窗口。
+
+| 控件 | 主要 API | 用途 |
+|---|---|---|
+| `CardSparkline` | `SetValues` / `Add` / `Values` / `AutoScale` / `Minimum` / `Maximum` / `Fill` | 极简趋势线，无坐标轴 |
+| `CardLineChart` | `Series`（`CardChartSeries`）/ `Labels` / `ShowGrid` / `ShowLegend` / `ShowYLabels` / `ShowXLabels` / `ValueFormat` | 多序列折线 / 面积图 |
+| `CardBarChart` | `Series` / `Labels` / `ShowGrid` / `ShowLegend` / `ShowYLabels` / `ShowXLabels` | 分组柱状图 |
+| `CardTree` | `Roots` / `AddRoot` / `SelectedItem` / `SelectionChanged` / `ItemActivated` / `ExpandAll` | 主题化树：进程树、目录树、JSON |
+| `CardTimeline` | `Items` / `Add(time, title, detail, tone, icon)` / `Count` / `ScrollToEnd` / `ItemActivated` | 时间线：日志、命令历史、任务事件 |
+
+```csharp
+using MirrorpondHUD.Ui.Controls;
+
+var spark = new CardSparkline { Width = 320, Height = 40, Fill = true };
+spark.SetValues(new double[] { 12, 18, 14, 22, 28, 24, 31 });
+spark.ApplyStyle(style, cornerRadius);
+
+var line = new CardLineChart { Width = 480, Height = 220 };
+line.Series = new List<CardChartSeries>
+{
+    new CardChartSeries("CPU")  { Values = new List<double> { 12, 30, 24, 55, 40 } },
+    new CardChartSeries("内存") { Values = new List<double> { 40, 42, 44, 47, 50 } }
+};
+line.Labels = new List<string> { "00", "05", "10", "15", "20" };
+line.ApplyStyle(style, cornerRadius);
+
+var tree = new CardTree { Width = 300, Height = 200 };
+var root = tree.AddRoot("MirrorpondHUD");
+root.Add("Cards").Add("CardTable");
+root.Add("Contracts");
+tree.ApplyStyle(style, cornerRadius);
+
+var timeline = new CardTimeline { Width = 360, Height = 200 };
+timeline.Add("14:01", "启动完成", "已注册 6 个插件", CardTimelineTone.Accent);
+timeline.Add("14:03", "警告", "媒体解码器回退", CardTimelineTone.Warning);
+timeline.ApplyStyle(style, cornerRadius);
+```
+
+说明：
+
+- 图表颜色来自 `ThemeTokens.Accent / Danger / Muted / Border`，`CardChartSeries.Color` 可覆盖；
+- 空数据、`NaN` / `Infinity`、宽高 < 2 都不会抛异常；
+- `CardTree` / `CardTimeline` 用回收式虚拟化容器，只创建可视行；深层树只保证顶层虚拟化；
+- 直接修改 `Series` / `Values` 的 live List 不会自动重绘，改完调用 `SetValues` / `Add` / 重新赋值
+  `Series` 或 `ApplyStyle` 触发 `InvalidateVisual`；
+- 2.18.0 仍没有“成功色”令牌，`CardTimelineTone.Success` 复用 Accent。
 
 ## 7. 宿主服务与状态
 

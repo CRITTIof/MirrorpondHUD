@@ -10,10 +10,10 @@
 > `f67a255` / `5f8933c` / `ef70cea`，**未发布、未合并**）；`v2.14.5`（`a0fe549`）/ `v2.14.6`（`3e6abc6`）
 > 已推送到 `origin/feature/runtime-card-loading`；
 > `v2.14.7`（`abcbcec`）/ `v2.14.8`（`633e9d6`）已随文档同步提交 `d73d2ec` 推送到同一分支（未发布、未合并）；
-> `v2.14.9`（`aba873a`）已推送；`v2.15.0`（`78d3381`）已推送（文档同步提交 `2eba9b4`）；`v2.16.0`（代码 `6406d96`，文档同步 `d1fd414`）**已推送并快进合并到 `main`**；`v2.17.0`（`27b8bbd`）为本次提交（分支 `feature/data-core`，**尚未推送、未合并 main**），未打 tag、未发布 Release。
+> `v2.14.9`（`aba873a`）已推送；`v2.15.0`（`78d3381`）已推送（文档同步提交 `2eba9b4`）；`v2.16.0`（代码 `6406d96`，文档同步 `d1fd414`）**已推送并快进合并到 `main`**；`v2.17.0`（`27b8bbd`）已提交到分支 `feature/data-core`；`v2.18.0`（`1e1c6ac`）为本次提交（同一分支，**尚未推送、未合并 main**），未打 tag、未发布 Release。
 > `v2.14.1` / `v2.14.2` / `v2.14.4` 的规模用对应提交的 `git show --shortstat`；`v2.14.3` / `v2.14.5` / `v2.14.6`
 > 按当时提交前工作区的 `git diff --shortstat` 计算；`v2.14.7` / `v2.14.8` 用对应提交的 `git show --shortstat`；
-> `v2.14.9` 用提交前工作区的 `git diff --shortstat -- MirrorpondHUD.csproj src`；`v2.15.0` 用 `git show --shortstat 78d3381`；`v2.16.0` 用 `git show --shortstat 6406d96`；`v2.17.0` 用 `git show --shortstat 27b8bbd`（文档同步另计）。
+> `v2.14.9` 用提交前工作区的 `git diff --shortstat -- MirrorpondHUD.csproj src`；`v2.15.0` 用 `git show --shortstat 78d3381`；`v2.16.0` 用 `git show --shortstat 6406d96`；`v2.17.0` 用 `git show --shortstat 27b8bbd`；`v2.18.0` 用 `git show --shortstat 1e1c6ac`（文档同步另计）。
 
 ## 0. 总览
 
@@ -70,6 +70,7 @@
 | v2.15.0 | 2026-11-01 | `78d3381` | UiKit 第一优先表单控件（Slider/Toggle/Select/Number/Color/Segmented/FormRow/SettingsForm）+ 根目录 DLL 卡片插件开发指南；SelfTest 表单控件回归 | 6 文件，+1365 / −4 |
 | v2.16.0 | 2026-11-01 | `6406d96` | 6 张内置卡全部 DLL 插件化（宿主内置 0）；新增宿主服务契约；UiKit 媒体控件化；插件 API 仍 2 | 60 文件，+1568 / −1557 |
 | v2.17.0 | 2026-11-01 | `27b8bbd` | 第二优先数据展示控件第一批：CardTable（虚拟化 / 排序 / 选中）、CardBadge、CardTag、CardMetricTile、CardGauge、CardProgressRing；版本三件套 + 6 插件同步 2.17.0 | 18 文件，+1315 / −17 |
+| v2.18.0 | 2026-11-01 | `1e1c6ac` | 第二优先第二批：CardSparkline / CardLineChart / CardBarChart / CardTree / CardTimeline；版本三件套 + 6 插件同步 2.18.0 | 19 文件，+2049 / −16 |
 
 ---
 
@@ -2310,7 +2311,44 @@ P2-4（占位文案）、P2-6（ALC 注释 / 旧别名日志）、P2-7（InferPr
 
 ---
 
-## 52. 不在版本里的东西
+## 52. v2.18.0（`1e1c6ac`，分支 `feature/data-core`）
+
+### 背景
+
+2.17.0 补了表格、指标块、仪表和圆环，但历史趋势、进程树、命令 / 任务时间线仍只能由插件自己画 `Canvas`。
+2.18.0 补齐第二优先的第二批：**图表 + 层级 / 时间线**，全部进 UiKit。
+
+### 改动
+
+1. **CardSparkline / CardLineChart / CardBarChart**：`src/UiKit/CardChartControls.cs`。
+   `CardSparkline` 画无轴趋势线；`CardLineChart` 支持多序列、网格、Y 轴刻度、X 轴标签、图例和面积；
+   `CardBarChart` 支持分组柱状、负值基线、圆角柱。全部用 `FormattedText`（含 DPI）+ 冻结 Pen/Brush，
+   空数据 / NaN / Infinity / 极小尺寸安全。
+2. **CardTree / CardTimeline**：`src/UiKit/CardTreeTimeline.cs`。CardTree 是主题化 TreeView
+   （自绘 ▸/▾、选中 / 悬停背景、空态、顶层虚拟化）；CardTimeline 是虚拟化 ListBox，左侧时间、
+   圆点 + 竖线、右侧标题 / 详情，支持语气色和双击 / 回车激活。
+3. **SelfTest**：新增 `CardChartSelfTest`，覆盖空数据、NaN、Add/SetValues、AutoScale、树展开/选中、
+   时间线 Count/ScrollToEnd 和离屏渲染；宿主 `--selftest` 新增「图表 / 树 / 时间线」一行。
+4. **版本**：宿主 / Contracts / UiKit / 6 个插件工程与 manifest 统一 2.18.0；插件 API 仍为 2。
+
+### 验证
+
+- `dotnet build MirrorpondHUD.csproj -c Release`：0 警告 0 错误；
+- `--selftest`：失败项 0，「图表 / 树 / 时间线: OK（Sparkline / Line / Bar / Tree / Timeline 离屏渲染）」；
+- 离屏预览：`bin/Release/charts-preview.png`（780×680）确认深色主题下的折线、柱状、树、时间线观感；
+- 6 个内置插件仍从 `plugins/cards` 加载成功。
+
+### 风险 / 未验证
+
+- 没有独立“成功色”令牌：`CardTimelineTone.Success` 复用 Accent，Warning 用前景色；
+- `CardTree` 只保证顶层虚拟化，深层节点仍用默认面板；超大深层树性能未验证；
+- 直接修改 live `Series` / `Values` List 不自动重绘，需要 setter / `SetValues` / `Add` / `ApplyStyle`；
+- 图例超长截断不换行；X 轴标签按宽度抽稀，不保证每个点都有标签；
+- 图表 / 树 / 时间线只做离屏渲染，未做真实鼠标展开 / 滚动 / 双击的人工验收。
+
+---
+
+## 53. 不在版本里的东西
 
 - 验收脚本、样张与测量脚本（`cmd-e2e.ps1`、`drag-glass.ps1`、`measure-*.py`、`shots/` 等）都在仓库外的 `hud-test/` 里，**没有提交**。
 - 发布：`main` 与标签已推送到 [github.com/CRITTIof/MirrorpondHUD](https://github.com/CRITTIof/MirrorpondHUD)；
@@ -2319,7 +2357,7 @@ P2-4（占位文案）、P2-6（ALC 注释 / 旧别名日志）、P2-7（InferPr
   更早的 Release 正文与附件保留原样，v2.4.0 的 Release 已删除（tag `v2.4.0` 保留，历史仍可检出）。
 - 仓库追踪的文件共 117 个，`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
 
-## 53. 已知代价（跨版本）
+## 54. 已知代价（跨版本）
 
 - 桌面亚克力为了不拍到自己，会把卡片排除在截屏之外 —— 这个模式下截图 / 录屏里**看不到卡片**，观感只能靠肉眼与离屏渲染验证。
 - 兼容实现每帧对身后窗口做 `PrintWindow`，拖动时最多 ~21 帧/秒；要更高只能走桌面亚克力（DXGI）。
