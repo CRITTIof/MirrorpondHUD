@@ -10,7 +10,7 @@
 |---|---|---|
 | 插件契约 | `src/Contracts/Cards/` | `ICardModule` / `IRichCardModule` / `CardModuleBase` / `RichCardModuleBase` / 设置区块契约 / `ICardHost` / `CardHostServices.cs`（通用宿主服务） |
 | 通用配置 / 工具 | `src/Contracts/Core/` | `Settings`（通用配置）、`Json` / `Log` / `AsyncProcess`（public 供插件使用）、`SecretStore`（DPAPI，插件与宿主共用） |
-| 共享控件 | `src/UiKit/` | `CardButton` / `CardList` / `CardStatus` / `CardHeader` / `CardInput` / `CardTextBox` / `CardDropOverlay` / `CliUi` / 表单控件 `CardFormControls.cs` / 媒体控件 `Media/CardMediaView.cs` + `Media/MediaSettings.cs` |
+| 共享控件 | `src/UiKit/` | `CardButton` / `CardList` / `CardStatus` / `CardHeader` / `CardInput` / `CardTextBox` / `CardDropOverlay` / `CliUi` / 表单控件 `CardFormControls.cs` / 数据展示控件 `CardDataControls.cs`（2.17.0）/ 媒体控件 `Media/CardMediaView.cs` + `Media/MediaSettings.cs` |
 | 内置卡片 | `src/Plugins/{InfoText,Buttons,Command,Chat,Media,DropStation}/` | 6 张内置卡，各含 `plugin.csproj` + `manifest.json`（id `builtin.*`、`apiVersion=2`），编成 `MirrorpondHUD.Cards.*.dll` |
 | 宿主 | `src/App.xaml.cs`、`src/Cards/`、`src/Ui/`、`src/Core/`、`src/Metrics/`、`src/Text/` | 加载器 / 注册表 / 配置模型、叠层窗口与设置页、采样 / 模板等宿主服务；不含具体卡片 |
 | 发布 | `MirrorpondHUD.csproj` | 构建 6 个插件工程并复制到 `<exe>/plugins/cards/builtin.*/`；single-file publish 同样复制 |
@@ -47,6 +47,7 @@
 | `src/Contracts/Core/SecretStore.cs` | 敏感字符串加密：Windows DPAPI（当前用户），settings.json 里只落 `dpapi:…`；2.16.0 起插件与宿主共用 |
 | `src/UiKit/CardButton.cs` | 卡片里的按钮：三种语气 + 三态模板，颜色跟随卡片外观 |
 | `src/UiKit/CardTextBox.cs` | 卡片里的输入框：底色 / 光标 / 选区跟着卡片文字色 |
+| `src/UiKit/CardDataControls.cs` | 2.17.0 数据展示控件：`CardTable`（虚拟化 / 排序 / 选中）、`CardBadge` / `CardTag` / `CardMetricTile`、`CardGauge` / `CardProgressRing`；均实现 `ApplyStyle` |
 | `src/UiKit/Media/CardMediaView.cs` | 图片 / 动图 / 视频控件（2.16.0 从宿主 MediaView 迁入 UiKit）：卡片内容的实际绘制者（文件名 + 进度条 + 圆角） |
 | `src/UiKit/Media/GifAnimator.cs` | 动图按帧播放（GDI+ 取帧 + `DispatcherTimer`） |
 | `src/UiKit/Media/VideoWindow.cs` | 视频子窗口：分层窗口画不出 `MediaElement`，视频单独开窗贴在卡片上 |

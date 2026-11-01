@@ -1,4 +1,4 @@
-# DLL 卡片插件开发指南（2.16.0+）
+# DLL 卡片插件开发指南（2.17.0+）
 
 本文面向要在 MirrorpondHUD 里添加**运行时卡片插件**的开发者。插件是一个独立的 .NET 8 WPF 类库（DLL），
 通过 `plugins/cards/<id>/manifest.json` 被宿主加载，可以贡献文字卡或富内容卡，并复用宿主的设置页、
@@ -286,7 +286,7 @@ public sealed class MyEditor : ICardEditorSection
 
 ---
 
-## 6. `MirrorpondHUD.UiKit` 表单控件
+## 6. `MirrorpondHUD.UiKit` 控件（表单 / 媒体 / 数据展示）
 
 所有表单控件都在 `MirrorpondHUD.Ui.Controls`，实现 `ICardFormControl`：
 
@@ -361,6 +361,62 @@ view.Bind(media);
 
 `CardMediaView` 负责文件名行、进度条与圆角内边距；视频子窗口会贴到卡片上（分层窗口画不出 `MediaElement`），
 因此视频区域的鼠标事件归子窗口。`MediaCard` 内置插件就是使用它实现的。
+
+### 6.3 数据展示控件（2.17.0 起在 UiKit）
+
+面向监控、行情、日志、任务、文件列表这类信息密度高的卡片。全部实现
+`ApplyStyle(StyleSettings style, double cornerRadius)`，换肤时逐个调用即可。
+
+| 控件 | 主要 API | 用途 |
+|---|---|---|
+| `CardTable` | `AddColumn` / `AddRow` / `ItemsSource` / `SortBy` / `SelectedItem` / `SelectionMode` / `ItemActivated` / `SetEmptyText` | 虚拟化表格：表头、列宽、点击表头排序、单选/多选、空态 |
+| `CardBadge` | `new CardBadge(text, tone)`、`Text`、`Tone` | 状态、计数、只读标记 |
+| `CardTag` | `new CardTag(text, tone)`、`Removable`、`Removed` | 胶囊标签；可带“×”移除 |
+| `CardMetricTile` | `Title` / `Value` / `Unit` / `Delta` / `Caption` / `Icon` / `Trend` / `Tone` | 监控 KPI 块：大数值 + 趋势 |
+| `CardGauge` | `Value` / `Minimum` / `Maximum` / `Label` / `Unit` / `ValueFormat` | 280° 单值仪表 |
+| `CardProgressRing` | `Value` / `Label` / `ShowValue` / `RingThickness` / `ValueFormat` | 圆环进度 / 配额 / 完成度 |
+
+表格示例（`CardTableItem` 按列下标放 Cells；也可以用 `ItemsSource` + 自定义列 `Value`）：
+
+```csharp
+using MirrorpondHUD.Ui.Controls;
+
+var table = new CardTable { Width = 340, Height = 180 };
+table.AddColumn("文件", null, null, new GridLength(1, GridUnitType.Star));
+table.AddColumn("状态", null, null, new GridLength(72));
+table.AddColumn("大小", null, null, new GridLength(72), TextAlignment.Right);
+table.AddRow("MirrorpondHUD.exe", "运行中", "1.8 MB");
+table.AddRow("mirrorpond.log", "写入", "248 KB");
+table.SortBy(0, false);
+table.SelectionMode = SelectionMode.Extended;
+table.ItemActivated += item => { /* CardTableItem.Tag 或自定义数据 */ };
+table.SetEmptyText("暂无文件");
+table.ApplyStyle(context.Settings.Style, context.Settings.Overlay.CornerRadius);
+```
+
+指标块 / 仪表示例：
+
+```csharp
+var cpu = new CardMetricTile("CPU", "42")
+{
+    Unit = "%", Delta = "+3.2", Caption = "较上次",
+    Trend = CardMetricTrend.Up, Tone = CardBadgeTone.Accent
+};
+cpu.ApplyStyle(style, cornerRadius);
+
+var gauge = new CardGauge { Value = 62, Label = "CPU", Unit = "%" };
+gauge.ApplyStyle(style, cornerRadius);
+
+var ring = new CardProgressRing { Value = 76, Label = "完成" };
+ring.ApplyStyle(style, cornerRadius);
+```
+
+说明：
+
+- `CardTable` 内部使用 `ListCollectionView` + 虚拟化 `ListBox`，数据量大时只创建可视行；
+- 排序默认按 `CardTableItem.Cells[i]` 或列 `SortKey` 比较，点表头会切换升/降序并触发 `SortChanged`；
+- `CardTable` / `CardGauge` / `CardProgressRing` 都是 UiKit 控件，不依赖宿主；`CardBadge` / `CardTag` / `CardMetricTile` 可放在任意卡片内容里；
+- 这些控件 2.17.0 只做数据展示，交互浮层（Dialog / Popover / ContextMenu / Toast）在后续版本补齐。
 
 ## 7. 宿主服务与状态
 

@@ -10,10 +10,10 @@
 > `f67a255` / `5f8933c` / `ef70cea`，**未发布、未合并**）；`v2.14.5`（`a0fe549`）/ `v2.14.6`（`3e6abc6`）
 > 已推送到 `origin/feature/runtime-card-loading`；
 > `v2.14.7`（`abcbcec`）/ `v2.14.8`（`633e9d6`）已随文档同步提交 `d73d2ec` 推送到同一分支（未发布、未合并）；
-> `v2.14.9`（`aba873a`）已推送；`v2.15.0`（`78d3381`）已推送（文档同步提交 `2eba9b4`）；`v2.16.0`（代码 `6406d96`，文档同步 `d1fd414`）**已推送并快进合并到 `main`**，未打 tag、未发布 Release。
+> `v2.14.9`（`aba873a`）已推送；`v2.15.0`（`78d3381`）已推送（文档同步提交 `2eba9b4`）；`v2.16.0`（代码 `6406d96`，文档同步 `d1fd414`）**已推送并快进合并到 `main`**；`v2.17.0`（`27b8bbd`）为本次提交（分支 `feature/data-core`，**尚未推送、未合并 main**），未打 tag、未发布 Release。
 > `v2.14.1` / `v2.14.2` / `v2.14.4` 的规模用对应提交的 `git show --shortstat`；`v2.14.3` / `v2.14.5` / `v2.14.6`
 > 按当时提交前工作区的 `git diff --shortstat` 计算；`v2.14.7` / `v2.14.8` 用对应提交的 `git show --shortstat`；
-> `v2.14.9` 用提交前工作区的 `git diff --shortstat -- MirrorpondHUD.csproj src`；`v2.15.0` 用 `git show --shortstat 78d3381`；`v2.16.0` 用 `git show --shortstat 6406d96`（文档同步另计）。
+> `v2.14.9` 用提交前工作区的 `git diff --shortstat -- MirrorpondHUD.csproj src`；`v2.15.0` 用 `git show --shortstat 78d3381`；`v2.16.0` 用 `git show --shortstat 6406d96`；`v2.17.0` 用 `git show --shortstat 27b8bbd`（文档同步另计）。
 
 ## 0. 总览
 
@@ -69,6 +69,7 @@
 | v2.14.9 | 2026-11-01 | 本次提交 | 最终审阅修复：`CardSettings.Kind` 默认值 `metrics`→`infotext`、README 设置示例改 `Extras.command/media/chat`（P1×2）、旧迁移/旧 Kind 注释与 SelfTest 夹具清理（部分 P2）；版本 2.14.9 | 10 文件，+18 / −25（源码部分，文档同步另计） |
 | v2.15.0 | 2026-11-01 | `78d3381` | UiKit 第一优先表单控件（Slider/Toggle/Select/Number/Color/Segmented/FormRow/SettingsForm）+ 根目录 DLL 卡片插件开发指南；SelfTest 表单控件回归 | 6 文件，+1365 / −4 |
 | v2.16.0 | 2026-11-01 | `6406d96` | 6 张内置卡全部 DLL 插件化（宿主内置 0）；新增宿主服务契约；UiKit 媒体控件化；插件 API 仍 2 | 60 文件，+1568 / −1557 |
+| v2.17.0 | 2026-11-01 | `27b8bbd` | 第二优先数据展示控件第一批：CardTable（虚拟化 / 排序 / 选中）、CardBadge、CardTag、CardMetricTile、CardGauge、CardProgressRing；版本三件套 + 6 插件同步 2.17.0 | 18 文件，+1315 / −17 |
 
 ---
 
@@ -2271,7 +2272,45 @@ P2-4（占位文案）、P2-6（ALC 注释 / 旧别名日志）、P2-7（InferPr
 
 ---
 
-## 51. 不在版本里的东西
+## 51. v2.17.0（`27b8bbd`，分支 `feature/data-core`）
+
+### 背景
+
+2.16.0 把 6 张内置卡迁成 DLL 插件后，插件能拿到的共享控件仍只有表单 / 媒体 / 列表 / 状态行。
+监控、行情、日志、任务、文件列表类卡片需要高密度数据展示，如果每个插件都自己拼 `ListView` / `Canvas`，
+会出现虚拟化、排序、选中态、主题色、空态各写一套的问题。2.17.0 补齐**第二优先：数据展示控件**的第一批，
+全部放在 `MirrorpondHUD.UiKit`，插件只需引用 UiKit。
+
+### 改动
+
+1. **CardTable**：`src/UiKit/CardDataControls.cs`。表头 + 虚拟化行（`ListCollectionView` + 回收式 `ListBox`），
+   支持列宽、点击表头升/降序、单选 / 多选、双击 / 回车激活、空态、`ScrollToEnd`；行数据用 `CardTableItem`
+   或自定义 `ItemsSource` + 列 `Value` / `SortKey`。
+2. **CardBadge / CardTag / CardMetricTile**：同文件，统一走 `CardBadgeTone` 与主题令牌；指标块支持标题、
+   主数值 + 单位、趋势、说明、图标。
+3. **CardGauge / CardProgressRing**：同文件，`FrameworkElement` 自绘（`DrawingContext`），支持范围、格式、
+   标签、单位与主题换色；不依赖宿主。
+4. **SelfTest**：新增 `CardDataSelfTest`，覆盖表格排序 / 选中 / 清空 / 空态、徽标 / 标签 / 指标块 /
+   仪表 / 圆环的布局与离屏渲染；宿主 `--selftest` 新增「数据控件」一行。
+5. **版本**：宿主 / Contracts / UiKit / 6 个插件工程与 manifest 统一 2.17.0；插件 API 仍为 2（纯 UiKit 加法）。
+
+### 验证
+
+- `dotnet build MirrorpondHUD.csproj -c Release`：0 警告 0 错误；
+- `--selftest`：失败项 0，新增「数据控件: OK（Table 排序 / 选中 / 空态；Badge / Tag / Metric / Gauge / Ring）」；
+- 离屏预览：`bin/Release/data-controls-preview.png`（760×520）确认表格、指标块、徽标、仪表、圆环的深色主题观感；
+- 6 个内置插件仍从 `plugins/cards` 加载成功。
+
+### 风险 / 未验证
+
+- 表头与纵向滚动条同时出现时，星号列宽会因滚动条占位产生几像素偏差；固定列宽不受影响；
+- 表格只做基础文本单元格，没有单元格模板 / 编辑 / 列拖拽；需要时由插件在 `ItemsSource` 上自行扩展；
+- 图表 / 树 / 时间线属于 2.18.0，浮层 / 交互属于 2.19.0，本版不包含；
+- 未做真实键鼠操作（表头点击 / 多选拖拽）的人工验收，仅有布局与离屏渲染自检。
+
+---
+
+## 52. 不在版本里的东西
 
 - 验收脚本、样张与测量脚本（`cmd-e2e.ps1`、`drag-glass.ps1`、`measure-*.py`、`shots/` 等）都在仓库外的 `hud-test/` 里，**没有提交**。
 - 发布：`main` 与标签已推送到 [github.com/CRITTIof/MirrorpondHUD](https://github.com/CRITTIof/MirrorpondHUD)；
@@ -2280,7 +2319,7 @@ P2-4（占位文案）、P2-6（ALC 注释 / 旧别名日志）、P2-7（InferPr
   更早的 Release 正文与附件保留原样，v2.4.0 的 Release 已删除（tag `v2.4.0` 保留，历史仍可检出）。
 - 仓库追踪的文件共 117 个，`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
 
-## 52. 已知代价（跨版本）
+## 53. 已知代价（跨版本）
 
 - 桌面亚克力为了不拍到自己，会把卡片排除在截屏之外 —— 这个模式下截图 / 录屏里**看不到卡片**，观感只能靠肉眼与离屏渲染验证。
 - 兼容实现每帧对身后窗口做 `PrintWindow`，拖动时最多 ~21 帧/秒；要更高只能走桌面亚克力（DXGI）。
