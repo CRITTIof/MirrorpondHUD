@@ -1,4 +1,4 @@
-# 版本修改记录（2.4.1 → 2.14.9）
+# 版本修改记录（2.4.1 → 2.15.0）
 
 > 范围：本文只记录**这一轮接手后我做的版本**（v2.4.1 起）。v2.4.0 及更早是既有历史，不在本文档里。
 > 数据全部取自仓库真实提交（`git diff --shortstat <上一版>..<本版>`），文件行的 `+ / -` 就是实际增删行数。
@@ -10,10 +10,10 @@
 > `f67a255` / `5f8933c` / `ef70cea`，**未发布、未合并**）；`v2.14.5`（`a0fe549`）/ `v2.14.6`（`3e6abc6`）
 > 已推送到 `origin/feature/runtime-card-loading`；
 > `v2.14.7`（`abcbcec`）/ `v2.14.8`（`633e9d6`）已随文档同步提交 `d73d2ec` 推送到同一分支（未发布、未合并）；
-> `v2.14.9` 为本次提交（基于 `d73d2ec`，与本文档一并推送 `origin/feature/runtime-card-loading`，未发布、未合并）。
+> `v2.14.9`（`aba873a`）已推送；`v2.15.0`（`78d3381`）为本次提交（基于 `aba873a`，与本文档一并推送，未发布、未合并）。
 > `v2.14.1` / `v2.14.2` / `v2.14.4` 的规模用对应提交的 `git show --shortstat`；`v2.14.3` / `v2.14.5` / `v2.14.6`
 > 按当时提交前工作区的 `git diff --shortstat` 计算；`v2.14.7` / `v2.14.8` 用对应提交的 `git show --shortstat`；
-> `v2.14.9` 用提交前工作区的 `git diff --shortstat -- MirrorpondHUD.csproj src`（文档同步另计）。
+> `v2.14.9` 用提交前工作区的 `git diff --shortstat -- MirrorpondHUD.csproj src`；`v2.15.0` 用 `git show --shortstat 78d3381`（文档同步另计）。
 
 ## 0. 总览
 
@@ -67,6 +67,7 @@
 | v2.14.7 | 2026-11-01 | `abcbcec` | 删除旧 Kind 别名与旧 Schema 迁移（开发阶段无用户）：clock/metrics/keys/text 不再转 infotext，旧 Schema 按损坏处理 | 11 文件，+30 / −434 |
 | v2.14.8 | 2026-11-01 | `633e9d6` | Contracts 瘦身：内置卡设置 Command/Media/Chat、DPAPI SecretStore、默认内容迁回宿主，Contracts 只留通用契约 | 11 文件，+351 / −358（含新增 `BuiltInCardSettings.cs` 316 行、`CardDefaults.cs` 21 行） |
 | v2.14.9 | 2026-11-01 | 本次提交 | 最终审阅修复：`CardSettings.Kind` 默认值 `metrics`→`infotext`、README 设置示例改 `Extras.command/media/chat`（P1×2）、旧迁移/旧 Kind 注释与 SelfTest 夹具清理（部分 P2）；版本 2.14.9 | 10 文件，+18 / −25（源码部分，文档同步另计） |
+| v2.15.0 | 2026-11-01 | `78d3381` | UiKit 第一优先表单控件（Slider/Toggle/Select/Number/Color/Segmented/FormRow/SettingsForm）+ 根目录 DLL 卡片插件开发指南；SelfTest 表单控件回归 | 6 文件，+1365 / −4 |
 
 ---
 
@@ -2130,7 +2131,44 @@ P2-4（占位文案）、P2-6（ALC 注释 / 旧别名日志）、P2-7（InferPr
 
 ---
 
-## 49. 不在版本里的东西
+## 49. v2.15.0（功能分支 `feature/runtime-card-loading`，`78d3381`，本次提交）
+
+### 背景
+
+插件开发者要写设置/交互面板时，此前只能自己拼原生 WPF 控件，样式和卡片主题不一致。2.15.0 补齐第一优先的 UiKit 表单控件，并在仓库根目录提供完整的 DLL 卡片插件开发指南。
+
+### 改动
+
+1. `src/UiKit/CardFormControls.cs` 新增 `CardSlider`、`CardToggle`、`CardSelect`、`CardNumberInput`、`CardColorPicker`、`CardSegmentedControl`、`CardFormRow`、`CardSettingsForm`；统一实现 `ICardFormControl.ApplyStyle(StyleSettings, cornerRadius)`。
+2. 控件颜色全部走 `ThemeTokens` / `CardPalette`，跟随卡片前景色、强调色和字体；`CardSettingsForm` 支持声明式 `AddSlider` / `AddToggle` / `AddSelect` / `AddNumber` / `AddColor` / `AddSegmented`。
+3. 根目录新增 `DLL-CARD-PLUGIN-GUIDE.md`：工程引用 Contracts/UiKit、manifest、文字卡/富卡、设置 Extras、表单控件、主题换肤、宿主服务、热键/拖放、生命周期、热重载、调试与安全边界。
+4. `SelfTest` 新增「表单控件」回归（控件实例化、样式套用、默认值/选中状态、表单行数）。
+5. 版本号：宿主 / Contracts / UiKit 均 2.15.0；插件 API 仍为 2。
+
+### 文件
+
+| 文件 | 行数 | 说明 |
+|---|---|---|
+| `src/UiKit/CardFormControls.cs` | +1230 | 8 个表单控件与 `ICardFormControl` |
+| `src/SelfTest.cs` | +29 | 表单控件回归 |
+| `DLL-CARD-PLUGIN-GUIDE.md` | +500 | 根目录插件开发指南 |
+| `MirrorpondHUD.csproj` / Contracts / UiKit | +1/−1 each | 2.14.9 → 2.15.0 |
+
+### 实测
+
+- 宿主 / Contracts / UiKit 构建：**0 警告 0 错误**。
+- `--selftest`：失败项 0；新增「表单控件」OK。
+- `--smoke 8 --minimized`：exit 0。
+
+### 风险 / 未验证
+
+- 表单控件是新增 UiKit API，插件需引用 UiKit；API 版本仍为 2。
+- 表单控件只做了 selftest 级实例化/样式验证，尚未做逐控件截图级视觉验收；`CardSelect` 的弹出层在真实卡片上的键盘/滚轮行为需要后续人工验证。
+- 主仓库 docs 保留；审阅副本仍按“无历史、只留 themes”生成。
+
+---
+
+## 50. 不在版本里的东西
 
 - 验收脚本、样张与测量脚本（`cmd-e2e.ps1`、`drag-glass.ps1`、`measure-*.py`、`shots/` 等）都在仓库外的 `hud-test/` 里，**没有提交**。
 - 发布：`main` 与标签已推送到 [github.com/CRITTIof/MirrorpondHUD](https://github.com/CRITTIof/MirrorpondHUD)；
@@ -2139,7 +2177,7 @@ P2-4（占位文案）、P2-6（ALC 注释 / 旧别名日志）、P2-7（InferPr
   更早的 Release 正文与附件保留原样，v2.4.0 的 Release 已删除（tag `v2.4.0` 保留，历史仍可检出）。
 - 仓库追踪的文件共 117 个，`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
 
-## 50. 已知代价（跨版本）
+## 51. 已知代价（跨版本）
 
 - 桌面亚克力为了不拍到自己，会把卡片排除在截屏之外 —— 这个模式下截图 / 录屏里**看不到卡片**，观感只能靠肉眼与离屏渲染验证。
 - 兼容实现每帧对身后窗口做 `PrintWindow`，拖动时最多 ~21 帧/秒；要更高只能走桌面亚克力（DXGI）。
