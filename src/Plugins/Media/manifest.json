@@ -1,7 +1,7 @@
 {
   "id": "builtin.media",
   "name": "媒体",
-  "version": "2.18.0",
+  "version": "2.19.0",
   "apiVersion": 2,
   "entryType": "MirrorpondHUD.Cards.MediaCard",
   "assembly": "MirrorpondHUD.Cards.Media.dll",
