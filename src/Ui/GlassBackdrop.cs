@@ -68,7 +68,7 @@ namespace MirrorpondHUD.Ui
         int _gradientColor = DefaultGradientColor;
 
         /// <summary>
-        /// 亚克力的色调。实测（docs/blockhelm-glass.md 3.2 的探针）：DWM 的 alpha 基本被忽略，
+        /// 亚克力的色调。本机探针结论：DWM 的 alpha 基本被忽略，
         /// 真正决定观感的是 GradientColor 的 RGB —— 玻璃的**亮度**来自这个颜色，
         /// 背后的画面只贡献色相与细微结构（白底 / 红底 / 黑底都试过）。
         /// 所以这里跟着卡片的「背景」颜色走：深色卡片 = 烟色玻璃，浅色卡片 = 乳白玻璃。
@@ -88,7 +88,7 @@ namespace MirrorpondHUD.Ui
         // ==================== 可用性 ====================
 
         /// <summary>
-        /// 系统亚克力在这台机器上能不能用。矩阵来自 docs/blockhelm-glass.md 的实测：
+        /// 系统亚克力在这台机器上能不能用。矩阵来自本机实测评测：
         /// 关闭「透明效果」、远程会话、高对比度都会让 DWM 只给纯色，必须退回截屏取样。
         /// </summary>
         public static bool IsAvailable(out string reason)

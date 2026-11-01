@@ -1,4 +1,4 @@
-# 版本修改记录（2.4.1 → 2.14.5）
+# 版本修改记录（2.4.1 → 2.14.6）
 
 > 范围：本文只记录**这一轮接手后我做的版本**（v2.4.1 起）。v2.4.0 及更早是既有历史，不在本文档里。
 > 数据全部取自仓库真实提交（`git diff --shortstat <上一版>..<本版>`），文件行的 `+ / -` 就是实际增删行数。
@@ -6,10 +6,11 @@
 > v2.4.5 已发布 Release（附件为两个 requires-dotnet 单文件），v2.4.0 的 Release 已删除、其 tag 保留。
 > `v2.5.0`–`v2.9.2` 均为附注标签，**已随 2.9.2 的推送同步到远端**（`v2.6.0` = `9c1bafa`、`v2.6.1` = `d3ac63d`、
 > `v2.6.2` = `1b138e7`、`v2.9.2` = `754115e`）；`v2.4.1` 也已补推。`v2.9.3`–`v2.12.2` 已于 2.12.2 推送并发布 Release；`v2.13.0`–`v2.13.6` 目前只在本地 / 功能分支创建。
-> `v2.14.0`–`v2.14.4` 只存在于本地功能分支 `feature/runtime-card-loading`（**未推送、未发布、未合并**），
-> 提交分别为 `dbe8207` / `730fd39` / `f67a255` / `5f8933c` / `ef70cea`；`v2.14.5` 为本次提交。
-> `v2.14.1` / `v2.14.2` / `v2.14.4` 的规模用对应提交的 `git show --shortstat`；`v2.14.3` / `v2.14.5` 按提交前
-> 工作区的 `git diff --shortstat` 计算（文档同步改动另计）。
+> `v2.14.0`–`v2.14.4` 为功能分支 `feature/runtime-card-loading` 上的提交（分别为 `dbe8207` / `730fd39` /
+> `f67a255` / `5f8933c` / `ef70cea`，**未发布、未合并**）；`v2.14.5` 已推送到 `origin/feature/runtime-card-loading`
+> （`a0fe549`）；`v2.14.6` 为本次提交（提交后推送 `origin/feature/runtime-card-loading`）。
+> `v2.14.1` / `v2.14.2` / `v2.14.4` 的规模用对应提交的 `git show --shortstat`；`v2.14.3` / `v2.14.5` / `v2.14.6`
+> 按提交前工作区的 `git diff --shortstat` 计算（文档同步改动另计）。
 
 ## 0. 总览
 
@@ -59,6 +60,7 @@
 | v2.14.3 | 2026-11-01 | 本次提交 | 方案 B 收尾：版本 2.14.3；`ThemeTokens` / `ThemeResolver` 迁入 Contracts（宿主类型转发）；SelfTest 契约身份断言；最终验证 | 5 文件，+30 / −10（文档同步另计） |
 | v2.14.4 | 2026-11-01 | `ef70cea` | 删除宿主 `TypeForwards`，插件 API 升到 2：`apiVersion=1` 旧插件被明确拒绝、宿主不崩；示例 manifest 0.2.0 / apiVersion=2 | 5 文件，+5 / −57 |
 | v2.14.5 | 2026-11-01 | 本次提交 | 方案 B 程序集边界完成：拆出 `MirrorpondHUD.UiKit`（8 个共享 WPF 控件迁入、只依赖 Contracts），宿主 ProjectReference；插件 ALC 对宿主 / Contracts / UiKit 都走默认 ALC；三工程版本 2.14.5 | 11 文件，+23 / −14，另新增 2 个文件（UiKit 工程 31 行 + AssemblyInfo 4 行）；文档同步另计 |
+| v2.14.6 | 2026-11-01 | 本次提交 | 低风险清理：删 `CardPluginHandle.EntryType` 与 `SettingsMigration` 无调用重载；新增「插件引用宿主程序集」明确拒绝；过期注释 / 失效文档路径清理；版本 2.14.6 | 8 文件，+26 / −19（文档同步另计） |
 
 ---
 
@@ -1830,7 +1832,90 @@ v2.13.6 / v2.14.0 的运行时插件走的是方案 A：插件直接引用 `Mirr
 
 ---
 
-## 45. 不在版本里的东西
+## 45. v2.14.6（功能分支 `feature/runtime-card-loading`，本次提交）
+
+### 背景
+
+2.14.5 已把共享 WPF 控件拆到 `MirrorpondHUD.UiKit`，插件程序集边界完成并推送（`a0fe549`）。
+按 2.14.5 clean 副本的两份审阅报告（`%TEMP%\review-clean\plugin.md`、`architecture.md`），
+本轮只做**低风险清理**与一处让错误更早暴露的加载期校验，不动契约结构、不做用户配置迁移：
+
+- 删死代码 / 无调用重载；
+- 插件仍引用宿主程序集时明确拒绝（2.14.4 删除类型转发后，这种插件本就不该再被容忍）；
+- 清理过期注释与失效的本地文档路径。
+
+### 改动
+
+1. **删 `CardPluginHandle.EntryType`**（`src/Cards/CardPluginLoader.cs`）：该属性与构造参数只写不读，
+   加载日志用的是局部变量 `entryType`；删除属性、构造参数与调用点传参，行为不变。
+2. **删 `SettingsMigration.Load(string, out bool)` 无调用重载**（`src/Core/SettingsMigration.cs`）：
+   2-out 版本没有任何调用点（3-out / 4-out 版本仍被 `ConfigStore` / `SelfTest` 使用）。
+3. **插件引用宿主程序集的显式拒绝**（`CardPluginLoader.LoadOne`）：`LoadFromAssemblyPath` 之后枚举
+   `assembly.GetReferencedAssemblies()`，只要引用宿主 `MirrorpondHUD` 就拒绝该插件（丢弃 ALC 与影子目录）：
+   日志「卡片插件引用了宿主程序集，已拒绝: <id>（请改为引用 MirrorpondHUD.Contracts）」，
+   错误原因「插件引用了宿主程序集 MirrorpondHUD，必须改为引用 MirrorpondHUD.Contracts」。
+   这是 2.14.4 删除 `TypeForwardedTo` 后的收口：插件必须只引用 Contracts（需要控件时加 UiKit）。
+4. **过期注释 / 失效路径清理**：
+   - `CardPluginLoader` 的 ALC 注释改为「宿主 / Contracts / UiKit」（2.14.5 已加 UiKit，注释漏写）；
+   - `GlassBackdrop` 去掉不存在的 `docs/blockhelm-glass.md` 引用（该文件被 `.gitignore` 永久忽略）；
+   - `ThemeFile` / `DragSource` 去掉失效的 `docs/theme-system.md` / `docs/file-transfer-station.md` 路径
+     （设计文档在独立仓库，不随主仓库发布）。
+5. 版本号：宿主 / Contracts / UiKit 三个 csproj 均为 2.14.6。
+
+### 文件
+
+| 文件 | 行数 | 说明 |
+|---|---|---|
+| `src/Cards/CardPluginLoader.cs` | +19 / −5 | 删 `CardPluginHandle.EntryType`；新增插件引用宿主的拒绝；ALC 注释更新 |
+| `src/Core/SettingsMigration.cs` | 0 / −7 | 删除无调用的 `Load(string, out bool)` 重载 |
+| `src/Ui/GlassBackdrop.cs` | +2 / −2 | 注释去掉不存在的 `docs/blockhelm-glass.md` |
+| `src/Core/ThemeFile.cs` | +1 / −1 | 注释去掉失效的 `docs/theme-system.md` 路径 |
+| `src/Ui/DragSource.cs` | +1 / −1 | 注释去掉失效的 `docs/file-transfer-station.md` 路径 |
+| `MirrorpondHUD.csproj` | +1 / −1 | 版本 2.14.5 → 2.14.6 |
+| `src/Contracts/MirrorpondHUD.Contracts.csproj` | +1 / −1 | 版本 2.14.5 → 2.14.6 |
+| `src/UiKit/MirrorpondHUD.UiKit.csproj` | +1 / −1 | 版本 2.14.5 → 2.14.6 |
+
+文档同步更新：`README.md`、`docs/version-history.md`（另计）。
+
+### 实测
+
+- 构建：宿主 / Contracts / UiKit **0 警告 0 错误**。
+- `--selftest`：**失败项 0**。
+- 引用宿主的测试插件（host-ref）被明确拒绝，日志出现「卡片插件引用了宿主程序集，已拒绝…」；宿主照常启动，不崩溃。
+- 正常示例插件（只引用 `MirrorpondHUD.Contracts`、`apiVersion=2`）加载成功。
+- 2.14.5 clean 审阅的验证保留：干净副本构建 / `--selftest` / `--smoke` / API2 示例加载 / API1 拒绝 /
+  旧 Kind 运行时路径 / legacy schema 迁移，合计 **30/30 PASS**（脚本与日志见 `%TEMP%\review-clean\`）。
+
+### 审阅发现与未处理项
+
+2.14.5 clean 副本有两份审阅报告：`%TEMP%\review-clean\plugin.md`（不必要的兼容层与历史遗留）与
+`%TEMP%\review-clean\architecture.md`（契约边界 / 架构）。2.14.6 只采纳低风险项，以下**未处理**，留待后续版本：
+
+- **旧 Kind 别名链（metrics / clock / keys / text）仍是活运行时路径**：老配置每次启动都靠运行时别名渲染，
+  直接删会让这些卡片显示「插件不可用」。需要先做 **SchemaVersion=7 迁移**（把旧 Kind 直接写成
+  `infotext` + 正确 `Preset`，并在归一化改变 Kind 时落盘），保留至少一个版本后再删别名链。
+- **`SettingsMigration` 旧结构迁移必须保留**：schema 0/1/2/3–5 → 6 是老用户唯一迁移路径；已知小缺陷是旧
+  `clock` / `text` 自定义内容迁移后 `Preset` 可能落成 `metrics`（按「系统信息」显示，内容仍正常）——建议随
+  Schema 7 一起修。
+- **Contracts 瘦身（P1-1）未做**：`CommandSettings` / `MediaSettings` / `ChatSettings` / `SecretStore` /
+  `Settings.Normalize` 的 chat 策略 / `Default*Content` 等内置卡专用内容仍在契约程序集，插件 ABI 面被污染；
+  需要单独的公开面清单与迁移 PR。
+- 审阅另列、本版未处理：插件 `Extras` 只支持 public field 序列化（属性值会静默丢失，建议文档化并做 JSON 往返纯化）、
+  三工程版本分散 / 插件 ABI 无显式契约版本常量、`ReservedKinds` 与内置 Kind 清单双源、
+  README `SchemaVersion` 长期写作 3/4（本次已改为 6）、`PluginManifest.author` 去留、`docs/*.md` 发布策略。
+
+### 风险
+
+- **新校验只覆盖编译引用**：`assembly.GetReferencedAssemblies()` 看不到反射 / 动态加载宿主的极端写法；
+  但合法插件本来就不该引用宿主，这类插件仍会因缺少 `TypeForwardedTo` 在加载 / 类型解析时失败。
+- **清理不改变运行行为**：删除的是死属性 / 无调用重载与注释路径；`SettingsMigration` 的 3-out / 4-out 版本保留，
+  旧配置迁移路径不变。
+- **未处理项仍是后续风险**：旧 Kind 删除 / Schema 7 / Contracts 瘦身都需要版本化迁移与回归，不能顺手删。
+- 版本三件套（宿主 / Contracts / UiKit）必须同步为 2.14.6。
+
+---
+
+## 46. 不在版本里的东西
 
 - 验收脚本、样张与测量脚本（`cmd-e2e.ps1`、`drag-glass.ps1`、`measure-*.py`、`shots/` 等）都在仓库外的 `hud-test/` 里，**没有提交**。
 - 发布：`main` 与标签已推送到 [github.com/CRITTIof/MirrorpondHUD](https://github.com/CRITTIof/MirrorpondHUD)；
@@ -1839,7 +1924,7 @@ v2.13.6 / v2.14.0 的运行时插件走的是方案 A：插件直接引用 `Mirr
   更早的 Release 正文与附件保留原样，v2.4.0 的 Release 已删除（tag `v2.4.0` 保留，历史仍可检出）。
 - 仓库追踪的文件共 117 个，`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
 
-## 46. 已知代价（跨版本）
+## 47. 已知代价（跨版本）
 
 - 桌面亚克力为了不拍到自己，会把卡片排除在截屏之外 —— 这个模式下截图 / 录屏里**看不到卡片**，观感只能靠肉眼与离屏渲染验证。
 - 兼容实现每帧对身后窗口做 `PrintWindow`，拖动时最多 ~21 帧/秒；要更高只能走桌面亚克力（DXGI）。

@@ -12,13 +12,6 @@ namespace MirrorpondHUD.Core
     /// </summary>
     internal static class SettingsMigration
     {
-        public static Settings Load(string json, out bool needsSave)
-        {
-            bool corrupted;
-            bool future;
-            return Load(json, out needsSave, out corrupted, out future);
-        }
-
         public static Settings Load(string json, out bool needsSave, out bool corrupted)
         {
             bool future;

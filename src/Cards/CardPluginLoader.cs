@@ -14,14 +14,13 @@ namespace MirrorpondHUD.Cards
     /// </summary>
     internal sealed class CardPluginHandle
     {
-        public CardPluginHandle(string id, string name, string version, string entryType,
+        public CardPluginHandle(string id, string name, string version,
                                 string sourceDirectory, string shadowDirectory,
                                 AssemblyLoadContext context, ICardModule module)
         {
             Id = id ?? "";
             Name = name ?? "";
             Version = version ?? "";
-            EntryType = entryType ?? "";
             SourceDirectory = sourceDirectory ?? "";
             ShadowDirectory = shadowDirectory ?? "";
             Context = context;
@@ -31,7 +30,6 @@ namespace MirrorpondHUD.Cards
         public string Id { get; private set; }
         public string Name { get; private set; }
         public string Version { get; private set; }
-        public string EntryType { get; private set; }
         public string SourceDirectory { get; private set; }
         public string ShadowDirectory { get; private set; }
 
@@ -443,6 +441,23 @@ namespace MirrorpondHUD.Cards
 
                 context = new CardPluginLoadContext(id, assemblyPath);
                 Assembly assembly = context.LoadFromAssemblyPath(assemblyPath);
+
+                // 2.14.4 起不再维护宿主类型转发：插件必须只引用 Contracts（需要控件时加 UiKit），
+                // 引用宿主程序集的插件明确拒绝，避免“看起来能加载”的隐性兼容。
+                string hostAssemblyName = typeof(CardRegistry).Assembly.GetName().Name;
+                foreach (AssemblyName reference in assembly.GetReferencedAssemblies())
+                {
+                    if (!string.Equals(reference.Name, hostAssemblyName, StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    string error = label + ": 插件引用了宿主程序集 MirrorpondHUD，必须改为引用 MirrorpondHUD.Contracts";
+                    Log.Warn("卡片插件引用了宿主程序集，已拒绝: " + id +
+                             "（请改为引用 MirrorpondHUD.Contracts）");
+                    errors.Add(error);
+                    TryDiscardContext(context, shadowDir);
+                    return null;
+                }
+
                 Type type = assembly.GetType(entryType, false);
                 if (type == null)
                 {
@@ -496,7 +511,6 @@ namespace MirrorpondHUD.Cards
                     id,
                     Safe(manifest.name),
                     Safe(manifest.version),
-                    entryType,
                     dir,
                     shadowDir,
                     context,
@@ -682,7 +696,7 @@ namespace MirrorpondHUD.Cards
             return string.IsNullOrWhiteSpace(value) ? "(未命名)" : value;
         }
 
-        /// <summary>宿主与契约程序集必须由默认 ALC 提供；插件自己的依赖走插件 ALC。</summary>
+        /// <summary>宿主 / Contracts / UiKit 程序集必须由默认 ALC 提供；插件自己的依赖走插件 ALC。</summary>
         sealed class CardPluginLoadContext : AssemblyLoadContext
         {
             readonly AssemblyDependencyResolver _resolver;

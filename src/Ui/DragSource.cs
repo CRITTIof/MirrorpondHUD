@@ -11,7 +11,7 @@ namespace MirrorpondHUD.Ui
     /// 不接管行上的鼠标事件（中转站 / 画板自己决定从哪一行、哪个图形开始拖）。
     ///
     /// 注意：<see cref="BeginFiles"/> / <see cref="BeginText"/> 会阻塞到拖放结束，必须在 UI 线程调用；
-    /// 与整卡拖动的冲突见 docs/file-transfer-station.md §7.2。
+    /// 与整卡拖动的冲突见中转站设计文档的拖放章节。
     /// </summary>
     public static class DragSource
     {

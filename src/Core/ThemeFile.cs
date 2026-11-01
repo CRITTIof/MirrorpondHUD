@@ -153,7 +153,7 @@ namespace MirrorpondHUD.Core
 
     /// <summary>
     /// `.mptheme` 的读写：解析 + 校验 + 套用到副本 + 导出。
-    /// 格式见 `docs/theme-system.md` §3；与 `settings.json` 的 SchemaVersion 无关。
+    /// 格式见独立设计文档的格式章节；与 `settings.json` 的 SchemaVersion 无关。
     /// 只认识外观字段，卡片 / 热键 / 毛玻璃 / 位置一律不碰（导入只往 Style / Overlay / Cli 写值）。
     /// </summary>
     public static class ThemeFile
