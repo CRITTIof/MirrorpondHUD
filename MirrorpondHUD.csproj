@@ -18,7 +18,7 @@
     <PlatformTarget Condition="'$(RuntimeIdentifier)' == 'win-arm64'">arm64</PlatformTarget>
     <NoWarn>$(NoWarn);WFAC010</NoWarn>
     <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
-    <Version>2.13.5</Version>
+    <Version>2.13.6</Version>
     <Product>镜潭一览 (MirrorpondHUD)</Product>
     <AssemblyTitle>MirrorpondHUD</AssemblyTitle>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
@@ -35,6 +35,10 @@
   <ItemGroup>
     <ApplicationDefinition Include="src\App.xaml" />
     <Page Remove="src\App.xaml" />
+    <!-- sample 插件是独立工程，不编进宿主。 -->
+    <Compile Remove="samples\**\*.cs" />
+    <Page Remove="samples\**\*.xaml" />
+    <None Remove="samples\**\*" />
   </ItemGroup>
 
   <ItemGroup>

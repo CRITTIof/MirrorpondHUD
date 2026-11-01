@@ -278,7 +278,7 @@ publish.bat        :: 生成 publish\ 下的四个单文件
   **设置 → 外观 → 高级（实验性）** 里可调。三条路的实测与选择建议见
   **[docs/glass-implementations.md](docs/glass-implementations.md)**。只想要半透明卡片的话，把「背景不透明度」
   调到 0.5–0.7 即可，没有额外开销
-- 运行期插件（`plugins/cards/*.dll`）暂未实现；设计与安全边界见 [docs/runtime-card-extensions.md](docs/runtime-card-extensions.md)。加一种卡片目前只需在 `src/Cards` 新增一个类——文字卡继承 `CardModuleBase`，
+- 运行期插件（`plugins/cards/*.dll`）实验性支持：把可信本地插件放进 `plugins/cards/<id>/`（manifest + DLL），重启后出现在「添加卡片」；示例见 [samples/RuntimeCardExample/README.md](samples/RuntimeCardExample/README.md)。设计与安全边界见 [docs/runtime-card-extensions.md](docs/runtime-card-extensions.md)。加一种内置卡片仍可在 `src/Cards` 新增一个类——文字卡继承 `CardModuleBase`，
   图片 / 视频这类富内容卡继承 `RichCardModuleBase`，宿主不用改
 
 ## 🗂️ 目录结构
@@ -307,7 +307,7 @@ tools/                   开发脚本（make_logo.py 生成多尺寸 logo.ico）
 - [docs/theme-motion.md](docs/theme-motion.md) — 主题的动效与控件样式调研：启动动画参数化、出现 / 消失 / 让位动画、按钮面板滑块 token 与受控模板、设置页换肤（含分层窗口动画实测）
 - [docs/legacy-audit.md](docs/legacy-audit.md) — 源码遗留审计：与 v2.9.4 同源的检查、13 条遗留（颜色解析 / 异步 void / 静态缓存 / 死字段等）与清理顺序
 - [docs/file-transfer-station.md](docs/file-transfer-station.md) — 文件中转站调研与设计：拖入 / 列表 / 引用与复制、状态持久化、拖出与锁定语义、M1–M3 路线
-- [docs/version-history.md](docs/version-history.md) — v2.4.1 → v2.13.5 每个版本改了什么、动了哪些文件（含实测数据与提交号）
+- [docs/version-history.md](docs/version-history.md) — v2.4.1 → v2.13.6 每个版本改了什么、动了哪些文件（含实测数据与提交号）
 - [docs/review-p1-fixes.md](docs/review-p1-fixes.md) — 2.12.2 评审报告 P1-1..P1-10 的修复对照、验证与已知剩余
 - [docs/review-p2-fixes.md](docs/review-p2-fixes.md) — 2.12.2 评审报告中有实际影响的 P2 条目修复与未纳入项
 - [docs/review-2.13.4-fixes.md](docs/review-2.13.4-fixes.md) — 2.13.4 审阅意见的 P1/先修项修复、未纳入项与剩余风险
@@ -416,7 +416,7 @@ Everything is stored in `settings.json` next to the executable (`SchemaVersion: 
   screenshots or recordings** — a self-capturing window has to exclude itself. Measured numbers, the full list
   of flaws and how to choose: **[docs/glass-implementations.md](docs/glass-implementations.md)** (bilingual).
   If all you want is a translucent card, set *Background opacity* to 0.5–0.7 — it costs nothing
-- Runtime plugins (`plugins/cards/*.dll`) are not implemented; see [docs/runtime-card-extensions.md](docs/runtime-card-extensions.md). Adding a card is one new class in `src/Cards` (text cards derive from `CardModuleBase`, rich cards from `RichCardModuleBase`)
+- Runtime plugins (`plugins/cards/*.dll`) are experimental: install a trusted local plugin under `plugins/cards/<id>/` (manifest + DLL), restart, and it appears in *Add card*. Example: [samples/RuntimeCardExample/README.md](samples/RuntimeCardExample/README.md); design and security notes: [docs/runtime-card-extensions.md](docs/runtime-card-extensions.md). Adding a built-in card is still one new class in `src/Cards` (text cards derive from `CardModuleBase`, rich cards from `RichCardModuleBase`)
 
 ## Build
 

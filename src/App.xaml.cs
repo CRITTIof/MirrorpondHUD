@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Windows;
+using MirrorpondHUD.Cards;
 using MirrorpondHUD.Core;
 using MirrorpondHUD.Ui;
 
@@ -64,6 +65,10 @@ namespace MirrorpondHUD
 
             List<string> args = e.Args.ToList();
 
+            // 运行时卡片插件必须在第一次访问 CardRegistry / 配置归一化 / 截图之前加载。
+            // 第一版只支持重启生效；插件损坏 / 版本不兼容不影响宿主启动。
+            CardRegistry.Initialize(CardPluginLoader.LoadAll());
+
             string shotCards = GetOption(args, "--screenshot-cards");
             if (shotCards != null)
             {
@@ -103,6 +108,7 @@ namespace MirrorpondHUD
                 return;
             }
 
+            // 运行时卡片插件已在启动早期加载（见 args 之后）。
             Settings settings = ConfigStore.Load();
             if (!string.IsNullOrEmpty(ConfigStore.LastLoadWarning))
             {

@@ -7,6 +7,9 @@ certs/
 settings.json.bak
 settings.json.broken-*
 
+# 运行时卡片插件（用户本地安装，不跟仓库）
+plugins/
+
 # 源码说明文档放在独立仓库里，不随主仓库发布
 docs/source/
 

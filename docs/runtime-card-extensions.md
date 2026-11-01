@@ -1,6 +1,9 @@
 # 运行时扩展卡片调研（`plugins/cards/*.dll`）
 
-> 状态：调研 / 设计提案，未实现。
+> 状态：P0/P1 实验性实现已落在分支 `feature/runtime-card-loading`（v2.13.6，未合并）。
+> 已实现：`plugins/cards/<id>/manifest.json` + 独立 ALC + `CardRegistry.Initialize` 启动早期注入；
+> 未知 Kind 保留原配置；示例见 `samples/RuntimeCardExample`。未实现：签名/白名单、shadow copy、
+> 热重载、插件缺失占位卡（当前未知 Kind 渲染仍会回退默认卡，但配置不改写）。
 > 基线：v2.12.2（文件级代码审计 + 现有模块化评审结论）。
 > 结论先行：技术上可做，但**不能直接把 DLL 丢进一个目录就加载**。当前的单程序集、
 > 静态 `CardRegistry`、以及“未知 Kind 回退到默认卡”的归一化策略，会分别带来

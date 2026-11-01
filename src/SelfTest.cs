@@ -486,6 +486,19 @@ namespace MirrorpondHUD
                 ChatSettings oddChat = ChatCard.ChatOf(oddCard);
                 bool oddOk = SecretStore.IsProtected(oddChat.ApiKey);
 
+                // 插件卸载 / 未安装时，CardModel.Normalize 不能把未知 Kind 改成默认卡。
+                var unknownSettings = new Settings();
+                unknownSettings.Cards.Add(new CardSettings
+                {
+                    Id = "plugin-missing", Kind = "example-clock", Name = "插件卡", Content = "插件内容",
+                    Extras = new Dictionary<string, object> { { "plugin", "keep" } }
+                });
+                CardModel.Normalize(unknownSettings);
+                bool unknownKindOk = unknownSettings.Cards.Count == 1
+                                  && unknownSettings.Cards[0].Kind == "example-clock"
+                                  && unknownSettings.Cards[0].Content == "插件内容"
+                                  && unknownSettings.Cards[0].Extras.ContainsKey("plugin");
+
                 string atomicId = "selftest-atomic-" + Guid.NewGuid().ToString("N");
                 string atomicDir = CardStateStore.DirectoryFor(atomicId);
                 bool atomicOk = false;
@@ -509,7 +522,7 @@ namespace MirrorpondHUD
                 }
 
                 configRepairOk = nullOk && brokenOk && oldOk && unversionedOk
-                              && futureOk && overflowOk && oddOk && atomicOk;
+                              && futureOk && overflowOk && oddOk && unknownKindOk && atomicOk;
             }
             catch (Exception ex)
             {

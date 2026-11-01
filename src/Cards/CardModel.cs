@@ -41,11 +41,27 @@ namespace MirrorpondHUD.Cards
                 }
 
                 card.Kind = CardRegistry.ResolveKind(card.Kind);
-                ICardModule module = CardRegistry.Get(card.Kind);
+                ICardModule module;
+                bool known = CardRegistry.TryGet(card.Kind, out module);
 
                 if (string.IsNullOrWhiteSpace(card.Id) || ids.Contains(card.Id))
                     card.Id = NewId();
                 ids.Add(card.Id);
+
+                if (!known)
+                {
+                    // 插件被卸载 / 加载失败：保留原 Kind 与 Extras，绝不能静默改成默认卡。
+                    // 名称、内容、间距仍做安全夹紧；等插件重新出现时原配置自动恢复。
+                    card.Kind = (card.Kind ?? "").Trim();
+                    if (string.IsNullOrWhiteSpace(card.Name)) card.Name = card.Kind;
+                    card.Content = card.Content ?? "";
+                    card.Hotkey = (card.Hotkey ?? "").Trim();
+                    card.Spacing = Math.Round(Settings.Clamp(card.Spacing, 0, 300));
+                    if (card.Extras == null)
+                        card.Extras = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+                    Log.Warn("卡片 Kind 未注册（插件缺失？），保留原配置: " + card.Kind);
+                    continue;
+                }
 
                 card.Name = string.IsNullOrWhiteSpace(card.Name) ? module.DisplayName : card.Name.Trim();
                 card.Content = card.Content ?? "";
@@ -84,7 +100,8 @@ namespace MirrorpondHUD.Cards
             foreach (CardSettings card in cards)
             {
                 if (card == null) continue;
-                if (CardRegistry.Get(card.Kind).IsInteractive) count++;
+                ICardModule module;
+                if (CardRegistry.TryGet(card.Kind, out module) && module != null && module.IsInteractive) count++;
             }
             return count;
         }

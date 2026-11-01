@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <OutputType>Library</OutputType>
+    <AssemblyName>RuntimeCardExample</AssemblyName>
+    <RootNamespace>RuntimeCardExample</RootNamespace>
+    <Nullable>disable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
+    <NoWarn>$(NoWarn);WFAC010</NoWarn>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 插件直接引用宿主程序集；运行时由默认 ALC 提供，不能再复制一份。 -->
+    <Reference Include="MirrorpondHUD">
+      <HintPath>..\..\bin\Release\MirrorpondHUD.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+</Project>
