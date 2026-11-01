@@ -13,6 +13,8 @@ namespace MirrorpondHUD
     {
         Mutex _mutex;
         OverlayController _controller;
+        IList<CardPluginHandle> _plugins;
+        PluginDevReloader _pluginDev;
 
         protected override void OnStartup(StartupEventArgs e)
         {
@@ -66,8 +68,14 @@ namespace MirrorpondHUD
             List<string> args = e.Args.ToList();
 
             // 运行时卡片插件必须在第一次访问 CardRegistry / 配置归一化 / 截图之前加载。
-            // 第一版只支持重启生效；插件损坏 / 版本不兼容不影响宿主启动。
-            CardRegistry.Initialize(CardPluginLoader.LoadAll());
+            // 2.14.0：插件先影子复制再加载（源目录不锁文件），默认仍是重启生效；
+            // 插件损坏 / 版本不兼容不影响宿主启动。
+            CardPluginLoader.CleanupShadowCache();
+            CardPluginLoadReport pluginReport = CardPluginLoader.LoadAll();
+            _plugins = pluginReport.Handles;
+            CardRegistry.Initialize(_plugins.Select(h => h.Module));
+            if (pluginReport.HasErrors)
+                Log.Warn("运行时插件有 " + pluginReport.Errors.Count + " 个加载失败，详见上面的 WARN");
 
             string shotCards = GetOption(args, "--screenshot-cards");
             if (shotCards != null)
@@ -147,6 +155,13 @@ namespace MirrorpondHUD
             {
                 _controller = new OverlayController(settings, args);
                 _controller.Start();
+
+                // --plugin-dev：开发期热重载，只允许文字卡；生产默认仍是重启生效。
+                if (args.Contains("--plugin-dev"))
+                {
+                    _pluginDev = new PluginDevReloader(_controller, _plugins);
+                    _pluginDev.Start();
+                }
             }
             catch (Exception ex)
             {
@@ -173,7 +188,18 @@ namespace MirrorpondHUD
 
         protected override void OnExit(ExitEventArgs e)
         {
+            try { _pluginDev?.Dispose(); } catch { }
             try { _controller?.Dispose(); } catch { }
+
+            // 先把注册表里的插件模块引用摘掉，再请求卸载 ALC；否则静态注册表会一直钉住旧程序集。
+            // 第二实例在互斥检查处就会退出，此时 _plugins 还是 null，不能走这里的清理日志。
+            if (_plugins != null)
+            {
+                try { CardRegistry.ReplaceExternal(new List<ICardModule>()); } catch { }
+                try { _pluginDev?.UnloadCurrent(); } catch { }
+                try { CardPluginLoader.Unload(_plugins); } catch { }
+            }
+
             try { _mutex?.ReleaseMutex(); } catch { }
             try { _mutex?.Dispose(); } catch { }
             base.OnExit(e);

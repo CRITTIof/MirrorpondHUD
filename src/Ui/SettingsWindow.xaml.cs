@@ -1865,9 +1865,25 @@ namespace MirrorpondHUD.Ui
             base.OnClosing(e);
         }
 
+        /// <summary>
+        /// --plugin-dev 热重载前断开设置页对卡片模块的引用。
+        /// WPF 的绑定引擎在窗口关闭后还可能短暂保留 ItemsControl/ListCollectionView，
+        /// 只 Close 不摘 ItemsSource 会让旧 CardEditor 继续钉住插件 ALC。
+        /// </summary>
+        public void ReleaseCardEditorsForPluginReload()
+        {
+            foreach (CardEditor editor in _editors)
+            {
+                try { editor.ReleaseModule(); } catch { }
+            }
+            try { CardList.ItemsSource = null; } catch { }
+            _editors.Clear();
+        }
+
         public void CloseForReal()
         {
             _reallyClose = true;
+            ReleaseCardEditorsForPluginReload();
             Close();
         }
 

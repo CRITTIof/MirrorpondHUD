@@ -14,12 +14,15 @@ if errorlevel 1 (
     exit /b 1
 )
 
-rem bin\Release is wiped below; keep the user's settings and log across the build.
+rem bin\Release is wiped below; keep the user's settings, log and portable plugins across the build.
 set "DATA_BACKUP=%TEMP%\mirrorpondhud-publish-data"
 if exist "%DATA_BACKUP%" rd /s /q "%DATA_BACKUP%" >nul 2>&1
 mkdir "%DATA_BACKUP%" >nul 2>&1
 for %%F in (settings.json settings.json.bak mirrorpond.log) do (
     if exist "%~dp0bin\Release\%%F" copy /y "%~dp0bin\Release\%%F" "%DATA_BACKUP%\%%F" >nul 2>&1
+)
+if exist "%~dp0bin\Release\plugins" (
+    xcopy /e /i /q /y "%~dp0bin\Release\plugins" "%DATA_BACKUP%\plugins" >nul 2>&1
 )
 
 rem Self-contained first, framework-dependent last.
@@ -47,9 +50,12 @@ if exist "%~dp0sign.ps1" (
     powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0sign.ps1"
 )
 
-rem Put the user's settings and log back into the rebuilt bin\Release.
+rem Put the user's settings, log and portable plugins back into the rebuilt bin\Release.
 for %%F in (settings.json settings.json.bak mirrorpond.log) do (
     if exist "%DATA_BACKUP%\%%F" copy /y "%DATA_BACKUP%\%%F" "%~dp0bin\Release\%%F" >nul 2>&1
+)
+if exist "%DATA_BACKUP%\plugins" (
+    xcopy /e /i /q /y "%DATA_BACKUP%\plugins" "%~dp0bin\Release\plugins" >nul 2>&1
 )
 
 echo.

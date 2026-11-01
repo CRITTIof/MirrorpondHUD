@@ -1031,6 +1031,69 @@ namespace MirrorpondHUD.Ui
             _cards.AddRange(next);
         }
 
+        /// <summary>
+        /// --plugin-dev 热重载后调用：注册表已经换成新模块，这里把受影响的卡片重新绑定模块并重画。
+        /// 设置窗口会先关闭，避免 CardEditor / 添加菜单继续持有旧插件实例，把旧 ALC 钉在内存里。
+        /// </summary>
+        public void ReloadPluginCards()
+        {
+            if (_disposed) return;
+
+            if (_settingsWindow != null)
+            {
+                try { _settingsWindow.CloseForReal(); } catch { }
+                _settingsWindow = null;
+                Log.Info("插件热重载：设置窗口已关闭（重新打开后会反映新插件）");
+            }
+
+            if (_command.IsActive) _command.Exit();
+            _intro.Finish();
+
+            var changed = new List<CardSlot>();
+            foreach (CardSlot slot in _cards)
+            {
+                if (slot == null || slot.Config == null) continue;
+
+                ICardModule module = CardRegistry.Get(slot.Config.Kind);
+                if (!ReferenceEquals(module, slot.Module)) changed.Add(slot);
+            }
+
+            foreach (CardSlot slot in changed)
+            {
+                DetachHost(slot);
+                ReleaseContent(slot);
+
+                slot.Module = CardRegistry.Get(slot.Config.Kind);
+                slot.Rich = slot.Module as IRichCardModule;
+                slot.Window.Interactive = slot.Rich != null && slot.Rich.NeedsMouseInput;
+                slot.ContentSignature = null;
+                slot.StyleSignature = null;
+                slot.Dialog = BuildDialog();
+                slot.Host.Config = slot.Config;
+                AttachHost(slot);
+                WireInputCapabilities(slot);
+                slot.LastRenderUtc = DateTime.MinValue;
+
+                if (slot.Shown)
+                {
+                    if (slot.Rich != null) ShowCard(slot, "");
+                    else slot.Window.Apply(slot.Dialog, _hasSnapshot ? RenderCardText(slot) : RenderPlaceholderText(slot));
+                }
+                else
+                {
+                    slot.Window.Apply(slot.Dialog, "");
+                }
+            }
+
+            UpdateCommandInfo();
+            if (_hotkeyRouter != null) _hotkeyRouter.Register();
+            _tray?.Update();
+            RefreshVisibility();
+            RenderNow();
+
+            Log.Info("插件热重载：已刷新 " + changed.Count + " 张卡片");
+        }
+
         void ApplyAnchor(double x, double y, int monitor)
         {
             _settings.Overlay.X = x;

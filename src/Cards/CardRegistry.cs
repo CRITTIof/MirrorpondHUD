@@ -10,14 +10,18 @@ namespace MirrorpondHUD.Cards
     /// 按 Order 排好。设置页的「添加卡片」菜单、默认内容、渲染都从这里取，
     /// 宿主里不再出现 switch(kind)。
     ///
-    /// 运行时插件（第一版）：<see cref="Initialize"/> 允许在启动早期追加外部模块，
-    /// 之后注册表变成只读快照；插件加载失败不会阻止宿主启动。
+    /// 运行时插件：<see cref="Initialize"/> 在启动早期把内置模块与插件模块合成一份只读快照；
+    /// <see cref="ReplaceExternal"/> 仅供 --plugin-dev 热重载在 UI 线程替换外部模块。
+    /// 未知 Kind 由 <see cref="Get"/> 返回「插件不可用」占位模块，不会把配置改写成默认卡。
     /// </summary>
     public static class CardRegistry
     {
         static readonly object Sync = new object();
         static List<ICardModule> _modules;
         static Dictionary<string, ICardModule> _lookup;
+        static List<ICardModule> _builtins;
+        static readonly Dictionary<string, ICardModule> _placeholders =
+            new Dictionary<string, ICardModule>(StringComparer.OrdinalIgnoreCase);
         static bool _initialized;
 
         /// <summary>全部已注册的卡片模块（按添加菜单顺序；初始化后为只读快照）。</summary>
@@ -44,35 +48,12 @@ namespace MirrorpondHUD.Cards
                     return;
                 }
 
-                var modules = Discover();
-                var kinds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                foreach (ICardModule module in modules)
-                    if (module != null) kinds.Add(module.Kind);
-
-                int added = 0;
-                if (external != null)
-                {
-                    foreach (ICardModule module in external)
-                    {
-                        if (module == null) continue;
-                        string kind = (module.Kind ?? "").Trim();
-                        if (kind.Length == 0)
-                        {
-                            Log.Warn("运行时插件模块 Kind 为空，已拒绝: " + module.GetType().FullName);
-                            continue;
-                        }
-                        if (!kinds.Add(kind))
-                        {
-                            Log.Warn("运行时插件卡片 Kind 与已有模块冲突，已拒绝: " + kind);
-                            continue;
-                        }
-
-                        modules.Add(module);
-                        added++;
-                    }
-                }
-
+                List<ICardModule> builtins = Discover();
+                int added;
+                List<ICardModule> modules = Merge(builtins, external, out added);
                 Sort(modules);
+
+                _builtins = new List<ICardModule>(builtins);
                 _modules = modules;
                 _lookup = BuildLookup(modules);
                 _initialized = true;
@@ -83,11 +64,72 @@ namespace MirrorpondHUD.Cards
             }
         }
 
+        /// <summary>
+        /// 替换外部插件模块，保留内置模块。仅供 --plugin-dev 热重载使用。
+        /// 校验失败会抛异常且不改变当前注册表，调用方应保留旧模块。
+        /// </summary>
+        public static void ReplaceExternal(IEnumerable<ICardModule> external)
+        {
+            lock (Sync)
+            {
+                EnsureInitializedCore();
+
+                var modules = new List<ICardModule>(_builtins);
+                var kinds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (ICardModule module in _builtins)
+                    if (module != null) kinds.Add(module.Kind);
+
+                if (external != null)
+                {
+                    foreach (ICardModule module in external)
+                    {
+                        if (module == null)
+                            throw new InvalidOperationException("运行时插件模块为空");
+
+                        string kind = (module.Kind ?? "").Trim();
+                        if (kind.Length == 0)
+                            throw new InvalidOperationException("运行时插件模块 Kind 为空: " + module.GetType().FullName);
+
+                        if (!kinds.Add(kind))
+                            throw new InvalidOperationException("运行时插件卡片 Kind 重复或与内置模块冲突: " + kind);
+
+                        modules.Add(module);
+                    }
+                }
+
+                Sort(modules);
+                _modules = modules;
+                _lookup = BuildLookup(modules);
+                _placeholders.Clear();
+
+                Log.Info("运行时插件模块已替换：内置 " + _builtins.Count +
+                         "，外部 " + (modules.Count - _builtins.Count) + "，共 " + modules.Count + " 个");
+            }
+        }
+
         public static ICardModule Get(string kind)
         {
             EnsureInitialized();
+
             ICardModule module;
-            return TryGet(kind, out module) ? module : _modules[0];
+            if (TryGet(kind, out module)) return module;
+
+            string key = (kind ?? "").Trim();
+            if (key.Length == 0) return _modules[0];
+
+            // 旧 Kind（metrics / clock / keys / text）仍按别名找回模块，
+            // 只有真正未知的外部插件 Kind 才进入占位卡。
+            if (TryResolveAlias(key, out module)) return module;
+
+            lock (Sync)
+            {
+                if (!_placeholders.TryGetValue(key, out module))
+                {
+                    module = new UnavailableCardModule(key);
+                    _placeholders[key] = module;
+                }
+                return module;
+            }
         }
 
         public static bool TryGet(string kind, out ICardModule module)
@@ -143,17 +185,59 @@ namespace MirrorpondHUD.Cards
         static void EnsureInitialized()
         {
             if (_initialized) return;
-
             lock (Sync)
             {
-                if (_initialized) return;
-                var modules = Discover();
-                _modules = modules;
-                _lookup = BuildLookup(modules);
-                _initialized = true;
-                Log.Info("已注册内置卡片模块 " + modules.Count + " 个: " +
-                         string.Join("、", modules.ConvertAll(m => m.Kind).ToArray()));
+                EnsureInitializedCore();
             }
+        }
+
+        static void EnsureInitializedCore()
+        {
+            if (_initialized) return;
+
+            List<ICardModule> builtins = Discover();
+            Sort(builtins);
+            _builtins = new List<ICardModule>(builtins);
+            _modules = builtins;
+            _lookup = BuildLookup(builtins);
+            _initialized = true;
+
+            Log.Info("已注册内置卡片模块 " + builtins.Count + " 个: " +
+                     string.Join("、", builtins.ConvertAll(m => m.Kind).ToArray()));
+        }
+
+        static List<ICardModule> Merge(List<ICardModule> builtins, IEnumerable<ICardModule> external, out int added)
+        {
+            var modules = new List<ICardModule>(builtins);
+            var kinds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (ICardModule module in builtins)
+                if (module != null) kinds.Add(module.Kind);
+
+            added = 0;
+            if (external == null) return modules;
+
+            foreach (ICardModule module in external)
+            {
+                if (module == null) continue;
+
+                string kind = (module.Kind ?? "").Trim();
+                if (kind.Length == 0)
+                {
+                    Log.Warn("运行时插件模块 Kind 为空，已拒绝: " + module.GetType().FullName);
+                    continue;
+                }
+
+                if (!kinds.Add(kind))
+                {
+                    Log.Warn("运行时插件卡片 Kind 与已有模块冲突，已拒绝: " + kind);
+                    continue;
+                }
+
+                modules.Add(module);
+                added++;
+            }
+
+            return modules;
         }
 
         static Dictionary<string, ICardModule> BuildLookup(List<ICardModule> modules)

@@ -55,6 +55,16 @@ namespace MirrorpondHUD.Cards
         string Render(CardRenderContext context);
     }
 
+    /// <summary>
+    /// 插件模块可选的生命周期回调：宿主在卸载插件 ALC 之前调用，
+    /// 插件应在这里停掉自己的线程 / 定时器、解绑静态事件。
+    /// 文字卡热重载（--plugin-dev）会调用它；富内容卡片仍建议重启宿主。
+    /// </summary>
+    public interface ICardModuleLifetime
+    {
+        void OnPluginUnloading();
+    }
+
     /// <summary>渲染一张卡片时需要的共享数据。变量表按需构建，同一帧内的多张卡片可以复用。</summary>
     public sealed class CardRenderContext
     {

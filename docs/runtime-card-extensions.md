@@ -1,14 +1,18 @@
-# 运行时扩展卡片调研（`plugins/cards/*.dll`）
+# 运行时扩展卡片（`plugins/cards/*.dll`）
 
-> 状态：P0/P1 实验性实现已落在分支 `feature/runtime-card-loading`（v2.13.6，未合并）。
-> 已实现：`plugins/cards/<id>/manifest.json` + 独立 ALC + `CardRegistry.Initialize` 启动早期注入；
-> 未知 Kind 保留原配置；示例见 `samples/RuntimeCardExample`。未实现：签名/白名单、shadow copy、
-> 热重载、插件缺失占位卡（当前未知 Kind 渲染仍会回退默认卡，但配置不改写）。
-> 基线：v2.12.2（文件级代码审计 + 现有模块化评审结论）。
-> 结论先行：技术上可做，但**不能直接把 DLL 丢进一个目录就加载**。当前的单程序集、
-> 静态 `CardRegistry`、以及“未知 Kind 回退到默认卡”的归一化策略，会分别带来
-> 契约版本、加载时序和配置丢失三个问题。建议先拆契约与加载时序，把插件当**可信本地扩展**，
-> 第一版只支持“重启生效”，不要先做热插拔或沙箱。
+> 状态：2.14.0 已把「可信本地插件 + 重启生效」做成生产路径，并在分支 `feature/runtime-card-loading` 上加入
+> dev-only 纯文字卡热重载（未推送、未发布、未合并）。
+> 已实现：`plugins/cards/<id>/manifest.json` + 独立可收集 ALC + `CardRegistry.Initialize` 启动早期注入；
+> 影子复制到 `%LOCALAPPDATA%\MirrorpondHUD\plugin-cache`（失败回退源目录）；缺失插件「插件不可用」占位卡
+> （保留 Kind / Content / Extras、不写回配置）；manifest 大小 / id / apiVersion / assembly / entryType / Kind 校验
+> （拒绝内置与旧别名 Kind）；加载报告与重复 id / Kind 拒绝；`--plugin-dev` 纯文字卡热重载（拒绝富内容 /
+> 交互 / 设置区块 / 旧别名）；设置页引用释放；示例见 `samples/RuntimeCardExample`。
+> 未实现：签名 / 哈希 / 白名单；富内容卡热重载；安全沙箱；插件市场 / 自动更新。生产 UI 不提供热插拔。
+> 基线：v2.12.2（文件级代码审计 + 现有模块化评审结论）；v2.13.6 完成 spike，2.14.0 补齐上述生产路径与 dev 热重载。
+> 结论先行：技术上可做，但**不能直接把 DLL 丢进一个目录就加载**。单程序集、静态 `CardRegistry` 与
+> “未知 Kind 回退默认卡”的归一化策略会分别带来契约版本、加载时序和配置丢失三个问题；2.14.0 已用
+> 「影子复制 + 占位卡 + 清单校验 + 加载报告」补上，但 `AssemblyLoadContext` 只解决加载与依赖隔离，
+> 不解决沙箱、卸载和契约演进。仍建议把插件当**可信本地扩展**，生产保持“重启生效”。
 
 ---
 
@@ -25,7 +29,7 @@
 
 ### 非目标（第一版）
 
-- 不承诺热插拔：替换 DLL 后要求重启；
+- 生产不承诺热插拔：替换 DLL 后要求重启；开发期只有 `--plugin-dev` 的纯文字卡热重载；
 - 不把 `AssemblyLoadContext` 当沙箱；不加载来路不明的插件；
 - 不做插件市场 / 在线下载 / 自动更新；
 - 不把现有卡片改成独立进程；
@@ -48,7 +52,7 @@
 | 添加卡片菜单直接遍历静态 `CardRegistry.Modules` | `src/Ui/SettingsWindow.xaml.cs:680-730` | 需要“加载失败 / 不兼容”的列表项与原因，而不是静默消失 |
 | 富内容契约直接出现 `FrameworkElement` | `src/Cards/RichCard.cs:12-53` | 契约程序集必须面向 WPF（`net8.0-windows` + `UseWPF`），插件必须能在 UI/STA 线程创建控件 |
 | 契约与实现没有 ApiVersion | `src/Cards/CardModule.cs` 全文 | 二进制不兼容时只能靠程序集版本 / 类型加载失败来发现 |
-| README 明确写“运行期插件暂未实现” | `README.md:281`、`README.md:416` | 本文是补这缺口的前置调研 |
+| README 曾写“运行期插件暂未实现”（v2.12.2 调研基线时） | `README.md:281`、`README.md:416` | 本文是补这缺口的前置调研；2.14.0 已同步 README |
 
 ### 2.1 已存在的结构性问题
 
@@ -176,6 +180,19 @@
 | `sha256` | 可选；开启签名 / 校验时使用 |
 | `author` / `version` | 设置页展示与排错 |
 
+**2.14.0 实际校验（`CardPluginLoader.LoadOne`）**
+
+- `manifest.json` ≤ 256 KB；JSON 读取 / 解析失败或为空直接拒绝；
+- `id` ≤ 100 字符，只允许字母数字与 `.` `-` `_`，不能用 `.` / `..`；
+- `apiVersion` 必须等于 1（`SupportedApiVersion`）；
+- `assembly` 必须是不含路径分隔符 / 非法字符的 `.dll` 裸文件名，且文件必须存在；
+- `entryType` 非空、不含空白；类型必须存在、非抽象 / 接口、实现 `ICardModule`，且有 public 无参构造函数；
+- 模块 `Kind` ≤ 64 字符、只允许字母数字与 `.` `-` `_`，并拒绝内置 Kind 与旧别名
+  （`infotext` / `command` / `media` / `chat` / `dropstation` / `buttons` / `metrics` / `clock` / `keys` / `text`）；
+- 同批扫描拒绝重复 `id`、重复 `Kind`、空 `Kind`；失败只影响该插件，不阻止宿主启动。
+
+`minHostVersion` / `sha256` 仍是规划字段（当前 manifest 解析器没有这两个字段，写了会被忽略）；签名 / 哈希校验尚未实现。
+
 ### 4.3 加载时序与发现
 
 当前 `CardRegistry` 是静态初始化；而 `ConfigStore.Load()` 会调用 `CardModel.Normalize`，
@@ -240,22 +257,21 @@ sealed class CardPluginLoadContext : AssemblyLoadContext
 
 ### 4.4 兼容性：最关键的是“未知 Kind”
 
-如果插件被卸载 / 加载失败，配置里仍然有 `Kind = "com.example.clock-plus"`。当前
-`CardModel.Normalize` 会：
+如果插件被卸载 / 加载失败，配置里仍然有 `Kind = "com.example.clock-plus"`。2.13.6 之前的
+`CardModel.Normalize` / `CardRegistry.ResolveKind` 会把未知 Kind 回退成 `_modules[0].Kind`：
 
 ```csharp
-card.Kind = CardRegistry.ResolveKind(card.Kind);   // 未知 → _modules[0].Kind
+card.Kind = CardRegistry.ResolveKind(card.Kind);   // 旧行为：未知 → _modules[0].Kind
 ```
 
-这会把插件卡片**静默改成默认卡**，用户配置和 `Extras` 都可能被后续保存覆盖。运行时插件
-必须先改这条规则：
+这会把插件卡片**静默改成默认卡**，用户配置和 `Extras` 都可能被后续保存覆盖。2.13.6 起已改成：
 
-1. `ResolveKind` 对“非空但未知”的 Kind 不再回退；返回原值并让调用方处理；
-2. `CardModel.Normalize` 保留未知 Kind，不调用模块元数据（不知道 `SupportsContent` 等）；
-3. 卡片渲染 / 设置页遇到未知模块时显示“插件缺失 / 已禁用”的占位卡，允许用户移除或禁用，
-   但不改写 Kind；
-4. 如果插件重新出现，原卡片自动恢复（`Extras` 原样还在）；
-5. `CardRegistry.Get` 不再“未知就返回第一张卡”；改用 `TryGet`，调用方显式处理 null。
+1. `ResolveKind` 对“非空但未知”的 Kind 不再回退；返回原值；
+2. `CardModel.Normalize` 保留未知 Kind，不调用模块元数据；
+3. 2.14.0 起，卡片渲染 / 设置页遇到真正未知的外部 Kind 时显示「插件不可用」占位卡（`UnavailableCardModule`），
+   不改写 Kind / Content / Extras；
+4. 如果插件重新出现，原卡片自动恢复（`Extras` 原样还在）；dev 热重载下放回插件即恢复，生产模式重启恢复；
+5. `CardRegistry.Get` 不再“未知就返回第一张卡”，旧的 `metrics` / `clock` / `keys` / `text` 仍按 `ICardLegacyAlias` 找回宿主模块。
 
 这一条比 ALC 技术细节更重要：**插件生态最怕的是卸载插件后配置被宿主改写。**
 
@@ -291,10 +307,26 @@ card.Kind = CardRegistry.ResolveKind(card.Kind);   // 未知 → _modules[0].Kin
 
 ### 4.7 卸载与热重载
 
-第一版**不做**。热插拔（ALC 卸载、引用链、仅文字卡 dev-only 原型）的进一步调研见
-[runtime-card-hot-reload.md](runtime-card-hot-reload.md)。
+2.14.0 的结论：**生产仍不做热插拔，dev 期只对纯文字卡开放热重载**（`--plugin-dev`）。
+ALC 卸载、引用链与实现验收见 [runtime-card-hot-reload.md](runtime-card-hot-reload.md)。
 
-主要原因：
+生产边界：
+
+- 插件目录使用 **shadow copy**（复制到 `%LOCALAPPDATA%\MirrorpondHUD\plugin-cache/<id>-<时间戳>-<随机>/`）再加载，
+  源 DLL 不再被锁；复制失败回退源目录（此时源 DLL 被锁，热重载可能不可用）；
+- 启用 / 禁用 / 更新插件后仍提示“重启生效”，设置页不提供热重载 / 卸载按钮；
+- 程序退出时先摘注册表引用、再统一 `Unload` 当前句柄；
+- 富内容卡（`IRichCardModule`）不参与热重载。
+
+dev 热重载（`--plugin-dev`，只接受纯文字卡）会：
+
+- 监听 `<exe>/plugins/cards` 与 `%LOCALAPPDATA%\MirrorpondHUD\plugins\cards`，变化 700 ms debounce；
+- 先完整加载新模块，任一扫目录有错误就放弃本轮、保留旧模块；
+- 拒绝 `IRichCardModule`、`IsInteractive`、`ICardEditorSection`、`ICardLegacyAlias`；
+- 换注册表 → 刷新卡片（关闭设置窗并释放编辑器引用、重注册热键）→ 卸载旧 ALC → 延迟 800 ms 做弱引用验证；
+- 失败不改写配置、不退出宿主；`settings.json` 的 `Kind` / `Extras` 始终保留。
+
+仍不能整体热重载的原因（针对富内容卡与全量热插拔；与 2.13.6 调研一致）：
 
 - `CardRegistry` 静态引用、WPF 视觉树、`Application.Current.Resources`、事件订阅、
   `DispatcherTimer`、`CardJobQueue`、`ShellIcons` 缓存、后台线程都可能持有插件程序集；
@@ -302,17 +334,14 @@ card.Kind = CardRegistry.ResolveKind(card.Kind);   // 未知 → _modules[0].Kin
 - 可收集 ALC 的验证需要 `WeakReference` + 强制 GC，且 WPF 控件很容易让插件“假卸载”；
 - 卸载后还要销毁所有卡片窗口、设置编辑器、托盘菜单项，并清理状态。
 
-第一版做法：
-
-- 插件目录使用 **shadow copy**（复制到 `plugins-cache/<hash>/`）再加载，避免 DLL 被锁；
-- 启用 / 禁用 / 更新插件后提示“重启生效”；
-- 程序退出时统一释放；
-- 真要做热重载，先写一个只加载 / 卸载“纯数据插件”的 spike，再评估 WPF 富卡片是否值得。
-
 ### 4.8 安全边界
 
 `AssemblyLoadContext` **不是安全沙箱**。插件代码以当前用户权限运行，能读写文件、访问网络、
 操作注册表、弹窗、伪造设置页。插件里返回的 WPF 控件也能画任意内容。
+
+2.14.0 现状：影子复制、占位卡、manifest 校验和加载报告都只是**可靠性**措施，不是安全措施；
+签名 / 哈希 / 白名单仍未实现，宿主也不校验插件来源。因此仍只建议加载用户明确安装、来源可信的本地插件，
+不要把“影子复制 + 清单校验”误解为可以加载不可信代码。
 
 建议的第一版策略：
 
@@ -349,6 +378,11 @@ card.Kind = CardRegistry.ResolveKind(card.Kind);   // 未知 → _modules[0].Kin
 **建议先做 P0–P2，不把 P4/P5 写进第一版承诺。** 这样能尽快验证“插件能不能用”，
 又不会在 WPF 卸载上无限投入。
 
+截至 2.14.0 的状态：P0 spike 与 P1 契约 / 注册表已在 2.13.6 落地；P2 的未知 Kind 保留、占位卡、
+shadow copy、加载报告已在 2.14.0 落地（设置页暂只显示「插件不可用」，不展示插件状态 / 拒绝原因）。
+P3 未做：签名 / 哈希 / 白名单、x64 之外的平台验证。P4 只做了 dev-only 纯文字卡热重载
+（`--plugin-dev`），富内容卡不承诺；P5 未做。
+
 ---
 
 ## 6. 验收清单
@@ -372,7 +406,7 @@ card.Kind = CardRegistry.ResolveKind(card.Kind);   // 未知 → _modules[0].Kin
 - 插件富卡片能创建 WPF 控件，主题 / 字号变化能走 `ApplyStyle`；
 - 插件异常不会让叠层崩溃；
 - 禁用插件后重启：卡片不出现在添加菜单，已有卡片显示“插件不可用”；
-- 如实现卸载：卸载后 `WeakReference` 不再存活，且没有残留窗口 / 定时器 / 任务。
+- dev 热重载（`--plugin-dev`）：卸载后旧 `WeakReference` 最终不再存活（允许上下文延迟回收），且没有残留窗口 / 定时器 / 任务。
 
 **安全 / 分发**
 
@@ -390,9 +424,10 @@ card.Kind = CardRegistry.ResolveKind(card.Kind);   // 未知 → _modules[0].Kin
    B 干净但要拆 `ConfigStore` / UiKit。
 3. **富卡片是否对插件开放**：如果只开放文字卡，契约可以小很多；如果开放 `IRichCardModule`，
    WPF、主题、卸载都会复杂。
-4. **插件目录**：`<exe>/plugins/cards` 还是 `%LOCALAPPDATA%`？便携版和安装版是否各一套？
-5. **热重载**：是否真的需要“替换 DLL 不重启”？如果只是开发期需要，可以只给开发者一个
-   `--plugin-dev` 参数，不进入正式功能。
+4. **插件目录**（2.14.0 已定）：便携 `<exe>/plugins/cards` 与用户级 `%LOCALAPPDATA%\MirrorpondHUD\plugins\cards`
+   两个根目录都会扫描；影子缓存固定在 `%LOCALAPPDATA%\MirrorpondHUD\plugin-cache`。
+5. **热重载**（2.14.0 已定）：生产保持“替换 DLL 后重启生效”；开发期 `--plugin-dev` 只对纯文字卡热重载，
+   不进入正式 UI。富内容卡的热插拔仍未承诺。
 6. **版本策略**：`apiVersion` 整数是否够；是否还要 `minHostVersion` / `maxHostVersion`；
    插件市场是否需要签名链。
 7. **配置兼容**：未知 Kind 的占位卡是否允许用户“移除 / 禁用 / 重新定位插件”，还是只读展示。
@@ -424,6 +459,7 @@ card.Kind = CardRegistry.ResolveKind(card.Kind);   // 未知 → _modules[0].Kin
 
 ## 9. 一句话总结
 
-运行时扩展卡片**值得做**，但第一版应该是“可信插件 + 重启生效 + 宿主版本锁定”，
-并且先修 `Unknown Kind` 的配置保留问题；`AssemblyLoadContext` 只解决加载与依赖隔离，
-不解决沙箱、卸载和契约演进。先把契约与配置兼容做对，再谈热插拔。
+2.14.0 已按「可信插件 + 重启生效 + 宿主版本锁定」把运行时扩展卡片做成生产路径：影子复制让源 DLL 可替换 /
+可删除，缺失插件显示占位卡且不改写配置，manifest / Kind 校验与加载报告让坏插件只影响自己；
+`--plugin-dev` 的纯文字卡热重载只是开发者工具，富内容卡、沙箱、签名 / 白名单仍未做。
+`AssemblyLoadContext` 只解决加载与依赖隔离，不解决沙箱、卸载和契约演进。

@@ -278,7 +278,7 @@ publish.bat        :: 生成 publish\ 下的四个单文件
   **设置 → 外观 → 高级（实验性）** 里可调。三条路的实测与选择建议见
   **[docs/glass-implementations.md](docs/glass-implementations.md)**。只想要半透明卡片的话，把「背景不透明度」
   调到 0.5–0.7 即可，没有额外开销
-- 运行期插件（`plugins/cards/*.dll`）实验性支持：把可信本地插件放进 `plugins/cards/<id>/`（manifest + DLL），重启后出现在「添加卡片」；示例见 [samples/RuntimeCardExample/README.md](samples/RuntimeCardExample/README.md)。设计与安全边界见 [docs/runtime-card-extensions.md](docs/runtime-card-extensions.md)。加一种内置卡片仍可在 `src/Cards` 新增一个类——文字卡继承 `CardModuleBase`，
+- 运行期插件（`plugins/cards/*.dll`）：把可信本地插件放进 `plugins/cards/<id>/`（便携目录）或 `%LOCALAPPDATA%\MirrorpondHUD\plugins\cards\<id>/`（manifest + DLL），重启后出现在「添加卡片」。2.14.0 起加载前会先把插件影子复制到 `%LOCALAPPDATA%\MirrorpondHUD\plugin-cache`（源目录不再被锁，可运行中覆盖 / 删除 DLL），manifest 校验大小 / id / apiVersion=1 / assembly / entryType / Kind（拒绝内置与旧别名 Kind）；插件缺失时卡片显示「插件不可用」占位并保留原 `Kind` / `Extras`，不写回配置；`publish.bat` 会备份 / 恢复 `bin\Release\plugins`。生产默认仍是重启生效；开发期可用 `--plugin-dev` 对纯文字卡热重载（富内容 / 交互卡 / 设置区块 / 旧别名拒绝，且会强制关闭设置窗）。示例见 [samples/RuntimeCardExample/README.md](samples/RuntimeCardExample/README.md)，设计与安全边界见 [docs/runtime-card-extensions.md](docs/runtime-card-extensions.md)，热重载细节见 [docs/runtime-card-hot-reload.md](docs/runtime-card-hot-reload.md)。`AssemblyLoadContext` 不是安全沙箱，只加载可信本地插件；加一种内置卡片仍可在 `src/Cards` 新增一个类——文字卡继承 `CardModuleBase`，
   图片 / 视频这类富内容卡继承 `RichCardModuleBase`，宿主不用改
 
 ## 🗂️ 目录结构
@@ -307,12 +307,12 @@ tools/                   开发脚本（make_logo.py 生成多尺寸 logo.ico）
 - [docs/theme-motion.md](docs/theme-motion.md) — 主题的动效与控件样式调研：启动动画参数化、出现 / 消失 / 让位动画、按钮面板滑块 token 与受控模板、设置页换肤（含分层窗口动画实测）
 - [docs/legacy-audit.md](docs/legacy-audit.md) — 源码遗留审计：与 v2.9.4 同源的检查、13 条遗留（颜色解析 / 异步 void / 静态缓存 / 死字段等）与清理顺序
 - [docs/file-transfer-station.md](docs/file-transfer-station.md) — 文件中转站调研与设计：拖入 / 列表 / 引用与复制、状态持久化、拖出与锁定语义、M1–M3 路线
-- [docs/version-history.md](docs/version-history.md) — v2.4.1 → v2.13.6 每个版本改了什么、动了哪些文件（含实测数据与提交号）
+- [docs/version-history.md](docs/version-history.md) — v2.4.1 → v2.14.0 每个版本改了什么、动了哪些文件（含实测数据与提交号）
 - [docs/review-p1-fixes.md](docs/review-p1-fixes.md) — 2.12.2 评审报告 P1-1..P1-10 的修复对照、验证与已知剩余
 - [docs/review-p2-fixes.md](docs/review-p2-fixes.md) — 2.12.2 评审报告中有实际影响的 P2 条目修复与未纳入项
 - [docs/review-2.13.4-fixes.md](docs/review-2.13.4-fixes.md) — 2.13.4 审阅意见的 P1/先修项修复、未纳入项与剩余风险
-- [docs/runtime-card-hot-reload.md](docs/runtime-card-hot-reload.md) — 运行时卡片热插拔调研：ALC 卸载、引用链、dev-only 文字卡原型与风险清单
-- [docs/runtime-card-extensions.md](docs/runtime-card-extensions.md) — 运行时扩展卡片调研：`plugins/cards/*.dll`、AssemblyLoadContext、契约边界、未知 Kind 保留、卸载与安全
+- [docs/runtime-card-hot-reload.md](docs/runtime-card-hot-reload.md) — 运行时卡片热重载（2.14.0 dev-only 文字卡）：实现与验收、风险矩阵、`--plugin-dev` 用法与残余风险
+- [docs/runtime-card-extensions.md](docs/runtime-card-extensions.md) — 运行时扩展卡片：`plugins/cards/*.dll`、影子复制、缺失占位卡、manifest / Kind 校验、AssemblyLoadContext、安全边界
 - 「热键」页：全局三个热键置顶；媒体卡片单独一组（播放 / 暂停、前进、后退、加速、减速），
   由卡片模块自己声明，新增卡片类型可以注册自己的通用热键
 
@@ -417,7 +417,7 @@ Everything is stored in `settings.json` next to the executable (`SchemaVersion: 
   screenshots or recordings** — a self-capturing window has to exclude itself. Measured numbers, the full list
   of flaws and how to choose: **[docs/glass-implementations.md](docs/glass-implementations.md)** (bilingual).
   If all you want is a translucent card, set *Background opacity* to 0.5–0.7 — it costs nothing
-- Runtime plugins (`plugins/cards/*.dll`) are experimental: install a trusted local plugin under `plugins/cards/<id>/` (manifest + DLL), restart, and it appears in *Add card*. Example: [samples/RuntimeCardExample/README.md](samples/RuntimeCardExample/README.md); design and security notes: [docs/runtime-card-extensions.md](docs/runtime-card-extensions.md). Adding a built-in card is still one new class in `src/Cards` (text cards derive from `CardModuleBase`, rich cards from `RichCardModuleBase`)
+- Runtime plugins (`plugins/cards/*.dll`): install a trusted local plugin under `plugins/cards/<id>/` (portable) or `%LOCALAPPDATA%\MirrorpondHUD\plugins\cards\<id>/` (manifest + DLL), restart, and it appears in *Add card*. Since 2.14.0 the plugin is shadow-copied to `%LOCALAPPDATA%\MirrorpondHUD\plugin-cache` before loading (the source DLL is no longer locked, so it can be replaced / deleted while running); the manifest is validated (size / id / apiVersion=1 / assembly / entryType / Kind, built-in and legacy-alias Kinds rejected); a missing plugin keeps its `Kind` / `Extras` and renders a "plugin unavailable" placeholder instead of being rewritten; `publish.bat` backs up / restores `bin\Release\plugins`. Production still requires a restart; developers can pass `--plugin-dev` for text-card hot reload (rich / interactive / editor-section / legacy-alias plugins are rejected, and the settings window is force-closed). Example: [samples/RuntimeCardExample/README.md](samples/RuntimeCardExample/README.md); design and security notes: [docs/runtime-card-extensions.md](docs/runtime-card-extensions.md); hot reload: [docs/runtime-card-hot-reload.md](docs/runtime-card-hot-reload.md). The `AssemblyLoadContext` is not a sandbox — only trusted local plugins. Adding a built-in card is still one new class in `src/Cards` (text cards derive from `CardModuleBase`, rich cards from `RichCardModuleBase`)
 
 ## Build
 

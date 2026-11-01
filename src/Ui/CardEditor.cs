@@ -18,7 +18,7 @@ namespace MirrorpondHUD.Ui
     public sealed class CardEditor : INotifyPropertyChanged
     {
         readonly CardSettings _config;
-        readonly ICardModule _module;
+        ICardModule _module;
         readonly Settings _settings;
         bool _expanded;
         bool _spacingEnabled;
@@ -33,6 +33,17 @@ namespace MirrorpondHUD.Ui
             _expanded = expanded;
         }
 
+        /// <summary>
+        /// 插件热重载 / 卸载前断开模块引用。WPF 的绑定引擎可能在窗口关闭后短暂保留
+        /// CardEditor / ListCollectionView；这些残留对象不能继续钉住插件 ALC。
+        /// </summary>
+        public void ReleaseModule()
+        {
+            _module = null;
+            _section = null;
+            _sectionCreated = false;
+        }
+
         public CardSettings Config { get { return _config; } }
         public ICardModule Module { get { return _module; } }
 
@@ -44,6 +55,7 @@ namespace MirrorpondHUD.Ui
         {
             get
             {
+                if (_module == null) return null;
                 if (_sectionCreated) return _section;
                 _sectionCreated = true;
 
@@ -99,6 +111,7 @@ namespace MirrorpondHUD.Ui
         {
             get
             {
+                if (_module == null) return Icons.Txt;
                 return IsInfoText ? InfoTextCard.IconFor(_config.Preset) : _module.Icon;
             }
         }
@@ -107,6 +120,7 @@ namespace MirrorpondHUD.Ui
         {
             get
             {
+                if (_module == null) return "插件不可用";
                 return IsInfoText
                     ? _module.DisplayName + " · " + InfoTextCard.LabelFor(_config.Preset)
                     : _module.DisplayName;
@@ -158,7 +172,11 @@ namespace MirrorpondHUD.Ui
 
         public string DisplayName
         {
-            get { return string.IsNullOrWhiteSpace(_config.Name) ? _module.DisplayName : _config.Name; }
+            get
+            {
+                if (!string.IsNullOrWhiteSpace(_config.Name)) return _config.Name;
+                return _module == null ? "插件不可用" : _module.DisplayName;
+            }
         }
 
         public string Summary
@@ -197,7 +215,7 @@ namespace MirrorpondHUD.Ui
         {
             get
             {
-                if (!_module.SupportsContent) return Visibility.Collapsed;
+                if (_module == null || !_module.SupportsContent) return Visibility.Collapsed;
                 if (IsInfoText && InfoTextCard.NormalizePreset(_config.Preset) == "keys") return Visibility.Collapsed;
                 return Visibility.Visible;
             }
@@ -252,7 +270,7 @@ namespace MirrorpondHUD.Ui
             }
         }
 
-        public bool ResidentEnabled { get { return !_module.IsInteractive; } }
+        public bool ResidentEnabled { get { return _module == null || !_module.IsInteractive; } }
 
         public bool HotkeyEnabled
         {
@@ -310,7 +328,7 @@ namespace MirrorpondHUD.Ui
             }
         }
 
-        public bool SupportsContent { get { return _module.SupportsContent; } }
+        public bool SupportsContent { get { return _module != null && _module.SupportsContent; } }
 
         // 命令行卡片的设置（工具 / 自定义命令 / 工作目录 / 返回内容 / 提示符预览）
         // 已搬到模块自己身上：见 src/Cards/CommandCardEditor.cs 与 ICardEditorSection。

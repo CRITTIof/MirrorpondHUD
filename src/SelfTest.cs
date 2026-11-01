@@ -563,10 +563,22 @@ namespace MirrorpondHUD
                              && legacySettings.Cards[1].Kind == "infotext"
                              && legacySettings.Cards[1].Preset == "text";
 
+                // 插件卸载 / 未安装：Get 必须返回按原 Kind 渲染的占位模块，
+                // 而不是把卡片绑到默认模块（否则界面会显示一张假的默认卡）。
+                ICardModule missing = CardRegistry.Get("selftest-missing-plugin");
+                string missingText = missing.Render(new CardRenderContext(
+                    settings, Screenshots.DemoSnapshot(), null,
+                    new CardSettings { Kind = "selftest-missing-plugin" }));
+                bool placeholderOk = missing.Kind == "selftest-missing-plugin"
+                                  && missing.DisplayName == "插件不可用"
+                                  && !missing.IsInteractive
+                                  && missingText.IndexOf("插件不可用", StringComparison.Ordinal) >= 0;
+
                 cardOk = CardRegistry.Modules.Count >= 3
                          && CardRegistry.Get("media") is IRichCardModule
                          && CardRegistry.Get("infotext") is InfoTextCard
                          && legacyOk
+                         && placeholderOk
                          && settings.Cards.Count >= 1
                          && !string.IsNullOrWhiteSpace(clock)
                          && clock.IndexOf('{') < 0

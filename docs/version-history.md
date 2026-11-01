@@ -1,4 +1,4 @@
-# 版本修改记录（2.4.1 → 2.13.6）
+# 版本修改记录（2.4.1 → 2.14.0）
 
 > 范围：本文只记录**这一轮接手后我做的版本**（v2.4.1 起）。v2.4.0 及更早是既有历史，不在本文档里。
 > 数据全部取自仓库真实提交（`git diff --shortstat <上一版>..<本版>`），文件行的 `+ / -` 就是实际增删行数。
@@ -6,6 +6,8 @@
 > v2.4.5 已发布 Release（附件为两个 requires-dotnet 单文件），v2.4.0 的 Release 已删除、其 tag 保留。
 > `v2.5.0`–`v2.9.2` 均为附注标签，**已随 2.9.2 的推送同步到远端**（`v2.6.0` = `9c1bafa`、`v2.6.1` = `d3ac63d`、
 > `v2.6.2` = `1b138e7`、`v2.9.2` = `754115e`）；`v2.4.1` 也已补推。`v2.9.3`–`v2.12.2` 已于 2.12.2 推送并发布 Release；`v2.13.0`–`v2.13.6` 目前只在本地 / 功能分支创建。
+> `v2.14.0` 只存在于本地功能分支 `feature/runtime-card-loading`（**未推送、未发布、未合并**）；
+> 本版本规模按提交前冻结工作区的 `git diff --shortstat` 计算（文档同步改动另计）。
 
 ## 0. 总览
 
@@ -49,6 +51,7 @@
 | v2.13.4 | 2026-10-31 | `eaa479c` | 评审报告 P2 高价值项：句柄/定时器泄漏、热键旧绑定、命令输出上限与日志脱敏、主题 1MB、队列累积、音量副作用、PDH 状态、ffmpeg 代次 | 16 文件，+1046 / −170 |
 | v2.13.5 | 2026-11-01 | `7920969` | 2.13.4 审阅意见：中转站孤儿/合并、热键路由、Chat 快照、DPAPI/备份、版本号、Replace 回退、命令脱敏、解码器切换、媒体 Join | 20 文件，+1199 / −204 |
 | v2.13.6 | 2026-11-01 | 本次提交 | 功能分支 `feature/runtime-card-loading`：运行时卡片插件（manifest + ALC + 启动早期注入 + 示例插件 + 未知 Kind 保留） | 14 文件，+496 / −30 |
+| v2.14.0 | 2026-11-01 | 本次提交 | 运行时插件完善：影子复制、缺失插件「插件不可用」占位卡、manifest / Kind 校验与加载报告、`--plugin-dev` 纯文字卡热重载、延迟 ALC 弱引用验证、设置页引用释放、`publish.bat` 插件备份 | 10 文件，+865 / −98，另新增 2 个源文件（38 + 327 行） |
 
 ---
 
@@ -1448,7 +1451,117 @@ v2.12.2 的调研文档提出 `plugins/cards/*.dll` 运行时扩展卡片；本�
 
 ---
 
-## 39. 不在版本里的东西
+## 39. v2.14.0（功能分支 `feature/runtime-card-loading`，本次提交）
+
+### 背景
+
+v2.13.6 的 spike 只做到「重启加载可信本地插件」：插件缺失时 `Kind` 能被保留，但界面仍会回退成默认卡；
+插件 DLL 被宿主锁住，开发时只能反复重启；没有清单校验、没有加载报告，也没有热重载。独立风险复核
+（`%TEMP%\hot-reload-review\report.md`）指出影子复制回退、Kind 校验、设置页引用、ALC 回收证据与发布数据保护等方向。
+本轮把**生产默认路径**补齐（仍是重启生效），并把 `--plugin-dev` 做成只在开发期使用的纯文字卡热重载。
+
+### 改动
+
+1. **插件影子复制**：加载前把 `<exe>/plugins/cards/<id>/`（或 `%LOCALAPPDATA%\MirrorpondHUD\plugins\cards\<id>`）整目录复制到
+   `%LOCALAPPDATA%\MirrorpondHUD\plugin-cache\<id>-<时间戳>-<随机>` 再加载，源目录不再被锁，运行中可覆盖 / 删除 DLL，
+   下次加载用新文件；启动时清理上一轮残留（日志「已清理插件影子缓存 N 个」）。`LocalAppData` 不可用时影子根退到 `%TEMP%`；
+   复制失败则回退源目录直接加载（WARN，源 DLL 被锁，热重载可能不可用），坏插件不影响宿主启动。
+2. **缺失插件占位卡**：`CardRegistry.Get` 对未注册且不是旧别名的 `Kind` 返回按原 Kind 渲染的 `UnavailableCardModule`
+   （「插件不可用：<kind>」+ 重新安装提示）。占位模块不进入 `Modules`，因此不会出现在「添加卡片」菜单；
+   `Kind` / `Content` / `Extras` 原样保留、不写回配置；插件装回后 dev 模式自动热重载恢复，生产模式下次启动恢复。自检新增占位断言。
+3. **manifest / Kind 校验**：`manifest.json` ≤ 256 KB；`id` ≤ 100 字符且只允许字母数字与 `.-_`；`apiVersion` 必须为 1；
+   `assembly` 只接受裸 DLL 文件名；`entryType` 非空、不含空白，入口类型必须存在、非抽象 / 接口、实现 `ICardModule` 且有 public 无参构造；
+   模块 `Kind` ≤ 64 字符、只允许字母数字与 `.-_`，并拒绝内置 Kind 与旧别名
+   （`infotext` / `command` / `media` / `chat` / `dropstation` / `buttons` / `metrics` / `clock` / `keys` / `text`）。
+   任一校验失败只拒绝该插件并写明原因，不阻止宿主启动。
+4. **加载报告与重复拒绝**：新增 `CardPluginLoadReport`（成功句柄 + 失败原因 + `HasErrors`）；同批扫描中重复 `id`、重复 `Kind`、
+   空 Kind 一律拒绝；启动日志输出「运行时插件加载完成：成功 N 个，失败 M 个」。
+5. **`--plugin-dev` 纯文字卡热重载**：监听便携目录与 `%LOCALAPPDATA%` 插件目录，文件变化 700 ms debounce；
+   先完整加载并校验新模块，任一目录有加载错误就整轮放弃、保留旧模块；只接受纯文字卡，拒绝 `IRichCardModule`、
+   `IsInteractive`、`ICardLegacyAlias`、`ICardEditorSection`；顺序为「换注册表 → 刷新卡片（关闭设置窗并释放编辑器、
+   重注册热键）→ 卸载旧 ALC」；失败不改写配置、不退出宿主。
+6. **延迟回收验证**：卸载请求后不在同一消息轮判定，交给 800 ms `DispatcherTimer`（Background 优先级）做 3 轮
+   `GC.Collect()` + `WaitForPendingFinalizers`，再检查模块 / ALC 上下文弱引用；日志区分「均已回收」「模块已回收、上下文延迟回收」
+   「仍有模块引用」三种结果，验证后清理影子目录。新增可选 `ICardModuleLifetime.OnPluginUnloading`（additive，`apiVersion` 保持 1），
+   在 Unload 前让插件停线程 / 解绑事件。
+7. **设置页释放与刷新**：`SettingsWindow.ReleaseCardEditorsForPluginReload` 逐个 `CardEditor.ReleaseModule()`、
+   摘掉 `CardList.ItemsSource` 并清空编辑器列表，`CloseForReal` 复用同一路径；`OverlayController.ReloadPluginCards`
+   只重建模块引用发生变化的卡片，文字卡直接重画、不重建窗口。
+8. **发布与退出**：`publish.bat` 在 `rd /s /q bin\Release` 前后备份 / 恢复 `bin\Release\plugins`（连同 settings / log），
+   重发布不再删用户插件；退出时先 `ReplaceExternal(空)` 摘注册表引用再卸载当前句柄，第二实例早退不再误报插件清理日志。
+
+### 文件
+
+| 文件 | 行数 | 说明 |
+|---|---|---|
+| `src/Cards/CardPluginLoader.cs` | +592 / −60 | manifest / Kind 校验、影子复制与回退、加载报告、重复拒绝、卸载探针 |
+| `src/Cards/CardRegistry.cs` | +112 / −28 | 「插件不可用」占位模块、`ReplaceExternal` |
+| `src/Ui/OverlayController.cs` | +63 / 新增 | `ReloadPluginCards`：关设置窗、按 Kind 重绑卡片、重注册热键 |
+| `src/App.xaml.cs` | +28 / −2 | 启动清影子缓存 + 加载报告、`--plugin-dev` 启动监听、退出顺序 |
+| `src/Ui/CardEditor.cs` | +23 / −5 | `ReleaseModule`，热重载前摘掉编辑器对模块的引用 |
+| `src/Ui/SettingsWindow.xaml.cs` | +16 / 新增 | `ReleaseCardEditorsForPluginReload` / `CloseForReal` |
+| `src/SelfTest.cs` | +12 / 新增 | 缺失插件占位卡断言 |
+| `src/Cards/CardModule.cs` | +10 / 新增 | 可选生命周期接口 `ICardModuleLifetime` |
+| `src/Cards/UnavailableCardModule.cs` | +38 / 新增 | 按原 Kind 渲染的「插件不可用」占位模块 |
+| `src/Ui/PluginDevReloader.cs` | +327 / 新增 | 目录监听、debounce、安全与失败策略、延迟弱引用验证 |
+| `publish.bat` | +8 / −2 | 备份 / 恢复 `bin\Release\plugins` |
+| `MirrorpondHUD.csproj` | +1 / −1 | 版本号 2.13.6 → 2.14.0 |
+
+文档同步更新：`README.md`、`docs/runtime-card-extensions.md`、`docs/runtime-card-hot-reload.md`、`samples/RuntimeCardExample/README.md`。
+
+### 实测
+
+- `dotnet build MirrorpondHUD.csproj -c Release`：**0 警告 0 错误**。
+- `--selftest`：**失败项 0**（新增「插件不可用」占位卡断言）。
+- 热重载 v1 → v2：在 app 副本目录用测试插件（`Kind=hotreload-test`）覆盖 DLL + manifest，日志依次出现
+  「检测到插件目录变化，开始热重载」→「已加载卡片插件 Hot Reload Test …（文字卡，影子副本）」→「运行时插件模块已替换」→
+  「已刷新 1 张卡片」→「插件热重载完成」；卡片 marker 从 v1 变为 v2 新模块实际渲染的文本。
+- 运行中移走插件目录：日志「未发现运行时卡片插件」「运行时插件模块已替换：内置 6，外部 0」，卡片显示「插件不可用：hotreload-test」；
+  `settings.json` 的 SHA-256 前后一致，`Kind` / `Extras` 未被改写；放回插件目录后 dev 模式自动加载恢复（生产模式重启恢复）。
+- ALC 回收：最新一轮日志「插件 ALC 已卸载（模块 / 上下文弱引用均已回收）」；部分轮次出现
+  「插件模块已回收，ALC 上下文仍在卸载（运行时延迟回收；开发模式可接受）」，见残余风险。
+- 影子复制：日志出现「已清理插件影子缓存 1 个」「已加载卡片插件 …（…，影子副本）」；运行中覆盖 / 删除源插件 DLL 无 sharing violation。
+
+### 风险与边界
+
+- **生产默认仍是「重启生效」**：设置页不提供热重载 / 卸载按钮；`--plugin-dev` 只是开发者开关，不是正式功能。
+- **ALC 不是安全沙箱**：插件以当前用户权限运行，影子复制不改变信任模型；宿主只加载用户明确安装的可信本地插件。
+- **富内容卡拒绝热重载**：`IRichCardModule`、交互卡、带 `ICardEditorSection` 或 `ICardLegacyAlias` 的插件在 dev 下都会拒绝并提示重启；
+  富内容卡片的生产加载保持现状。
+- **插件 static 可变状态 / 后台线程 / `DispatcherTimer` / 事件订阅**仍可能钉住 ALC；`ICardModuleLifetime` 只是 best-effort，
+  弱引用只能事后发现、不能预防。
+- **设置窗会被热重载强制关闭，未保存的编辑会丢失**（设置页控件会钉住旧 ALC）。
+- 若 `ReloadPluginCards` 在换完注册表后抛异常，旧句柄会保留到重启（不卸载，避免视觉树引用已卸载类型）；
+  整轮扫描中任一加载错误会放弃本轮并保留旧模块。
+- 上下文回收存在延迟；不能把「`Unload()` 调用成功」当作回收成功。
+- 影子复制是**全量复制、无签名 / 哈希 / 白名单**：磁盘双份、启动复制耗时、无完整性校验；旧缓存依赖下次启动清理。
+- 插件加载在 UI 线程：坏插件构造函数可挂起启动；`FileSystemWatcher` 错误只记日志、不重建监听。
+- `Extras` 若被插件类型实例（如属性 DTO）钉住，仍可能阻碍回收；插件 API 建议只放 JSON 原语 / public field。
+
+### `--plugin-dev` 使用方式
+
+```bat
+:: 1) 构建宿主（示例插件：dotnet build samples\RuntimeCardExample\RuntimeCardExample.csproj -c Release）
+dotnet build -c Release
+
+:: 2) 把插件放到 plugins/cards/<id>/（或 %LOCALAPPDATA%\MirrorpondHUD\plugins\cards\<id>/）
+::    示例：copy samples\RuntimeCardExample\bin\Release\RuntimeCardExample.dll bin\Release\plugins\cards\example-clock\
+
+:: 3) 以开发模式启动
+bin\Release\MirrorpondHUD.exe --plugin-dev
+
+:: 需要自动退出 / 收集日志时可配合 --smoke
+bin\Release\MirrorpondHUD.exe --plugin-dev --smoke 90 --smoke-visible
+```
+
+- 监听 `<exe>/plugins/cards` 与 `%LOCALAPPDATA%\MirrorpondHUD\plugins\cards`（目录不存在会自动创建，两个根都监听）。
+- 改完 `manifest.json` 或 DLL 保存即可，700 ms debounce 后自动重载；日志会说明成功或拒绝原因。
+- 只支持纯文字卡；富内容卡、交互卡、带设置区块或旧 Kind 别名的插件会提示「请重启宿主」，不会替换。
+- 热重载不写配置；重载期间设置窗会被关闭。生产使用不要带 `--plugin-dev`，装 / 换插件后重启。
+
+---
+
+## 40. 不在版本里的东西
 
 - 验收脚本、样张与测量脚本（`cmd-e2e.ps1`、`drag-glass.ps1`、`measure-*.py`、`shots/` 等）都在仓库外的 `hud-test/` 里，**没有提交**。
 - 发布：`main` 与标签已推送到 [github.com/CRITTIof/MirrorpondHUD](https://github.com/CRITTIof/MirrorpondHUD)；
@@ -1457,7 +1570,7 @@ v2.12.2 的调研文档提出 `plugins/cards/*.dll` 运行时扩展卡片；本�
   更早的 Release 正文与附件保留原样，v2.4.0 的 Release 已删除（tag `v2.4.0` 保留，历史仍可检出）。
 - 仓库追踪的文件共 117 个，`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
 
-## 40. 已知代价（跨版本）
+## 41. 已知代价（跨版本）
 
 - 桌面亚克力为了不拍到自己，会把卡片排除在截屏之外 —— 这个模式下截图 / 录屏里**看不到卡片**，观感只能靠肉眼与离屏渲染验证。
 - 兼容实现每帧对身后窗口做 `PrintWindow`，拖动时最多 ~21 帧/秒；要更高只能走桌面亚克力（DXGI）。
