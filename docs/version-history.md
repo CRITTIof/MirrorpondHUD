@@ -10,7 +10,7 @@
 > `f67a255` / `5f8933c` / `ef70cea`，**未发布、未合并**）；`v2.14.5`（`a0fe549`）/ `v2.14.6`（`3e6abc6`）
 > 已推送到 `origin/feature/runtime-card-loading`；
 > `v2.14.7`（`abcbcec`）/ `v2.14.8`（`633e9d6`）已随文档同步提交 `d73d2ec` 推送到同一分支（未发布、未合并）；
-> `v2.14.9`（`aba873a`）已推送；`v2.15.0`（`78d3381`）已推送（文档同步提交 `2eba9b4`）；`v2.16.0`（`6406d96`）为本次提交（分支 `feature/dll-card-migration`，基于 `main`/`2eba9b4`，**尚未推送、未合并 main**）。
+> `v2.14.9`（`aba873a`）已推送；`v2.15.0`（`78d3381`）已推送（文档同步提交 `2eba9b4`）；`v2.16.0`（代码 `6406d96`，文档同步 `d1fd414`）**已推送并快进合并到 `main`**，未打 tag、未发布 Release。
 > `v2.14.1` / `v2.14.2` / `v2.14.4` 的规模用对应提交的 `git show --shortstat`；`v2.14.3` / `v2.14.5` / `v2.14.6`
 > 按当时提交前工作区的 `git diff --shortstat` 计算；`v2.14.7` / `v2.14.8` 用对应提交的 `git show --shortstat`；
 > `v2.14.9` 用提交前工作区的 `git diff --shortstat -- MirrorpondHUD.csproj src`；`v2.15.0` 用 `git show --shortstat 78d3381`；`v2.16.0` 用 `git show --shortstat 6406d96`（文档同步另计）。
@@ -2169,7 +2169,9 @@ P2-4（占位文案）、P2-6（ALC 注释 / 旧别名日志）、P2-7（InferPr
 
 ---
 
-## 50. v2.16.0（`6406d96`，分支 `feature/dll-card-migration`）
+## 50. v2.16.0（`6406d96`，分支 `feature/dll-card-migration`，已合并 main）
+
+> 状态：代码 `6406d96` + 文档 `d1fd414` 已推送到 `origin/main`；未打 tag、未发布 Release。
 
 ### 背景
 
@@ -2253,7 +2255,7 @@ P2-4（占位文案）、P2-6（ALC 注释 / 旧别名日志）、P2-7（InferPr
 
 - 未做真实媒体播放（图片 / 动图 / 视频 / ffmpeg 路径）、键鼠交互与设置页逐控件点击的人工验收；
 - `--plugin-dev` 热重载只对用户文字卡生效，内置插件不参与（内置富卡改代码需重启）；
-- `publish.bat` 的工作区改动已改为恢复时跳过 `builtin.*`（内置插件由构建目标重新生成）；安装包 / 覆盖升级场景仍未验证；
+- `publish.bat` 已改为恢复时跳过 `builtin.*`（内置插件由构建目标重新生成）；安装包 / 覆盖升级场景仍未验证；
 - single-file 发布只验证了「发布目录插件齐全 + 发布版 --selftest」，未做安装包 / 覆盖升级场景。
 
 ### 风险
