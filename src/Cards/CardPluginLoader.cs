@@ -155,11 +155,10 @@ namespace MirrorpondHUD.Cards
         public const int SupportedApiVersion = 2;
         const int MaxManifestBytes = 256 * 1024;
 
-        /// <summary>内置模块与旧 Kind 别名占用的标识；插件不能用它们，否则配置归一化会被别名抢走。</summary>
+        /// <summary>内置模块占用的标识；插件不能与内置卡片 Kind 冲突。</summary>
         static readonly HashSet<string> ReservedKinds = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            "infotext", "command", "media", "chat", "dropstation", "buttons",
-            "metrics", "clock", "keys", "text"
+            "infotext", "command", "media", "chat", "dropstation", "buttons"
         };
 
         /// <summary>便携插件根目录（exe 同目录）。</summary>

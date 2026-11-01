@@ -227,12 +227,6 @@ namespace MirrorpondHUD.Ui
                 return false;
             }
 
-            if (handle.Module is ICardLegacyAlias)
-            {
-                reason = "声明了旧 Kind 别名（会影响配置迁移）";
-                return false;
-            }
-
             if (handle.Module is ICardEditorSection)
             {
                 reason = "提供 WPF 设置区块（设置页控件会钉住 ALC）";

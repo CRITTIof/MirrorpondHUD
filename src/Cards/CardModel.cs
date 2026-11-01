@@ -30,16 +30,6 @@ namespace MirrorpondHUD.Cards
                     continue;
                 }
 
-                // 旧版本用过的 Kind 由模块自己认领（信息与文本卡接管 metrics / clock / keys / text）；
-                // 别名对应旧预设名，先记进 Preset，再由模块的 InitializeCard 做归一化。
-                string legacyKind = (card.Kind ?? "").Trim().ToLowerInvariant();
-                ICardModule legacyModule;
-                if (CardRegistry.TryResolveAlias(legacyKind, out legacyModule))
-                {
-                    if (string.IsNullOrWhiteSpace(card.Preset)) card.Preset = legacyKind;
-                    card.Kind = legacyModule.Kind;
-                }
-
                 card.Kind = CardRegistry.ResolveKind(card.Kind);
                 ICardModule module;
                 bool known = CardRegistry.TryGet(card.Kind, out module);

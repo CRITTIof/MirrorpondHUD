@@ -26,11 +26,8 @@ namespace MirrorpondHUD.Cards
     /// 用卡片自己的 `Preset` 选择预设。四种预设都是模板渲染，所以内容、占位符、
     /// 图标倍率、描边等文字能力完全一致。
     /// </summary>
-    public sealed class InfoTextCard : CardModuleBase, ICardSettingsModule, ICardLegacyAlias
+    public sealed class InfoTextCard : CardModuleBase, ICardSettingsModule
     {
-        /// <summary>合并前那四种卡片用过的 Kind；迁移时由本模块认领。</summary>
-        static readonly string[] LegacyKindList = { "metrics", "clock", "keys", "text" };
-
         static readonly List<InfoTextPreset> PresetList = new List<InfoTextPreset>
         {
             new InfoTextPreset("metrics", "系统信息", Settings.DefaultMetricsContent, Icons.Cpu),
@@ -61,14 +58,11 @@ namespace MirrorpondHUD.Cards
             }
         }
 
-        // ==================== 模块自己的设置 / 旧 Kind 迁移 ====================
-
-        /// <inheritdoc />
-        public IList<string> LegacyKinds { get { return LegacyKindList; } }
+        // ==================== 模块自己的设置 ====================
 
         /// <summary>
-        /// 预设归一化：旧配置里 Kind=clock/keys/text 的卡片迁移过来时，Preset 可能为空，
-        /// 这里按内容反推（内容恰好等于某个预设的默认内容时就能对上），再把未知值归到系统信息。
+        /// 预设归一化：内容恰好等于某个预设的默认内容时，把预设纠回那一个；
+        /// 未知 / 空值归到系统信息。
         /// </summary>
         public void InitializeCard(CardSettings config)
         {

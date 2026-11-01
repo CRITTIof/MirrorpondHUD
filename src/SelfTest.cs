@@ -459,9 +459,9 @@ namespace MirrorpondHUD
 
                 Settings old = SettingsMigration.Load("{\"SchemaVersion\":1,\"Cards\":[]}",
                                                       out needsSave, out corrupted);
-                bool oldOk = !corrupted && needsSave && old != null;
+                bool oldOk = corrupted && !needsSave && old != null;
 
-                // 审阅 2.13.4：缺版本号的当前格式不能被当成 legacy；溢出损坏；未来版本只读。
+                // 缺版本号的当前格式仍接受；旧 Schema 已不再迁移，直接按损坏处理。
                 Settings unversioned = SettingsMigration.Load(
                     "{\"Cards\":[{\"Id\":\"c1\",\"Kind\":\"chat\",\"Name\":\"对话\"}]}",
                     out needsSave, out corrupted);
@@ -535,33 +535,14 @@ namespace MirrorpondHUD
                 settings.Normalize();
                 CardModel.Normalize(settings);
 
-                string clock = CardRegistry.Get("clock").Render(
+                string clock = CardRegistry.Get("infotext").Render(
                     new CardRenderContext(settings, Screenshots.DemoSnapshot(), null,
-                                          new CardSettings { Kind = "clock", Content = "{time}" }));
+                                          new CardSettings { Kind = "infotext", Preset = "clock", Content = "{time}" }));
 
                 var vars = Variables.Build(Screenshots.DemoSnapshot(), settings, null);
                 bool weekdayOk = vars.ContainsKey("weekday_zh") && vars.ContainsKey("weekday_en")
                               && vars["weekday_zh"].ToString().StartsWith("星期", StringComparison.Ordinal)
                               && vars["weekday_en"].ToString().Length > 3;
-
-                // 旧 Kind 由模块自己认领（P1-3）：clock / text → infotext，预设按内容推断恢复
-                // （CardSettings.Preset 默认是 metrics，旧配置也靠内容匹配来认回 clock / text）
-                var legacySettings = new Settings();
-                legacySettings.Cards.Add(new CardSettings
-                {
-                    Id = "old-clock", Kind = "clock", Content = Settings.DefaultClockContent
-                });
-                legacySettings.Cards.Add(new CardSettings
-                {
-                    Id = "old-text", Kind = "text", Content = Settings.DefaultTextContent
-                });
-                CardModel.Normalize(legacySettings);
-
-                bool legacyOk = legacySettings.Cards.Count == 2
-                             && legacySettings.Cards[0].Kind == "infotext"
-                             && legacySettings.Cards[0].Preset == "clock"
-                             && legacySettings.Cards[1].Kind == "infotext"
-                             && legacySettings.Cards[1].Preset == "text";
 
                 // 插件卸载 / 未安装：Get 必须返回按原 Kind 渲染的占位模块，
                 // 而不是把卡片绑到默认模块（否则界面会显示一张假的默认卡）。
@@ -587,7 +568,6 @@ namespace MirrorpondHUD
                 cardOk = CardRegistry.Modules.Count >= 3
                          && CardRegistry.Get("media") is IRichCardModule
                          && CardRegistry.Get("infotext") is InfoTextCard
-                         && legacyOk
                          && placeholderOk
                          && contractsOk
                          && settings.Cards.Count >= 1

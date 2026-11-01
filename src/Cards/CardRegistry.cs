@@ -117,10 +117,6 @@ namespace MirrorpondHUD.Cards
             string key = (kind ?? "").Trim();
             if (key.Length == 0) return _modules[0];
 
-            // 旧 Kind（metrics / clock / keys / text）仍按别名找回模块，
-            // 只有真正未知的外部插件 Kind 才进入占位卡。
-            if (TryResolveAlias(key, out module)) return module;
-
             lock (Sync)
             {
                 if (!_placeholders.TryGetValue(key, out module))
@@ -150,36 +146,6 @@ namespace MirrorpondHUD.Cards
             string trimmed = (kind ?? "").Trim();
             ICardModule module;
             return TryGet(trimmed, out module) ? module.Kind : (trimmed.Length == 0 ? _modules[0].Kind : trimmed);
-        }
-
-        /// <summary>
-        /// 旧版本用过的 Kind（如 metrics / clock / keys / text）→ 现在接管它们的模块。
-        /// 别名由模块自己通过 <see cref="ICardLegacyAlias"/> 声明，宿主不再维护一份名单。
-        /// </summary>
-        public static bool TryResolveAlias(string kind, out ICardModule module)
-        {
-            EnsureInitialized();
-            module = null;
-
-            string key = (kind ?? "").Trim().ToLowerInvariant();
-            if (key.Length == 0) return false;
-
-            foreach (ICardModule candidate in _modules)
-            {
-                var alias = candidate as ICardLegacyAlias;
-                if (alias == null || alias.LegacyKinds == null) continue;
-
-                foreach (string item in alias.LegacyKinds)
-                {
-                    if (string.Equals(item, key, StringComparison.OrdinalIgnoreCase))
-                    {
-                        module = candidate;
-                        return true;
-                    }
-                }
-            }
-
-            return false;
         }
 
         static void EnsureInitialized()
