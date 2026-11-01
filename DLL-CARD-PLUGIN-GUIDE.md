@@ -1,4 +1,4 @@
-# DLL 卡片插件开发指南（2.20.0+）
+# DLL 卡片插件开发指南（2.21.0+）
 
 本文面向要在 MirrorpondHUD 里添加**运行时卡片插件**的开发者。插件是一个独立的 .NET 8 WPF 类库（DLL），
 通过 `plugins/cards/<id>/manifest.json` 被宿主加载，可以贡献文字卡或富内容卡，并复用宿主的设置页、
@@ -374,6 +374,7 @@ control.ApplyStyle(context.Settings.Style, context.Settings.Overlay.CornerRadius
 
 | 控件 | 常用 API | 用途 |
 |---|---|---|
+| `CardIcon` | `CardIcon(LucideIcons.X)`、`Size`、`Icon`、`ApplyStyle` | Lucide 图标（ISC）；详见 §6.6.7 |
 | `CardButton` | `new CardButton(text, CardButtonTone.Normal/Primary/Danger)`、`Text`、`Click`、`ApplyStyle` | 卡片内按钮 |
 | `CardTextBox` | `Text`、`KeyDown`、`ApplyStyle` | 单行输入框 |
 | `CardInput` | `Text`、`Placeholder`、`Submitted`、`TextChanged`、`Submit`、`Clear`、`FocusInput`、`SetError`、`ApplyStyle` | 带提交 / 错误态的输入行 |
@@ -636,6 +637,258 @@ menu.ShowAt(targetElement);
 - `CardDialog` 的 Enter = 确认、Esc = 取消；重复 `ShowAsync` 返回同一个 Task，不会叠出第二层遮罩；
 - 浮层颜色 / 字体 / 圆角都走 `StyleSettings`，`CardContextMenu` 的条目是自绘模板，不使用系统白底；
 - 版本 2.19.0 不包含独立的成功色令牌，`CardToastTone.Success` 用内定的绿色，Warning 用内定黄色。
+
+### 6.6 控件详解（API / 行为 / 示例）
+
+这一节按控件组补充常用属性、事件、行为边界和完整用法；所有控件都在
+`MirrorpondHUD.Ui.Controls`（媒体控件在 `MirrorpondHUD.Ui.Controls.Media`）。
+`ApplyStyle(style, cornerRadius)` 是统一换肤入口。
+
+#### 6.6.1 基础控件
+
+| 控件 | 构造 / 关键成员 | 行为与注意 |
+|---|---|---|
+| `CardButton` | `new CardButton(text, CardButtonTone)`；`Tone`、`Text`、`IsEnabled`、`Click` | `Primary` / `Danger` 只改描边与文字色；默认透明底；`ApplyStyle` 换字体 / 圆角 |
+| `CardTextBox` | `Text`、`KeyDown`、`ApplyStyle` | 单行输入；回车 / Esc 由调用方处理；需要占位符 / 提交事件用 `CardInput` |
+| `CardInput` | `Text`、`Placeholder`、`IsReadOnly`、`Submitted`、`TextChanged`、`Submit()`、`Clear()`、`FocusInput()`、`SetError(bool)` | 回车触发 `Submitted`；`SetError` 显示错误描边；不要同时用 `CardTextBox` 重复造轮子 |
+| `CardList` | `Items`、`ItemsSource`、`ItemTemplate`、`SelectionMode`、`SelectedItem`、`SelectedItems`、`ItemActivated`、`SetEmptyText`、`Inner`、`ApplyStyle(style, cli)` | 回收式虚拟化；行内容由 `ItemTemplate` / 直接放控件决定；`ItemActivated` 双击或回车 |
+| `CardStatus` | `SetText(text, CardStatusKind)`、`SetBusy(bool)`、`SetProgress(double?)`、`ApplyStyle(style)` | `CardStatusKind`：Normal / Info / Success / Warning / Error / Busy；Busy 自带转圈定时器 |
+| `CardHeader` | `Title`、`Badge`、`Actions.Add(text, click, tone, tooltip)` | 标题 + 计数徽标 + 右侧按钮；`Actions` 是 `CardToolbar` |
+| `CardToolbar` | `Add(...)`、`ApplyStyle` | 一排等间距 `CardButton`；适合标题栏操作 |
+| `CardDropOverlay` | `Show(count, accepted)`、`Show(text, accepted)`、`Hide()`、`ApplyStyle` | 拖入时覆盖在列表上；配合 `ICardDropTarget` / `ICardDropFeedback` |
+
+```csharp
+var input = new CardInput { Placeholder = "输入命令，回车提交" };
+input.Submitted += text => Run(text);
+input.ApplyStyle(style, cornerRadius);
+
+var status = new CardStatus();
+status.SetText("已复制 3 个文件路径", CardStatusKind.Success);
+status.SetProgress(null);
+status.ApplyStyle(style);
+
+var header = new CardHeader("文件中转站") { Badge = "12 个文件" };
+header.Actions.Add("清空", ClearAll, CardButtonTone.Danger, "不删除源文件");
+header.ApplyStyle(style, cornerRadius);
+```
+
+`CardList` 的 `ItemTemplate` 建议在 XAML 里定义（代码构造 DataTemplate 比较啰嗦）：
+
+```xml
+<controls:CardList x:Name="Files" SelectionMode="Extended">
+  <controls:CardList.ItemTemplate>
+    <DataTemplate>
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+        <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"/>
+        <TextBlock Grid.Column="1" Text="{Binding Size}" Opacity="0.55"/>
+      </Grid>
+    </DataTemplate>
+  </controls:CardList.ItemTemplate>
+</controls:CardList>
+```
+
+```csharp
+files.ItemsSource = items;               // 有 INotifyCollectionChanged 时自动跟随
+files.ItemActivated += item => Open(item);
+files.SetEmptyText("把文件拖进来");
+files.ApplyStyle(style, settings.Cli);
+```
+
+#### 6.6.2 表单控件
+
+| 控件 | 主要构造 / 属性 | 事件 / 方法 |
+|---|---|---|
+| `CardSlider` | `CardSlider(label, min, max, value)`；`Value`、`Minimum`、`Maximum`、`Step`、`ValueFormat` | `ValueChanged(double)`；`ApplyStyle` |
+| `CardToggle` | `CardToggle(text)`；`Text`、`IsChecked` | 标准 `Checked` / `Unchecked`；`ApplyStyle` |
+| `CardSelect` | `CardSelect(label, options)`；`ItemsSource`、`SelectedItem`、`SelectedIndex` | `SelectionChanged(string)`；`ApplyStyle` |
+| `CardNumberInput` | `CardNumberInput(label, value, min, max)`；`Value`、`ValueFormat` | `ValueChanged(double)`；回车 / 失焦提交 |
+| `CardColorPicker` | `CardColorPicker(label, "#AARRGGBB")`；`Value` | `ValueChanged(string)`；非法颜色回退 |
+| `CardSegmentedControl` | `CardSegmentedControl(label, options)`；`Items`、`SelectedIndex`、`SelectedItem` | `SelectionChanged(int, string)`；`SetItems` / `Select` |
+| `CardFormRow` | `new CardFormRow(label, content)`；`Label` | 一行标题 + 内容 |
+| `CardSettingsForm` | `AddRow` / `AddSlider` / `AddToggle` / `AddSelect` / `AddNumber` / `AddColor` / `AddSegmented` / `AddDescription` / `AddDivider` | `ApplyStyle` 递归换肤 |
+
+```csharp
+var form = new CardSettingsForm();
+var volume = form.AddSlider("音量", 0, 1, data.Volume);
+var enabled = form.AddToggle("启用", data.Enabled);
+var speed = form.AddNumber("刷新间隔", data.Interval, 100, 10000);
+volume.ValueChanged += v => { data.Volume = v; Save(); };
+enabled.Checked += (s, e) => { data.Enabled = true; Save(); };
+enabled.Unchecked += (s, e) => { data.Enabled = false; Save(); };
+speed.ValueChanged += v => { data.Interval = v; Save(); };
+form.ApplyStyle(style, cornerRadius);
+```
+
+`CardSettingsForm` 只是布局辅助；它不会自动把值写回 `Config.Extras`，每个 `ValueChanged` / `Checked`
+里要自己 `SetExtras` 并调用 `onChanged()`。
+
+#### 6.6.3 媒体控件
+
+`CardMediaView` 是 UiKit 的图片 / 动图 / 视频控件：
+
+| 成员 | 说明 |
+|---|---|
+| `Bind(MediaSettings)` | 绑定文件 / 缩放 / 循环 / 静音 / 速度 / 解码器；同路径重绑保留播放状态 |
+| `MediaPath` / `LoadedPath` / `HasVideo` | 当前设置路径、实际加载路径、是否视频 |
+| `Play()` / `Pause()` / `TogglePlayPause()` | 播放状态 |
+| `SeekBy(seconds)` / `ChangeSpeed(delta)` | 视频跳转 / 变速 |
+| `ShowPoster(path)` | 视频首帧封面（截图路径） |
+| `HandleHotkey(action)` | 处理 `media.play-pause` / `media.forward` 等 |
+| `RaiseVideo()` | 卡片重新置顶后把视频子窗口抬回来 |
+| `LayoutChanged` | 内容尺寸变化，宿主可据此重新布局 |
+| `ApplyStyle(style, cornerRadius)` / `Dispose()` | 换肤 / 释放解码器、音频、子窗口 |
+
+`MediaSettings` 主要字段：`Path`、`Fit`（Contain / Cover / Fill / None）、`Width` / `Height`、
+`Opacity`、`Loop`、`Autoplay`、`Muted`、`Speed`、`Rounded`、`Decoder`（Auto / BuiltIn / FFmpeg）、
+`DecoderPath`。视频使用独立子窗口，不能假设它被卡片裁剪；卡片销毁时必须 `Dispose()`。
+
+#### 6.6.4 数据展示控件
+
+`CardTable`：
+
+| 成员 | 说明 |
+|---|---|
+| `Columns` / `AddColumn(header, value, sortKey, width, alignment)` | 列定义；`Value` 返回单元格文本，`SortKey` 返回排序键 |
+| `Rows` / `AddRow(params object[])` | 用 `CardTableItem` 的按列 Cells 添加行 |
+| `ItemsSource` | 自定义数据源；配合列 `Value` / `SortKey` |
+| `SortBy(index, descending)` / `SortColumnIndex` / `SortDescending` / `SortChanged` | 代码排序；点表头也走这里 |
+| `SelectionMode` / `SelectedItem` / `SelectedIndex` / `SelectedItems` / `SelectionChanged` | 单选 / 多选 |
+| `ItemActivated` / `GetItem(index)` / `Count` / `IsEmpty` | 双击/回车激活、按视图顺序取项、统计、空态 |
+| `SetEmptyText` / `ScrollToEnd` / `ApplyStyle` | 空态、滚动、换肤 |
+
+```csharp
+var table = new CardTable { Width = 420, Height = 180 };
+table.AddColumn("名称", null, null, new GridLength(1, GridUnitType.Star));
+table.AddColumn("状态", null, null, new GridLength(90));
+table.AddColumn("大小", null, null, new GridLength(80), TextAlignment.Right);
+table.AddRow("MirrorpondHUD.exe", "运行中", "1.8 MB");
+table.AddRow("mirrorpond.log", "写入", "248 KB");
+table.SortBy(0, false);
+table.SelectionMode = SelectionMode.Extended;
+table.ItemActivated += item => { var row = item as CardTableItem; Open(row); };
+table.SetEmptyText("暂无文件");
+table.ApplyStyle(style, cornerRadius);
+```
+
+`CardTable` 不提供单元格编辑 / 自定义单元格控件；需要在 `ItemsSource` 之外自行放控件时，
+用 `CardList` + `ItemTemplate` 更灵活。
+
+`CardBadge` / `CardTag` / `CardMetricTile`：
+
+- `CardBadge(text, tone)`：单行徽标；`Tone` 取 `CardBadgeTone`；
+- `CardTag(text, tone)`：胶囊标签；`Removable` + `Removed` 支持“×”移除；
+- `CardMetricTile(title, value)`：`Unit` / `Delta` / `Caption` / `Icon` / `Tone` / `Trend`
+  （`CardMetricTrend`：None / Up / Down / Flat）；`SetValue(value, delta, caption)` 一次刷新。
+
+`CardGauge` / `CardProgressRing`：
+
+- `Value` / `Minimum` / `Maximum` / `Label` / `Unit` / `ValueFormat` / `Tone`；
+- Gauge 是 240° 圆弧，Ring 是完整圆环；`ValueFormat` 用 .NET 数字格式（Ring 默认 `0'%'`）；
+- 值越界会夹在 0–1 的绘制比例里，不会抛异常。
+
+#### 6.6.5 图表 / 树 / 时间线
+
+`CardSparkline`：`Values` / `SetValues` / `Add`、`AutoScale`、`Minimum` / `Maximum`、`LineThickness`、`Fill`。
+`CardLineChart` / `CardBarChart`：`Series`（`CardChartSeries`：`Name` / `Values` / `Color`）、`Labels`、
+`AutoScale`、`Minimum` / `Maximum`、`ShowGrid`、`ShowLegend`、`ShowYLabels`、`ShowXLabels`、`ValueFormat`、`Fill`（Line）。
+`CardTree`：`Roots` / `AddRoot` / `Clear` / `ExpandAll` / `CollapseAll` / `SelectedItem` / `SelectionChanged` /
+`ItemActivated` / `EmptyText`；`CardTreeItem` 有 `Text` / `Icon` / `Tooltip` / `Tag` / `IsExpanded` / `Children`。
+`CardTimeline`：`Items` / `Add(time, title, detail, tone, icon)` / `Count` / `Clear` / `ScrollToEnd` /
+`SelectedItem` / `SelectionChanged` / `ItemActivated`；`CardTimelineTone`：Normal / Accent / Success / Warning / Danger。
+
+```csharp
+var line = new CardLineChart { Width = 420, Height = 180 };
+line.Series = new List<CardChartSeries>
+{
+    new CardChartSeries("CPU") { Values = new List<double> { 12, 30, 24, 55, 40 } },
+    new CardChartSeries("内存") { Values = new List<double> { 40, 42, 44, 47, 50 } }
+};
+line.Labels = new List<string> { "00", "05", "10", "15", "20" };
+line.ApplyStyle(style, cornerRadius);
+
+var timeline = new CardTimeline { Width = 420, Height = 200 };
+timeline.Add("14:01", "启动完成", "已注册 6 个插件", CardTimelineTone.Accent);
+timeline.Add("14:03", "警告", "媒体解码器回退", CardTimelineTone.Warning);
+timeline.ApplyStyle(style, cornerRadius);
+```
+
+注意：直接改 `Series` / `Values` 的 live List 不会自动重绘；改完调用 `SetValues` / `Add`、重新赋值
+`Series` / `Values` 或 `ApplyStyle`。图表 / 树 / 时间线都只创建可视行，适合数据量较大的卡片。
+
+#### 6.6.6 浮层与交互控件
+
+`CardModal`：`Body`、`Show(Panel host)`、`Close()`、`IsOpen`、`CloseOnBackdropClick`、`Closed`。
+`CardDialog`：`Title`、`Message`、`Buttons`（`CardDialogButtons.Ok/OkCancel/YesNo`）、`OkText`、`CancelText`、
+`Task<bool> ShowAsync(Panel host)`、`DialogResult`、`CloseWith(bool)`。
+`CardPopover`：`Content`、`ShowAt(target, PlacementMode)`、`Close`、`ApplyStyle`。
+`CardTooltip`：`Text`、`DelayMs`、`Attach(target)`、`Detach`、`Dispose`。
+`CardContextMenu`：`Add(text, action, shortcut, danger)`、`AddSeparator()`、`AddHeader()`、`ShowAt(target)`。
+`CardToast`：`CardToast.Show(host, text, tone, duration, actionText, action)`、`Dismiss`、`Closed`。
+
+```csharp
+var dialog = new CardDialog
+{
+    Title = "删除这张卡片？",
+    Message = "配置与状态会一起删除，无法撤销。",
+    Buttons = CardDialogButtons.YesNo,
+    OkText = "删除",
+    CancelText = "取消"
+};
+dialog.ApplyStyle(style, cornerRadius);
+bool ok = await dialog.ShowAsync(this);   // this = 卡片内容的根 Panel
+
+CardToast.Show(this, "已复制 3 个文件路径", CardToastTone.Success, 2500);
+
+var tip = new CardTooltip { Text = "完整路径 / 说明" };
+tip.ApplyStyle(style, cornerRadius);
+tip.Attach(target);
+```
+
+约束：Modal / Dialog 必须加到卡片内容根 `Panel`；Popup / Tooltip / ContextMenu 是独立 HWND，目标必须在可视树里，
+卡片销毁前要 `Close` / `Detach` / `Dismiss`；Toast 底部居中需要 Grid / StackPanel 宿主，Canvas 要套一层 Grid。
+
+#### 6.6.7 图标字体：Lucide（2.21.0 起）
+
+项目内嵌 **Lucide 1.66.0**（ISC License），字体文件 `assets/icons/Lucide.ttf`，许可证
+`assets/icons/LICENSE.txt`，来源 https://lucide.dev 与 `lucide-static` npm 包的 `font/lucide.ttf`。
+
+两种用法：
+
+```csharp
+using MirrorpondHUD.Core;
+using MirrorpondHUD.Ui.Controls;
+
+// 1) UiKit 的 CardIcon（推荐）
+var icon = new CardIcon(LucideIcons.Cpu) { Size = 20 };
+icon.ApplyStyle(context.Settings.Style, context.Settings.Overlay.CornerRadius);
+
+// 2) 直接给 TextBlock 设置字体族
+var text = new TextBlock
+{
+    Text = LucideIcons.Get("chart-line"),
+    FontFamily = LucideIcons.FontFamily,
+    FontSize = 20
+};
+```
+
+`LucideIcons` 提供：
+
+- 常用常量：`Cpu` / `MemoryStick` / `HardDrive` / `Network` / `Wifi` / `Clock` / `Terminal` /
+  `MessageSquare` / `Image` / `Video` / `Folder` / `File` / `Settings` / `Activity` / `ChartLine` /
+  `Gauge` / `TriangleAlert` / `Download` / `Upload` / `Play` / `Pause` / `ChevronDown` / `Copy` / `Trash2` 等；
+- `Names`：全部 2292 个 CSS 图标名；
+- `Get("cpu")` / `Get("icon-cpu")` / `TryGet(...)`，未知返回空串 / false；
+- `FontFamily`：宿主内嵌字体，插件无需复制 TTF。
+
+图标字体只负责“字形”；大小用 `FontSize` / `CardIcon.Size`，颜色用 `Foreground`（`CardIcon.ApplyStyle` 自动取卡片前景色）。
+ReiconFont 仍保留给键帽 / 现有设置页图标；新卡片图标优先 Lucide。
+
+
+![Lucide 图标示例](docs/lucide-icons.png)
 
 ## 7. 宿主服务与状态
 

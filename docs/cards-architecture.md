@@ -10,7 +10,7 @@
 |---|---|---|
 | 插件契约 | `src/Contracts/Cards/` | `ICardModule` / `IRichCardModule` / `CardModuleBase` / `RichCardModuleBase` / 设置区块契约 / `ICardHost` / `CardHostServices.cs`（通用宿主服务） |
 | 通用配置 / 工具 | `src/Contracts/Core/` | `Settings`（通用配置）、`Json` / `Log` / `AsyncProcess`（public 供插件使用）、`SecretStore`（DPAPI，插件与宿主共用） |
-| 共享控件 | `src/UiKit/` | `CardButton` / `CardList` / `CardStatus` / `CardHeader` / `CardInput` / `CardTextBox` / `CardDropOverlay` / `CliUi` / 表单控件 `CardFormControls.cs` / 数据展示控件 `CardDataControls.cs`（2.17.0）/ 图表 / 树 / 时间线 `CardChartControls.cs` + `CardTreeTimeline.cs`（2.18.0）/ 浮层与交互 `CardOverlayControls.cs`（2.19.0）/ 媒体控件 `Media/CardMediaView.cs` + `Media/MediaSettings.cs` |
+| 共享控件 | `src/UiKit/` | `CardButton` / `CardList` / `CardStatus` / `CardHeader` / `CardInput` / `CardTextBox` / `CardDropOverlay` / `CliUi` / 表单控件 `CardFormControls.cs` / 图标字体 `CardIcon` + `LucideIcons`（Lucide ISC）/ 数据展示控件 `CardDataControls.cs`（2.17.0）/ 图表 / 树 / 时间线 `CardChartControls.cs` + `CardTreeTimeline.cs`（2.18.0）/ 浮层与交互 `CardOverlayControls.cs`（2.19.0）/ 媒体控件 `Media/CardMediaView.cs` + `Media/MediaSettings.cs` |
 | 内置卡片 | `src/Plugins/{InfoText,Buttons,Command,Chat,Media,DropStation}/` | 6 张内置卡，各含 `plugin.csproj` + `manifest.json`（id `builtin.*`、`apiVersion=2`），编成 `MirrorpondHUD.Cards.*.dll` |
 | 宿主 | `src/App.xaml.cs`、`src/Cards/`、`src/Ui/`、`src/Core/`、`src/Metrics/`、`src/Text/` | 加载器 / 注册表 / 配置模型、叠层窗口与设置页、采样 / 模板等宿主服务；不含具体卡片 |
 | 发布 | `MirrorpondHUD.csproj` | 构建 6 个插件工程并复制到 `<exe>/plugins/cards/builtin.*/`；single-file publish 同样复制 |
@@ -47,6 +47,7 @@
 | `src/Contracts/Core/SecretStore.cs` | 敏感字符串加密：Windows DPAPI（当前用户），settings.json 里只落 `dpapi:…`；2.16.0 起插件与宿主共用 |
 | `src/UiKit/CardButton.cs` | 卡片里的按钮：三种语气 + 三态模板，颜色跟随卡片外观 |
 | `src/UiKit/CardTextBox.cs` | 卡片里的输入框：底色 / 光标 / 选区跟着卡片文字色 |
+| `src/UiKit/CardIcon.cs` | 2.21.0 Lucide 图标控件；`LucideIcons` 码位 / 查询表在 Contracts，字体资源 `assets/icons/Lucide.ttf`（ISC） |
 | `src/UiKit/CardDataControls.cs` | 2.17.0 数据展示控件：`CardTable`（虚拟化 / 排序 / 选中）、`CardBadge` / `CardTag` / `CardMetricTile`、`CardGauge` / `CardProgressRing`；均实现 `ApplyStyle` |
 | `src/UiKit/CardChartControls.cs` | 2.18.0 图表：`CardSparkline` / `CardLineChart` / `CardBarChart` + `CardChartSeries`；自绘、空数据安全 |
 | `src/UiKit/CardTreeTimeline.cs` | 2.18.0 层级与时间线：`CardTree` / `CardTreeItem`、`CardTimeline` / `CardTimelineItem`；主题化、虚拟化、空态 |

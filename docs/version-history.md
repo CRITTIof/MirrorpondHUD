@@ -1,4 +1,4 @@
-# 版本修改记录（2.4.1 → 2.20.0）
+# 版本修改记录（2.4.1 → 2.21.0）
 
 > 范围：本文只记录**这一轮接手后我做的版本**（v2.4.1 起）。v2.4.0 及更早是既有历史，不在本文档里。
 > 数据全部取自仓库真实提交（`git diff --shortstat <上一版>..<本版>`），文件行的 `+ / -` 就是实际增删行数。
@@ -10,10 +10,10 @@
 > `f67a255` / `5f8933c` / `ef70cea`，**未发布、未合并**）；`v2.14.5`（`a0fe549`）/ `v2.14.6`（`3e6abc6`）
 > 已推送到 `origin/feature/runtime-card-loading`；
 > `v2.14.7`（`abcbcec`）/ `v2.14.8`（`633e9d6`）已随文档同步提交 `d73d2ec` 推送到同一分支（未发布、未合并）；
-> `v2.14.9`（`aba873a`）已推送；`v2.15.0`（`78d3381`）已推送（文档同步提交 `2eba9b4`）；`v2.16.0`（代码 `6406d96`，文档同步 `d1fd414`）**已推送并快进合并到 `main`**；`v2.17.0`（`27b8bbd`）/ `v2.18.0`（`1e1c6ac`）/ `v2.19.0`（`d21773c`）**已推送并快进合并到 `main`**；`v2.20.0`（代码 `d8f36ab`，文档 `de64021`）**已推送并快进合并到 `main`**，未打 tag、未发布 Release。
+> `v2.14.9`（`aba873a`）已推送；`v2.15.0`（`78d3381`）已推送（文档同步提交 `2eba9b4`）；`v2.16.0`（代码 `6406d96`，文档同步 `d1fd414`）**已推送并快进合并到 `main`**；`v2.17.0`（`27b8bbd`）/ `v2.18.0`（`1e1c6ac`）/ `v2.19.0`（`d21773c`）**已推送并快进合并到 `main`**；`v2.20.0`（代码 `d8f36ab`，文档 `de64021`）**已推送并快进合并到 `main`**；`v2.21.0`（代码 `0d687e9`）为本次提交，**尚未推送 / 合并**，未打 tag、未发布 Release。
 > `v2.14.1` / `v2.14.2` / `v2.14.4` 的规模用对应提交的 `git show --shortstat`；`v2.14.3` / `v2.14.5` / `v2.14.6`
 > 按当时提交前工作区的 `git diff --shortstat` 计算；`v2.14.7` / `v2.14.8` 用对应提交的 `git show --shortstat`；
-> `v2.14.9` 用提交前工作区的 `git diff --shortstat -- MirrorpondHUD.csproj src`；`v2.15.0` 用 `git show --shortstat 78d3381`；`v2.16.0` 用 `git show --shortstat 6406d96`；`v2.17.0` 用 `git show --shortstat 27b8bbd`；`v2.18.0` 用 `git show --shortstat 1e1c6ac`；`v2.19.0` 用 `git show --shortstat d21773c`；`v2.20.0` 用 `git show --shortstat d8f36ab`（文档同步另计）。
+> `v2.14.9` 用提交前工作区的 `git diff --shortstat -- MirrorpondHUD.csproj src`；`v2.15.0` 用 `git show --shortstat 78d3381`；`v2.16.0` 用 `git show --shortstat 6406d96`；`v2.17.0` 用 `git show --shortstat 27b8bbd`；`v2.18.0` 用 `git show --shortstat 1e1c6ac`；`v2.19.0` 用 `git show --shortstat d21773c`；`v2.20.0` 用 `git show --shortstat d8f36ab`；`v2.21.0` 用 `git show --shortstat d6e1af3`（文档同步另计）。
 
 ## 0. 总览
 
@@ -73,6 +73,7 @@
 | v2.18.0 | 2026-11-01 | `1e1c6ac` | 第二优先第二批：CardSparkline / CardLineChart / CardBarChart / CardTree / CardTimeline；版本三件套 + 6 插件同步 2.18.0 | 19 文件，+2049 / −16 |
 | v2.19.0 | 2026-11-01 | `d21773c` | 第四优先浮层与交互：CardModal / CardDialog / CardPopover / CardTooltip / CardContextMenu / CardToast；toast 置顶修复；版本三件套 + 6 插件同步 2.19.0 | 18 文件，+1513 / −16 |
 | v2.20.0 | 2026-11-01 | `d8f36ab` | 移除卡片热插拔 / 热重载（`PluginDevReloader`、`--plugin-dev`、运行时注册表替换）；插件更新统一重启；根指南重写为自包含开发手册 | 24 文件，+32 / −767（文档同步另计） |
+| v2.21.0 | 2026-11-01 | `0d687e9` | 引入 Lucide 1.66.0 开源图标字体（ISC）：2292 个码位常量 / 查询表、`CardIcon`、图标自检、许可证与文档；控件章节详写 | 23 文件，+7169 / −16（文档同步另计） |
 
 ---
 
@@ -2433,7 +2434,44 @@ P2-4（占位文案）、P2-6（ALC 注释 / 旧别名日志）、P2-7（InferPr
 
 ---
 
-## 55. 不在版本里的东西
+## 55. v2.21.0（`0d687e9`，分支 `feature/lucide-icons`）
+
+### 背景
+
+开发指南已有控件目录，但没有逐个控件的属性 / 事件 / 行为边界；同时卡片的图标只有 ReiconFont（主要面向键帽和
+设置页的少量界面图标），插件作者缺少一套覆盖完整的开源图标字体。2.21.0 引入 Lucide，并把控件章节扩成可按图索骥的
+详细说明。
+
+### 改动
+
+1. **Lucide 字体**：`assets/icons/Lucide.ttf`（`lucide-static` 1.66.0，ISC，977 KB）；
+   `assets/icons/LICENSE.txt`、`assets/icons/README.md`、根目录 `THIRD-PARTY-NOTICES.md`；宿主 csproj 作为 WPF Resource 嵌入。
+2. **码位表**：`src/Contracts/Core/LucideIcons.cs`（6929 行），由 `lucide.css` 生成 2292 个名字 / 常量；
+   提供 `FamilyName` / `FontFamily`、常用常量、`Names`、`Get("cpu")`、`TryGet(...)`；支持 `icon-` 前缀。
+3. **CardIcon**：`src/UiKit/CardIcon.cs`，固定 Lucide 字体族，`Size` / `Icon` / `ApplyStyle`；直接放进任意卡片内容。
+4. **自检**：`CardIconSelfTest` 检查码位一致性、`icon-` 前缀、未知图标空串、真实离屏渲染（有像素才通过）；
+   宿主 `--selftest` 新增「图标字体」一行。
+5. **文档**：根指南新增 §6.6 控件详解（基础 / 表单 / 媒体 / 数据 / 图表 / 树 / 时间线 / 浮层，每个列属性、
+   事件、行为边界和示例）与 §6.6.7 Lucide 用法；控件索引补 `CardIcon`；README / THIRD-PARTY-NOTICES 同步。
+6. **版本**：宿主 / Contracts / UiKit / 6 个插件工程与 manifest 统一 2.21.0；插件 API 仍为 2。
+
+### 验证
+
+- 干净构建 0 警告 0 错误；
+- `--selftest` 失败项 0，「图标字体: OK（Lucide 码位 / 查询 / CardIcon 渲染）」；
+- 760×300 离屏预览渲染 24 个 Lucide 图标（CPU / 网络 / 终端 / 图表 / 告警等）正常，样张存入 `docs/lucide-icons.png`；
+- 6 个内置插件仍从 `plugins/cards` 加载成功；根指南“复制即用”模板此前已在仓库外独立工程验证。
+
+### 风险 / 未验证
+
+- `LucideIcons.cs` 体积较大（2292 常量 + 字典），会增加 Contracts 程序集体积；若后续只需要少量图标可改为生成子集；
+- 字体 977 KB 随 exe 分发；许可证已保留，但未做字体子集化 / woff2 压缩；
+- 码位由 `lucide.css` 生成，升级 Lucide 版本必须同时替换 TTF 与重新生成常量，否则会出现错字 / 方框；
+- 图标只做离屏渲染验证，未逐图标做像素级 / 高 DPI 人工验收；树 / 表格等控件仍依赖文档与自检，未逐项手工操作。
+
+---
+
+## 56. 不在版本里的东西
 
 - 验收脚本、样张与测量脚本（`cmd-e2e.ps1`、`drag-glass.ps1`、`measure-*.py`、`shots/` 等）都在仓库外的 `hud-test/` 里，**没有提交**。
 - 发布：`main` 与标签已推送到 [github.com/CRITTIof/MirrorpondHUD](https://github.com/CRITTIof/MirrorpondHUD)；
@@ -2442,7 +2480,7 @@ P2-4（占位文案）、P2-6（ALC 注释 / 旧别名日志）、P2-7（InferPr
   更早的 Release 正文与附件保留原样，v2.4.0 的 Release 已删除（tag `v2.4.0` 保留，历史仍可检出）。
 - 仓库追踪的文件共 117 个，`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
 
-## 56. 已知代价（跨版本）
+## 57. 已知代价（跨版本）
 
 - 桌面亚克力为了不拍到自己，会把卡片排除在截屏之外 —— 这个模式下截图 / 录屏里**看不到卡片**，观感只能靠肉眼与离屏渲染验证。
 - 兼容实现每帧对身后窗口做 `PrintWindow`，拖动时最多 ~21 帧/秒；要更高只能走桌面亚克力（DXGI）。

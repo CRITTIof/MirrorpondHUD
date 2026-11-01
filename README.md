@@ -291,7 +291,7 @@ dotnet build samples\RuntimeCardExample\RuntimeCardExample.csproj -c Release
   **设置 → 外观 → 高级（实验性）** 里可调。三条路的实测与选择建议见
   **[docs/glass-implementations.md](docs/glass-implementations.md)**。只想要半透明卡片的话，把「背景不透明度」
   调到 0.5–0.7 即可，没有额外开销
-- 运行期插件（`plugins/cards/*.dll`）：把可信本地插件放进 `plugins/cards/<id>/`（便携目录）或 `%LOCALAPPDATA%\MirrorpondHUD\plugins\cards\<id>/`（manifest + DLL），**重启宿主后**出现在「添加卡片」。插件只引用 `MirrorpondHUD.Contracts`（需要共享控件时再加 `MirrorpondHUD.UiKit`），不引用宿主 DLL；宿主会拒绝仍引用 `MirrorpondHUD` 的插件。2.16.0 起 6 张内置卡也全部是 DLL 插件（宿主内置 0、运行时插件 6），2.17.0–2.19.0 陆续补齐数据展示、图表、树/时间线、浮层交互等 UiKit 控件。**本项目不提供热插拔 / 热重载**：安装、更新、删除插件都通过替换目录并重启宿主生效；`--plugin-dev` 已移除。插件缺失时卡片显示「插件不可用」占位并保留原 `Kind` / `Extras`。完整制作指南见根目录 [DLL-CARD-PLUGIN-GUIDE.md](DLL-CARD-PLUGIN-GUIDE.md)，设计与安全边界见 [docs/runtime-card-extensions.md](docs/runtime-card-extensions.md)。`AssemblyLoadContext` 不是安全沙箱，只加载可信本地插件；加一种内置卡片 = 在 `src/Plugins` 新增一个插件工程（manifest id `builtin.*`），文字卡继承 `CardModuleBase`，图片 / 视频等富内容卡继承 `RichCardModuleBase`。
+- 运行期插件（`plugins/cards/*.dll`）：把可信本地插件放进 `plugins/cards/<id>/`（便携目录）或 `%LOCALAPPDATA%\MirrorpondHUD\plugins\cards\<id>/`（manifest + DLL），**重启宿主后**出现在「添加卡片」。插件只引用 `MirrorpondHUD.Contracts`（需要共享控件时再加 `MirrorpondHUD.UiKit`），不引用宿主 DLL；宿主会拒绝仍引用 `MirrorpondHUD` 的插件。2.16.0 起 6 张内置卡也全部是 DLL 插件（宿主内置 0、运行时插件 6），2.17.0–2.19.0 陆续补齐数据展示、图表、树/时间线、浮层交互等 UiKit 控件；2.21.0 引入 Lucide 开源图标字体（ISC）与 `CardIcon` / `LucideIcons`。**本项目不提供热插拔 / 热重载**：安装、更新、删除插件都通过替换目录并重启宿主生效；`--plugin-dev` 已移除。插件缺失时卡片显示「插件不可用」占位并保留原 `Kind` / `Extras`。完整制作指南见根目录 [DLL-CARD-PLUGIN-GUIDE.md](DLL-CARD-PLUGIN-GUIDE.md)，设计与安全边界见 [docs/runtime-card-extensions.md](docs/runtime-card-extensions.md)。`AssemblyLoadContext` 不是安全沙箱，只加载可信本地插件；加一种内置卡片 = 在 `src/Plugins` 新增一个插件工程（manifest id `builtin.*`），文字卡继承 `CardModuleBase`，图片 / 视频等富内容卡继承 `RichCardModuleBase`。
   图片 / 视频这类富内容卡继承 `RichCardModuleBase`，宿主不用改
 
 ## 🗂️ 目录结构
@@ -322,8 +322,9 @@ tools/                   开发脚本（make_logo.py 生成多尺寸 logo.ico）
 - [docs/theme-motion.md](docs/theme-motion.md) — 主题的动效与控件样式调研：启动动画参数化、出现 / 消失 / 让位动画、按钮面板滑块 token 与受控模板、设置页换肤（含分层窗口动画实测）
 - [docs/legacy-audit.md](docs/legacy-audit.md) — 源码遗留审计：与 v2.9.4 同源的检查、13 条遗留（颜色解析 / 异步 void / 静态缓存 / 死字段等）与清理顺序
 - [docs/file-transfer-station.md](docs/file-transfer-station.md) — 文件中转站调研与设计：拖入 / 列表 / 引用与复制、状态持久化、拖出与锁定语义、M1–M3 路线
-- [docs/version-history.md](docs/version-history.md) — v2.4.1 → 2.20.0 每个版本改了什么、动了哪些文件（含实测数据与提交号）
+- [docs/version-history.md](docs/version-history.md) — v2.4.1 → 2.21.0 每个版本改了什么、动了哪些文件（含实测数据与提交号）
 - [DLL-CARD-PLUGIN-GUIDE.md](DLL-CARD-PLUGIN-GUIDE.md) — DLL 卡片插件开发指南（自包含）：工程引用、manifest、最小文字卡/富卡完整代码、全部契约签名、CardSettings/Extras、UiKit 控件目录、构建安装调试、安全与检查清单
+- [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) — 第三方字体与许可证（Lucide ISC、ReiconFont OFL）
 - [docs/review-p1-fixes.md](docs/review-p1-fixes.md) — 2.12.2 评审报告 P1-1..P1-10 的修复对照、验证与已知剩余
 - [docs/review-p2-fixes.md](docs/review-p2-fixes.md) — 2.12.2 评审报告中有实际影响的 P2 条目修复与未纳入项
 - [docs/review-2.13.4-fixes.md](docs/review-2.13.4-fixes.md) — 2.13.4 审阅意见的 P1/先修项修复、未纳入项与剩余风险
