@@ -461,25 +461,55 @@ namespace MirrorpondHUD
                                                       out needsSave, out corrupted);
                 bool oldOk = !corrupted && needsSave && old != null;
 
+                // 审阅 2.13.4：缺版本号的当前格式不能被当成 legacy；溢出损坏；未来版本只读。
+                Settings unversioned = SettingsMigration.Load(
+                    "{\"Cards\":[{\"Id\":\"c1\",\"Kind\":\"chat\",\"Name\":\"对话\"}]}",
+                    out needsSave, out corrupted);
+                bool unversionedOk = !corrupted && needsSave && unversioned.Cards.Count == 1
+                                  && unversioned.Cards[0].Kind == "chat";
+
+                bool futureFlag;
+                Settings future = SettingsMigration.Load("{\"SchemaVersion\":999,\"Cards\":[]}",
+                                                         out needsSave, out corrupted, out futureFlag);
+                bool futureOk = !corrupted && futureFlag && !needsSave && future != null;
+
+                Settings overflow = SettingsMigration.Load("{\"SchemaVersion\":1e300,\"Cards\":[]}",
+                                                           out needsSave, out corrupted, out futureFlag);
+                bool overflowOk = corrupted && !needsSave;
+
+                // 非 chat Kind 的卡片里残留 chat Extras 时，Normalize 也要把明文字段加密。
+                var oddSettings = new Settings();
+                var oddCard = new CardSettings { Id = "odd", Kind = "metrics", Name = "杂项" };
+                oddCard.SetExtras("chat", new ChatSettings { ApiKey = "sk-odd-plain" });
+                oddSettings.Cards.Add(oddCard);
+                oddSettings.Normalize();
+                ChatSettings oddChat = ChatCard.ChatOf(oddCard);
+                bool oddOk = SecretStore.IsProtected(oddChat.ApiKey);
+
                 string atomicId = "selftest-atomic-" + Guid.NewGuid().ToString("N");
                 string atomicDir = CardStateStore.DirectoryFor(atomicId);
                 bool atomicOk = false;
                 try
                 {
-                    CardStateStore.Write(atomicId, "state.json", "v1");
-                    CardStateStore.Write(atomicId, "state.json", "v2");
+                    CardStateStore.Write(atomicId, "state.json", "{\"v\":1}");
+                    CardStateStore.Write(atomicId, "state.json", "{\"v\":2}");
                     string main = Path.Combine(atomicDir, "state.json");
                     string current = CardStateStore.Read(atomicId, "state.json");
+                    File.WriteAllText(main, "{bad");
+                    string corruptRecovered = CardStateStore.Read(atomicId, "state.json");
                     File.Delete(main);
                     string recovered = CardStateStore.Read(atomicId, "state.json");
-                    atomicOk = current == "v2" && recovered == "v1";
+                    atomicOk = current == "{\"v\":2}"
+                            && corruptRecovered == "{\"v\":1}"
+                            && recovered == "{\"v\":1}";
                 }
                 finally
                 {
                     try { if (Directory.Exists(atomicDir)) Directory.Delete(atomicDir, true); } catch { }
                 }
 
-                configRepairOk = nullOk && brokenOk && oldOk && atomicOk;
+                configRepairOk = nullOk && brokenOk && oldOk && unversionedOk
+                              && futureOk && overflowOk && oddOk && atomicOk;
             }
             catch (Exception ex)
             {

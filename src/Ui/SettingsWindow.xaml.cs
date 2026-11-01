@@ -33,6 +33,15 @@ namespace MirrorpondHUD.Ui
         readonly List<KeyValuePair<string, TextBox>> _cardHotkeyBoxes = new List<KeyValuePair<string, TextBox>>();
 
         Settings _working;
+        /// <summary>
+        /// 打开窗口 / 上次保存成功时的设置快照。保存前用它判断「用户有没有在本窗口改过」运行时字段
+        /// （见 <see cref="MergeRuntimeFields"/>）：和基线不同就当用户编辑过，保留用户的值。
+        /// </summary>
+        Settings _runtimeBaseline;
+        /// <summary>控制器当前持有的 Settings 对象；热键切 Chat 模式、热键被占用回退都直接改这一份。</summary>
+        Settings _liveSettings;
+        /// <summary>点了「恢复默认值」后以界面为准，不再把 live 的运行时字段合并回来。</summary>
+        bool _skipRuntimeMerge;
         bool _suppress;
         bool _reallyClose;
         bool _loadFailed;
@@ -47,6 +56,7 @@ namespace MirrorpondHUD.Ui
             _onApply = onApply;
             _onPosition = onPosition;
             _onClearKeys = onClearKeys;
+            _liveSettings = live;
             try { VersionText.Text = "v" + typeof(SettingsWindow).Assembly.GetName().Version; } catch { }
 
             HookEvents();
@@ -284,7 +294,11 @@ namespace MirrorpondHUD.Ui
 
         public bool Reload(Settings live)
         {
-            return LoadUi(live);
+            if (!LoadUi(live)) return false;
+
+            _liveSettings = live;
+            _skipRuntimeMerge = false;
+            return true;
         }
 
         bool LoadUi(Settings s)
@@ -305,6 +319,7 @@ namespace MirrorpondHUD.Ui
                 _loadFailed = false;
                 _working = working;
                 CardModel.Normalize(_working);
+                CaptureRuntimeBaseline();
 
                 ThemeCombo.SelectedIndex = ThemeIndexOf(_working.Style.ThemeName);
                 ThemeNameText.Text = string.IsNullOrWhiteSpace(_working.Style.ThemeName)
@@ -1626,6 +1641,9 @@ namespace MirrorpondHUD.Ui
                 return;
             }
 
+            // 设置窗打开期间热键可能绕过本窗口改了 live settings；保存前把运行时字段合并回来。
+            MergeRuntimeFields(s);
+
             string hotkeyError = ValidateSettings(s);
             if (hotkeyError != null)
             {
@@ -1634,6 +1652,11 @@ namespace MirrorpondHUD.Ui
             }
 
             if (_onApply != null) _onApply(s);
+
+            // 控制器在 ApplySettings 里直接把传入对象当成 live settings（_settings = settings），
+            // 之后热键切模式就落在它上面；记下来供下次保存前的运行时字段合并。
+            _liveSettings = s;
+            _skipRuntimeMerge = false;
 
             // 控制器会把实时锚点带回来，同步到界面，避免下次保存又写回旧坐标。
             SyncAnchor(s.Overlay.X, s.Overlay.Y, s.Overlay.Monitor);
@@ -1645,6 +1668,7 @@ namespace MirrorpondHUD.Ui
                 _loadFailed = false;
                 _working = next;
                 CardModel.Normalize(_working);
+                CaptureRuntimeBaseline();
             }
             else
             {
@@ -1659,12 +1683,144 @@ namespace MirrorpondHUD.Ui
                 : "已保存并应用（" + DateTime.Now.ToString("HH:mm:ss") + "）";
         }
 
+        // ==================== 运行时字段合并（P1-5 设置窗快照） ====================
+
+        /// <summary>记录「用户还没动过」的运行时字段基线；克隆失败时退化成不合并（宁可保持旧行为）。</summary>
+        void CaptureRuntimeBaseline()
+        {
+            Settings baseline;
+            string error;
+            if (TryClone(_working, out baseline, out error))
+            {
+                _runtimeBaseline = baseline;
+                return;
+            }
+
+            _runtimeBaseline = null;
+            Log.Warn("设置基线克隆失败，本次保存不合并运行时字段: " + error);
+        }
+
+        /// <summary>
+        /// P1-5：设置窗打开期间，热键切 Chat 模式（<c>ChatCard.ToggleMode</c>）和热键被占用后的
+        /// 自动回退都会直接改 live settings，而本窗口的 <see cref="_working"/> 是打开时的深拷贝；
+        /// 直接保存会把模式 / 实际热键回滚成旧值。
+        ///
+        /// 这里在保存前只把 live 的<em>运行时字段</em>合并进待保存设置，并且逐个字段和打开时的基线比较：
+        /// 与基线不同 = 用户在本窗口改过，保留用户的值（不覆盖未保存编辑）；相同时才采用 live 的值。
+        /// 运行时字段限定为：Chat 模式、卡片呼出热键、三个全局热键、卡片通用动作热键。
+        /// </summary>
+        void MergeRuntimeFields(Settings target)
+        {
+            if (_skipRuntimeMerge || target == null || _liveSettings == null || _runtimeBaseline == null) return;
+            if (ReferenceEquals(target, _liveSettings)) return;
+
+            Settings live = _liveSettings;
+            Settings baseline = _runtimeBaseline;
+
+            if (live.Hotkeys != null && baseline.Hotkeys != null && target.Hotkeys != null)
+            {
+                target.Hotkeys.ToggleOverlay = MergeRuntimeValue(
+                    target.Hotkeys.ToggleOverlay, baseline.Hotkeys.ToggleOverlay, live.Hotkeys.ToggleOverlay);
+                target.Hotkeys.OpenSettings = MergeRuntimeValue(
+                    target.Hotkeys.OpenSettings, baseline.Hotkeys.OpenSettings, live.Hotkeys.OpenSettings);
+                target.Hotkeys.ToggleLock = MergeRuntimeValue(
+                    target.Hotkeys.ToggleLock, baseline.Hotkeys.ToggleLock, live.Hotkeys.ToggleLock);
+
+                if (live.Hotkeys.CardActions != null)
+                {
+                    foreach (CardActionHotkey entry in live.Hotkeys.CardActions)
+                    {
+                        if (entry == null || string.IsNullOrWhiteSpace(entry.Action)) continue;
+
+                        string action = entry.Action;
+                        string targetValue = target.Hotkeys.GetCardAction(action);
+                        if (!SameRuntimeValue(targetValue, baseline.Hotkeys.GetCardAction(action))) continue;  // 用户改过
+
+                        string liveValue = live.Hotkeys.GetCardAction(action);
+                        if (!SameRuntimeValue(targetValue, liveValue))
+                            target.Hotkeys.SetCardAction(action, liveValue);
+                    }
+                }
+            }
+
+            MergeCardRuntimeFields(target, live, baseline);
+        }
+
+        /// <summary>卡片级的运行时字段：呼出热键（被占用时会自动换成实际组合）与 Chat 模式。</summary>
+        void MergeCardRuntimeFields(Settings target, Settings live, Settings baseline)
+        {
+            if (target.Cards == null || live.Cards == null || baseline.Cards == null) return;
+
+            Dictionary<string, CardSettings> liveCards = IndexCards(live.Cards);
+            Dictionary<string, CardSettings> baselineCards = IndexCards(baseline.Cards);
+
+            foreach (CardSettings card in target.Cards)
+            {
+                if (card == null || string.IsNullOrEmpty(card.Id)) continue;
+
+                CardSettings liveCard, baselineCard;
+                if (!liveCards.TryGetValue(card.Id, out liveCard)) continue;
+                if (!baselineCards.TryGetValue(card.Id, out baselineCard)) continue;
+                if (liveCard == null || baselineCard == null) continue;
+
+                card.Hotkey = MergeRuntimeValue(card.Hotkey, baselineCard.Hotkey, liveCard.Hotkey);
+
+                // Chat 模式只有热键会绕过设置窗直接改 live；非 chat 卡不碰 Extras，避免写脏。
+                if (!string.Equals(card.Kind, "chat", StringComparison.OrdinalIgnoreCase)) continue;
+
+                string liveMode = ChatModeOf(liveCard);
+                string targetMode = ChatModeOf(card);
+                if (!SameRuntimeValue(targetMode, ChatModeOf(baselineCard))) continue;  // 用户改过模式
+                if (SameRuntimeValue(targetMode, liveMode)) continue;
+
+                ChatCard.ChatOf(card).Mode = liveMode;
+            }
+        }
+
+        /// <summary>读卡片 Extras 里的 Chat 模式；调用方已限定 chat 卡，不会给别的卡写 Extras。</summary>
+        static string ChatModeOf(CardSettings card)
+        {
+            if (card == null) return "";
+            ChatSettings chat = card.ExtrasAs<ChatSettings>(ChatCard.SettingsKey);
+            return chat == null ? "" : ChatSettings.NormalizeMode(chat.Mode);
+        }
+
+        /// <summary>
+        /// 用户没动过这个字段（仍等于打开时的基线）才采用 live 的运行时值。
+        /// 空值不合并：热键路由在注册失败时会把 live 热键写成空串，合并回来会让卡片呼出热键
+        /// 触发「没有呼出热键」校验而挡住保存；保留窗口里的值，应用设置时还能重试注册。
+        /// </summary>
+        static string MergeRuntimeValue(string targetValue, string baselineValue, string liveValue)
+        {
+            if (string.IsNullOrWhiteSpace(liveValue)) return targetValue;
+            return SameRuntimeValue(targetValue, baselineValue) ? liveValue : targetValue;
+        }
+
+        static bool SameRuntimeValue(string left, string right)
+        {
+            return string.Equals(left ?? "", right ?? "", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>按卡片 Id 建索引；Id 是删除 / 重排都不变的稳定标识。</summary>
+        static Dictionary<string, CardSettings> IndexCards(List<CardSettings> cards)
+        {
+            var map = new Dictionary<string, CardSettings>(StringComparer.OrdinalIgnoreCase);
+            foreach (CardSettings card in cards)
+            {
+                if (card == null || string.IsNullOrEmpty(card.Id)) continue;
+                if (!map.ContainsKey(card.Id)) map[card.Id] = card;
+            }
+            return map;
+        }
+
         void ResetClick(object sender, RoutedEventArgs e)
         {
             var fresh = new Settings();
             fresh.Normalize();
             CardModel.Normalize(fresh);
             LoadUi(fresh);
+            // 「恢复默认值」是用户的显式意图（含热键与 Chat 模式），保存时不要再被 live 的运行时字段盖回去。
+            _skipRuntimeMerge = true;
             StatusText.Text = "已恢复默认值，点击“保存并应用”生效";
         }
 

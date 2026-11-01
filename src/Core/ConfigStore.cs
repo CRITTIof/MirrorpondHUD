@@ -9,9 +9,13 @@ namespace MirrorpondHUD.Core
     public static class ConfigStore
     {
         static string _path;
+        static readonly object SaveSync = new object();
 
-        /// <summary>最近一次加载设置的警告（损坏 / 从备份恢复）。正常加载为空。</summary>
+        /// <summary>最近一次加载设置的警告（损坏 / 从备份恢复 / 未来版本只读）。正常加载为空。</summary>
         public static string LastLoadWarning { get; private set; } = "";
+
+        /// <summary>配置来自更高 SchemaVersion：只读加载，Save 拒绝覆盖。</summary>
+        public static bool LastLoadReadOnly { get; private set; }
 
         public static string Path
         {
@@ -51,32 +55,43 @@ namespace MirrorpondHUD.Core
         public static Settings Load()
         {
             LastLoadWarning = "";
+            LastLoadReadOnly = false;
 
             Settings settings = new Settings();
             bool migrated = false;
             bool corrupted = false;
             bool recovered = false;
+            bool future = false;
+            bool empty = false;
 
             string file = Path;
-            if (File.Exists(file))
+            bool exists = File.Exists(file);
+            if (exists)
             {
-                if (!TryReadSettings(file, out settings, out migrated, out corrupted))
-                {
+                if (!TryReadSettings(file, out settings, out migrated, out corrupted, out empty, out future))
                     corrupted = true;
-                }
 
-                if (corrupted)
+                if (corrupted || empty)
                 {
-                    TryBackupBroken();
-                    Log.Warn("设置文件损坏，已备份为 .broken-*");
-                    LastLoadWarning = "设置文件损坏，原文件已备份为 .broken-*。";
+                    if (corrupted)
+                    {
+                        TryBackupBroken();
+                        Log.Warn("设置文件损坏，已备份为 .broken-*");
+                        LastLoadWarning = "设置文件损坏，原文件已备份为 .broken-*。";
+                    }
+                    else
+                    {
+                        LastLoadWarning = "设置文件为空。";
+                    }
 
                     Settings backupSettings;
                     bool backupMigrated;
-                    if (TryLoadBackup(out backupSettings, out backupMigrated))
+                    bool backupFuture;
+                    if (TryLoadBackup(out backupSettings, out backupMigrated, out backupFuture))
                     {
                         settings = backupSettings;
                         migrated = backupMigrated;
+                        future = backupFuture;
                         recovered = true;
                         LastLoadWarning += " 已从 settings.json.bak 恢复。";
                         Log.Warn("已从 settings.json.bak 恢复设置");
@@ -87,6 +102,29 @@ namespace MirrorpondHUD.Core
                         LastLoadWarning += " 没有可用的备份，已使用默认设置。";
                     }
                 }
+            }
+            else
+            {
+                // 主文件缺失（杀软隔离 / OneDrive 占位 / 误删）：不要直接覆盖成默认值，先看 .bak。
+                Settings backupSettings;
+                bool backupMigrated;
+                bool backupFuture;
+                if (TryLoadBackup(out backupSettings, out backupMigrated, out backupFuture))
+                {
+                    settings = backupSettings;
+                    migrated = backupMigrated;
+                    future = backupFuture;
+                    recovered = true;
+                    LastLoadWarning = "settings.json 不存在，已从 settings.json.bak 恢复。";
+                    Log.Warn("settings.json 不存在，已从 .bak 恢复");
+                }
+            }
+
+            if (future)
+            {
+                LastLoadReadOnly = true;
+                LastLoadWarning = "设置来自更高版本，已只读加载；不会覆盖原文件。";
+                Log.Warn("设置来自更高 SchemaVersion，只读加载");
             }
 
             // 必须在 Normalize 之前检测：Normalize 会把明文 Key 就地加密，之后就看不出来了。
@@ -119,61 +157,98 @@ namespace MirrorpondHUD.Core
 
             // 旧版单窗口配置 / 初版多卡片配置：迁移后立刻落盘，避免每次启动重复迁移。
             // 旧版明文 API Key 同理：Normalize 已经把它换成 dpapi:…。
-            // plainKey 用归一化之前的结果，确保这次保存不会生成含明文的 .bak。
-
-            // 以前版本迁移后可能把明文旧文件留在 .bak；本次启动顺手清掉。
-            ScrubPlaintextBackup();
-
-            // 从 .bak 恢复时不要再把损坏的主文件复制回 .bak；明文 Key 迁移时也不能留下含明文的旧备份。
-            bool keepBackup = !(plainKey || recovered);
-            bool deletePlaintextBackup = plainKey;
-            if (migrated || plainKey || recovered || corrupted)
-                Save(settings, keepBackup, deletePlaintextBackup);
+            // 从 .bak 恢复时不要再把损坏的主文件复制回 .bak；明文 Key 迁移时不生成含明文的旧备份。
+            if (!LastLoadReadOnly)
+            {
+                bool keepBackup = !(plainKey || recovered);
+                if (migrated || plainKey || recovered || corrupted || empty)
+                {
+                    if (Save(settings, keepBackup))
+                    {
+                        // 保存成功后再清洗旧备份：先删后保存会在磁盘满/占用时丢掉唯一恢复副本。
+                        ScrubPlaintextArtifacts();
+                    }
+                }
+            }
 
             return settings;
         }
 
-        /// <summary>旧版本可能把明文 Key 的旧文件备份成 .bak；发现就删掉，别让“加密迁移”留下明文尾巴。</summary>
-        static void ScrubPlaintextBackup()
+        /// <summary>保存成功后清洗旧 `.bak` / `.broken-*` / `.tmp` 里残留的明文 Key。</summary>
+        static void ScrubPlaintextArtifacts()
         {
-            string backup = Path + ".bak";
-            if (!File.Exists(backup)) return;
+            string file = Path;
+            string dir = System.IO.Path.GetDirectoryName(file);
+            if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) return;
 
+            string name = System.IO.Path.GetFileName(file);
             try
             {
-                string text = File.ReadAllText(backup, Encoding.UTF8);
-                if (string.IsNullOrWhiteSpace(text)) return;
+                foreach (string candidate in Directory.EnumerateFiles(dir, name + "*"))
+                {
+                    if (string.Equals(candidate, file, StringComparison.OrdinalIgnoreCase)) continue;
 
-                bool needsSave;
-                bool corrupted;
-                Settings old = SettingsMigration.Load(text, out needsSave, out corrupted);
-                if (corrupted || old == null || !HasPlainApiKey(old)) return;
+                    string suffix = candidate.Substring(file.Length);
+                    bool artifact = suffix == ".bak" || suffix == ".tmp" ||
+                                    suffix.StartsWith(".broken-", StringComparison.OrdinalIgnoreCase);
+                    if (!artifact) continue;
 
-                File.Delete(backup);
-                Log.Warn("检测到 settings.json.bak 里有明文 API Key，已删除旧备份");
+                    if (!ContainsPlaintextApiKey(candidate)) continue;
+
+                    File.Delete(candidate);
+                    Log.Warn("已删除含明文 API Key 的旧设置文件: " + System.IO.Path.GetFileName(candidate));
+                }
             }
             catch (Exception ex)
             {
-                Log.Warn("检查旧设置备份失败: " + ex.Message);
+                Log.Warn("清洗旧设置备份失败: " + ex.Message);
             }
         }
 
-        static bool TryReadSettings(string file, out Settings settings, out bool migrated, out bool corrupted)
+        static bool ContainsPlaintextApiKey(string path)
+        {
+            try
+            {
+                string text = File.ReadAllText(path, Encoding.UTF8);
+                if (string.IsNullOrWhiteSpace(text)) return false;
+
+                bool needsSave;
+                bool corrupted;
+                bool future;
+                Settings old = SettingsMigration.Load(text, out needsSave, out corrupted, out future);
+                return !corrupted && old != null && HasPlainApiKey(old);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        static bool TryReadSettings(string file, out Settings settings, out bool migrated,
+                                    out bool corrupted, out bool empty, out bool future)
         {
             settings = new Settings();
             migrated = false;
             corrupted = false;
+            empty = false;
+            future = false;
 
             try
             {
                 string text = File.ReadAllText(file, Encoding.UTF8);
-                if (string.IsNullOrWhiteSpace(text)) return true; // 空文件按“没有配置”处理
+                if (string.IsNullOrWhiteSpace(text))
+                {
+                    empty = true;
+                    return true;
+                }
 
                 bool needsSave;
                 bool bad;
-                settings = SettingsMigration.Load(text, out needsSave, out bad);
+                bool isFuture;
+                settings = SettingsMigration.Load(text, out needsSave, out bad, out isFuture);
                 migrated = needsSave;
                 corrupted = bad;
+                future = isFuture;
                 return !bad;
             }
             catch (Exception ex)
@@ -183,10 +258,11 @@ namespace MirrorpondHUD.Core
             }
         }
 
-        static bool TryLoadBackup(out Settings settings, out bool migrated)
+        static bool TryLoadBackup(out Settings settings, out bool migrated, out bool future)
         {
             settings = null;
             migrated = false;
+            future = false;
 
             string backup = Path + ".bak";
             if (!File.Exists(backup)) return false;
@@ -198,11 +274,13 @@ namespace MirrorpondHUD.Core
 
                 bool needsSave;
                 bool bad;
-                Settings loaded = SettingsMigration.Load(text, out needsSave, out bad);
+                bool isFuture;
+                Settings loaded = SettingsMigration.Load(text, out needsSave, out bad, out isFuture);
                 if (bad) return false;
 
                 settings = loaded;
                 migrated = needsSave;
+                future = isFuture;
                 return true;
             }
             catch (Exception ex)
@@ -231,12 +309,26 @@ namespace MirrorpondHUD.Core
 
         public static bool Save(Settings settings)
         {
-            return Save(settings, true, false);
+            return Save(settings, true);
         }
 
-        static bool Save(Settings settings, bool backup, bool deleteBackup)
+        static bool Save(Settings settings, bool backup)
+        {
+            // 并发 Save 共用 settings.json.tmp：串行化，避免互相删掉正在写的临时文件。
+            lock (SaveSync)
+            {
+                return SaveCore(settings, backup);
+            }
+        }
+
+        static bool SaveCore(Settings settings, bool backup)
         {
             if (settings == null) return false;
+            if (LastLoadReadOnly)
+            {
+                Log.Warn("配置来自更高版本，只读模式拒绝保存，避免降级覆盖");
+                return false;
+            }
 
             string tmp = null;
             try
@@ -262,21 +354,24 @@ namespace MirrorpondHUD.Core
                         }
                         catch (Exception ex)
                         {
-                            // 某些文件系统 / 杀软会拒绝 Replace：退回“先备份再覆盖”，至少不丢主文件。
+                            // 某些文件系统 / 杀软会拒绝 Replace：退回“先备份再覆盖”。
+                            // 备份失败必须中止，绝不能无备份覆盖主文件。
                             Log.Warn("设置原子替换失败，回退到备份+覆盖: " + ex.Message);
-                            try { File.Copy(file, bak, true); }
-                            catch { /* 备份失败不影响主流程 */ }
+                            try
+                            {
+                                File.Copy(file, bak, true);
+                            }
+                            catch (Exception copyEx)
+                            {
+                                Log.Error("设置回退备份失败，已中止保存", copyEx);
+                                return false;
+                            }
+
                             File.Move(tmp, file, true);
                         }
                     }
                     else
                     {
-                        // 明文 Key 迁移 / 从备份恢复：默认不生成新 .bak；只有确认旧备份含明文时才删。
-                        if (deleteBackup)
-                        {
-                            try { if (File.Exists(file + ".bak")) File.Delete(file + ".bak"); }
-                            catch { }
-                        }
                         File.Move(tmp, file, true);
                     }
                 }

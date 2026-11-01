@@ -325,11 +325,16 @@ namespace MirrorpondHUD.Media
 
                 if (video && decoderChanged)
                 {
-                    _pendingVideo = path;
+                    // 审阅 §19：不能先把 _pendingVideo 交给 ReleaseVideo——它内部会清空 pending
+                    // 并 ++_videoRun，TryStartVideo 看到 _pendingVideo == null 就直接 return，
+                    // 视频会停在最后一帧且没有任何提示。先释放旧播放器，再把待启动路径交回启动流程。
                     ReleaseVideo();
+                    _pendingVideo = path;
                     TryStartVideo();
 
                     // 换解码器必然重开视频（Open / StartFfmpeg 会按 Autoplay 起播），这里把状态还原回去。
+                    // StartFfmpeg 是异步的，Play/Pause 在 player 建好前调用不生效；
+                    // StartFfmpeg 里会再按 _playing 校正一次。
                     if (wasPlaying) Play();
                     else Pause();
                 }
@@ -612,6 +617,12 @@ namespace MirrorpondHUD.Media
                 _player.Start(ffmpeg, path, width, height, info.Fps,
                               _settings.Loop, info.Duration, _settings.Autoplay,
                               _speed, 0, !_settings.Muted, 100);
+
+                // 探测是异步的：Bind / 解码器切换时调用的 Play()/Pause() 那时 _player 还是 null，
+                // 不会生效。这里按当前用户状态校正一次，避免换解码器后暂停的视频自己播起来
+                // （或正在播的视频被 Autoplay=false 卡住）。
+                if (_playing) _player.Resume();
+                else _player.Pause();
 
                 Log.Info("ffmpeg 解码：" + FileName(path) + " " + width + "×" + height +
                          " " + info.Fps.ToString("0.##") + "fps");

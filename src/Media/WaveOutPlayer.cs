@@ -304,6 +304,7 @@ namespace MirrorpondHUD.Media
                 // buffer/header/handle 的所有权交给本线程，必须在这里自己释放，
                 // 否则没人敢释放（Stop 释放会与本线程并发写冲突）。
                 if (_stop) ClaimCleanup(handle);
+                else ReleaseResourcesOnEof(handle);
             }
         }
 
@@ -356,31 +357,35 @@ namespace MirrorpondHUD.Media
                 // 资源已经收尾（或从来没分配过）。
                 if (Volatile.Read(ref _resources) == 0) return;
 
+                // 句柄已经被另一条收尾路径（上一次 Stop 的超时交接 / Feed 自然 EOF）拿走：
+                // 收尾权在别人手里，这里绝不能抢——抢了会用空句柄跳过 Unprepare/Close。
+                if (handle == IntPtr.Zero) return;
+
                 // 上一次 Stop 已经把收尾权交给 Feed 线程：这次只能继续等它，
                 // 绝不自己释放（它可能还在往 buffer 写）。
                 if (thread == null) thread = _handoffThread;
             }
 
-            if (handle != IntPtr.Zero)
+            try { waveOutReset(handle); } catch { }
+
+            if (thread == null)
             {
-                try { waveOutReset(handle); } catch { }
+                // 没有 Feed 线程可等（从未启动 / 已退出）：当场收尾，等价于原来 Join 成功的路径。
+                ClaimCleanup(handle);
+                return;
             }
 
-            // Join 成功 = Feed 线程彻底退出（finally 也已经跑完），它不可能再碰
-            // header/buffer/handle，这时候才可以释放内存。
-            bool joined = true;
-            if (thread != null)
-            {
-                try { joined = thread.Join(1000); } catch { joined = false; }
-            }
+            // 先做一次零等待：绝大多数 Stop 时 Feed 已经因为 _stop / 管道关闭退出了。
+            bool joined;
+            try { joined = thread.Join(0); } catch { joined = false; }
 
             if (!joined)
             {
-                // 线程还卡在 pcm.Read / waveOutWrite 里（音频管道阻塞、设备驱动卡住）。
-                // 这里绝不 FreeHGlobal：所有权交给 Feed 线程，它退出时在 finally 里
-                // 认领收尾（ClaimCleanup）。这是 P1-7 的核心修复。
+                // 审阅 §20：原来在调用方（通常是 UI）线程 Join(1000)，换文件 / 删卡最多冻 1s。
+                // 现在把 Join + 收尾交给后台；收尾权先记到 _handoffThread，后续 Stop 只会继续
+                // 等它，不会重复释放（ClaimCleanup 的 CAS 再兜一层）。
                 lock (_sync) { _handoffThread = thread; }
-                Log.Warn("音频线程 1s 内未退出，缓冲/句柄改由音频线程自行释放");
+                QueueFinish(thread, handle);
                 return;
             }
 
@@ -390,6 +395,55 @@ namespace MirrorpondHUD.Media
             }
 
             ClaimCleanup(handle);
+        }
+
+        /// <summary>后台等 Feed 线程退出（最多 1s）后收尾；调用方（UI 线程）不再为 Join 阻塞。</summary>
+        void QueueFinish(Thread thread, IntPtr handle)
+        {
+            ThreadPool.QueueUserWorkItem(_ =>
+            {
+                bool joined = false;
+                try { joined = thread.Join(1000); } catch { }
+
+                if (!joined)
+                {
+                    // 线程还卡在 pcm.Read / waveOutWrite 里：所有权交回 Feed 线程，
+                    // 它退出时在 finally 里认领收尾（ClaimCleanup）。
+                    Log.Warn("音频线程 1s 内未退出，缓冲/句柄改由音频线程自行释放");
+                    return;
+                }
+
+                lock (_sync)
+                {
+                    if (ReferenceEquals(_handoffThread, thread)) _handoffThread = null;
+                }
+
+                ClaimCleanup(handle);
+            });
+        }
+
+        /// <summary>
+        /// 审阅 §21：非循环视频自然放完（EOF）时没有人调 Stop，_stop 仍是 false；
+        /// 原来 finally 只处理“被 Stop”的收尾，设备句柄 + 4 个 HGlobal 会一直留到卡片重绑。
+        /// 这里由 Feed 线程自己把状态推进到“已停止”并收尾。
+        /// </summary>
+        void ReleaseResourcesOnEof(IntPtr handle)
+        {
+            lock (_sync)
+            {
+                if (_stop || Volatile.Read(ref _resources) == 0) return;   // Stop 已经在收尾
+
+                _stop = true;
+                _resume.Set();
+                if (ReferenceEquals(_thread, Thread.CurrentThread)) _thread = null;
+
+                // 句柄已被 Stop 拿走 = 收尾权在 Stop 的 Join / 后台路径，不抢。
+                if (_handle == IntPtr.Zero) return;
+                _handle = IntPtr.Zero;
+            }
+
+            ClaimCleanup(handle);
+            Log.Info("音频自然播放结束，已释放音频设备与缓冲");
         }
 
         /// <summary>

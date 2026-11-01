@@ -343,13 +343,23 @@ namespace MirrorpondHUD.Core
             @"(?i)(\bbearer\s+)[^\s""']+", RegexOptions.Compiled);
 
         static readonly Regex SecretValuePattern = new Regex(
-            @"(?i)((?:--?|/)?(?:access[_-]?token|refresh[_-]?token|token|password|passwd|pwd|secret|api[_-]?key|access[_-]?key|apikey|auth(?:orization)?|bearer)\s*[=:]\s*)(""[^""]*""|'[^']*'|[^\s""']+)",
+            @"(?i)((?:--?|/)?(?:access[_-]?token|refresh[_-]?token|token|password|passwd|pwd|secret|api[_-]?key|access[_-]?key|apikey|auth(?:orization)?|bearer|user(?:name)?|user-credentials)\s*[=:]\s*)(""[^""]*""|'[^']*'|[^\s""']+)",
+            RegexOptions.Compiled);
+
+        /// <summary>
+        /// 空白分隔的密钥参数：<see cref="SecretValuePattern"/> 要求 <c>=</c> / <c>:</c>，抓不到
+        /// <c>curl --token sk-xxx</c>、<c>--password secret</c>、<c>--api-key sk-abc</c>、
+        /// <c>curl -u user:pass</c> 这类写法（审阅报告已用探针复现）。这里只匹配「选项名 + 空白 + 值」，
+        /// 把值整体替换成 ***；长选项名与上面的规则保持一致，另加 curl 的 -u / --user / --user-credentials。
+        /// </summary>
+        static readonly Regex SecretOptionPattern = new Regex(
+            @"(?i)((?:^|\s)(?:-u|--user(?:name)?|--user-credentials|(?:--?|/)(?:access[_-]?token|refresh[_-]?token|token|password|passwd|pwd|secret|api[_-]?key|access[_-]?key|apikey|auth(?:orization)?|bearer|private[_-]?key|client[_-]?secret))\s+)(?:""[^""]*""|'[^']*'|[^\s""']+)",
             RegexOptions.Compiled);
 
         /// <summary>
         /// 给日志用的命令摘要：绝不回传完整命令。先把常见密文写法（Authorization / Bearer /
-        /// token= / --password= 等）替换成 ***，再截到 <see cref="LogSummaryChars"/> 字。
-        /// 完整命令只留在界面上给用户自己看。
+        /// token= / --password= / --token value / -u user:pass 等）替换成 ***，再截到
+        /// <see cref="LogSummaryChars"/> 字。完整命令只留在界面上给用户自己看。
         /// </summary>
         public static string DescribeCommand(string command)
         {
@@ -366,7 +376,8 @@ namespace MirrorpondHUD.Core
         {
             text = AuthorizationPattern.Replace(text, "$1***");
             text = BearerPattern.Replace(text, "$1***");
-            text = SecretValuePattern.Replace(text, "$1***");
+            text = SecretOptionPattern.Replace(text, "$1***");   // 空白分隔：--token value / -u user:pass
+            text = SecretValuePattern.Replace(text, "$1***");    // 现有的 = / : 分隔规则
             return text;
         }
 

@@ -13,6 +13,7 @@ namespace MirrorpondHUD.Core
     /// </summary>
     public static class CardStateStore
     {
+        static readonly object WriteSync = new object();
         /// <summary>这张卡片的状态目录（不存在时返回路径，不创建）。Id 非法时返回 null。</summary>
         public static string DirectoryFor(string cardId)
         {
@@ -24,7 +25,7 @@ namespace MirrorpondHUD.Core
             return Path.Combine(root, id);
         }
 
-        /// <summary>读状态文件；主文件读不到时回退 .bak；不存在 / 名字非法 / 读失败都返回 null。</summary>
+        /// <summary>读状态文件；主文件不存在或不是合法 JSON 时回退 .bak；都失败返回 null。</summary>
         public static string Read(string cardId, string fileName)
         {
             string path = Resolve(cardId, fileName);
@@ -32,14 +33,43 @@ namespace MirrorpondHUD.Core
 
             try
             {
-                if (File.Exists(path)) return File.ReadAllText(path, Encoding.UTF8);
+                if (File.Exists(path))
+                {
+                    string text = File.ReadAllText(path, Encoding.UTF8);
+                    if (LooksLikeJson(text)) return text;
+                    Log.Warn("卡片状态主文件损坏，尝试 .bak(" + fileName + ")");
+                }
+
                 string backup = path + ".bak";
-                return File.Exists(backup) ? File.ReadAllText(backup, Encoding.UTF8) : null;
+                if (File.Exists(backup))
+                {
+                    string text = File.ReadAllText(backup, Encoding.UTF8);
+                    if (LooksLikeJson(text))
+                    {
+                        Log.Warn("已从卡片状态 .bak 恢复(" + fileName + ")");
+                        return text;
+                    }
+                }
+                return null;
             }
             catch (Exception ex)
             {
                 Log.Warn("读取卡片状态失败(" + fileName + "): " + ex.Message);
                 return null;
+            }
+        }
+
+        static bool LooksLikeJson(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return false;
+            try
+            {
+                Json.Parse(text);
+                return true;
+            }
+            catch
+            {
+                return false;
             }
         }
 
@@ -49,6 +79,14 @@ namespace MirrorpondHUD.Core
             string path = Resolve(cardId, fileName);
             if (path == null) return false;
 
+            lock (WriteSync)
+            {
+                return WriteCore(path, text);
+            }
+        }
+
+        static bool WriteCore(string path, string text)
+        {
             string tmp = path + ".tmp";
             try
             {
@@ -64,8 +102,19 @@ namespace MirrorpondHUD.Core
                     }
                     catch (Exception ex)
                     {
+                        // Replace 失败时先备份再覆盖；备份失败必须中止，不能无备份覆盖。
                         Log.Warn("卡片状态原子替换失败，回退到备份+覆盖: " + ex.Message);
-                        try { File.Copy(path, backup, true); } catch { }
+                        try
+                        {
+                            File.Copy(path, backup, true);
+                        }
+                        catch (Exception copyEx)
+                        {
+                            Log.Error("卡片状态回退备份失败，已中止写入(" + fileNameOf(path) + ")", copyEx);
+                            try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
+                            return false;
+                        }
+
                         File.Move(tmp, path, true);
                     }
                 }
@@ -77,10 +126,15 @@ namespace MirrorpondHUD.Core
             }
             catch (Exception ex)
             {
-                Log.Warn("写入卡片状态失败(" + fileName + "): " + ex.Message);
+                Log.Warn("写入卡片状态失败(" + fileNameOf(path) + "): " + ex.Message);
                 try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
                 return false;
             }
+        }
+
+        static string fileNameOf(string path)
+        {
+            return Path.GetFileName(path);
         }
 
         /// <summary>删掉一个状态文件（连同 .bak；不存在也算成功）。</summary>

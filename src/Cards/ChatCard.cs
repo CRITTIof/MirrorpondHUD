@@ -152,7 +152,7 @@ namespace MirrorpondHUD.Cards
     /// <summary>
     /// AI 对话卡片的终端界面与请求逻辑。一张卡片一个实例，互不影响（各带自己的上下文）。
     /// </summary>
-    internal sealed class ChatView : CliPanelView
+    internal sealed class ChatView : CliPanelView, IDisposable
     {
         /// <summary>共享 HttpClient：连接复用，避免每问一次握手一次。</summary>
         static readonly HttpClient Http = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
@@ -175,6 +175,7 @@ namespace MirrorpondHUD.Cards
 
         CancellationTokenSource _pending;
         bool _busy;
+        bool _disposed;
         int _spinFrame;
         readonly DispatcherTimer _spin;
 
@@ -440,6 +441,9 @@ namespace MirrorpondHUD.Cards
                 _busy = false;
                 _spin.Stop();
                 if (_pending != null) { _pending.Dispose(); _pending = null; }
+                // 极端异常（AddEntry / SetInputReadOnly 等）也要把输入框恢复成可输入，
+                // 否则一次异常之后这张卡片会永久只读，只能重开窗口。
+                UpdateEnabled();
                 SetStatus("! " + Explain(ex), true);
                 Log.Error("对话请求异常", ex);
             }
@@ -526,6 +530,32 @@ namespace MirrorpondHUD.Cards
         {
             try { if (_pending != null) _pending.Cancel(); }
             catch { }
+        }
+
+        /// <summary>
+        /// 宿主 <c>ReleaseContent</c> 会在换设置 / 删卡 / 退出时 Dispose 实现了 <see cref="IDisposable"/>
+        /// 的卡片内容；之前 ChatView 没实现，销毁只能靠 <see cref="Cancel"/> 兜着。这里取消在途请求、
+        /// 停掉转圈定时器，避免已释放的视图还挂着 <see cref="DispatcherTimer"/>。
+        /// </summary>
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+
+            Cancel();
+
+            // DispatcherTimer 只能在自己的 Dispatcher 线程上 Stop；正常调用点（ReleaseContent）就在 UI 线程。
+            if (_spin.Dispatcher.CheckAccess())
+            {
+                _spin.Stop();
+                _spin.Tick -= OnSpinTick;
+            }
+
+            if (_pending != null)
+            {
+                try { _pending.Dispose(); } catch (ObjectDisposedException) { }
+                _pending = null;
+            }
         }
 
         /// <summary>

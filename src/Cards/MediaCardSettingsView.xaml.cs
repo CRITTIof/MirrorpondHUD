@@ -234,7 +234,17 @@ namespace MirrorpondHUD.Cards
 
                 List<DecoderInfo> found = Decoders.Cached;
                 if (found.Count == 0)
+                {
+                    // 审阅 §18：首启缓存为空只是“还没探测完”，不能直接报“没找到”；
+                    // 预热结束后 WarmDecodersAsync 会主动刷新这个提示。
+                    if (!Decoders.HasResult)
+                    {
+                        if (!Decoders.IsDetecting) Decoders.WarmUp();   // 上一轮探测异常结束则重试
+                        return "正在检测解码器…（完成后会自动刷新）";
+                    }
+
                     return "没找到 ffmpeg / mpv / VLC；视频只能用 Windows 自带的 Media Foundation";
+                }
 
                 DecoderInfo ffmpeg = null;
                 var others = new System.Text.StringBuilder();

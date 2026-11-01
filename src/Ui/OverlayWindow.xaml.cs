@@ -19,6 +19,7 @@ namespace MirrorpondHUD.Ui
         Settings _settings;
         DispatcherTimer _topmostTimer;
         bool _handleReady;
+        bool _closed;
         bool _commandMode;
         IntPtr _previousForeground;
         DispatcherTimer _glassTimer;
@@ -95,6 +96,7 @@ namespace MirrorpondHUD.Ui
             DpiChanged += (s, e) => UpdateBackdrop();
             Closed += (s, e) =>
             {
+                _closed = true;
                 StopTimers();
                 ReleaseBackdrop();
             };
@@ -499,6 +501,7 @@ namespace MirrorpondHUD.Ui
 
         void CaptureGlass()
         {
+            if (_closed) return;                            // 窗口已关闭：不再抓屏，也不写 UI
             if (BackdropActive) return;                     // 系统底板接管时不抓屏
             if (!_settings.Style.Acrylic || !_handleReady || _glassBusy) return;
             if (!IsVisible || WindowState == WindowState.Minimized) return;
@@ -545,6 +548,9 @@ namespace MirrorpondHUD.Ui
                     Dispatcher.BeginInvoke(new Action(() =>
                     {
                         _glassBusy = false;
+                        // 审阅 §21：Closed 只停了定时器，Start 之前投递的抓屏完成后仍会写 UI。
+                        // 窗口关闭后到达的在途结果直接丢弃。
+                        if (_closed) return;
                         if (image != null)
                         {
                             Surface.SetGlass(image);

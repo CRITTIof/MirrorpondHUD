@@ -15,20 +15,32 @@ namespace MirrorpondHUD.Core
         public static Settings Load(string json, out bool needsSave)
         {
             bool corrupted;
-            return Load(json, out needsSave, out corrupted);
+            bool future;
+            return Load(json, out needsSave, out corrupted, out future);
+        }
+
+        public static Settings Load(string json, out bool needsSave, out bool corrupted)
+        {
+            bool future;
+            return Load(json, out needsSave, out corrupted, out future);
         }
 
         /// <summary>
         /// 读设置。<paramref name="corrupted"/> = true 表示 JSON / 绑定失败，调用方应备份损坏文件并尝试 .bak，
         /// 不能把它当成“旧版本迁移”后静默保存默认值。
+        /// <paramref name="futureVersion"/> = true 表示文件来自更高 SchemaVersion：只读，不能保存覆盖。
         /// </summary>
-        public static Settings Load(string json, out bool needsSave, out bool corrupted)
+        public static Settings Load(string json, out bool needsSave, out bool corrupted, out bool futureVersion)
         {
             needsSave = false;
             corrupted = false;
+            futureVersion = false;
 
+            Dictionary<string, object> root;
             int version;
-            if (!TryReadVersion(json, out version))
+            bool hasVersion;
+            if (!TryReadRoot(json, out root) ||
+                !TryReadVersion(root, out version, out hasVersion))
             {
                 corrupted = true;
                 Log.Warn("设置文件不是合法的 JSON 对象，按损坏处理");
@@ -37,6 +49,26 @@ namespace MirrorpondHUD.Core
 
             try
             {
+                // 没有 SchemaVersion 的当前格式（例如手改/旧工具导出）：不能当 legacy 迁移，
+                // 否则 chat/media/dropstation 会被 NormalizeKind 降成 metrics 并丢 Extras。
+                if (!hasVersion && LooksLikeCurrentFormat(root))
+                {
+                    Settings unversioned = Json.Deserialize<Settings>(json);
+                    if (unversioned == null) throw new InvalidOperationException("设置根对象为空");
+                    needsSave = true;
+                    Log.Warn("设置缺少 SchemaVersion，按当前格式补写版本号");
+                    return unversioned;
+                }
+
+                if (hasVersion && version > Settings.CurrentSchemaVersion)
+                {
+                    Settings future = Json.Deserialize<Settings>(json);
+                    if (future == null) throw new InvalidOperationException("设置根对象为空");
+                    futureVersion = true;
+                    Log.Warn("设置来自更高 SchemaVersion " + version + "，只读加载，拒绝覆盖");
+                    return future;
+                }
+
                 if (version >= Settings.CurrentSchemaVersion)
                 {
                     Settings current = Json.Deserialize<Settings>(json);
@@ -76,6 +108,15 @@ namespace MirrorpondHUD.Core
                     return two;
                 }
 
+                // 显式 SchemaVersion 0 + 当前卡片形状：也按当前格式补写，而不是 legacy 重建。
+                if (LooksLikeCurrentFormat(root))
+                {
+                    Settings zero = Json.Deserialize<Settings>(json);
+                    if (zero == null) throw new InvalidOperationException("设置根对象为空");
+                    Log.Warn("设置 SchemaVersion=0 但卡片是当前格式，按当前格式补写");
+                    return zero;
+                }
+
                 LegacySettings legacy = Json.Deserialize<LegacySettings>(json);
                 if (legacy == null) throw new InvalidOperationException("旧设置根对象为空");
 
@@ -88,6 +129,7 @@ namespace MirrorpondHUD.Core
             {
                 corrupted = true;
                 needsSave = false;
+                futureVersion = false;
                 Log.Warn("设置解析失败，按损坏处理: " + ex.Message);
                 return new Settings();
             }
@@ -194,28 +236,72 @@ namespace MirrorpondHUD.Core
             }
         }
 
-        static bool TryReadVersion(string json, out int version)
+        static bool TryReadRoot(string json, out Dictionary<string, object> root)
         {
-            version = -1;
+            root = null;
             try
             {
-                var map = Json.Parse(json) as Dictionary<string, object>;
-                if (map == null) return false;
+                root = Json.Parse(json) as Dictionary<string, object>;
+                return root != null;
+            }
+            catch
+            {
+                return false;
+            }
+        }
 
-                object raw;
-                if (!map.TryGetValue("SchemaVersion", out raw) || raw == null)
-                {
-                    version = 0;
-                    return true;
-                }
+        static bool TryReadVersion(Dictionary<string, object> root, out int version, out bool hasVersion)
+        {
+            version = 0;
+            hasVersion = false;
 
-                version = (int)Math.Round(Convert.ToDouble(raw, System.Globalization.CultureInfo.InvariantCulture));
+            object raw;
+            if (root == null || !root.TryGetValue("SchemaVersion", out raw) || raw == null)
+                return true; // 缺省版本号：由调用方按卡片形状判断 legacy / 当前格式
+
+            hasVersion = true;
+            try
+            {
+                double value = Convert.ToDouble(raw, System.Globalization.CultureInfo.InvariantCulture);
+                if (double.IsNaN(value) || double.IsInfinity(value) ||
+                    value < 0 || value > 1_000_000)
+                    return false;
+
+                version = (int)Math.Round(value);
                 return true;
             }
             catch
             {
                 return false;
             }
+        }
+
+        /// <summary>
+        /// 没有版本号时区分“旧版 legacy”与“当前 CardSettings 形状”。legacy 卡片只有
+        /// Kind/Visible/X/Y/Monitor/Content；当前卡片有 Id/Extras/Preset/Hotkey/Resident 等字段。
+        /// </summary>
+        static bool LooksLikeCurrentFormat(Dictionary<string, object> root)
+        {
+            if (root == null) return false;
+
+            object cardsNode;
+            if (!root.TryGetValue("Cards", out cardsNode) || cardsNode == null) return false;
+
+            var cards = cardsNode as List<object>;
+            if (cards == null) return false;
+
+            foreach (object entry in cards)
+            {
+                var card = entry as Dictionary<string, object>;
+                if (card == null) continue;
+
+                if (card.ContainsKey("Id") || card.ContainsKey("Extras") ||
+                    card.ContainsKey("Preset") || card.ContainsKey("Hotkey") ||
+                    card.ContainsKey("Resident"))
+                    return true;
+            }
+
+            return false;
         }
 
         public static Settings Migrate(LegacySettings legacy)

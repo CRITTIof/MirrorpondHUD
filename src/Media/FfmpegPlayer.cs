@@ -738,7 +738,8 @@ namespace MirrorpondHUD.Media
         static void DisposeAudio(WaveOutPlayer audio)
         {
             if (audio == null) return;
-            try { audio.Stop(); } catch { }
+            // 审阅 §20：Dispose 内部已经会 Stop()（Join 已改成后台有界等待），
+            // 原来 Stop + Dispose 会把同一个音频线程 Join 两遍，这里只留一次。
             try { audio.Dispose(); } catch { }
         }
 
@@ -943,10 +944,34 @@ namespace MirrorpondHUD.Media
 
             Thread reader = _reader;
             _reader = null;
-            if (reader != null)
+
+            // 审阅 §20：这里原来是 reader.Join(1500)，而 ReleaseVideo 经常在 UI 线程上调用
+            // （换文件 / 删卡 / 改解码器），最坏要冻 UI 1.5s。signal + Kill 已经让老读线程
+            // 立即失效（代次校验会丢掉它晚归的帧 / 失败），Join 只是收尾确认，交给后台有界等待。
+            DetachJoin(reader);
+        }
+
+        /// <summary>把读线程的 Join 交给后台（最多等 2s，只写日志），调用线程不阻塞。</summary>
+        static void DetachJoin(Thread thread)
+        {
+            if (thread == null) return;
+
+            try
             {
-                try { reader.Join(1500); } catch { }
+                // 绝大多数情况进程刚被杀，读线程已经退出；先做一次零等待，避免无谓地开后台任务。
+                if (thread.Join(0)) return;
+
+                Task.Run(() =>
+                {
+                    try
+                    {
+                        if (!thread.Join(2000))
+                            Log.Warn("ffmpeg 读线程 2s 内未退出（已脱离，不阻塞 UI）");
+                    }
+                    catch { }
+                });
             }
+            catch { }
         }
 
         public void Dispose()

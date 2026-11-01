@@ -48,6 +48,15 @@ namespace MirrorpondHUD.Media
         static Task _warming;
         static readonly TimeSpan CacheFor = TimeSpan.FromMinutes(5);
 
+        // 审阅 §21：FindFfmpeg 会在 UI 线程被 Bind / TryStartVideo / LoadImage / StartPoster
+        // 同步调用；PATH 里有断开的 UNC / 网络盘时每次扫 PATH 都可能卡数秒。
+        // 这里缓存“自动找到的 ffmpeg”，60s 后允许重扫（用户可能刚装好 ffmpeg），
+        // 手动「检测」和后台预热会立即刷新。
+        static string _autoFfmpeg;
+        static bool _autoFfmpegSearched;
+        static DateTime _autoFfmpegAt = DateTime.MinValue;
+        static readonly TimeSpan AutoFfmpegCacheFor = TimeSpan.FromSeconds(60);
+
         // 单个版本进程的整体超时；超时由 AsyncProcess 直接 Kill(true)。
         const int VersionTimeoutMs = 1500;
 
@@ -117,6 +126,28 @@ namespace MirrorpondHUD.Media
             }
         }
 
+        /// <summary>缓存是否已经完成过至少一轮探测（首启空缓存 ≠ 真的没找到）。</summary>
+        public static bool HasResult
+        {
+            get { lock (Gate) { return _cached != null; } }
+        }
+
+        /// <summary>
+        /// 是否正在后台检测。审阅 §18：首启空缓存时设置页应显示“正在检测…”，
+        /// 而不是误报“没找到 ffmpeg / mpv / VLC”。
+        /// </summary>
+        public static bool IsDetecting
+        {
+            get
+            {
+                lock (Gate)
+                {
+                    if (_cached != null) return false;
+                    return _warming != null && !_warming.IsCompleted;
+                }
+            }
+        }
+
         /// <summary>后台预热缓存，不阻塞调用方；可以安全地重复调用。</summary>
         public static void WarmUp()
         {
@@ -158,6 +189,24 @@ namespace MirrorpondHUD.Media
                     string path = Find(name, null);
                     if (path == null || !seen.Add(path)) continue;
                     found.Add(path);
+                }
+
+                // 后台探测本来就读了一遍 PATH：顺手刷新 FindFfmpeg 的自动查找缓存，
+                // 免得 UI 线程之后又同步扫一遍（审阅 §21）。
+                string autoFfmpeg = null;
+                for (int i = 0; i < found.Count; i++)
+                {
+                    if (string.Equals(Path.GetFileName(found[i]), "ffmpeg.exe", StringComparison.OrdinalIgnoreCase))
+                    {
+                        autoFfmpeg = found[i];
+                        break;
+                    }
+                }
+                lock (Gate)
+                {
+                    _autoFfmpeg = autoFfmpeg;
+                    _autoFfmpegSearched = true;
+                    _autoFfmpegAt = DateTime.UtcNow;
                 }
 
                 // 版本号并行探测：每个进程都有自己的整体超时 + Kill(true)，
@@ -226,10 +275,29 @@ namespace MirrorpondHUD.Media
                 Log.Warn("自定义解码器不存在：" + custom + "，改回自动查找");
             }
 
+            // 自动查找结果做短缓存：这个方法是 UI 线程同步调用的，PATH 有断开的网络盘时
+            // 每扫一次都可能卡数秒（审阅 §21）。60s 允许重扫，手动「检测」/ 预热会立即刷新。
+            string cached;
+            bool fresh;
+            lock (Gate)
+            {
+                cached = _autoFfmpeg;
+                fresh = _autoFfmpegSearched && DateTime.UtcNow - _autoFfmpegAt < AutoFfmpegCacheFor;
+            }
+            if (fresh) return cached;
+
+            string found = Find("ffmpeg.exe", null);
+            lock (Gate)
+            {
+                _autoFfmpeg = found;
+                _autoFfmpegSearched = true;
+                _autoFfmpegAt = DateTime.UtcNow;
+            }
+
             // 顺手预热解码器缓存（后台线程，不阻塞）：设置页的 DecoderHint 是属性 getter，
             // 只要缓存已经就绪就不会出现“没找到解码器”的假提示。
             WarmUp();
-            return Find("ffmpeg.exe", null);
+            return found;
         }
 
         /// <summary>只在 PATH 与常见目录里找，不看用户设置。</summary>

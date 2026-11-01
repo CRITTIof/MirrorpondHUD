@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -337,7 +339,9 @@ namespace MirrorpondHUD.Cards
         /// 已经会对 <see cref="IDisposable"/> 调 Dispose）。P1-6：
         /// · 复制任务比控件活得久：先取消排队和进行中的任务；
         /// · 停掉 <see cref="CardStatus"/> 内部的 DispatcherTimer，否则旧视图一直被计时器强引用；
-        /// · 置 <see cref="_disposed"/>，让已经排进 Dispatcher 的完成回调和写盘全部作废。
+        /// · 置 <see cref="_disposed"/>，让已经排进 Dispatcher 的 UI 回调和整表写盘作废；
+        ///   但「复制完成后目标已落盘」的单条结果仍会合并进 items.json
+        ///   （见 <see cref="PersistCompletedAfterDispose"/>），避免目标文件成为孤儿。
         ///
         /// 这里刻意只 CancelAll、不 Dispose 队列本身：CardJobQueue.Dispose 与在飞任务的
         /// Release 有竞态（评审 P2-10，不在本文件范围），取消后任务自己收尾即可。
@@ -1206,15 +1210,92 @@ namespace MirrorpondHUD.Cards
 
             job.Task.ContinueWith(task =>
             {
-                // P1-6：视图可能已经被销毁（换接收目录 / 删卡 / 退出），结果只丢弃：
-                // 不再回 UI 线程改列表，也不再整表写盘覆盖新视图。
-                if (_disposed) return;
+                // P1-6：视图可能已经被销毁（换接收目录 / 删卡 / 退出）。
+                // 销毁后不能再回 UI 线程改列表、也不能整表覆盖新视图；但复制已经成功、
+                // 目标已经落盘时不能把结果整个丢掉——只把这一条合并进 items.json，
+                // 让下一个视图 Load 时能看到（见 PersistCompletedAfterDispose）。
+                if (_disposed)
+                {
+                    PersistCompletedAfterDispose(item, job, target);
+                    return;
+                }
+
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
-                    if (_disposed) return;
+                    if (_disposed)
+                    {
+                        PersistCompletedAfterDispose(item, job, target);
+                        return;
+                    }
                     CompleteCopy(item, job, target);
                 }));
             });
+        }
+
+        /// <summary>
+        /// 视图销毁后复制才完成：目标已落盘，但旧视图不能再碰 UI / 不能整表覆盖新视图。
+        /// 这里只把这一条按 Id（没有 Id 的旧数据按路径）合并进 items.json，并按
+        /// AddedUtc 保留最新 <see cref="StationSettings.MaxEntries"/> 条，让新视图
+        /// Load 时能看到已完成的收纳，而不是留下「磁盘上有、列表里没有」的孤儿文件（P1-6）。
+        /// 视图已销毁，所以不再做 Move 模式的删源副作用，只补齐状态。
+        /// 调用方必须保证 <paramref name="item"/> 不会再被 UI 线程并发读写：
+        /// 这里只读取它的值，写盘走 <see cref="PersistSync"/> 与新视图串行。
+        /// </summary>
+        void PersistCompletedAfterDispose(StationItem item, CardJob job, string target)
+        {
+            try
+            {
+                if (item == null || job == null) return;
+                if (job.State != CardJobState.Succeeded || string.IsNullOrEmpty(target)) return;
+                // 完成回调里目标已经不在（被外部删除 / 移走）时不记录指向空路径的条目。
+                if (!File.Exists(target) && !Directory.Exists(target)) return;
+
+                var completed = new StationItem
+                {
+                    Id = string.IsNullOrEmpty(item.Id) ? NewId() : item.Id,
+                    Path = item.Path,
+                    StoredPath = target,
+                    Name = Path.GetFileName(target),
+                    Size = item.IsDirectory ? 0 : SafeSize(target),
+                    AddedUtc = string.IsNullOrEmpty(item.AddedUtc) ? UtcNow() : item.AddedUtc,
+                    Missing = false,
+                    IsDirectory = item.IsDirectory
+                };
+
+                lock (PersistSync)
+                {
+                    StationState disk = ReadState();
+                    var items = new List<StationItem>();
+                    if (disk != null && disk.Items != null)
+                    {
+                        foreach (StationItem existing in disk.Items)
+                        {
+                            if (existing == null) continue;
+                            // 同 Id：用完成后的结果替换（StoredPath 从空变成落盘路径）。
+                            if (!string.IsNullOrEmpty(existing.Id) &&
+                                string.Equals(existing.Id, completed.Id, StringComparison.OrdinalIgnoreCase))
+                                continue;
+                            // 旧数据没有 Id：按源路径 / 目标路径去重，别让同一条出现两次。
+                            if (string.IsNullOrEmpty(existing.Id) &&
+                                (SamePath(existing.DisplayPath, item.Path) ||
+                                 SamePath(existing.DisplayPath, target)))
+                                continue;
+                            items.Add(existing);
+                        }
+                    }
+
+                    items.Add(completed);
+                    items = OrderOldestFirst(items);
+                    TrimMerged(items);
+
+                    if (!WriteStateJson(new StationState { Items = items }))
+                        Log.Warn("中转站销毁后合并完成项写盘失败，目标文件可能不在列表中: " + target);
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("中转站销毁后合并完成项失败: " + ex.Message);
+            }
         }
 
         void CompleteCopy(StationItem item, CardJob job, string target)
@@ -1373,6 +1454,11 @@ namespace MirrorpondHUD.Cards
                     _items.Add(item);
                 }
 
+                // 旧版本可能把「磁盘旧条目」堆在文件尾部；先按 AddedUtc 排回旧→新，
+                // 再从头部裁掉最旧的，保证留下的是最新 MaxEntries 条（P1-6 合并截断）。
+                List<StationItem> ordered = OrderOldestFirst(_items);
+                _items.Clear();
+                _items.AddRange(ordered);
                 Trim();
 
                 // 先记下加载基线：之后本视图删掉的条目，写盘合并时不会从磁盘「复活」（P1-6）。
@@ -1401,11 +1487,14 @@ namespace MirrorpondHUD.Cards
         /// · 本视图加载时就存在、现在没了的条目 = 本视图删掉的，不复活；
         /// · 本次加载之后由别的视图新增的条目 = 保留，别抹掉；
         /// · 同 Id 以本视图为准（本视图持有最新的 StoredPath / Missing）。
-        /// 写成功后把当前列表记为新的「已加载」基线，下一次删除才能正确识别。
+        /// 合并结果按 AddedUtc 从旧到新排序，超过 MaxEntries 时从头部（最旧）裁剪。
+        /// 只有写盘返回成功才把当前列表记为新的「已加载 / 已写盘」基线；失败时保留旧基线，
+        /// 下一次 Persist 会带着同一份内存列表重试，删掉的条目也不会因此复活。
         /// </summary>
         void Persist()
         {
-            // 已销毁的旧视图绝不能再写盘，否则会用旧快照覆盖新视图的结果。
+            // 已销毁的旧视图绝不能再写整表，否则会用旧快照覆盖新视图的结果；
+            // 销毁后复制完成的那一条走 PersistCompletedAfterDispose（只合并这一条）。
             if (_disposed) return;
 
             try
@@ -1413,10 +1502,11 @@ namespace MirrorpondHUD.Cards
                 lock (PersistSync)
                 {
                     StationState merged = MergeWithDisk();
-
-                    string json = Json.Serialize(merged);
-                    if (_host != null) _host.WriteState(StateFile, json);
-                    else CardStateStore.Write(_config.Id, StateFile, json);
+                    if (!WriteStateJson(merged))
+                    {
+                        Log.Warn("中转站状态写入失败，保留写入基线等待下次重试。");
+                        return;
+                    }
 
                     RememberLoaded();
                 }
@@ -1425,6 +1515,21 @@ namespace MirrorpondHUD.Cards
             {
                 Log.Warn("中转站状态写入失败: " + ex.Message);
             }
+        }
+
+        /// <summary>写 items.json；返回是否成功（宿主 / CardStateStore 都可能返回 false）。</summary>
+        bool WriteStateJson(StationState state)
+        {
+            string json = Json.Serialize(state);
+            return _host != null
+                ? _host.WriteState(StateFile, json)
+                : CardStateStore.Write(_config.Id, StateFile, json);
+        }
+
+        static bool SamePath(string a, string b)
+        {
+            return !string.IsNullOrEmpty(a) && !string.IsNullOrEmpty(b) &&
+                   string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>读磁盘上的状态；没有 / 读坏了返回 null。</summary>
@@ -1449,14 +1554,15 @@ namespace MirrorpondHUD.Cards
         /// <summary>合并内存列表与磁盘状态（P1-6）。调用方必须持有 <see cref="PersistSync"/>。</summary>
         StationState MergeWithDisk()
         {
-            var merged = new List<StationItem>(_items);
+            var current = new List<StationItem>(_items);
+            var onlyOnDisk = new List<StationItem>();
 
             StationState disk = ReadState();
             if (disk != null && disk.Items != null)
             {
                 var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                foreach (StationItem item in merged)
+                foreach (StationItem item in current)
                 {
                     if (item == null) continue;
                     if (!string.IsNullOrEmpty(item.Id)) ids.Add(item.Id);
@@ -1477,21 +1583,54 @@ namespace MirrorpondHUD.Cards
                         continue;                                      // 旧数据没有 Id：按路径去重
                     }
 
-                    merged.Add(item);
+                    onlyOnDisk.Add(item);
                     if (!string.IsNullOrEmpty(item.Id)) ids.Add(item.Id);
                     paths.Add(item.DisplayPath);
                 }
             }
 
+            // 「只在磁盘上」的条目先拼、内存列表后拼：AddedUtc 都有效时由下面的排序决定先后；
+            // 时间相同 / 旧数据没有 AddedUtc 时，只在磁盘上的多半是加载时从头部裁掉的更旧条目，
+            // 让它们在稳定排序里排在前面，TrimMerged 才会先裁它们，而不是把内存里的新条目裁掉。
+            var merged = new List<StationItem>(onlyOnDisk.Count + current.Count);
+            merged.AddRange(onlyOnDisk);
+            merged.AddRange(current);
+
+            // 关键：磁盘上的旧条目不能直接追加到尾部当成「最新」。先按 AddedUtc 排回旧→新，
+            // 再从头裁最旧，才能做到旧条不复活、最新 MaxEntries 条被保留。
+            merged = OrderOldestFirst(merged);
             TrimMerged(merged);
             return new StationState { Items = merged };
         }
 
-        /// <summary>合并结果按「最多保留」截断最旧的条目（P1-6）。</summary>
+        /// <summary>合并结果按 AddedUtc 排好序后，从头部裁掉最旧的条目，只留最新 MaxEntries 条（P1-6）。</summary>
         void TrimMerged(List<StationItem> items)
         {
             int max = Math.Max(1, _station.MaxEntries);
             while (items.Count > max) items.RemoveAt(0);
+        }
+
+        /// <summary>
+        /// 按 <see cref="StationItem.AddedUtc"/> 从旧到新稳定排序。时间相同或解析不了
+        /// （空字符串 / 旧数据）的条目保持原有相对顺序；解析不了的排在最前，视为最旧。
+        /// </summary>
+        static List<StationItem> OrderOldestFirst(IEnumerable<StationItem> items)
+        {
+            return items
+                .Where(item => item != null)
+                .OrderBy(AddedKey)
+                .ToList();
+        }
+
+        static DateTime AddedKey(StationItem item)
+        {
+            if (item == null || string.IsNullOrEmpty(item.AddedUtc)) return DateTime.MinValue;
+
+            DateTime parsed;
+            return DateTime.TryParse(item.AddedUtc, CultureInfo.InvariantCulture,
+                                     DateTimeStyles.RoundtripKind, out parsed)
+                ? parsed
+                : DateTime.MinValue;
         }
 
         /// <summary>把当前内存列表记为「已加载 / 已写盘」基线（P1-6）。</summary>

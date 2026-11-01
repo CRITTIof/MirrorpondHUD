@@ -76,6 +76,22 @@ namespace MirrorpondHUD.Core
 
             Cli.Normalize();
 
+            // P2-10：即使卡片 Kind 被改成非 chat，Extras["chat"] 里的明文 Key 也不能原样落盘；
+            // 在 Settings 层统一遍历所有卡片做 chat 归一化，而不是只依赖 chat 模块 InitializeCard。
+            foreach (CardSettings card in Cards)
+            {
+                if (card == null) continue;
+                try
+                {
+                    ChatSettings chat = card.ExtrasAs<ChatSettings>("chat");
+                    if (chat != null) chat.Normalize();
+                }
+                catch (Exception ex)
+                {
+                    Log.Warn("归一化卡片 chat 设置失败(" + (card.Id ?? "?") + "): " + ex.Message);
+                }
+            }
+
             Overlay.Monitor = Math.Max(0, Overlay.Monitor);
             Overlay.CornerRadius = Clamp(Overlay.CornerRadius, 0, 60);
             Overlay.X = Clamp(Overlay.X, -20000, 20000);
@@ -857,16 +873,24 @@ namespace MirrorpondHUD.Core
             }
         }
 
-        /// <summary>填 / 换 Key：进内存前先加密，落盘就只有密文；加密失败则清空，绝不落明文。</summary>
+        /// <summary>填 / 换 Key：进内存前先加密，落盘就只有密文；加密失败时保留旧 Key，绝不落明文。</summary>
         public void SetApiKey(string plain)
         {
             plain = (plain ?? "").Trim();
-            string stored;
-            if (plain.Length == 0) stored = "";
-            else if (!SecretStore.TryProtect(plain, out stored))
+            if (plain.Length == 0)
             {
-                Log.Error("API Key 加密失败，已清空而不是明文保存");
-                stored = "";
+                ApiKey = "";
+                _plainKeySource = null;
+                _plainKeyCache = null;
+                return;
+            }
+
+            string stored;
+            if (!SecretStore.TryProtect(plain, out stored))
+            {
+                // 新 Key 没存成功，但旧 Key 仍然可用：不要连旧 Key 一起清空。
+                Log.Error("API Key 加密失败，保留原 Key，新 Key 未保存");
+                return;
             }
 
             ApiKey = stored;
