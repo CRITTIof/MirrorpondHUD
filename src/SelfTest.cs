@@ -227,6 +227,7 @@ namespace MirrorpondHUD
             bool widgets2Ok = false;
             bool formControlsOk = false;
             bool dataControlsOk = false;
+            bool chartControlsOk = false;
             bool contextHostOk = false;
             bool shellOk = false;
             bool pluginSelfTestOk = false;
@@ -719,6 +720,18 @@ namespace MirrorpondHUD
 
             try
             {
+                string chartError = CardChartSelfTest.Run();
+                chartControlsOk = string.IsNullOrEmpty(chartError);
+                if (!chartControlsOk) Log.Warn("图表 / 树 / 时间线自检失败: " + chartError);
+            }
+            catch (Exception ex)
+            {
+                Log.Error("图表 / 树 / 时间线自检异常", ex);
+            }
+
+
+            try
+            {
                 // 2.10.2：富内容的渲染上下文要把这张卡片的 ICardHost 透传给内容控件。
                 var host = new TestCardHost();
                 var context = new CardRenderContext(
@@ -998,7 +1011,7 @@ namespace MirrorpondHUD
                   keyNameOk && keyLimitOk && keyOverflowOk && stateStoreOk && renderOk &&
                   glassPolicyOk && themeOk && themeFileOk && themeRejectOk && themeCatalogOk && cloneGuardOk &&
                   singleInteractiveOk && widgetsOk && widgets2Ok && formControlsOk && dataControlsOk &&
-                  contextHostOk && shellOk && secretOk && pluginSelfTestOk))
+                  chartControlsOk && contextHostOk && shellOk && secretOk && pluginSelfTestOk))
                 failures++;
 
             Fix(sb, "逻辑自检", string.Format(
@@ -1028,6 +1041,7 @@ namespace MirrorpondHUD
             Fix(sb, "共享控件（交互）", widgets2Ok ? "OK（Header 按钮可点；Input 提交；DropOverlay 显隐）" : "FAIL");
             Fix(sb, "表单控件", formControlsOk ? "OK（Slider / Toggle / Select / Number / Color / Segmented / Form）" : "FAIL");
             Fix(sb, "数据控件", dataControlsOk ? "OK（Table 排序 / 选中 / 空态；Badge / Tag / Metric / Gauge / Ring）" : "FAIL");
+            Fix(sb, "图表 / 树 / 时间线", chartControlsOk ? "OK（Sparkline / Line / Bar / Tree / Timeline 离屏渲染）" : "FAIL");
             Fix(sb, "渲染上下文", contextHostOk ? "OK（富内容创建上下文透传 ICardHost）" : "FAIL");
             Fix(sb, "Key 加密", secretOk ? "OK（DPAPI 往返；明文不落盘）" : "FAIL");
             Fix(sb, "卡片注册", cardOk ? "OK（6 个内置 Kind 齐全；契约在 Contracts；未知 Kind 占位）" : "FAIL");
