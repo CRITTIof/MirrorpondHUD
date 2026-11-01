@@ -55,7 +55,16 @@ for %%F in (settings.json settings.json.bak mirrorpond.log) do (
     if exist "%DATA_BACKUP%\%%F" copy /y "%DATA_BACKUP%\%%F" "%~dp0bin\Release\%%F" >nul 2>&1
 )
 if exist "%DATA_BACKUP%\plugins" (
-    xcopy /e /i /q /y "%DATA_BACKUP%\plugins" "%~dp0bin\Release\plugins" >nul 2>&1
+    rem 内置卡片插件由构建目标重新生成，不能拿备份里的旧 builtin.* 覆盖新版本；
+    rem 只恢复用户自己安装的插件目录。
+    if exist "%DATA_BACKUP%\plugins\cards" (
+        for /d %%D in ("%DATA_BACKUP%\plugins\cards\*") do (
+            echo %%~nxD | findstr /b /i "builtin." >nul
+            if errorlevel 1 (
+                xcopy /e /i /q /y "%%D" "%~dp0bin\Release\plugins\cards\%%~nxD" >nul 2>&1
+            )
+        )
+    )
 )
 
 echo.

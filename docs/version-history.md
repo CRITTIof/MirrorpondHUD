@@ -1,4 +1,4 @@
-# 版本修改记录（2.4.1 → 2.15.0）
+# 版本修改记录（2.4.1 → 2.16.0）
 
 > 范围：本文只记录**这一轮接手后我做的版本**（v2.4.1 起）。v2.4.0 及更早是既有历史，不在本文档里。
 > 数据全部取自仓库真实提交（`git diff --shortstat <上一版>..<本版>`），文件行的 `+ / -` 就是实际增删行数。
@@ -10,10 +10,10 @@
 > `f67a255` / `5f8933c` / `ef70cea`，**未发布、未合并**）；`v2.14.5`（`a0fe549`）/ `v2.14.6`（`3e6abc6`）
 > 已推送到 `origin/feature/runtime-card-loading`；
 > `v2.14.7`（`abcbcec`）/ `v2.14.8`（`633e9d6`）已随文档同步提交 `d73d2ec` 推送到同一分支（未发布、未合并）；
-> `v2.14.9`（`aba873a`）已推送；`v2.15.0`（`78d3381`）为本次提交（基于 `aba873a`，与本文档一并推送，未发布、未合并）。
+> `v2.14.9`（`aba873a`）已推送；`v2.15.0`（`78d3381`）已推送（文档同步提交 `2eba9b4`）；`v2.16.0`（`6406d96`）为本次提交（分支 `feature/dll-card-migration`，基于 `main`/`2eba9b4`，**尚未推送、未合并 main**）。
 > `v2.14.1` / `v2.14.2` / `v2.14.4` 的规模用对应提交的 `git show --shortstat`；`v2.14.3` / `v2.14.5` / `v2.14.6`
 > 按当时提交前工作区的 `git diff --shortstat` 计算；`v2.14.7` / `v2.14.8` 用对应提交的 `git show --shortstat`；
-> `v2.14.9` 用提交前工作区的 `git diff --shortstat -- MirrorpondHUD.csproj src`；`v2.15.0` 用 `git show --shortstat 78d3381`（文档同步另计）。
+> `v2.14.9` 用提交前工作区的 `git diff --shortstat -- MirrorpondHUD.csproj src`；`v2.15.0` 用 `git show --shortstat 78d3381`；`v2.16.0` 用 `git show --shortstat 6406d96`（文档同步另计）。
 
 ## 0. 总览
 
@@ -68,6 +68,7 @@
 | v2.14.8 | 2026-11-01 | `633e9d6` | Contracts 瘦身：内置卡设置 Command/Media/Chat、DPAPI SecretStore、默认内容迁回宿主，Contracts 只留通用契约 | 11 文件，+351 / −358（含新增 `BuiltInCardSettings.cs` 316 行、`CardDefaults.cs` 21 行） |
 | v2.14.9 | 2026-11-01 | 本次提交 | 最终审阅修复：`CardSettings.Kind` 默认值 `metrics`→`infotext`、README 设置示例改 `Extras.command/media/chat`（P1×2）、旧迁移/旧 Kind 注释与 SelfTest 夹具清理（部分 P2）；版本 2.14.9 | 10 文件，+18 / −25（源码部分，文档同步另计） |
 | v2.15.0 | 2026-11-01 | `78d3381` | UiKit 第一优先表单控件（Slider/Toggle/Select/Number/Color/Segmented/FormRow/SettingsForm）+ 根目录 DLL 卡片插件开发指南；SelfTest 表单控件回归 | 6 文件，+1365 / −4 |
+| v2.16.0 | 2026-11-01 | `6406d96` | 6 张内置卡全部 DLL 插件化（宿主内置 0）；新增宿主服务契约；UiKit 媒体控件化；插件 API 仍 2 | 60 文件，+1568 / −1557 |
 
 ---
 
@@ -2149,9 +2150,9 @@ P2-4（占位文案）、P2-6（ALC 注释 / 旧别名日志）、P2-7（InferPr
 
 | 文件 | 行数 | 说明 |
 |---|---|---|
-| `src/UiKit/CardFormControls.cs` | +1230 | 8 个表单控件与 `ICardFormControl` |
-| `src/SelfTest.cs` | +29 | 表单控件回归 |
-| `DLL-CARD-PLUGIN-GUIDE.md` | +500 | 根目录插件开发指南 |
+| `src/UiKit/CardFormControls.cs` | +886 | 8 个表单控件与 `ICardFormControl` |
+| `src/SelfTest.cs` | +31 / −1 | 表单控件回归 |
+| `DLL-CARD-PLUGIN-GUIDE.md` | +445 | 根目录插件开发指南 |
 | `MirrorpondHUD.csproj` / Contracts / UiKit | +1/−1 each | 2.14.9 → 2.15.0 |
 
 ### 实测
@@ -2168,7 +2169,107 @@ P2-4（占位文案）、P2-6（ALC 注释 / 旧别名日志）、P2-7（InferPr
 
 ---
 
-## 50. 不在版本里的东西
+## 50. v2.16.0（`6406d96`，分支 `feature/dll-card-migration`）
+
+### 背景
+
+到 2.15.0，6 张内置卡片仍编在宿主程序集里，宿主同时承担「卡片实现」与「插件宿主」两种角色：
+除 `CardSettingsModule` 的五个契约外，宿主还要认识信息与文本 / 命令行 / 媒体 / 对话等具体类型，
+`CardEditor`、`SettingsWindow`、`Screenshots`、`ConfigStore` 都有按卡片类型的分支，卡片想换实现只能改宿主。
+2.16.0 把 6 张内置卡全部迁成独立 DLL 插件，与用户插件走同一条加载路径；宿主只保留加载器 / 注册表 / 契约 /
+共享控件，并补一组通用宿主服务契约，让「宿主不认识具体卡片」真正落地。本版**不改插件 API 版本**（仍为 2）。
+
+### 改动
+
+1. **6 张内置卡 DLL 化**：`src/Cards` 里的卡片实现迁到 `src/Plugins/<Name>/`，各自独立 `plugin.csproj` 与
+   `manifest.json`，程序集 `MirrorpondHUD.Cards.<Name>.dll`，manifest id `builtin.*`；`CardPluginLoader` 新增
+   `IsBundled`（id 以 `builtin.` 开头），内置插件不参与 `--plugin-dev` 热重载替换。
+2. **宿主构建 / 发布复制内置插件**：宿主 csproj 用 `ReferenceOutputAssembly="false"` 的 `ProjectReference` 构建
+   6 个插件工程，`CopyBundledCardPlugins` 复制到 `<exe>/plugins/cards/builtin.*/`；
+   `CopyBundledCardPluginsToPublish` 再复制到 single-file 发布目录。启动时统一走 `CardPluginLoader.LoadAll()`，
+   日志「已注册卡片模块 6 个（内置 0，运行时插件 6）」。
+3. **新增宿主服务契约**（`src/Contracts/Cards/CardHostServices.cs`）：`ICardShellService`（剪贴板 / 文件图标 /
+   拖出 / 打开 / 定位）、`ICardEditorCommit`（设置区块草稿提交）、`ICardScreenshotProvider`（截图前准备）、
+   `ICardPresetSource` + `CardPreset`（通用预设下拉）、`ICardRuntimeSettingsMerge`（设置窗保存时合并运行时字段）、
+   `ICardSelfTest`（插件自带回归）；宿主实现 `src/Ui/CardShellService.cs`。`ICardHost` 增加
+   `bool SaveSettings()` 与 `ICardShellService Shell`。`SecretStore` 迁入 Contracts（DPAPI 插件与宿主共用），
+   `Json` / `Log` / `AsyncProcess` 转为 public 供插件使用。
+4. **宿主去具体卡片化**：`CardEditor` 改用 `ICardPresetSource` / `ICardEditorCommit`；`SettingsWindow` 用
+   `ICardRuntimeSettingsMerge`；`Screenshots` 用 `ICardScreenshotProvider`；`ConfigStore` 删除旧明文 Key 清理；
+   `CardPluginLoader` 删除保留 Kind 清单（内置卡也是普通插件）；`CardRegistry` 新增 `ClearExternal()` 供退出时
+   静默摘引用；`SelfTest` 重写并遍历 `ICardSelfTest`，新增「插件自检」项。
+5. **UiKit 媒体控件**：`MediaView` 迁入 UiKit 并更名 `CardMediaView`（`src/UiKit/Media/CardMediaView.cs`），
+   同目录含 `GifAnimator` / `FfmpegPlayer` / `VideoWindow` / `WaveOutPlayer` / `Decoders` / `MediaSettings`
+   （命名空间 `MirrorpondHUD.Ui.Controls.Media`）；`MediaCard` 插件改用它。UiKit 工程启用 `UseWindowsForms`
+   （动图解码用 `System.Drawing.Bitmap`）。
+6. **清理**：删除宿主 `src/Core/BuiltInCardSettings.cs`（315 行，内置卡设置随卡片进插件）；`AsyncProcess` 从
+   `src/Metrics/NvidiaSmi.cs` 的内部类抽到 `src/Contracts/Core/AsyncProcess.cs`（public，媒体 / 采样 / 插件共用）；
+   `.gitignore` 放行 `src/Plugins/`（忽略插件工程的 bin/obj）。
+7. 版本号：宿主 / Contracts / UiKit / 6 个插件工程均为 **2.16.0**；插件 API 仍为 **2**（新增契约成员均为加法，
+   旧插件无需改 manifest）。
+
+### 内置插件表
+
+| 目录 | 程序集 | manifest id | entryType | 卡片 |
+|---|---|---|---|---|
+| `src/Plugins/InfoText` | `MirrorpondHUD.Cards.InfoText.dll` | `builtin.infotext` | `MirrorpondHUD.Cards.InfoTextCard` | 信息与文本（文字卡，4 预设） |
+| `src/Plugins/Buttons` | `MirrorpondHUD.Cards.Buttons.dll` | `builtin.buttons` | `MirrorpondHUD.Cards.ButtonsCard` | 按钮演示（富内容） |
+| `src/Plugins/Command` | `MirrorpondHUD.Cards.Command.dll` | `builtin.command` | `MirrorpondHUD.Cards.CommandCard` | 命令行（富内容） |
+| `src/Plugins/Chat` | `MirrorpondHUD.Cards.Chat.dll` | `builtin.chat` | `MirrorpondHUD.Cards.ChatCard` | AI 对话（富内容） |
+| `src/Plugins/Media` | `MirrorpondHUD.Cards.Media.dll` | `builtin.media` | `MirrorpondHUD.Cards.MediaCard` | 媒体（富内容） |
+| `src/Plugins/DropStation` | `MirrorpondHUD.Cards.DropStation.dll` | `builtin.dropstation` | `MirrorpondHUD.Cards.DropStationCard` | 文件中转站（富内容） |
+
+### 文件
+
+`git show --shortstat 6406d96`：**60 文件，+1568 / −1557**。主要文件：
+
+| 文件 | 行数 | 说明 |
+|---|---|---|
+| `src/Plugins/*/`（6 组） | 新增 | 6 个插件工程：卡片实现 / manifest / plugin.csproj / 设置与预设 |
+| `src/Contracts/Cards/CardHostServices.cs` | +110 / 新增 | 6 个通用宿主服务契约 |
+| `src/Contracts/Core/AsyncProcess.cs` | +149 / 新增 | 公共后台进程工具（从 NvidiaSmi 抽出，public） |
+| `src/Contracts/Cards/CardHost.cs` | +9 | `ICardHost.SaveSettings()` 与 `Shell` |
+| `src/Contracts/Core/SecretStore.cs` | 0 / 0（rename） | DPAPI 从宿主迁入 Contracts |
+| `src/UiKit/Media/*` | 新增 / 迁入 | `CardMediaView` / `MediaSettings` / 播放与解码实现 |
+| `src/Ui/CardShellService.cs` | +65 / 新增 | `ICardShellService` 宿主实现 |
+| `src/SelfTest.cs` | +225 / −867 | 重写为 1105 行，新增插件自检遍历 |
+| `MirrorpondHUD.csproj` | +63 / −1 | 引用 6 插件工程、复制到 plugins/cards、版本 2.16.0 |
+| `src/Core/ConfigStore.cs` | +5 / −82 | 删除旧明文 Key 清理与具体卡片类型依赖 |
+| `src/Cards/CardPluginLoader.cs` | +13 / −16 | 删除保留 Kind、新增 `IsBundled` / `LoadAll(bool)` |
+| `src/Cards/CardRegistry.cs` | +19 / −2 | `ClearExternal()`、空注册表安全回退 |
+| `src/Ui/CardEditor.cs` / `SettingsWindow.xaml.cs` / `Screenshots.cs` | 见 diff | 改用通用预设 / 提交 / 截图 / 运行时合并契约 |
+| `src/Core/BuiltInCardSettings.cs` | 0 / −315 | 删除（内置卡设置随插件走） |
+
+### 实测
+
+- clean build：宿主 / Contracts / UiKit / 6 个插件工程 **0 警告 0 错误**。
+- `--selftest`：退出 0、**失败项 0**；「插件自检」= 6 个模块自检通过 / 0 失败；逻辑自检 / 表单控件 / Key 加密等既有项保持 OK。
+- `--smoke 8 --minimized`：exit 0，创建 5 张默认卡（infotext×3 + command + media）。
+- `--screenshot-cards` / `--screenshot-settings` / `--screenshot-widgets`：均成功。
+- single-file publish：发布目录 6 个插件齐全，发布版 `--selftest` 退出 0。
+- 干净环境启动日志：`已注册卡片模块 6 个（内置 0，运行时插件 6）`（用户自装插件会增加运行时插件数）。
+
+### 审阅与未验证
+
+- 未做真实媒体播放（图片 / 动图 / 视频 / ffmpeg 路径）、键鼠交互与设置页逐控件点击的人工验收；
+- `--plugin-dev` 热重载只对用户文字卡生效，内置插件不参与（内置富卡改代码需重启）；
+- `publish.bat` 的工作区改动已改为恢复时跳过 `builtin.*`（内置插件由构建目标重新生成）；安装包 / 覆盖升级场景仍未验证；
+- single-file 发布只验证了「发布目录插件齐全 + 发布版 --selftest」，未做安装包 / 覆盖升级场景。
+
+### 风险
+
+- **插件 API 仍为 2**：新增契约成员都是加法，旧插件无需改 manifest；但插件 ABI 面继续扩大（6 个宿主服务契约 +
+  `ICardHost` 新成员），后续改动需按 API 版本策略处理。
+- **内置卡也是插件**：内置卡与用户插件同路径加载，某个内置插件加载失败时会显示占位卡；发布必须保证
+  `plugins/cards/builtin.*` 随 exe 分发，否则「添加卡片」菜单为空。
+- **SecretStore / Json / Log / AsyncProcess 进入 Contracts**：插件可用的公共实现变多，但也扩大了契约程序集职责；
+  `ConfigStore` 不再清理旧明文 Key（旧迁移已删除，属有意取舍）。
+- `.gitignore` 仅放行 `src/Plugins/`，插件工程 bin/obj 仍被忽略。
+- 版本一致性：宿主 / Contracts / UiKit / 6 个插件工程必须同步为 2.16.0。
+
+---
+
+## 51. 不在版本里的东西
 
 - 验收脚本、样张与测量脚本（`cmd-e2e.ps1`、`drag-glass.ps1`、`measure-*.py`、`shots/` 等）都在仓库外的 `hud-test/` 里，**没有提交**。
 - 发布：`main` 与标签已推送到 [github.com/CRITTIof/MirrorpondHUD](https://github.com/CRITTIof/MirrorpondHUD)；
@@ -2177,7 +2278,7 @@ P2-4（占位文案）、P2-6（ALC 注释 / 旧别名日志）、P2-7（InferPr
   更早的 Release 正文与附件保留原样，v2.4.0 的 Release 已删除（tag `v2.4.0` 保留，历史仍可检出）。
 - 仓库追踪的文件共 117 个，`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
 
-## 51. 已知代价（跨版本）
+## 52. 已知代价（跨版本）
 
 - 桌面亚克力为了不拍到自己，会把卡片排除在截屏之外 —— 这个模式下截图 / 录屏里**看不到卡片**，观感只能靠肉眼与离屏渲染验证。
 - 兼容实现每帧对身后窗口做 `PrintWindow`，拖动时最多 ~21 帧/秒；要更高只能走桌面亚克力（DXGI）。

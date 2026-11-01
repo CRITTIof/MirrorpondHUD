@@ -1,13 +1,32 @@
-# DLL 卡片插件开发指南（2.15.0+）
+# DLL 卡片插件开发指南（2.16.0+）
 
 本文面向要在 MirrorpondHUD 里添加**运行时卡片插件**的开发者。插件是一个独立的 .NET 8 WPF 类库（DLL），
 通过 `plugins/cards/<id>/manifest.json` 被宿主加载，可以贡献文字卡或富内容卡，并复用宿主的设置页、
 热键、拖放、状态存储和 `MirrorpondHUD.UiKit` 里的主题化控件。
 
-> 当前插件 API 版本为 **2**。2.14.4 起不再兼容 2.14.3 及更早编译的插件；旧插件必须重新编译并引用
-> `MirrorpondHUD.Contracts`。插件是**可信本地代码**，`AssemblyLoadContext` 只是加载隔离，不是安全沙箱。
+> 当前插件 API 版本为 **2**（2.16.0 新增的宿主服务契约均为加法，旧插件无需改 manifest）。2.14.4 起不再兼容
+> 2.14.3 及更早编译的插件；旧插件必须重新编译并引用 `MirrorpondHUD.Contracts`。插件是**可信本地代码**，
+> `AssemblyLoadContext` 只是加载隔离，不是安全沙箱。
+>
+> **2.16.0 起，6 张内置卡片本身就是 DLL 插件**（`src/Plugins/*`，manifest id `builtin.*`），宿主不再内置任何
+> `ICardModule`；你的用户插件和内置插件走同一条加载路径、同一套契约与宿主服务。
 
 ---
+
+## 0. 内置卡片就是插件（2.16.0+）
+
+从 2.16.0 起，宿主程序集里**没有**任何具体卡片实现：信息与文本 / 命令行 / 媒体 / AI 对话 / 文件中转站 / 按钮演示
+6 张内置卡都在 `src/Plugins/<Name>/` 里，各自编成 `MirrorpondHUD.Cards.<Name>.dll` + `manifest.json`
+（id `builtin.*`，`apiVersion=2`）。宿主构建 / 发布时把它们复制到 `<exe>/plugins/cards/builtin.*/`，
+启动时和用户插件一起由 `CardPluginLoader.LoadAll()` 加载；干净环境的启动日志是
+「已注册卡片模块 6 个（内置 0，运行时插件 6）」。
+
+对你的插件意味着：
+
+- 加载行为、影子复制、manifest 校验、ALC 隔离与内置插件完全一致；
+- 内置插件的 id 以 `builtin.` 开头（`CardPluginHandle.IsBundled`），`--plugin-dev` 不会热重载它们；
+- 不要依赖「宿主里一定有某个内置卡片类型」——所有卡片（包括内置卡）都经由契约程序集交互；
+- 新增内置卡 = 在 `src/Plugins` 新增一个插件工程，不需要改宿主。
 
 ## 1. 能力边界
 
@@ -325,7 +344,52 @@ public sealed class MyRichCard : RichCardModuleBase, ICardStyleAware
 
 ---
 
+### 6.2 媒体控件（2.16.0 起在 UiKit）
+
+媒体卡片的图片 / 动图 / 视频渲染控件从宿主 `MediaView` 迁入 UiKit，更名为 `CardMediaView`，命名空间
+`MirrorpondHUD.Ui.Controls.Media`，同目录还有 `MediaSettings` / `GifAnimator` / `FfmpegPlayer` / `VideoWindow` /
+`WaveOutPlayer` / `Decoders`。插件要用媒体能力时引用 UiKit 即可：
+
+```csharp
+using MirrorpondHUD.Ui.Controls.Media;
+
+var view = new CardMediaView();
+var media = new MediaSettings { Path = "C:\\media\\a.mp4", Fit = "Cover", Loop = true, Muted = true };
+media.Normalize();
+view.Bind(media);
+```
+
+`CardMediaView` 负责文件名行、进度条与圆角内边距；视频子窗口会贴到卡片上（分层窗口画不出 `MediaElement`），
+因此视频区域的鼠标事件归子窗口。`MediaCard` 内置插件就是使用它实现的。
+
 ## 7. 宿主服务与状态
+
+除了 `ICardHost`（状态目录 / 重画 / 布局 / `SaveSettings()` / `Shell`），2.16.0 起 Contracts 还提供一组
+**通用宿主服务契约**（`src/Contracts/Cards/CardHostServices.cs`），宿主不认具体卡片类型，插件按需实现 / 使用：
+
+| 契约 | 方向 | 用途 |
+|---|---|---|
+| `ICardShellService` | 宿主 → 插件 | 剪贴板（文件 / 文本）、文件图标、文件拖出、用默认程序打开 / 在资源管理器定位；通过 `ICardHost.Shell` 获取 |
+| `ICardEditorCommit` | 插件 → 宿主 | 设置区块里的“失焦才提交”草稿（如 API Key 输入框）；宿主点确定前调用 `CommitPendingEdits()` |
+| `ICardScreenshotProvider` | 插件 → 宿主 | 文档截图前把富内容切到可离屏渲染的状态（如视频卡画第一帧封面） |
+| `ICardPresetSource` + `CardPreset` | 插件 → 宿主 | 通用预设下拉（信息与文本卡的四个预设）；宿主设置页不再认识具体卡片 |
+| `ICardRuntimeSettingsMerge` | 插件 → 宿主 | 卡片有绕过设置窗直接写 live settings 的运行时字段（对话模式）时，保存前做三方合并 |
+| `ICardSelfTest` | 插件 → 宿主 | 插件自带回归；`--selftest` 会逐个调用，返回 null / 空串表示通过 |
+
+```csharp
+public sealed class MyCard : RichCardModuleBase, ICardHostAware, ICardSelfTest, ICardPresetSource
+{
+    ICardHost _host;
+
+    public void Attach(ICardHost host) { _host = host; }
+    public void Detach(ICardHost host) { _host = null; }
+
+    // 运行期改了 Extras 需要落盘时：bool saved = _host.SaveSettings();
+    // 宿主服务（剪贴板 / 图标 / 拖出 / 打开）：_host.Shell.TryGetClipboardFiles(out var paths);
+
+    public string RunSelfTest() => null;   // 返回失败说明字符串即视为失败
+}
+```
 
 模块实现 `ICardHostAware` 可在建卡时拿到 `ICardHost`：
 
@@ -383,9 +447,12 @@ CLI 面板可实现 `IClifFocusTarget`（`CliPanelView` 已实现）。
 
 ## 9. 生命周期与热重载
 
+2.16.0 起 `--plugin-dev` 的热重载只针对**用户**文字卡：内置插件（id `builtin.*`）不参与替换，改内置插件的代码
+需要重新构建 / 重启宿主。生产环境始终是「替换 DLL 后重启生效」。
+
 - `ICardModuleLifetime.OnPluginUnloading()`：卸载插件 ALC 前调用，停线程/定时器、解绑静态事件；
 - 富内容卡建议在 `OnVisibilityChanged(content, false)` 暂停视频/动图；
-- `--plugin-dev`：开发期只对**纯文字卡**热重载（富内容/交互/设置区块/旧别名插件会被拒绝并提示重启）；
+- `--plugin-dev`：开发期只对**用户纯文字卡**热重载（富内容/交互/设置区块插件会被拒绝并提示重启；内置插件不参与）；
 - 热重载时会关闭设置窗（未保存编辑会丢）；生产使用不要带 `--plugin-dev`，安装/更新插件后重启。
 
 ---
@@ -415,13 +482,16 @@ copy MyCard\manifest.json bin\Release\plugins\cards\my-card\
 | `插件引用了宿主程序集` | 改引用 `MirrorpondHUD.Contracts`，不要引用 `MirrorpondHUD.dll` |
 | `API 版本不兼容 api=1（宿主支持 2）` | manifest 的 `apiVersion` 改为 2 |
 | `入口类型不存在` / `不符合 ICardModule 契约` | `entryType` / 基类 / public 无参构造不对 |
-| `Kind 与内置模块冲突` | 换一个插件自己的 Kind |
+| `Kind 重复 / 与其它插件冲突` | 注册表合并时后者被告警丢弃（启动）/ 抛错并保留旧模块（dev 重载）；换一个自己的 Kind |
 | `assembly 字段非法` / `程序集不存在` | manifest 的 `assembly` 只能是裸 DLL 文件名且文件存在 |
 | `manifest.json 解析为空` / `读取失败` | JSON 格式或大小（≤256KB） |
 
 ---
 
 ## 11. 安全与兼容性
+
+当前插件 API 版本为 **2**。2.16.0 新增的宿主服务契约（`CardHostServices.cs`）与 `ICardHost.SaveSettings()` /
+`Shell` 都是**加法**：旧插件不需要改 manifest，重新编译时引用最新 Contracts / UiKit 即可。
 
 - 只加载**可信本地插件**；ALC 不是沙箱，插件可执行当前用户权限内的任意代码；
 - 签名/哈希/白名单目前未实现；

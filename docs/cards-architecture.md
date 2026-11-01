@@ -1,39 +1,58 @@
 # 卡片模块化：现在的实现
 
 > 目标：把「桌面信息叠层」做成一组**可添加、可删除、可排序**的卡片。
-> 现在六种内置卡片（信息与文本 / 命令行 / 媒体 / AI 对话 / 文件中转站 / 按钮演示）都按这个结构跑起来；
-> 再加一种卡片只需要在 `src/Cards` 里新增一个文件，宿主不用改
-> ——文字卡用 `CardModuleBase`，图片 / 视频 / 面板这类富内容卡用 `RichCardModuleBase`。
+> **2.16.0 起，6 张内置卡片本身就是 DLL 插件**（`src/Plugins/<Name>/`，manifest id `builtin.*`）；宿主程序集里
+> 没有任何具体卡片实现，只保留加载器 / 注册表 / 契约 / 共享控件。用户插件与内置插件走同一条加载路径。
+
+## 0. 2.16.0 架构速览
+
+| 层 | 位置 | 职责 |
+|---|---|---|
+| 插件契约 | `src/Contracts/Cards/` | `ICardModule` / `IRichCardModule` / `CardModuleBase` / `RichCardModuleBase` / 设置区块契约 / `ICardHost` / `CardHostServices.cs`（通用宿主服务） |
+| 通用配置 / 工具 | `src/Contracts/Core/` | `Settings`（通用配置）、`Json` / `Log` / `AsyncProcess`（public 供插件使用）、`SecretStore`（DPAPI，插件与宿主共用） |
+| 共享控件 | `src/UiKit/` | `CardButton` / `CardList` / `CardStatus` / `CardHeader` / `CardInput` / `CardTextBox` / `CardDropOverlay` / `CliUi` / 表单控件 `CardFormControls.cs` / 媒体控件 `Media/CardMediaView.cs` + `Media/MediaSettings.cs` |
+| 内置卡片 | `src/Plugins/{InfoText,Buttons,Command,Chat,Media,DropStation}/` | 6 张内置卡，各含 `plugin.csproj` + `manifest.json`（id `builtin.*`、`apiVersion=2`），编成 `MirrorpondHUD.Cards.*.dll` |
+| 宿主 | `src/App.xaml.cs`、`src/Cards/`、`src/Ui/`、`src/Core/`、`src/Metrics/`、`src/Text/` | 加载器 / 注册表 / 配置模型、叠层窗口与设置页、采样 / 模板等宿主服务；不含具体卡片 |
+| 发布 | `MirrorpondHUD.csproj` | 构建 6 个插件工程并复制到 `<exe>/plugins/cards/builtin.*/`；single-file publish 同样复制 |
+
+宿主侧与「具体卡片」解耦的关键契约：
+
+- **`ICardHost`**：状态目录 / 重画 / 布局 / `bool SaveSettings()` / `ICardShellService Shell`；
+- **`CardHostServices.cs`**：`ICardShellService`（剪贴板 / 图标 / 拖出 / 打开 / 定位）、`ICardEditorCommit`、
+  `ICardScreenshotProvider`、`ICardPresetSource` + `CardPreset`、`ICardRuntimeSettingsMerge`、`ICardSelfTest`；
+- 宿主实现：`src/Ui/CardShellService.cs`；`CardEditor` / `SettingsWindow` / `Screenshots` 分别通过上述契约与插件交互。
+
+> 注：本文 §1–§9 的其余内容（布局、富内容、热键、生命周期、CLI 面板等）大多仍是现行实现；与 2.16.0 冲突的
+> 路径 / 类型以本节为准，下文已同步关键条目。
 
 ## 1. 文件结构
 
 | 文件 | 职责 |
 | --- | --- |
-| `src/Cards/CardModule.cs` | `ICardModule` 接口、`CardRenderContext`、`CardModuleBase` 默认实现 |
-| `src/Cards/RichCard.cs` | `IRichCardModule` / `RichCardModuleBase`：返回任意 WPF 内容的卡片契约（含 `NeedsMouseInput`） |
-| `src/Cards/CardRegistry.cs` | 反射扫描本程序集里所有 `ICardModule` 实现，按 `Order` 排序 |
-| `src/Cards/CardModel.cs` | 卡片列表的创建、补全、校验、名称去重 |
-| `src/Cards/CardSettingsModule.cs` | 卡片自己的五个契约：`ICardSettingsModule`（补默认 / 归一化）、`ICardEditorSection`（自带设置区块）、`ICardSettingsValidator`（自带校验）、`ICardSummary`（自带摘要）、`ICardLegacyAlias`（认领旧 Kind） |
-| `src/Cards/InfoTextCard.cs` | 信息与文本卡：系统信息 / 时钟 / 按键 / 文本四个预设；通过 `ICardLegacyAlias` 接管 metrics / clock / keys / text 四个旧 Kind |
-| `src/Cards/CommandCard.cs` / `CommandCardEditor.cs` | 命令行卡（富内容面板，见 §9）与它自己的设置区块；设置存在 `CardSettings.Extras.command` |
-| `src/Cards/MediaCard.cs` / `MediaCardSettingsView.xaml(.cs)` | 媒体卡：图片 / 动图 / 视频；文件与缩放参数在 `Extras.media`，设置区块由模块自己提供 |
-| `src/Cards/ChatCard.cs` / `ChatCardSettingsView.xaml(.cs)` | AI 对话卡；接口 / 模型 / Key 在 `Extras.chat`，设置区块由模块自己提供 |
-| `src/Cards/CardHost.cs` | 每卡宿主服务 `ICardHost`（状态目录、重画 / 布局请求）与生命周期 `ICardHostAware`（v2.7.0） |
+| `src/Contracts/Cards/CardModule.cs` | `ICardModule` 接口、`CardRenderContext`、`CardModuleBase` 默认实现 |
+| `src/Contracts/Cards/RichCard.cs` | `IRichCardModule` / `RichCardModuleBase`：返回任意 WPF 内容的卡片契约（含 `NeedsMouseInput`） |
+| `src/Cards/CardRegistry.cs` | 反射扫描宿主程序集（2.16.0 起为空）+ 合并运行时插件模块，按 `Order` 排序；`ClearExternal()` 供退出 |
+| `src/Cards/CardModel.cs` | 卡片列表的创建、补全、校验、名称去重（宿主不认具体卡片类型） |
+| `src/Contracts/Cards/CardSettingsModule.cs` | 卡片自己的契约：`ICardSettingsModule`、`ICardEditorSection`、`ICardSettingsValidator`、`ICardSummary`、`ICardStyleAware`（旧 `ICardLegacyAlias` 已于 2.14.7 删除） |
+| `src/Plugins/InfoText/InfoTextCard.cs` | 信息与文本卡：系统信息 / 时钟 / 按键 / 文本四个预设；实现 `ICardPresetSource` / `ICardSelfTest`（旧 Kind 别名 2.14.7 已删除） |
+| `src/Plugins/Command/CommandCard.cs` / `CommandCardEditor.cs` | 命令行卡（富内容面板，见 §9）与它自己的设置区块；设置存在 `CardSettings.Extras.command` |
+| `src/Plugins/Media/MediaCard.cs` / `MediaCardSettingsView.xaml(.cs)` | 媒体卡：图片 / 动图 / 视频；文件与缩放参数在 `Extras.media`，内容控件用 UiKit 的 `CardMediaView` |
+| `src/Plugins/Chat/ChatCard.cs` / `ChatCardSettingsView.xaml(.cs)` | AI 对话卡；接口 / 模型 / Key 在 `Extras.chat`，设置区块由模块自己提供（`ChatSettings` 在插件工程里） |
+| `src/Contracts/Cards/CardHost.cs` | 每卡宿主服务 `ICardHost`（状态目录、重画 / 布局、`SaveSettings()`、`Shell`）与 `ICardHostAware`；2.16.0 新增宿主服务契约见 `CardHostServices.cs` |
 | `src/Core/CardStateStore.cs` | 每卡状态文件：`<settings.json 目录>\cards\<Id>\`，临时文件 + 替换的原子写，卡片 Id / 文件名都做路径校验 |
 | `src/Ui/GlassBackdrops.cs` | 毛玻璃实现选择：`GlassPolicy`（纯决策）+ `IGlassBackdrop` + 系统亚克力 / 桌面亚克力两块底板（v2.8.1） |
-| `src/Cards/ChatCard.cs` | AI 对话卡：和命令行卡同一套 CLI 面板（模型名 + `>` 输入行 + 每条问答一块小面板），单次 / 轮询走全局热键 |
-| `src/Ui/Controls/CliUi.cs` | CLI 面板公共件：面板骨架 `CliPanelView`、内部小面板 `CliEntryPanel`、卡片风格滑块 `CliScrollBars`、取色 `CardPalette` |
-| `src/Cards/ButtonsCard.cs` | 按钮演示卡：验证 `CardButton` / `CardTextBox` 这套卡片控件 |
-| `src/Cards/DropStationCard.cs` | 文件中转站：拖入列表、引用 / 复制、状态持久化、设置区块（v2.11.0） |
-| `src/Core/SecretStore.cs` | 敏感字符串加密：Windows DPAPI（当前用户），settings.json 里只落 `dpapi:…` |
-| `src/Ui/Controls/CardButton.cs` | 卡片里的按钮：三种语气 + 三态模板，颜色跟随卡片外观 |
-| `src/Ui/Controls/CardTextBox.cs` | 卡片里的输入框：底色 / 光标 / 选区跟着卡片文字色 |
-| `src/Media/MediaView.cs` | 图片 / 动图 / 视频控件：卡片内容的实际绘制者（文件名 + 进度条 + 圆角） |
-| `src/Media/GifAnimator.cs` | 动图按帧播放（GDI+ 取帧 + `DispatcherTimer`） |
-| `src/Media/VideoWindow.cs` | 视频子窗口：分层窗口画不出 `MediaElement`，视频单独开窗贴在卡片上 |
-| `src/Media/Decoders.cs` | 解码器探测：自定义路径 → PATH → 常见安装目录，找 ffmpeg / mpv / VLC |
-| `src/Media/FfmpegPlayer.cs` | 外部 ffmpeg 解码：原始 BGRA 帧管道、进度、循环、变速、图片兜底 |
-| `src/Media/WaveOutPlayer.cs` | winmm waveOut 播放 ffmpeg 的 PCM 音频（暂停 / 继续 / 音量） |
+| `src/UiKit/CliUi.cs` | CLI 面板公共件：面板骨架 `CliPanelView`、内部小面板 `CliEntryPanel`、卡片风格滑块 `CliScrollBars`、取色 `CardPalette` |
+| `src/Plugins/Buttons/ButtonsCard.cs` | 按钮演示卡：验证 `CardButton` / `CardTextBox` 这套卡片控件 |
+| `src/Plugins/DropStation/DropStationCard.cs` | 文件中转站：拖入列表、引用 / 复制、状态持久化、设置区块（v2.11.0）；用 `ICardHost.Shell` 做剪贴板 / 图标 / 拖出 |
+| `src/Contracts/Core/SecretStore.cs` | 敏感字符串加密：Windows DPAPI（当前用户），settings.json 里只落 `dpapi:…`；2.16.0 起插件与宿主共用 |
+| `src/UiKit/CardButton.cs` | 卡片里的按钮：三种语气 + 三态模板，颜色跟随卡片外观 |
+| `src/UiKit/CardTextBox.cs` | 卡片里的输入框：底色 / 光标 / 选区跟着卡片文字色 |
+| `src/UiKit/Media/CardMediaView.cs` | 图片 / 动图 / 视频控件（2.16.0 从宿主 MediaView 迁入 UiKit）：卡片内容的实际绘制者（文件名 + 进度条 + 圆角） |
+| `src/UiKit/Media/GifAnimator.cs` | 动图按帧播放（GDI+ 取帧 + `DispatcherTimer`） |
+| `src/UiKit/Media/VideoWindow.cs` | 视频子窗口：分层窗口画不出 `MediaElement`，视频单独开窗贴在卡片上 |
+| `src/UiKit/Media/Decoders.cs` | 解码器探测：自定义路径 → PATH → 常见安装目录，找 ffmpeg / mpv / VLC |
+| `src/UiKit/Media/FfmpegPlayer.cs` | 外部 ffmpeg 解码：原始 BGRA 帧管道、进度、循环、变速、图片兜底 |
+| `src/UiKit/Media/WaveOutPlayer.cs` | winmm waveOut 播放 ffmpeg 的 PCM 音频（暂停 / 继续 / 音量） |
 | `src/Ui/OverlayController.cs` | 每张卡片一个窗口，负责生命周期编排、显示 / 隐藏、热键、命令行、富内容 |
 | `src/Ui/CardSlot.cs` | 单张卡片的运行时模型（配置 / 模块 / 窗口 / 富内容 / 签名）与 `CardHost` |
 | `src/Ui/CardLayoutCoordinator.cs` | 垂直堆叠、左右对齐、窗口高度变化合并与延迟布局 |
@@ -41,7 +60,7 @@
 | `src/Ui/HotkeyRouter.cs` | 全局热键 / 卡片呼出 / 卡片通用动作的注册、回退与分发 |
 | `src/Ui/TrayController.cs` | 托盘图标、菜单动作、命令热键同步、位置日志与启动气泡 |
 | `src/Ui/CommandModeController.cs` | 快捷命令行会话：交互卡进入 / 退出、激活回调、键盘抑制 |
-| `src/Ui/CardEditor.cs` | 设置页「内容」里的一张卡片设置卡（双向绑定，含每卡命令行 / 媒体 / AI 接口设置） |
+| `src/Ui/CardEditor.cs` | 设置页「内容」里的通用卡片设置卡：通用字段 + `ICardPresetSource` 预设 + `ICardEditorSection` 区块 + `ICardEditorCommit` 草稿提交；不再认识具体卡片类型 |
 
 ## 2. 卡片接口
 
@@ -64,7 +83,7 @@ public interface ICardModule
 `CardRenderContext` 持有本次采样的 `Settings`、`MetricsSnapshot`、`KeyHistory` 和当前 `CardSettings`；
 变量表按需构建一次，卡片拿到的都是同一帧的数据。
 
-新增一张**文字卡**：
+新增一个**文字卡插件**（工程放 `src/Plugins/<Name>/`，加 `manifest.json` 与 `apiVersion=2`）：
 
 ```csharp
 public sealed class WeatherCard : CardModuleBase
@@ -82,7 +101,7 @@ public sealed class WeatherCard : CardModuleBase
 }
 ```
 
-新增一张**富内容卡**（图片、动图、视频、以后的自定义面板）：
+新增一个**富内容卡插件**（图片、动图、视频、以后的自定义面板；工程同样放 `src/Plugins/<Name>/`）：
 
 ```csharp
 public sealed class MyMediaCard : RichCardModuleBase
@@ -94,10 +113,11 @@ public sealed class MyMediaCard : RichCardModuleBase
 
     public override FrameworkElement CreateContent(CardRenderContext context)
     {
-        var view = new MediaView()
+        var view = new CardMediaView()
             .WithCornerRadius(context.Settings.Overlay.CornerRadius)
             .WithStyle(context.Settings.Style);
-        view.Bind(MediaCard.MediaOf(context.Config));
+        // MediaSettings 是 UiKit 里的公共类型；插件自己的 DTO 可以映射到它
+        view.Bind(context.Config.ExtrasAs<MediaSettings>("mymedia"));
         return view;
     }
 }
@@ -105,7 +125,7 @@ public sealed class MyMediaCard : RichCardModuleBase
 
 富内容契约只有三个方法：`CreateContent`（建控件）、`UpdateContent`（设置没变时刷新数据）、
 `OnVisibilityChanged` / `OnZOrderChanged`（卡片显示 / 隐藏、重新置顶时通知）。
-控件自己不碰窗口，所以卡片模块依旧是「新增一个类即可」。
+控件自己不碰窗口；新增卡片 = 新增一个插件工程，宿主不用改。
 
 **渲染节奏**（v2.7.1 起）：文字卡片的 `Render` 由宿主按 120 ms 的 tick 调用，
 模块可以实现 `ICardModule.RefreshIntervalMs(CardSettings)` 声明「最快多久重画一次」（0 = 每帧）——
@@ -153,7 +173,8 @@ public override FrameworkElement CreateContent(CardRenderContext context)
 ```
 
 拿到 host 后可以直接 `RequestLayout()`（列表变长）、`RequestRender()`、`ReadState/WriteState`
-（状态目录与 `CardStateStore` 是同一套）。
+（状态目录与 `CardStateStore` 是同一套），以及 2.16.0 新增的 `SaveSettings()`（把当前整棵设置树写回磁盘）
+和 `Shell`（剪贴板 / 文件图标 / 拖出 / 打开 / 定位）。
 
 新增一张**带自己设置的卡片**（`Extras` + 自带设置区块，v2.6.0 起）：
 
@@ -196,7 +217,7 @@ public sealed class DropStationCard : RichCardModuleBase,
 宿主不再认识具体卡片的设置字段，所以 `CardSettings` / `CardModel` / `CardEditor` / `SettingsWindow.xaml` 都不用再改。
 （`ICardSummary` 是可选的：不实现就用宿主的通用文案「常驻 / 呼出 F9」。）
 
-把文件放进 `src/Cards/` 即可：工程默认包含全部 `.cs`，`CardRegistry` 启动时反射发现，
+把插件放进 `src/Plugins/<Name>/`（含 `plugin.csproj` + `manifest.json`）：宿主 csproj 会构建并复制到 `<exe>/plugins/cards/builtin.*/`，`CardPluginLoader` 启动时加载，
 「添加卡片」菜单、设置页编辑、默认内容、热键校验全部自动生效。
 
 > 中转站本身的调研与设计（数据模型、引用 / 复制 / 移动、拖出、锁定语义、分阶段）见
@@ -259,7 +280,7 @@ public sealed class DropStationCard : RichCardModuleBase,
 
   模块用 `CardSettings.ExtrasAs<T>("command" | "media" | "chat")` 读、`SetExtras(...)` 写。
   v2 里命令行设置是全局的，v3 拆到卡片上，v5 / v6 起统一搬进 `Extras`——cmd、pwsh、WSL 仍可各放一张卡同时待命
-- `Preset`：「信息与文本」卡自己的变体（metrics / clock / keys / text），旧 Kind 由 `ICardLegacyAlias` 认领
+- `Preset`：「信息与文本」卡自己的变体（metrics / clock / keys / text）；旧 Kind 别名 2.14.7 已删除，未知 Kind 走占位卡
 - 命令行的**外观与尺寸**不在这里：两块 CLI 面板共用 `Settings.Cli`（最大宽度 / 最大高度 / 内部小面板最大高度 / 最多保留条数）
 - 命令行卡强制 `Resident=false`、无内容模板
 
@@ -305,7 +326,7 @@ for card in Cards where visible:
 ## 5. 富内容与视频子窗口
 
 媒体卡片和文字卡片共用同一块「底层」：卡片窗口照常由 `OverlaySurface` 画底色 / 毛玻璃 / 圆角 /
-投影，`MediaView` 在四周留出和文字一样的内边距，所以媒体卡看起来仍是同一叠卡片里的一张：
+投影，`CardMediaView` 在四周留出和文字一样的内边距，所以媒体卡看起来仍是同一叠卡片里的一张：
 
 ```
 ┌──────────────────────────────┐  ← OverlaySurface：tint / 毛玻璃 / 圆角 / 投影
@@ -353,7 +374,7 @@ ffmpeg 路线把视频解成逐帧原始像素，什么格式都能放（代价�
 
 ### 媒体卡通用热键
 
-`MediaCard` 实现 `ICardHotkeySource`（声明动作）与 `ICardHotkeyTarget`（执行动作）：
+`MediaCard`（`src/Plugins/Media/`）实现 `ICardHotkeySource`（声明动作）与 `ICardHotkeyTarget`（执行动作）：
 
 | 动作 | 默认 | 说明 |
 | --- | --- | --- |
@@ -377,7 +398,7 @@ ffmpeg 路线把视频解成逐帧原始像素，什么格式都能放（代价�
 
 代价写在卡片实现里：**它会挡住自己身下的桌面点击**，所以交互卡片通常尺寸克制、默认常驻。
 
-控件在 `src/Ui/Controls/`，颜色 / 字号 / 圆角都跟着卡片外观走，不依赖设置窗口那套浅色资源：
+控件在 `src/UiKit/`，颜色 / 字号 / 圆角都跟着卡片外观走，不依赖设置窗口那套浅色资源：
 
 - `CardButton`：`Normal` / `Primary` / `Danger` 三种语气，自定义模板画圆角底 + hover / pressed /
   键盘焦点三态；`SetActive(bool)` 用于「多选 / 当前模式」这类选中态。
@@ -388,7 +409,7 @@ ffmpeg 路线把视频解成逐帧原始像素，什么格式都能放（代价�
 
 ### AI 对话卡片
 
-`ChatCard` 是第一个「有状态」的富内容卡片：一张卡片一套接口与上下文，样子做成**终端**。
+`ChatCard`（`src/Plugins/Chat/`）是第一个「有状态」的富内容卡片：一张卡片一套接口与上下文，样子做成**终端**。
 
 ![AI 对话卡片](chat-card.png)
 
@@ -408,7 +429,7 @@ ffmpeg 路线把视频解成逐帧原始像素，什么格式都能放（代价�
 
 ### API Key 怎么存
 
-`ChatSettings.ApiKey` 里存的是 `dpapi:<base64>`，由 `Core/SecretStore.cs` 调 `crypt32.dll` 的
+`ChatSettings.ApiKey` 里存的是 `dpapi:<base64>`，由 `Contracts/Core/SecretStore.cs` 调 `crypt32.dll` 的
 `CryptProtectData`（当前用户 + 附加熵）加密：
 
 - 同一台机器、同一个 Windows 用户：能解开；换用户 / 换机器就解不开，卡片和设置页都会提示重填；
@@ -503,7 +524,7 @@ ffmpeg 路线把视频解成逐帧原始像素，什么格式都能放（代价�
 两块面板是**同一类卡片**：终端样式、同一套版式、同一套滑块与尺寸设置。
 
 ```
-CliPanelView（src/Ui/Controls/CliUi.cs）
+CliPanelView（src/UiKit/CliUi.cs）
 ├── 标题行     名称（模型名 / shell 工具名）+ 状态徽标（[轮询] / [就绪] / [运行中]）
 ├── 分隔线
 ├── 记录区     ScrollViewer（外层滑块，超过 Cli.MaxHeight 才出现）

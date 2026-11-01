@@ -1,28 +1,26 @@
 # 运行时扩展卡片（`plugins/cards/*.dll`）
 
-> 状态：2.14.8 把「可信本地插件 + 重启生效」保持为生产路径，并完成方案 B 的程序集边界与契约瘦身
-> （2.14.1 拆 `MirrorpondHUD.Contracts`、2.14.2 拆 Core→Cards、2.14.3 迁 `ThemeTokens`、
-> 2.14.4 删类型转发并把插件 API 升到 2、2.14.5 拆出 `MirrorpondHUD.UiKit`、2.14.6 拒绝插件引用宿主、
-> 2.14.7 删旧 Kind / 旧 Schema 迁移、2.14.8 把内置卡 DTO / DPAPI / 默认内容迁回宿主）；
-> 分支 `feature/runtime-card-loading` 上另有 dev-only 纯文字卡热重载（已推送到 origin，未发布、未合并）。
-> 已实现：`plugins/cards/<id>/manifest.json` + 独立可收集 ALC + `CardRegistry.Initialize` 启动早期注入；
-> 影子复制到 `%LOCALAPPDATA%\MirrorpondHUD\plugin-cache`（失败回退源目录）；缺失插件「插件不可用」占位卡
-> （保留 Kind / Content / Extras、不写回配置）；manifest 大小 / id / apiVersion / assembly / entryType / Kind 校验
-> （拒绝内置 Kind）；加载报告与重复 id / Kind 拒绝；插件程序集引用宿主时直接拒绝（2.14.6）；
-> `--plugin-dev` 纯文字卡热重载（拒绝富内容 / 交互 / 设置区块）；设置页引用释放；示例见 `samples/RuntimeCardExample`。
-> 已实现（方案 B，2.14.1–2.14.8）：独立 `MirrorpondHUD.Contracts` 契约程序集（插件契约 / 通用 DTO / ThemeTokens）
-> 与 `MirrorpondHUD.UiKit` 共享控件程序集；插件只引用 Contracts（可选 UiKit）、不引用宿主；
-> 插件 ALC 对宿主 / Contracts / UiKit 都走默认 ALC；插件 API=2；2.14.7 起旧 Kind 别名与旧 SchemaVersion 迁移已删除
-> （旧配置不再兼容）；2.14.8 起内置卡专用 DTO / DPAPI / 默认内容已迁回宿主，Contracts 只保留通用契约。
+> 状态：2.16.0 把内置卡片也变成插件：6 张内置卡全部拆成独立 DLL（`src/Plugins/*`，manifest id `builtin.*`），
+> 宿主不再内置任何 `ICardModule`（启动日志：内置 0 / 运行时插件 6），只保留加载器 / 注册表 / 契约 / 共享控件；
+> 新增 `ICardShellService` / `ICardEditorCommit` / `ICardScreenshotProvider` / `ICardPresetSource` /
+> `ICardRuntimeSettingsMerge` / `ICardSelfTest` 宿主服务契约，`ICardHost` 增加 `SaveSettings()` / `Shell`；
+> 媒体控件迁入 UiKit（`CardMediaView` / `MediaSettings`）；插件 API 仍为 2。
+> 已实现：`plugins/cards/<id>/manifest.json` + 独立可收集 ALC + 启动早期注入；影子复制（失败回退源目录）；
+> 缺失插件「插件不可用」占位卡（保留 Kind / Content / Extras、不写回配置）；manifest 大小 / id / apiVersion /
+> assembly / entryType / Kind 校验；加载报告与重复 Kind 合并；插件程序集引用宿主时直接拒绝（2.14.6）；
+> `--plugin-dev` 纯文字卡热重载（2.16.0 起只重载用户文字卡，内置插件不参与）；示例见 `samples/RuntimeCardExample`。
+> 已实现（方案 B，2.14.1–2.16.0）：独立 `MirrorpondHUD.Contracts` 契约程序集与 `MirrorpondHUD.UiKit` 共享控件程序集；
+> 插件只引用 Contracts（可选 UiKit）、不引用宿主；插件 ALC 对宿主 / Contracts / UiKit 都走默认 ALC；插件 API=2；
+> 2.14.7 起旧 Kind 别名与旧 SchemaVersion 迁移已删除（旧配置不再兼容）；2.14.8 起内置卡专用 DTO / DPAPI /
+> 默认内容迁回宿主；2.16.0 起内置卡片本身就是插件，宿主只做加载与通用服务。
 > 未实现：签名 / 哈希 / 白名单；富内容卡热重载；安全沙箱；插件市场 / 自动更新；插件 API 版本迁移 UI。
 > 生产 UI 不提供热插拔。
 > 基线：v2.12.2（文件级代码审计 + 现有模块化评审结论）；v2.13.6 完成 spike，2.14.0 补齐生产路径与 dev 热重载，
-> 2.14.1–2.14.8 完成程序集边界、契约瘦身与旧兼容删除。
+> 2.14.1–2.16.0 完成程序集边界、契约瘦身、API 2 收紧与内置卡插件化。
 > 结论先行：技术上可做，但**不能直接把 DLL 丢进一个目录就加载**。单程序集、静态 `CardRegistry` 与
 > “未知 Kind 回退默认卡”的归一化策略会分别带来契约版本、加载时序和配置丢失三个问题；2.14.0 已用
-> 「影子复制 + 占位卡 + 清单校验 + 加载报告」补上，2.14.1–2.14.8 再完成程序集边界、契约瘦身与旧兼容删除，
-> 但 `AssemblyLoadContext` 只解决加载与依赖隔离，不解决沙箱、卸载和契约演进。仍建议把插件当**可信本地扩展**，
-> 生产保持“重启生效”。
+> 「影子复制 + 占位卡 + 清单校验 + 加载报告」补上，2.14.1–2.16.0 再完成程序集边界、契约瘦身与内置卡插件化，
+> 但 `AssemblyLoadContext` 只解决加载与依赖隔离，不解决沙箱、卸载和契约演进。仍建议把插件当**可信本地扩展**。
 
 ---
 
@@ -64,7 +62,7 @@
 | 契约与实现没有 ApiVersion | `src/Cards/CardModule.cs` 全文 | 二进制不兼容时只能靠程序集版本 / 类型加载失败来发现 |
 | README 曾写“运行期插件暂未实现”（v2.12.2 调研基线时） | `README.md:281`、`README.md:416` | 本文是补这缺口的前置调研；2.14.0 已同步 README，2.14.1–2.14.3 再补契约程序集 / 类型转发说明 |
 
-§2 是 2.12.2 基线的代码审计（行号按当时源码）；表中标注了 2.14.x 的落地变化（契约程序集 / 归一化钩子 / UiKit / 插件 API 2），未标注的行是基线状态，部分已在后续版本变化，看现状以各节说明与源码为准。
+§2 是 2.12.2 基线的代码审计（行号按当时源码）；表中标注了 2.14.x–2.16.0 的落地变化（契约程序集 / 归一化钩子 / UiKit / 插件 API 2 / 内置卡插件化），未标注的行是基线状态，看现状以各节说明与源码为准。
 
 ### 2.1 已存在的结构性问题
 
@@ -114,10 +112,11 @@
 2.14.1 起新插件不再走这条路径；2.14.4 起宿主删除 `TypeForwardedTo` 兼容层，引用宿主的旧插件二进制
 不再兼容，必须重编译为引用 Contracts / UiKit。**方案 A 只保留为历史实现。**
 
-#### 方案 B：独立 `MirrorpondHUD.Contracts` + `MirrorpondHUD.UiKit`（2.14.8 已完成契约瘦身）
+#### 方案 B：独立 `MirrorpondHUD.Contracts` + `MirrorpondHUD.UiKit`（2.16.0 已完成内置卡插件化）
 
 **状态：2.14.8 已完成 Contracts + UiKit 程序集拆分与契约瘦身；兼容层已在 2.14.4（类型转发）与
-2.14.7（旧 Kind / 旧 Schema 迁移）移除。**
+2.14.7（旧 Kind / 旧 Schema 迁移）移除。2.16.0 起 6 张内置卡都是这套契约上的普通 DLL 插件，宿主不再内置
+任何 `ICardModule`；新增宿主服务契约（`CardHostServices.cs`）与 UiKit 媒体控件，插件 API 仍为 2（加法）。**
 
 已迁到 Contracts 的内容（命名空间保持不变，减少源码改动）：
 
@@ -217,15 +216,16 @@ SchemaVersion 迁移，旧配置会按损坏备份并使用默认设置。插件
 | `sha256` | 可选；开启签名 / 校验时使用 |
 | `author` / `version` | 设置页展示与排错 |
 
-**2.14.8 实际校验（`CardPluginLoader.LoadOne`）**
+**2.16.0 实际校验（`CardPluginLoader.LoadOne`）**
 
 - `manifest.json` ≤ 256 KB；JSON 读取 / 解析失败或为空直接拒绝；
 - `id` ≤ 100 字符，只允许字母数字与 `.` `-` `_`，不能用 `.` / `..`；
 - `apiVersion` 必须等于 2（`SupportedApiVersion`）；`apiVersion=1` 会被拒绝，日志「卡片插件 API 版本不兼容: <id> api=1（宿主支持 2）」；
 - `assembly` 必须是不含路径分隔符 / 非法字符的 `.dll` 裸文件名，且文件必须存在；
 - `entryType` 非空、不含空白；类型必须存在、非抽象 / 接口、实现 `ICardModule`，且有 public 无参构造函数；
-- 模块 `Kind` ≤ 64 字符、只允许字母数字与 `.` `-` `_`，并拒绝内置 Kind
-  （`infotext` / `command` / `media` / `chat` / `dropstation` / `buttons`）；2.14.7 起旧 Kind 别名已从保留清单移除；
+- 模块 `Kind` ≤ 64 字符、只允许字母数字与 `.` `-` `_`；2.16.0 起 loader 不再维护内置 Kind 保留清单
+  （6 张内置卡也是插件，`IsBundled` 按 id `builtin.*` 识别）；Kind 重复由 `CardRegistry` 合并处理
+  （启动合并告警丢弃后者，`--plugin-dev` 替换时抛错并保留旧模块）；
 - 同批扫描拒绝重复 `id`、重复 `Kind`、空 `Kind`；失败只影响该插件，不阻止宿主启动。
 
 `minHostVersion` / `sha256` 仍是规划字段（当前 manifest 解析器没有这两个字段，写了会被忽略）；签名 / 哈希校验尚未实现。
@@ -294,6 +294,8 @@ sealed class CardPluginLoadContext : AssemblyLoadContext
 - 用 `LoadFromAssemblyPath` / `LoadFromStream`，配合 `AssemblyDependencyResolver`；
 - `AssemblyDependencyResolver` 需要插件的 `.deps.json`（类库项目默认会生成）；
 - 插件自己的依赖走插件 ALC；宿主 / 契约 / UiKit（`MirrorpondHUD` / `MirrorpondHUD.Contracts` / `MirrorpondHUD.UiKit`）都走默认 ALC；
+- 2.16.0 起 `CardPluginLoader.LoadAll(bool includeBundled = true)` 支持跳过内置插件（`--plugin-dev` 重载用
+  `LoadAll(false)`），句柄的 `IsBundled` 按 id `builtin.` 前缀识别；
 - 2.14.5 起 `CardPluginLoadContext` 同时记录宿主 / 契约 / UiKit 三个程序集名，`Load` 对三者都返回 `null`，
   否则插件会拿到第二份 `ICardModule` 或第二份控件类型，与宿主不是同一个 Type；
 - 加载前用 `MetadataLoadContext` 做一次只读预检（类型名、引用、ApiVersion），可以避免
@@ -361,7 +363,8 @@ card.Kind = CardRegistry.ResolveKind(card.Kind);   // 旧行为：未知 → _mo
 
 ### 4.7 卸载与热重载
 
-2.14.0 的结论（2.14.1–2.14.8 的程序集边界与兼容删除不改变它）：**生产仍不做热插拔，dev 期只对纯文字卡开放热重载**（`--plugin-dev`）。
+2.14.0 的结论（2.14.1–2.16.0 的程序集边界、兼容删除与内置卡插件化不改变它）：**生产仍不做热插拔，dev 期只对
+用户纯文字卡开放热重载**（`--plugin-dev`；2.16.0 起内置插件不参与热重载，内置富卡改代码需重启）。
 ALC 卸载、引用链与实现验收见 [runtime-card-hot-reload.md](runtime-card-hot-reload.md)。
 
 生产边界：
@@ -393,7 +396,8 @@ dev 热重载（`--plugin-dev`，只接受纯文字卡）会：
 `AssemblyLoadContext` **不是安全沙箱**。插件代码以当前用户权限运行，能读写文件、访问网络、
 操作注册表、弹窗、伪造设置页。插件里返回的 WPF 控件也能画任意内容。
 
-2.14.8 现状：影子复制、占位卡、manifest 校验和加载报告都只是**可靠性**措施，不是安全措施；2.14.1–2.14.8 的程序集边界与契约瘦身不改变信任模型；
+2.16.0 现状：影子复制、占位卡、manifest 校验和加载报告都只是**可靠性**措施，不是安全措施；2.14.1–2.16.0 的
+程序集边界、契约瘦身与内置卡插件化不改变信任模型（内置卡与用户插件同为可信本地代码）；
 签名 / 哈希 / 白名单仍未实现，宿主也不校验插件来源。因此仍只建议加载用户明确安装、来源可信的本地插件，
 不要把“影子复制 + 清单校验”误解为可以加载不可信代码。
 
@@ -432,9 +436,10 @@ dev 热重载（`--plugin-dev`，只接受纯文字卡）会：
 **建议先做 P0–P2，不把 P4/P5 写进第一版承诺。** 这样能尽快验证“插件能不能用”，
 又不会在 WPF 卸载上无限投入。
 
-截至 2.14.8 的状态：P0 spike 与 P1 契约 / 注册表已在 2.13.6 落地；P1 的「方案 A 还是 B」在 2.14.1 选定 B，
+截至 2.16.0 的状态：P0 spike 与 P1 契约 / 注册表已在 2.13.6 落地；P1 的「方案 A 还是 B」在 2.14.1 选定 B，
 2.14.1–2.14.5 完成 Contracts / Core→Cards / ThemeTokens / UiKit 拆分，2.14.6 拒绝插件引用宿主，
-2.14.7 删除旧 Kind / 旧 Schema 迁移，2.14.8 完成 Contracts 瘦身（内置卡 DTO / DPAPI / 默认内容回宿主）；
+2.14.7 删除旧 Kind / 旧 Schema 迁移，2.14.8 完成 Contracts 瘦身（内置卡 DTO / DPAPI / 默认内容回宿主），
+2.16.0 把 6 张内置卡拆成独立 DLL 插件并新增宿主服务契约；
 P2 的未知 Kind 保留、占位卡、shadow copy、加载报告已在 2.14.0 落地（设置页暂只显示「插件不可用」，
 不展示插件状态 / 拒绝原因）。
 P3 未做：签名 / 哈希 / 白名单、x64 之外的平台验证。P4 只做了 dev-only 纯文字卡热重载（`--plugin-dev`），
@@ -477,10 +482,12 @@ P3 未做：签名 / 哈希 / 白名单、x64 之外的平台验证。P4 只做�
 
 1. **信任模型**：只支持用户手动安装的可信插件，还是要做签名 / 白名单？如果要加载不可信代码，
    是否接受独立进程 + 数据型卡片的限制？
-2. **契约边界**（2.14.8 已完成主要部分）：选择 B（独立 `MirrorpondHUD.Contracts` + `MirrorpondHUD.UiKit`）；
+2. **契约边界**（2.16.0 已完成主要部分）：选择 B（独立 `MirrorpondHUD.Contracts` + `MirrorpondHUD.UiKit`）；
    2.14.1 拆 Contracts、2.14.2 拆 Core→Cards、2.14.3 迁 ThemeTokens、2.14.4 删类型转发升 API 2、2.14.5 拆 UiKit、
-   2.14.6 拒绝插件引用宿主、2.14.7 删旧 Kind / 旧 Schema、2.14.8 内置卡 DTO / DPAPI / 默认内容回宿主。
-   剩余：Contracts 仍含 `Settings` / `ThemeTokens` 等通用类型；旧插件 / 旧配置不再兼容；插件 API 迁移指引。
+   2.14.6 拒绝插件引用宿主、2.14.7 删旧 Kind / 旧 Schema、2.14.8 内置卡 DTO / DPAPI / 默认内容回宿主、
+   2.16.0 内置卡插件化 + 宿主服务契约。
+   剩余：Contracts 仍含 `Settings` / `ThemeTokens` 等通用类型；旧插件 / 旧配置不再兼容；插件 API 迁移指引；
+   内置插件与 `plugins/cards` 的发布 / 覆盖升级流程。
 3. **富卡片是否对插件开放**：如果只开放文字卡，契约可以小很多；如果开放 `IRichCardModule`，
    WPF、主题、卸载都会复杂。
 4. **插件目录**（2.14.0 已定）：便携 `<exe>/plugins/cards` 与用户级 `%LOCALAPPDATA%\MirrorpondHUD\plugins\cards`
@@ -498,8 +505,15 @@ P3 未做：签名 / 哈希 / 白名单、x64 之外的平台验证。P4 只做�
 ### 代码
 
 - 注册与发现：`src/Cards/CardRegistry.cs`
-- 契约程序集：`src/Contracts/MirrorpondHUD.Contracts.csproj`；契约源码 `src/Contracts/Cards/`、`src/Contracts/Core/`、`src/Contracts/Ui/`、`src/Contracts/Metrics/`、`src/Contracts/Text/`
-- 共享控件程序集（2.14.5 起）：`src/UiKit/MirrorpondHUD.UiKit.csproj`、`src/UiKit/CliUi.cs`（`CardPalette`）、`src/UiKit/CardButton.cs` 等 8 个文件
+- 契约程序集：`src/Contracts/MirrorpondHUD.Contracts.csproj`；契约源码 `src/Contracts/Cards/`（含 `CardHostServices.cs`）、
+  `src/Contracts/Core/`、`src/Contracts/Ui/`、`src/Contracts/Metrics/`、`src/Contracts/Text/`
+- 内置卡片插件（2.16.0 起）：`src/Plugins/{InfoText,Buttons,Command,Chat,Media,DropStation}/`（各含 manifest / plugin.csproj）
+- 内置插件复制与加载：`MirrorpondHUD.csproj`（`BundledCardPluginFile` / `CopyBundledCardPlugins`）、
+  `src/Cards/CardPluginLoader.cs`（`IsBundled` / `LoadAll(bool)`）
+- 宿主服务契约：`src/Contracts/Cards/CardHostServices.cs`；宿主实现 `src/Ui/CardShellService.cs`
+- 共享控件程序集（2.14.5 起）：`src/UiKit/MirrorpondHUD.UiKit.csproj`、`src/UiKit/CliUi.cs`（`CardPalette`）、
+  `src/UiKit/CardButton.cs` 等 8 个控件、`src/UiKit/CardFormControls.cs`（表单控件）；
+  媒体控件（2.16.0 起）：`src/UiKit/Media/CardMediaView.cs`、`src/UiKit/Media/MediaSettings.cs` 等
 - 契约：`src/Contracts/Cards/CardModule.cs`、`src/Contracts/Cards/RichCard.cs`、`src/Contracts/Cards/CardSettingsModule.cs`、`src/Contracts/Cards/CardHost.cs`
 - 类型转发：2.14.1–2.14.3 用 `src/TypeForwards.cs`，**2.14.4 已删除**（不再兼容引用宿主的旧二进制）
 - 主题令牌（2.14.3 起在 Contracts）：`src/Contracts/Ui/ThemeTokens.cs`
@@ -525,10 +539,11 @@ P3 未做：签名 / 哈希 / 白名单、x64 之外的平台验证。P4 只做�
 
 ## 9. 一句话总结
 
-2.14.8 已按「可信插件 + 重启生效 + Contracts / UiKit 双程序集」把运行时扩展卡片做成生产路径：
+2.16.0 已按「可信插件 + 重启生效 + Contracts / UiKit 双程序集」把运行时扩展卡片做成生产路径：
 2.14.1–2.14.3 拆出 `MirrorpondHUD.Contracts` 并迁移 ThemeTokens，2.14.4 删除旧插件类型转发、插件 API 升到 2，
-2.14.5 拆出 `MirrorpondHUD.UiKit`（8 个共享 WPF 控件），2.14.6 拒绝仍引用宿主的插件，2.14.7 删除旧 Kind / 旧 Schema
-迁移（旧配置不再兼容），2.14.8 把内置卡 DTO / DPAPI / 默认内容迁回宿主、让 Contracts 只保留通用契约；
-影子复制、占位卡、manifest / Kind 校验与加载报告让坏插件只影响自己；`--plugin-dev` 的纯文字卡热重载只是开发者工具。
-富内容卡热插拔、沙箱、签名 / 白名单仍未做，Contracts 仍含 Settings / ThemeTokens 等通用类型。
+2.14.5 拆出 `MirrorpondHUD.UiKit`，2.14.6 拒绝仍引用宿主的插件，2.14.7 删除旧 Kind / 旧 Schema 迁移（旧配置不再兼容），
+2.14.8 把内置卡 DTO / DPAPI / 默认内容迁回宿主、让 Contracts 只保留通用契约，2.16.0 把 6 张内置卡全部拆成 DLL 插件、
+新增宿主服务契约与 UiKit 媒体控件（宿主内置 0 / 运行时插件 6，插件 API 仍为 2）；
+影子复制、占位卡、manifest / Kind 校验与加载报告让坏插件只影响自己；`--plugin-dev` 的纯文字卡热重载只是开发者工具
+（只对用户插件生效）。富内容卡热插拔、沙箱、签名 / 白名单仍未做，Contracts 仍含 Settings / ThemeTokens 等通用类型。
 `AssemblyLoadContext` 只解决加载与依赖隔离，不解决沙箱、卸载和契约演进。
