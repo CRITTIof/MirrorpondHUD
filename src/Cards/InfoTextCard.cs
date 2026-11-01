@@ -30,10 +30,10 @@ namespace MirrorpondHUD.Cards
     {
         static readonly List<InfoTextPreset> PresetList = new List<InfoTextPreset>
         {
-            new InfoTextPreset("metrics", "系统信息", Settings.DefaultMetricsContent, Icons.Cpu),
-            new InfoTextPreset("clock", "时钟", Settings.DefaultClockContent, Icons.Clock),
-            new InfoTextPreset("keys", "按键", Settings.DefaultKeysContent, Icons.TabHotkey),
-            new InfoTextPreset("text", "文本信息", Settings.DefaultTextContent, Icons.Txt)
+            new InfoTextPreset("metrics", "系统信息", CardDefaults.MetricsContent, Icons.Cpu),
+            new InfoTextPreset("clock", "时钟", CardDefaults.ClockContent, Icons.Clock),
+            new InfoTextPreset("keys", "按键", CardDefaults.KeysContent, Icons.TabHotkey),
+            new InfoTextPreset("text", "文本信息", CardDefaults.TextContent, Icons.Txt)
         };
 
         public static IList<InfoTextPreset> Presets { get { return PresetList; } }
@@ -41,7 +41,7 @@ namespace MirrorpondHUD.Cards
         public override string Kind { get { return "infotext"; } }
         public override string DisplayName { get { return "信息与文本"; } }
         public override string Icon { get { return Icons.Txt; } }
-        public override string DefaultContent { get { return Settings.DefaultMetricsContent; } }
+        public override string DefaultContent { get { return CardDefaults.MetricsContent; } }
         public override int Order { get { return 0; } }
 
         /// <summary>

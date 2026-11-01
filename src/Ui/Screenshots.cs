@@ -243,7 +243,7 @@ namespace MirrorpondHUD.Ui
                 }
                 else
                 {
-                    text = TemplateEngine.Render(Settings.DefaultMetricsContent,
+                    text = TemplateEngine.Render(CardDefaults.MetricsContent,
                                                  Variables.Build(snap, settings, keys));
                 }
 

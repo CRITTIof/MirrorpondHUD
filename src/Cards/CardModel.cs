@@ -105,19 +105,19 @@ namespace MirrorpondHUD.Cards
                 {
                     Id = NewId(), Kind = "infotext", Preset = "metrics",
                     Name = InfoTextCard.LabelFor("metrics"),
-                    Resident = true, Spacing = 0, Content = Settings.DefaultMetricsContent
+                    Resident = true, Spacing = 0, Content = CardDefaults.MetricsContent
                 },
                 new CardSettings
                 {
                     Id = NewId(), Kind = "infotext", Preset = "clock",
                     Name = InfoTextCard.LabelFor("clock"),
-                    Resident = true, Spacing = 12, Content = Settings.DefaultClockContent
+                    Resident = true, Spacing = 12, Content = CardDefaults.ClockContent
                 },
                 new CardSettings
                 {
                     Id = NewId(), Kind = "infotext", Preset = "keys",
                     Name = InfoTextCard.LabelFor("keys"),
-                    Resident = true, Spacing = 12, Content = Settings.DefaultKeysContent
+                    Resident = true, Spacing = 12, Content = CardDefaults.KeysContent
                 },
                 new CardSettings
                 {

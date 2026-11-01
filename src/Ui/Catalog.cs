@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using MirrorpondHUD.Cards;
 using MirrorpondHUD.Core;
 
 namespace MirrorpondHUD.Ui
@@ -66,7 +67,7 @@ namespace MirrorpondHUD.Ui
             new PresetInfo
             {
                 Name = "标准面板",
-                Content = Settings.DefaultMetricsContent
+                Content = CardDefaults.MetricsContent
             },
             new PresetInfo
             {
