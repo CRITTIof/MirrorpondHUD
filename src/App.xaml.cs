@@ -74,6 +74,8 @@ namespace MirrorpondHUD
             CardPluginLoadReport pluginReport = CardPluginLoader.LoadAll();
             _plugins = pluginReport.Handles;
             CardRegistry.Initialize(_plugins.Select(h => h.Module));
+            // Core 的 ConfigStore 不认识卡片；由宿主在第一次 Load 之前注入归一化钩子。
+            ConfigStore.SettingsNormalizer = CardModel.Normalize;
             if (pluginReport.HasErrors)
                 Log.Warn("运行时插件有 " + pluginReport.Errors.Count + " 个加载失败，详见上面的 WARN");
 

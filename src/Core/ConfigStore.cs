@@ -1,7 +1,6 @@
 using System;
 using System.IO;
 using System.Text;
-using MirrorpondHUD.Cards;
 
 namespace MirrorpondHUD.Core
 {
@@ -10,6 +9,19 @@ namespace MirrorpondHUD.Core
     {
         static string _path;
         static readonly object SaveSync = new object();
+
+        /// <summary>
+        /// 宿主注入的卡片归一化钩子（实际是 <c>CardModel.Normalize</c>）。
+        /// ConfigStore 在 Core 层，不应该为了卡片结构反过来引用 Cards；
+        /// App 在启动早期（插件注册之后、第一次 Load 之前）注入这个委托。
+        /// </summary>
+        public static Action<Settings> SettingsNormalizer;
+
+        static void NormalizeCards(Settings settings)
+        {
+            var normalizer = SettingsNormalizer;
+            if (normalizer != null) normalizer(settings);
+        }
 
         /// <summary>最近一次加载设置的警告（损坏 / 从备份恢复 / 未来版本只读）。正常加载为空。</summary>
         public static string LastLoadWarning { get; private set; } = "";
@@ -133,7 +145,7 @@ namespace MirrorpondHUD.Core
             try
             {
                 settings.Normalize();
-                CardModel.Normalize(settings);
+                NormalizeCards(settings);
             }
             catch (Exception ex)
             {
@@ -144,7 +156,7 @@ namespace MirrorpondHUD.Core
                 try
                 {
                     settings.Normalize();
-                    CardModel.Normalize(settings);
+                    NormalizeCards(settings);
                 }
                 catch (Exception retry)
                 {
@@ -334,7 +346,7 @@ namespace MirrorpondHUD.Core
             try
             {
                 settings.Normalize();
-                CardModel.Normalize(settings);
+                NormalizeCards(settings);
 
                 string file = Path;
                 string dir = System.IO.Path.GetDirectoryName(file);
