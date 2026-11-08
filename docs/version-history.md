@@ -1,4 +1,4 @@
-# 版本修改记录（2.4.1 → 2.21.0）
+# 版本修改记录（2.4.1 → 2.22.0）
 
 > 范围：本文只记录**这一轮接手后我做的版本**（v2.4.1 起）。v2.4.0 及更早是既有历史，不在本文档里。
 > 数据全部取自仓库真实提交（`git diff --shortstat <上一版>..<本版>`），文件行的 `+ / -` 就是实际增删行数。
@@ -10,10 +10,10 @@
 > `f67a255` / `5f8933c` / `ef70cea`，**未发布、未合并**）；`v2.14.5`（`a0fe549`）/ `v2.14.6`（`3e6abc6`）
 > 已推送到 `origin/feature/runtime-card-loading`；
 > `v2.14.7`（`abcbcec`）/ `v2.14.8`（`633e9d6`）已随文档同步提交 `d73d2ec` 推送到同一分支（未发布、未合并）；
-> `v2.14.9`（`aba873a`）已推送；`v2.15.0`（`78d3381`）已推送（文档同步提交 `2eba9b4`）；`v2.16.0`（代码 `6406d96`，文档同步 `d1fd414`）**已推送并快进合并到 `main`**；`v2.17.0`（`27b8bbd`）/ `v2.18.0`（`1e1c6ac`）/ `v2.19.0`（`d21773c`）**已推送并快进合并到 `main`**；`v2.20.0`（代码 `d8f36ab`，文档 `de64021`）**已推送并快进合并到 `main`**；`v2.21.0`（代码 `0d687e9`，文档 `4911e1b`）**已推送并快进合并到 `main`**，未打 tag、未发布 Release。
+> `v2.14.9`（`aba873a`）已推送；`v2.15.0`（`78d3381`）已推送（文档同步提交 `2eba9b4`）；`v2.16.0`（代码 `6406d96`，文档同步 `d1fd414`）**已推送并快进合并到 `main`**；`v2.17.0`（`27b8bbd`）/ `v2.18.0`（`1e1c6ac`）/ `v2.19.0`（`d21773c`）**已推送并快进合并到 `main`**；`v2.20.0`（代码 `d8f36ab`，文档 `de64021`）**已推送并快进合并到 `main`**；`v2.21.0`（代码 `0d687e9`，文档 `4911e1b`）**已推送并快进合并到 `main`**，未打 tag、未发布 Release；`v2.22.0`（代码为 `73837aa`–`2907be0` 的 12 个提交，文档同步本次提交）**已合并 `main`**，未打 tag、未发布 Release。
 > `v2.14.1` / `v2.14.2` / `v2.14.4` 的规模用对应提交的 `git show --shortstat`；`v2.14.3` / `v2.14.5` / `v2.14.6`
 > 按当时提交前工作区的 `git diff --shortstat` 计算；`v2.14.7` / `v2.14.8` 用对应提交的 `git show --shortstat`；
-> `v2.14.9` 用提交前工作区的 `git diff --shortstat -- MirrorpondHUD.csproj src`；`v2.15.0` 用 `git show --shortstat 78d3381`；`v2.16.0` 用 `git show --shortstat 6406d96`；`v2.17.0` 用 `git show --shortstat 27b8bbd`；`v2.18.0` 用 `git show --shortstat 1e1c6ac`；`v2.19.0` 用 `git show --shortstat d21773c`；`v2.20.0` 用 `git show --shortstat d8f36ab`；`v2.21.0` 用 `git show --shortstat d6e1af3`（文档同步另计）。
+> `v2.14.9` 用提交前工作区的 `git diff --shortstat -- MirrorpondHUD.csproj src`；`v2.15.0` 用 `git show --shortstat 78d3381`；`v2.16.0` 用 `git show --shortstat 6406d96`；`v2.17.0` 用 `git show --shortstat 27b8bbd`；`v2.18.0` 用 `git show --shortstat 1e1c6ac`；`v2.19.0` 用 `git show --shortstat d21773c`；`v2.20.0` 用 `git show --shortstat d8f36ab`；`v2.21.0` 用 `git show --shortstat d6e1af3`（文档同步另计）；`v2.22.0` 用 `git diff --shortstat b366e32..4899f3f`（30 文件，+1116 / −246；版本号 15 文件 +15 / −15 与文档同步另计）。
 
 ## 0. 总览
 
@@ -74,6 +74,7 @@
 | v2.19.0 | 2026-11-01 | `d21773c` | 第四优先浮层与交互：CardModal / CardDialog / CardPopover / CardTooltip / CardContextMenu / CardToast；toast 置顶修复；版本三件套 + 6 插件同步 2.19.0 | 18 文件，+1513 / −16 |
 | v2.20.0 | 2026-11-01 | `d8f36ab` | 移除卡片热插拔 / 热重载（`PluginDevReloader`、`--plugin-dev`、运行时注册表替换）；插件更新统一重启；根指南重写为自包含开发手册 | 24 文件，+32 / −767（文档同步另计） |
 | v2.21.0 | 2026-11-01 | `0d687e9` | 引入 Lucide 1.66.0 开源图标字体（ISC）：2292 个码位常量 / 查询表、`CardIcon`、图标自检、许可证与文档；控件章节详写 | 23 文件，+7169 / −16（文档同步另计） |
+| v2.22.0 | 2026-11-08 | `73837aa`…`2907be0`（12 个提交） | 2026-11 代码审阅 P0/P1：失败可见化（托盘 / 保存 / 启动 / 对话 / 中转站 / 命令行 / 媒体 / 桌面取图 / 指标 / JSON）、Log 重写 + `LogThrottle`、新增 `AGENTS.md` | 30 文件，+1116 / −246（版本号 15 文件另计、文档同步另计） |
 
 ---
 
@@ -2471,7 +2472,62 @@ P2-4（占位文案）、P2-6（ALC 注释 / 旧别名日志）、P2-7（InferPr
 
 ---
 
-## 56. 不在版本里的东西
+## 56. v2.22.0（`73837aa`…`2907be0`，分支 `fix/code-review-p0-p1`，已合并 main）
+
+### 背景
+
+2026-11-02 的代码审阅报告指出全仓存在大量「失败被吞掉 / 静默降级」的路径：配置保存失败、托盘图标添加失败、启动初始化失败、
+插件卸载无验证、主题 9 位色与 7 位色混用、ffmpeg 回退是假实现、桌面取图死源每帧空转、指标采样失败无痕、
+JSON 绑定错误静默置空等。2.22.0 按「失败必须可见」铁律完成 P0 全量与 P1 重点项（含审阅第 6 节「日志中断 / 终端」），
+并把由此确立的工程约束沉淀为根目录 `AGENTS.md`。
+
+### 改动
+
+1. **P0-1 / P0-2（失败必达 UI）**：`TrayIcon.AddFailed` 区分「用户关闭托盘」与「图标添加失败」，后者才弹设置窗兜底；
+   `ConfigStore.LastSaveError` + `OverlayController.ApplySettings` / `SettingsWindow._onApply` 改为返回 `bool`，
+   保存失败原样显示在设置窗状态行，截图模式 stub 同步；`HigherSchema` 只读拒绝保存同样可见。
+2. **P1-1（启动与异常）**：插件加载 / 四种截图模式 / selftest / 配置读取整体进 try，失败 `Log.Error` + 可见提示 + `Shutdown(1)`；
+   UI 线程异常改为白名单（InvalidOperation / COM / Win32 / ObjectDisposed，含内部异常链，5 次封顶），白名单外按
+   「不可信状态」记录 + 提示 + 退出；`OnExit` 记退出码并接回插件弱引用回收验证（幂等）；加载日志带 manifest `author`。
+3. **P1-3（主题）**：`foreground` / `background` 严格 7 位 `#RRGGBB`，9 位写法直接报错并提示改走 `backgroundOpacity`；
+   `accent` / `danger` / 软色仍允许 9 位 `#AARRGGBB`；前景 / 背景回落默认值时记 Warn；自检补 7 项颜色断言，
+   `docs/theme-system.md` 校验描述同步。
+4. **P1-4（AI 对话）**：请求成功 / 用户取消 / 超时 / 失败四类结果分级日志（模式、模型、主机、耗时）；
+   `_cancelRequested` 区分用户取消（Info）与超时（Warn）；删除无消费者的 `ChatSettings.Width` / `AnswerLines`。
+5. **P1-5（中转站 / 命令行）**：复制队列与卡片各失败路径落日志；不可逆删除失败按文件汇总 Warn；
+   移动模式删源失败 Warn；`Dispose` 改走队列释放（P2-10 已修）；命令输出读取超时 / 异常留痕，
+   执行结果分级并附脱敏 stderr；删除 9 个零引用 `*ForTest` 成员。
+6. **P1-6（媒体）**：`-readrate` 不兼容改真回退（`_useRe` 黏住、固定 1× 保音画同步，`SetSpeed` 拒改）；
+   新增 `AudioUnavailable` 事件，状态行如实标注「音频不可用（原因）」；WaveOut 错误码翻译为可读名并写入
+   `LastErrorName`；删除零调用的同步 `Probe` 死 API；视频窗日志顺序修正为先打开成功再记录。
+7. **P1-7（桌面取图）**：`DesktopFrameSource.IsDead` + `EnterDead` 一次性带 HRESULT 的 Warn（staging / Acquire / Map / 预热黑帧四路）；
+   `GlassFeed` 只在真读到帧时刷新闲置计时，死源立即释放并按 30s → 60s → 2min 封顶退避重建；
+   GDI `GetDC` / `BitBlt` 失败经 `LogThrottle` 留痕（`SetLastError` 取错误码）。
+8. **P1-9（日志基础设施）**：`Log` 重写（Debug 级别、指数冷却、降级回退文件、轮转）；
+   新增 `src/Contracts/Core/LogThrottle.cs`（状态转移 + 最小间隔，失败与恢复各记一条）。
+9. **审阅 6 / 6-9（采样与 JSON）**：nvidia-smi 未启动 / 非零退出 / 解析失败、PDH 采集失败全部接 `LogThrottle`；
+   `Json.Bind` 的 List 类型不符与未消化组合留 Warn，不再静默置空。
+10. **文档**：新增 `AGENTS.md`（多程序集边界、失败可见铁律、设置树引用纪律、代次计数 / 有界 Join、自检与提交纪律、
+    已评审推迟的历史包袱）；`docs/theme-system.md`、README 版本区间同步。
+11. **版本**：宿主 / Contracts / UiKit / 6 个插件工程与 manifest 统一 2.22.0；插件 API 仍为 2，契约无破坏性变更。
+
+### 验证
+
+- 干净构建 0 警告 0 错误；
+- `--selftest` 失败项 0（退出码 0），日志确认 6 个插件模块弱引用回收、`App 退出 code=0`；
+- 12 个提交按 P-编号拆分（Contracts 先行），每个中间提交保持可编译。
+
+### 风险 / 未验证
+
+- 结构性项按评审结论推迟：`GlassRuntimeState` 单一数据源、Acrylic / Glass 双套模糊字段合并、Dwm→DesktopFeed 更名、
+  StationView / OverlayController / SettingsWindow 拆分、`StationState.FormatVersion`、回收站删除（本批次以加强日志替代）、
+  Chat 模式别名（`polling` / `poll` / `continuous`，有意保留）；
+- `-re` 回退、桌面复制退避、DPAPI Key 往返只在自检与日志层验证，未做长时间真机压测 / 断驱动 / 断网演练；
+- 本批次未逐模式重跑 `--screenshot-*` 无头截图（UI 改动以状态行文案与日志为主，渲染分支未动）。
+
+---
+
+## 57. 不在版本里的东西
 
 - 验收脚本、样张与测量脚本（`cmd-e2e.ps1`、`drag-glass.ps1`、`measure-*.py`、`shots/` 等）都在仓库外的 `hud-test/` 里，**没有提交**。
 - 发布：`main` 与标签已推送到 [github.com/CRITTIof/MirrorpondHUD](https://github.com/CRITTIof/MirrorpondHUD)；
@@ -2480,7 +2536,7 @@ P2-4（占位文案）、P2-6（ALC 注释 / 旧别名日志）、P2-7（InferPr
   更早的 Release 正文与附件保留原样，v2.4.0 的 Release 已删除（tag `v2.4.0` 保留，历史仍可检出）。
 - 仓库追踪的文件共 117 个，`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
 
-## 57. 已知代价（跨版本）
+## 58. 已知代价（跨版本）
 
 - 桌面亚克力为了不拍到自己，会把卡片排除在截屏之外 —— 这个模式下截图 / 录屏里**看不到卡片**，观感只能靠肉眼与离屏渲染验证。
 - 兼容实现每帧对身后窗口做 `PrintWindow`，拖动时最多 ~21 帧/秒；要更高只能走桌面亚克力（DXGI）。
