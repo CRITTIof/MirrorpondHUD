@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Net.Http;
 using System.Text;
 using System.Threading;
@@ -198,6 +199,8 @@ namespace MirrorpondHUD.Cards
 
         CancellationTokenSource _pending;
         bool _busy;
+        // P1-4：区分「用户主动取消」和「请求超时」——Cancel() 置位，发送开始时清零。
+        volatile bool _cancelRequested;
         bool _disposed;
         int _spinFrame;
         readonly DispatcherTimer _spin;
@@ -492,6 +495,9 @@ namespace MirrorpondHUD.Cards
                 return;
             }
 
+            // 发起新请求：上一轮的取消标记作废。
+            _cancelRequested = false;
+
             bool context = _config.Mode == "Context";
             if (!context)
             {
@@ -523,7 +529,10 @@ namespace MirrorpondHUD.Cards
 
             try
             {
+                Stopwatch watch = Stopwatch.StartNew();
                 string reply = await RequestAsync(BuildMessages(), _pending.Token);
+                Log.Info("对话请求完成  模式=" + _config.Mode + "  model=" + _config.Model +
+                         "  host=" + HostOf(_config.BaseUrl) + "  耗时 " + watch.ElapsedMilliseconds + " ms");
                 _messages.Add(new Message { Role = "assistant", Text = reply });
                 TrimHistory();
                 if (round.Answer != null) round.Answer.Text = reply;
@@ -533,11 +542,22 @@ namespace MirrorpondHUD.Cards
             {
                 if (round.Answer != null) round.Answer.Text = "（已取消）";
                 SetStatus("已取消（或超过 " + _config.TimeoutSeconds + " 秒）", true);
+                // P1-4：静默吞掉取消会让「服务端一直不回」和「用户自己按取消」分不清。
+                // 用户取消是一次 Info；真正的超时（服务端没响应）要 Warn 留现场。
+                if (_cancelRequested)
+                    Log.Info("对话请求被用户取消  模式=" + _config.Mode + "  model=" + _config.Model +
+                             "  host=" + HostOf(_config.BaseUrl));
+                else
+                    Log.Warn("对话请求超时（超过 " + _config.TimeoutSeconds + " 秒无响应）  模式=" + _config.Mode +
+                             "  model=" + _config.Model + "  host=" + HostOf(_config.BaseUrl));
             }
             catch (Exception ex)
             {
                 if (round.Answer != null) round.Answer.Text = "! " + Explain(ex);
                 SetStatus(Explain(ex), true);
+                // P1-4：失败必须留现场（模式 / 模型 / 主机 / HTTP 状态在 ex.Message 里 / 耗时）。
+                Log.Warn("对话请求失败  模式=" + _config.Mode + "  model=" + _config.Model +
+                         "  host=" + HostOf(_config.BaseUrl) + "  原因=" + ex.Message);
             }
             finally
             {
@@ -552,8 +572,11 @@ namespace MirrorpondHUD.Cards
         /// <summary>卡片被隐藏 / 重建时取消还没回来的请求。</summary>
         public override void Cancel()
         {
+            // P1-4：置位取消标记，让超时日志能区分「用户取消」和「真的超过时限」。
+            _cancelRequested = true;
+            // 收尾流程可能已把 _pending 清掉；对已释放对象 Cancel 无事发生，不算错误。
             try { if (_pending != null) _pending.Cancel(); }
-            catch { }
+            catch (ObjectDisposedException) { }
         }
 
         /// <summary>
@@ -608,6 +631,15 @@ namespace MirrorpondHUD.Cards
                 list.Add(new Dictionary<string, object> { { "role", message.Role }, { "content", message.Text } });
 
             return list;
+        }
+
+        /// <summary>从 BaseUrl 里取主机名给日志用；地址写坏也不让日志行抛异常。</summary>
+        static string HostOf(string url)
+        {
+            Uri uri;
+            if (!string.IsNullOrWhiteSpace(url) && Uri.TryCreate(url.Trim(), UriKind.Absolute, out uri))
+                return uri.IsDefaultPort ? uri.Host : uri.Host + ":" + uri.Port;
+            return "(地址无效)";
         }
 
         async Task<string> RequestAsync(List<object> messages, CancellationToken token)

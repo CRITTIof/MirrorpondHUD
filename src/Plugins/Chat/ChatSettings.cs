@@ -29,19 +29,16 @@ namespace MirrorpondHUD.Core
         /// <summary>请求超时（秒）。</summary>
         public int TimeoutSeconds = 60;
 
-        /// <summary>卡片宽度（DIP）；旧字段，当前由 CLI 面板统一控制。</summary>
-        public double Width = 380;
-
-        /// <summary>答案区最多显示多少行；旧字段，当前由 CLI 面板统一控制。</summary>
-        public int AnswerLines = 8;
+        // 旧的 Width / AnswerLines 字段已删除：宽度与答案区行数现在统一由 CLI 面板
+        // （CliSettings.MaxWidth / MaxHeight）按所有卡片一致管理，这两个旧键从后端
+        // 读进来后会因为「字段不存在」被 Bind 丢弃，没有消费者。
 
         public ChatSettings Clone()
         {
             return new ChatSettings
             {
                 BaseUrl = BaseUrl, Model = Model, ApiKey = ApiKey, Mode = Mode,
-                SystemPrompt = SystemPrompt, TimeoutSeconds = TimeoutSeconds,
-                Width = Width, AnswerLines = AnswerLines
+                SystemPrompt = SystemPrompt, TimeoutSeconds = TimeoutSeconds
             };
         }
 
@@ -132,8 +129,6 @@ namespace MirrorpondHUD.Core
             Mode = NormalizeMode(Mode);
             SystemPrompt = SystemPrompt ?? "";
             TimeoutSeconds = (int)Settings.Clamp(TimeoutSeconds, 5, 300);
-            Width = Settings.Clamp(Width, 220, 1200);
-            AnswerLines = (int)Settings.Clamp(AnswerLines, 2, 40);
         }
 
         /// <summary>对话模式：Single（单次） / Context（轮询，保留上下文）。</summary>
