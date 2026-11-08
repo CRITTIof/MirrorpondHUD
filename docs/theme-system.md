@@ -110,7 +110,9 @@
 
 ```
 选择 .mptheme ──► 读取 + 解析 JSON ──► schema 校验（只认 1，更高版本直接拒绝）
-                ──► 逐字段校验（颜色 #RRGGBB / #AARRGGBB，数值范围与 Settings.Normalize 一致）
+                ──► 逐字段校验（`foreground` / `background` 严格 7 位 `#RRGGBB`，
+                透明度必须用 `backgroundOpacity` 表达；`accent` / `danger` 与软色仍接受
+                `#RRGGBB` / `#AARRGGBB`；数值范围与 Settings.Normalize 一致）
                 ──► Clone 当前 Settings → 只覆盖 appearance 映射到的字段 → Normalize()
                 ──► 应用到所有卡片窗口（与「保存并应用」同一条路径）
                 ──► 失败：不改任何内存 / 磁盘状态，弹一行原因

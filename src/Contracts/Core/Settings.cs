@@ -86,8 +86,19 @@ namespace MirrorpondHUD.Core
             // 命令行工具 / 工作目录不再全局保存：它们属于每张「命令行」卡片（CardSettings.Extras 里的 command），
             // 这样同时放 cmd、pwsh、自定义工具的多张命令行卡片可以各用各的。
 
-            if (!IsHexColor(Style.Foreground)) Style.Foreground = "#E6EDF3";
-            if (!IsHexColor(Style.Background)) Style.Background = "#0D1117";
+            if (!IsHexColor(Style.Foreground))
+            {
+                // P1-3：静默回落会让用户不知道为什么前景色没变成设置里写的值，必须留日志。
+                Log.Warn("样式 foreground 不合法（\"" + (Style.Foreground ?? "") +
+                         "\"），已回落默认 #E6EDF3（只接受 7 位 #RRGGBB）");
+                Style.Foreground = "#E6EDF3";
+            }
+            if (!IsHexColor(Style.Background))
+            {
+                Log.Warn("样式 background 不合法（\"" + (Style.Background ?? "") +
+                         "\"），已回落默认 #0D1117（只接受 7 位 #RRGGBB，透明度请用 backgroundOpacity）");
+                Style.Background = "#0D1117";
+            }
 
             // 外观令牌：非法值回落到默认 / 派生，避免主题文件写坏后整块外观失效。
             Style.Accent = NormalizeColorToken(Style.Accent, "#2F6FEB");

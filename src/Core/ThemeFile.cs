@@ -473,8 +473,8 @@ namespace MirrorpondHUD.Core
             var colors = appearance.Child("colors");
             if (colors != null)
             {
-                doc.Colors.Foreground = colors.Color("foreground");
-                doc.Colors.Background = colors.Color("background");
+                doc.Colors.Foreground = colors.ColorStrict("foreground");
+                doc.Colors.Background = colors.ColorStrict("background");
                 doc.Colors.BackgroundOpacity = colors.Number("backgroundOpacity");
                 colors.Range(doc.Colors.BackgroundOpacity, "backgroundOpacity", 0, 1);
                 doc.Colors.Accent = colors.Color("accent");
@@ -671,6 +671,29 @@ namespace MirrorpondHUD.Core
                 if (text.Length == 0 || !Settings.IsColorToken(text))
                 {
                     Fail(key, "必须是 #RRGGBB 或 #AARRGGBB");
+                    return null;
+                }
+                return text;
+            }
+
+            /// <summary>
+            /// 严格 #RRGGBB（只接受 7 位）：foreground / background 专用。
+            /// 带透明度的 #AARRGGBB 在前景色上会让文字发虚，背景的透明度必须走
+            /// appearance.backgroundOpacity 表达，所以这里直接拒绝并给出明确错误。
+            /// </summary>
+            public string ColorStrict(string key)
+            {
+                string text = String(key);
+                if (text == null) return null;
+
+                if (text.Length == 9 && text[0] == '#')
+                {
+                    Fail(key, "必须是 7 位 #RRGGBB（#AARRGGBB 的透明度写法在这里不允许，背景透明度请用 appearance.backgroundOpacity）");
+                    return null;
+                }
+                if (text.Length == 0 || !Settings.IsHexColor(text))
+                {
+                    Fail(key, "必须是 7 位 #RRGGBB，例如 #E6EDF3");
                     return null;
                 }
                 return text;

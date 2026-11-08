@@ -354,7 +354,13 @@ namespace MirrorpondHUD
                 bool validateOk = !Settings.IsColorToken("#GGGGGG")
                                && !Settings.IsColorToken("123456")
                                && Settings.IsColorToken("")
-                               && Settings.IsColorToken("#80FFFFFF");
+                               && Settings.IsColorToken("#80FFFFFF")
+                               // P1-3：前景 / 背景走严格 #RRGGBB——9 位 Alpha 写法必须拒绝
+                               //（透明度只能走 backgroundOpacity），非 7 位一律不认可。
+                               && Settings.IsHexColor("#E6EDF3")
+                               && !Settings.IsHexColor("#80E6EDF3")
+                               && !Settings.IsHexColor("#GGGGGG")
+                               && !Settings.IsHexColor("");
 
                 var bad = new Settings { Style = { Accent = "nope", Muted = "#12" } };
                 bad.Normalize();
