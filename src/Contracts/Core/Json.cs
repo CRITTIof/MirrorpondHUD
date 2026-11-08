@@ -319,6 +319,13 @@ namespace MirrorpondHUD.Core
                 {
                     foreach (object item in items) list.Add(Bind(itemType, item));
                 }
+                else
+                {
+                    // §6-9：以前这里静默给个空数组——设置里写错了类型（应该写成数组的地方
+                    // 成了字符串 / 数字 / 对象）用户毫无感知，必须留日志。
+                    Log.Warn("JSON 绑定类型不匹配：目标是 " + target.Name + "，实际是 " +
+                             NodeTypeName(node) + "（原始内容已丢弃，字段用默认值）");
+                }
                 return list;
             }
 
@@ -337,7 +344,22 @@ namespace MirrorpondHUD.Core
                 return inst;
             }
 
+            // §6-9：没有任何处理器能消化这个组合（目标类型不支持，或节点类型对不上）——
+            // 以前静默 return null，字段悄悄归零。留一条日志，不再隐瞒。
+            Log.Warn("JSON 绑定未消化：目标=" + target.Name + "  节点=" + NodeTypeName(node));
             return null;
+        }
+
+        /// <summary>把 JSON 节点的类型翻成可读名（给绑定失败日志用）。</summary>
+        static string NodeTypeName(object node)
+        {
+            if (node == null) return "null";
+            if (node is string) return "string";
+            if (node is bool) return "bool";
+            if (node is double) return "number";
+            if (node is List<object>) return "array";
+            if (node is Dictionary<string, object>) return "object";
+            return node.GetType().Name;
         }
     }
 }
