@@ -123,25 +123,50 @@ namespace MirrorpondHUD.Ui.Controls.Media
             }
         }
 
-        /// <summary>打开声卡并开始从 PCM 流播放（流结束时自动停）。</summary>
+        /// <summary>
+        /// 打开声卡并开始从 PCM 流播放（流结束时自动停）。
+        /// P1-6：失败不能只返回 false —— 每个失败分支都把可读原因写进
+        /// <see cref="LastErrorName"/>，上层（FfmpegPlayer）据此带进日志和 UI。
+        /// </summary>
         public bool Start(Stream pcm)
         {
-            if (pcm == null) return false;
+            _lastErrorName = "";
+            if (pcm == null)
+            {
+                _lastErrorName = "没有音频流";
+                Log.Warn("音频输出启动失败: " + _lastErrorName);
+                return false;
+            }
 
             lock (_sync)
             {
-                if (_disposed || _thread != null) return false;
+                if (_disposed || _thread != null)
+                {
+                    _lastErrorName = "音频播放器已被占用（或已释放）";
+                    Log.Warn("音频输出启动失败: " + _lastErrorName);
+                    return false;
+                }
 
                 // 上一次 Stop 若是 Join 超时、把收尾权交给了 Feed 线程：它还活着就不能重开。
                 if (_handoffThread != null)
                 {
-                    if (_handoffThread.IsAlive) return false;
+                    if (_handoffThread.IsAlive)
+                    {
+                        _lastErrorName = "前一个音频线程仍在收尾";
+                        Log.Warn("音频输出启动失败: " + _lastErrorName);
+                        return false;
+                    }
                     _handoffThread = null;
                 }
 
                 // 它已经退出（应当已经自己收尾）。若资源还没释放完，等下一次再开。
                 // 这时分配新 buffer 会覆盖旧指针，旧线程照旧往旧地址写 → 堆破坏。
-                if (Volatile.Read(ref _resources) != 0) return false;
+                if (Volatile.Read(ref _resources) != 0)
+                {
+                    _lastErrorName = "音频缓冲资源尚未释放";
+                    Log.Warn("音频输出启动失败: " + _lastErrorName);
+                    return false;
+                }
 
                 var format = new WaveFormatEx
                 {
@@ -158,7 +183,8 @@ namespace MirrorpondHUD.Ui.Controls.Media
                 int code = waveOutOpen(out handle, -1, ref format, IntPtr.Zero, IntPtr.Zero, 0);
                 if (code != 0)
                 {
-                    Log.Warn("打开音频设备失败: " + code);
+                    _lastErrorName = MmsysErrorName(code);
+                    Log.Warn("打开音频设备失败: " + _lastErrorName);
                     return false;
                 }
 
@@ -174,8 +200,9 @@ namespace MirrorpondHUD.Ui.Controls.Media
                     Marshal.StructureToPtr(value, header, false);
                     _headers[i] = header;
 
-                    if (waveOutPrepareHeader(_handle, header, headerSize) != 0)
-                        Log.Warn("准备音频缓冲失败: " + i);
+                    int headerCode = waveOutPrepareHeader(_handle, header, headerSize);
+                    if (headerCode != 0)
+                        Log.Warn("准备音频缓冲失败: 槽 " + i + "  " + MmsysErrorName(headerCode));
                 }
 
                 Volatile.Write(ref _resources, 1);
@@ -283,9 +310,10 @@ namespace MirrorpondHUD.Ui.Controls.Media
                     IntPtr header = _headers[slot];
                     if (header == IntPtr.Zero) break;                // 防御：header 已收尾
 
-                    if (waveOutWrite(handle, header, headerSize) != 0)
+                    int writeCode = waveOutWrite(handle, header, headerSize);
+                    if (writeCode != 0)
                     {
-                        Log.Warn("写音频缓冲失败");
+                        Log.Warn("写音频缓冲失败: " + MmsysErrorName(writeCode));
                         break;
                     }
 
@@ -323,6 +351,40 @@ namespace MirrorpondHUD.Ui.Controls.Media
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// P1-6：最后一次 Start 失败的可读原因（MMSYSERR/WAVERR 错误名或状态说明），
+        /// 给上层（FfmpegPlayer）带进日志和 UI 状态行。音频启动在 LaunchAudio 里是串行的，
+        /// 用静态字段足够。
+        /// </summary>
+        static volatile string _lastErrorName = "";
+        public static string LastErrorName { get { return _lastErrorName == null ? "" : _lastErrorName; } }
+
+        /// <summary>把 winmm 的 MMSYSERR / WAVERR 返回值翻成可读名（给日志与用户提示用）。</summary>
+        public static string MmsysErrorName(int code)
+        {
+            switch (code)
+            {
+                case 0: return "MMSYSERR_NOERROR";
+                case 1: return "MMSYSERR_ERROR（未指明的错误）";
+                case 2: return "MMSYSERR_BADDEVICEID（设备 ID 无效）";
+                case 3: return "MMSYSERR_NOTENABLED（驱动未启用）";
+                case 4: return "MMSYSERR_ALLOCATED（设备已被占用）";
+                case 5: return "MMSYSERR_INVALHANDLE（句柄无效）";
+                case 6: return "MMSYSERR_NODRIVER（没有可用的驱动）";
+                case 7: return "MMSYSERR_NOMEM（内存不足）";
+                case 8: return "MMSYSERR_NOTSUPPORTED（不支持的操作）";
+                case 9: return "MMSYSERR_BADERRNUM";
+                case 10: return "MMSYSERR_INVALFLAG（标志无效）";
+                case 11: return "MMSYSERR_INVALPARAM（参数无效）";
+                case 12: return "MMSYSERR_HANDLEBUSY（句柄被其它线程占用）";
+                case 32: return "WAVERR_BADFORMAT（不支持的波形格式）";
+                case 33: return "WAVERR_STILLPLAYING（缓冲仍在播放中）";
+                case 34: return "WAVERR_UNPREPARED（缓冲未准备好）";
+                case 35: return "WAVERR_SYNC（设备为同步模式）";
+                default: return "waveOut 错误码 " + code;
+            }
         }
 
         public void Pause()

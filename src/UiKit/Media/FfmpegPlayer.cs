@@ -42,6 +42,9 @@ namespace MirrorpondHUD.Ui.Controls.Media
         public event Action<BitmapSource> FrameReady;
         public event Action<string> Failed;
         public event Action Completed;
+        /// <summary>P1-6：音频启动失败（WaveOut 打不开 / 解码进程起不来）时触发，
+        /// 内容是原因描述；视频照常播，UI 可以用它在状态行如实标注「音频不可用」。</summary>
+        public event Action<string> AudioUnavailable;
 
         readonly ManualResetEventSlim _resume = new ManualResetEventSlim(true);
 
@@ -72,7 +75,12 @@ namespace MirrorpondHUD.Ui.Controls.Media
         volatile bool _stop;
         volatile bool _startPaused;
         bool _disposed;
-        bool _readrateRetried;
+        /// <summary>
+        /// ffmpeg 不认 <c>-readrate</c> 的回退标记（P1-6）：一旦某代 0 帧输出，就改用经典的
+        /// <c>-re</c>（按原生速率读包）并只以 1× 播放。这是二进制能力问题，与文件无关，
+        /// 所以一旦置位就黏住，后续换文件 / 循环重开都不再试 -readrate。
+        /// </summary>
+        volatile bool _useRe;
 
         public double Duration { get { return _duration; } }
 
@@ -118,7 +126,6 @@ namespace MirrorpondHUD.Ui.Controls.Media
             _fps = fps >= 1 && fps <= 121 ? fps : 25;
             _duration = duration;
             _loop = loop;
-            _readrateRetried = false;
             _speed = ClampSpeed(speed);
             _audioEnabled = audio;
             _volume = Math.Max(0, Math.Min(100, volume));
@@ -188,8 +195,17 @@ namespace MirrorpondHUD.Ui.Controls.Media
             };
 
             AddInput(psi, startSeconds);
-            psi.ArgumentList.Add("-readrate");
-            psi.ArgumentList.Add(_speed.ToString("0.###", CultureInfo.InvariantCulture));
+            if (_useRe)
+            {
+                // P1-6：老版 ffmpeg 不认 -readrate，回退经典 -re（按原生速率读包）。
+                // 原生速率意味着没有倍速语义，所以 _speed 已经被固定成 1，保持音画同步。
+                psi.ArgumentList.Add("-re");
+            }
+            else
+            {
+                psi.ArgumentList.Add("-readrate");
+                psi.ArgumentList.Add(_speed.ToString("0.###", CultureInfo.InvariantCulture));
+            }
             psi.ArgumentList.Add("-i");
             psi.ArgumentList.Add(_path);
             psi.ArgumentList.Add("-map");
@@ -280,7 +296,13 @@ namespace MirrorpondHUD.Ui.Controls.Media
                 psi.ArgumentList.Add("pipe:1");
 
                 process = Process.Start(psi);
-                if (process == null) return;
+                if (process == null)
+                {
+                    // P1-6：Process.Start 返回 null 属于异常情况（资源耗尽 / 拦截），不能静默跳过。
+                    Log.Warn("音频解码进程没有启动（Process.Start 返回 null），继续静音播放");
+                    RaiseAudioUnavailable("音频解码进程没有启动");
+                    return;
+                }
 
                 process.ErrorDataReceived += (s, e) =>
                 {
@@ -312,7 +334,9 @@ namespace MirrorpondHUD.Ui.Controls.Media
                 player = new WaveOutPlayer { Volume = _volume };
                 if (!player.Start(process.StandardOutput.BaseStream))
                 {
-                    Log.Warn("音频输出启动失败，继续静音播放");
+                    // P1-6：失败原因要能给到 UI（状态行如实标注「音频不可用」），只写日志还不够。
+                    Log.Warn("音频输出启动失败，继续静音播放: " + WaveOutPlayer.LastErrorName);
+                    RaiseAudioUnavailable(WaveOutPlayer.LastErrorName);
                     try { player.Dispose(); } catch { }
                     player = null;
                     StopAudio(run);
@@ -347,6 +371,7 @@ namespace MirrorpondHUD.Ui.Controls.Media
             catch (Exception ex)
             {
                 Log.Warn("启动音频解码失败: " + ex.Message);
+                RaiseAudioUnavailable("音频解码失败：" + ex.Message);
                 DisposeProcess(process);
                 DisposeAudio(player);
                 StopAudio(run);
@@ -443,26 +468,25 @@ namespace MirrorpondHUD.Ui.Controls.Media
                         // 老代晚归：直接退出，不碰新代状态、不报假失败（P2-18）。
                         if (!IsCurrent(run) || _stop) break;
 
-                        // 一帧都没解出来：可能是老版本 ffmpeg 不认 -readrate，退回 -re 再试一次。
+                        // 一帧都没解出来：可能是老版本 ffmpeg 不认 -readrate。
+                        // P1-6：真回退 —— 置 -re 标记并把速度固定成 1×（原生速率读包，
+                        // 倍速会让音画走叉），重开本代再验证一次。
+                        bool switched = false;
                         if (framesSinceLaunch == 0)
                         {
-                            bool retried = false;
-                            double speed;
                             lock (_sync)
                             {
                                 if (run != _run) break;
-                                speed = _speed;
-                                if (!_readrateRetried)
+                                if (!_useRe)
                                 {
-                                    _readrateRetried = true;
-                                    retried = true;
+                                    _useRe = true;
+                                    _speed = 1;
+                                    switched = true;
                                 }
                             }
-
-                            if (retried && Math.Abs(speed - 1) > 0.001)
+                            if (switched)
                             {
-                                lock (_sync) { if (run == _run) _speed = 1; }
-                                Log.Warn("ffmpeg 不支持 -readrate，改用 -re 并以 1× 播放");
+                                Log.Warn("ffmpeg 不支持 -readrate（0 帧输出），已改用 -re 回退，以 1× 播放");
                                 LoopRestart(run, 0);
                                 continue;
                             }
@@ -639,6 +663,14 @@ namespace MirrorpondHUD.Ui.Controls.Media
             double next = ClampSpeed(speed);
             if (Math.Abs(next - _speed) < 0.001) return;
 
+            // P1-6：-re 回退模式下 ffmpeg 以原生速率读包，没有倍速语义；
+            // 强行变速会让视频原速、音频 atempo 各走各的，所以保持 1×。
+            if (_useRe && Math.Abs(next - 1) > 0.001)
+            {
+                Log.Info("-re 回退模式不支持倍速，保持 1× 播放");
+                return;
+            }
+
             double position = Position;
             _speed = next;
             Log.Info("ffmpeg 播放速度：" + next.ToString("0.##") + "×");
@@ -752,22 +784,20 @@ namespace MirrorpondHUD.Ui.Controls.Media
             }
         }
 
+        /// <summary>P1-6：音频不可用的通知；处理器异常不影响播放线程。</summary>
+        void RaiseAudioUnavailable(string message)
+        {
+            Action<string> handler = AudioUnavailable;
+            if (handler != null)
+            {
+                try { handler(message); } catch { }
+            }
+        }
+
         // ==================== 探测 ====================
 
         /// <summary>探测整体超时（从进程启动算起，到点 Kill(true)）。</summary>
         const int ProbeTimeoutMs = 4000;
-
-        /// <summary>
-        /// 问 ffmpeg 要时长 / 分辨率 / 帧率：`ffmpeg -i 文件`（不带输出）会把信息打到 stderr
-        /// 然后报「没有输出文件」退出，正好拿来读。
-        ///
-        /// 同步版本只为保持旧签名 / 兼容调用方存在：**只允许在后台线程调用**。
-        /// UI 线程请用 <see cref="ProbeAsync"/>，否则 ffmpeg 卡住时 UI 会一起冻住（P1-8）。
-        /// </summary>
-        public static VideoInfo Probe(string ffmpeg, string path)
-        {
-            return ProbeAsync(ffmpeg, path).GetAwaiter().GetResult();
-        }
 
         /// <summary>
         /// 异步探测。stdout / stderr 由 AsyncProcess 并行异步读，整体超时后 Kill(true)，

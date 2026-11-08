@@ -46,6 +46,9 @@ namespace MirrorpondHUD.Ui.Controls.Media
         FfmpegPlayer _player;
         DispatcherTimer _progressTimer;
 
+        /// <summary>P1-6：音频启动失败的如实备注（null = 音频正常）；追加在右上角状态行。</summary>
+        string _audioNote;
+
         MediaSettings _settings = new MediaSettings();
         StyleSettings _style;
         string _loadedPath;
@@ -492,10 +495,13 @@ namespace MirrorpondHUD.Ui.Controls.Media
                     _videoWindow.Video.MediaOpened += OnVideoOpened;
                     _videoWindow.Video.MediaFailed += OnVideoFailed;
                     _videoWindow.Video.MediaEnded += OnVideoEnded;
-                    Log.Info("视频窗已创建：" + path);
+                    Log.Info("视频子窗已创建（Owner=卡片，鼠标穿透 / 不进 Alt+Tab）");
                 }
 
                 _videoWindow.Open(path, _settings);
+                // P1-6：把“成功打开”的记录放到 Open 之后——万一 EnsureWindow / Uri 抛异常，
+                // 日志顺序不该先说成功；原来的 INFO 还把文件路径写进了“创建”那条，语义含混。
+                Log.Info("视频已交给系统解码器打开：" + path);
                 ApplyFit();
                 StartProgress();
 
@@ -611,6 +617,18 @@ namespace MirrorpondHUD.Ui.Controls.Media
                         ShowMessage("ffmpeg 解码失败：\n" + message);
                     }));
                 };
+                _player.AudioUnavailable += message =>
+                {
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        if (_disposed || _player == null) return;
+                        // P1-6：音频起不来时视频照播，但状态行必须如实标注，
+                        // 不能让用户以为是自己关了声音。
+                        _audioNote = string.IsNullOrEmpty(message) ? "音频不可用" : "音频不可用（" + message + "）";
+                        UpdateStatus();
+                    }));
+                };
+                _audioNote = null;   // 新一轮播放重置上一轮的音频备注
 
                 ApplySize();
 
@@ -1105,6 +1123,12 @@ namespace MirrorpondHUD.Ui.Controls.Media
             {
                 _statusText.Inlines.Add(new Run(" · " + _speed.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "×"));
             }
+
+            // P1-6：音频不可用的备注（ffmpeg 解码、WaveOut 起不来时）。
+            if (_audioNote != null)
+            {
+                _statusText.Inlines.Add(new Run(" · " + _audioNote) { FontWeight = FontWeights.Normal });
+            }
         }
 
         static string Clock(double seconds)
@@ -1140,6 +1164,7 @@ namespace MirrorpondHUD.Ui.Controls.Media
         void ReleaseVideo()
         {
             _pendingVideo = null;
+            _audioNote = null;
 
             // 让正在 await 的 StartFfmpeg 探测作废（否则它回来时会重新起一个 player）。
             _videoRun++;

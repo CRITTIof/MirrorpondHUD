@@ -52,6 +52,8 @@ namespace MirrorpondHUD.Ui.Controls.Media
             if (_disposed) return;
 
             EnsureWindow();
+            // EnsureWindow 失败时它自己已经写了日志（"创建视频窗失败"）；窗口没建起来
+            // Open 只能放弃继续，调用方（TryStartVideo）随后把 MediaFailed 的路径走完。
             if (_window == null) return;
 
             _video.Stretch = ParseStretch(settings == null ? "Contain" : settings.Fit);
