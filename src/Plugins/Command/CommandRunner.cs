@@ -294,8 +294,15 @@ namespace MirrorpondHUD.Core
                 // 保留原来的 5 秒等待：子进程被 Kill 后，个别孙进程可能还攥着管道，
                 // 这时宁可返回已读到的部分（空数组），也不要无限等。
                 if (task.Wait(5000)) return task.Result;
+                // P1-5：超时要落日志——不然「命令输出为空 + 结果可疑」在事后无从解释。
+                // 等不到通常是孙进程还攥着管道；已读到的部分照常返回。
+                Log.Warn("命令输出读取器 5 秒内没有结束（孙进程可能还攥着管道），返回已读到的部分");
             }
-            catch { }
+            catch (Exception ex)
+            {
+                // P1-5：读取任务本身抛异常（例如管道读端已被释放）也要留底。
+                Log.Warn("命令输出读取任务异常: " + ex.Message);
+            }
             return new BoundedOutput();
         }
 

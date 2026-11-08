@@ -359,16 +359,17 @@ namespace MirrorpondHUD.Cards
         ///   但「复制完成后目标已落盘」的单条结果仍会合并进 items.json
         ///   （见 <see cref="PersistCompletedAfterDispose"/>），避免目标文件成为孤儿。
         ///
-        /// 这里刻意只 CancelAll、不 Dispose 队列本身：CardJobQueue.Dispose 与在飞任务的
-        /// Release 有竞态（评审 P2-10，不在本文件范围），取消后任务自己收尾即可。
+        /// 收尾直接调用 <see cref="CardJobQueue.Dispose"/>：队列内部会先取消全部任务，
+        /// 再等最后一个在飞任务退出后才释放信号量（延迟 DisposeGate，P2-10 竞态已修），
+        /// 所以这里不再需要「只用 CancelAll、不 Dispose」的绕行。
         /// </summary>
         public void Dispose()
         {
             if (_disposed) return;
             _disposed = true;
 
-            try { _jobs.CancelAll(); }
-            catch (Exception ex) { Log.Warn("中转站取消复制失败: " + ex.Message); }
+            try { _jobs.Dispose(); }
+            catch (Exception ex) { Log.Warn("中转站队列收尾失败: " + ex.Message); }
 
             try
             {
@@ -395,41 +396,6 @@ namespace MirrorpondHUD.Cards
             _list.SetEmptyText(EmptyText());
             _list.MaxHeight = Math.Max(120, cli.MaxHeight - 104);
             Rebuild();
-        }
-
-        /// <summary>自检用：当前列表条数。</summary>
-        internal int ItemCountForTest { get { return _items.Count; } }
-
-        /// <summary>自检用：复制 / 移动队列是否还在跑。</summary>
-        internal bool CopyBusyForTest { get { return _copyTotal > 0 && _copyDone < _copyTotal; } }
-
-        /// <summary>自检用：第一条已收纳文件的目标路径（没有则为 null）。</summary>
-        internal string FirstStoredPathForTest
-        {
-            get { return _items.Count == 0 ? null : _items[0].StoredPath; }
-        }
-
-        internal bool FirstIsDirectoryForTest
-        {
-            get { return _items.Count > 0 && _items[0].IsDirectory; }
-        }
-
-        /// <summary>自检用：设置搜索词，走真实的 TextChanged → 过滤 → Rebuild 链路。</summary>
-        internal void SetSearchForTest(string text)
-        {
-            _search.Text = text ?? "";
-        }
-
-        internal int VisibleCountForTest { get { return _list.Items.Count; } }
-
-        internal string BadgeForTest { get { return _header.Badge; } }
-
-        internal int SelectedCountForTest { get { return _list.Inner.SelectedItems.Count; } }
-
-        internal void SelectAllForTest()
-        {
-            _list.Inner.SelectedItems.Clear();
-            foreach (object row in _list.Items) _list.Inner.SelectedItems.Add(row);
         }
 
         public void ShowDropHint(bool over, int count)
@@ -1041,6 +1007,7 @@ namespace MirrorpondHUD.Cards
 
             int deleted = 0;
             int failed = 0;
+            var failures = new List<string>();
             foreach (StationItem item in deletable)
             {
                 try
@@ -1052,11 +1019,17 @@ namespace MirrorpondHUD.Cards
                     _items.Remove(item);
                     deleted++;
                 }
-                catch
+                catch (Exception ex)
                 {
                     failed++;
+                    // 不可逆删除的失败必须留底：哪个文件、为什么，否则静默半删后数据去向无从追查。
+                    failures.Add(item.Name + "（" + ex.Message + "）");
                 }
             }
+
+            if (failed > 0)
+                Log.Warn("中转站不可逆删除失败 " + failed + "/" + deletable.Count + " 项: " +
+                         string.Join("；", failures.ToArray()));
 
             if (deleted > 0)
             {
@@ -1343,6 +1316,8 @@ namespace MirrorpondHUD.Cards
                     {
                         // 复制已经成功，目标文件 / 文件夹保留；源删不掉只提示，不回滚目标。
                         SetStatus("已收纳，但删除源失败：" + ex.Message, CardStatusKind.Warning);
+                        // P1-5：源删除失败意味着磁盘上留了一份重复数据，必须让日志知道。
+                        Log.Warn("中转站移动模式删除源失败（目标保留）  源=" + item.Path + "  原因=" + ex.Message);
                     }
                 }
                 else
@@ -1354,11 +1329,15 @@ namespace MirrorpondHUD.Cards
             {
                 _items.Remove(item);
                 SetStatus("收纳失败：" + (job.Error ?? "未知错误"), CardStatusKind.Error);
+                // P1-5：静默只有卡片状态行有记录，卡片一关（换目录 / 删卡）这条信息就没了。
+                Log.Error("中转站收纳失败  文件=" + item.Name + "  目标=" + target +
+                          "  原因=" + (job.Error ?? "未知错误"));
             }
             else
             {
                 _items.Remove(item);
                 SetStatus("收纳已取消", CardStatusKind.Warning);
+                Log.Info("中转站收纳已取消  文件=" + item.Name);
             }
 
             Persist();

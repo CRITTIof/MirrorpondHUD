@@ -258,15 +258,37 @@ namespace MirrorpondHUD.Cards
                               ? "已取消"
                               : "● 完成 · 输入下一条命令" + (truncated ? " · 输出已截断" : ""), false);
 
-                Log.Info("命令行完成：退出码 " + result.ExitCode + "，输出 " +
-                         ((output.Text ?? "").Length) + " 字" + (result.TimedOut ? "（超时）" : "") +
-                         (truncated ? "（输出已截断）" : ""));
+                // P1-5：取消 / 超时 / 失败不能和正常完成混在一条 INFO 里，失败要带上 stderr 内容。
+                if (result.Canceled)
+                {
+                    Log.Info("命令行已取消（用户取消或卡片销毁）");
+                }
+                else if (result.Failed)
+                {
+                    Log.Warn("命令行失败：退出码 " + result.ExitCode +
+                             (truncated ? "（输出已截断）" : "") +
+                             (string.IsNullOrWhiteSpace(result.Error) ? "" : "  stderr=" + ClipForLog(result.Error)));
+                }
+                else if (result.TimedOut)
+                {
+                    // 超时不是「失败态」但值得单独 Warn：命令被强杀，输出可能不完整。
+                    Log.Warn("命令行超时被终止：退出码 " + result.ExitCode +
+                             (string.IsNullOrWhiteSpace(result.Error) ? "" : "  stderr=" + ClipForLog(result.Error)));
+                }
+                else
+                {
+                    Log.Info("命令行完成：退出码 " + result.ExitCode + "，输出 " +
+                             ((output.Text ?? "").Length) + " 字" +
+                             (truncated ? "（输出已截断）" : ""));
+                }
             }
             catch (Exception ex)
             {
                 if (session != _session) return;
                 output.Text = "! " + ex.Message;
                 SetStatus("执行失败：" + ex.Message, true);
+                // P1-5：卡片侧的执行失败也要进日志（原来只有状态行有这条信息）。
+                Log.Warn("命令行执行失败: " + ex.Message);
             }
             finally
             {
@@ -283,6 +305,15 @@ namespace MirrorpondHUD.Cards
                 try { if (_cancel != null) { _cancel.Dispose(); _cancel = null; } }
                 catch { }
             }
+        }
+
+        /// <summary>把 stderr 压成单行并截短，给日志用（避免多行刷屏 / 超长内容塞爆日志）。</summary>
+        static string ClipForLog(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return "";
+            string flat = text.Replace("\r", " ").Replace("\n", " ").Trim();
+            if (flat.Length <= 200) return flat;
+            return flat.Substring(0, 200) + "…";
         }
 
         /// <summary>卡片被收起 / 重建：把还在跑的命令掐掉。</summary>

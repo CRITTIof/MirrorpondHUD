@@ -164,7 +164,9 @@ namespace MirrorpondHUD.Core
                 if (_gateDisposed || _live > 0) return;
                 _gateDisposed = true;
             }
-            try { _gate.Dispose(); } catch { }
+            try { _gate.Dispose(); }
+            catch (ObjectDisposedException) { }
+            catch (Exception ex) { Log.Debug("信号量释放异常: " + ex.Message); }
         }
 
         /// <summary>任务结束后：计数递减、剪掉过老的已结束任务，必要时释放信号量。</summary>
@@ -235,10 +237,14 @@ namespace MirrorpondHUD.Core
             catch (OperationCanceledException)
             {
                 job.Finish(CardJobState.Canceled);
+                // P1-5：任务取消也要在日志里留痕（不算错误，用 Info）。
+                Log.Info("后台任务已取消  name=" + job.Name);
             }
             catch (Exception ex)
             {
                 job.Finish(CardJobState.Failed, ex.Message);
+                // P1-5：静默吃掉失败会让「复制了多少个文件成功」和 UI 报错对不上账。
+                Log.Warn("后台任务失败  name=" + job.Name + "  原因=" + ex.Message);
             }
             finally
             {
