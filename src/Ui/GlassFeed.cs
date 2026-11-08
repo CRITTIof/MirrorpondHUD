@@ -79,6 +79,14 @@ namespace MirrorpondHUD.Ui
         static bool _frameSourceTried;
         static DateTime _frameSourceIdle = DateTime.MinValue;
 
+        // P1-7：桌面复制源被判死后，按 30s → 60s → 2min 封顶退避重建；退避期内一律走 GDI，
+        // 不再每帧空转（创建 D3D 设备 / 桌面复制对象一次要几十 ms，每秒做会很糟）。
+        static DateTime _frameSourceDeadUntil = DateTime.MinValue;
+
+        // P1-7：GDI 读屏自身的失败（GetDC / BitBlt）以前完全静默；现在落日志，
+        // 但每秒多轮的循环经节流器（状态转移 + 60s 最小间隔）控制，不刷屏。
+        static readonly LogThrottle _gdiFailure = new LogThrottle("玻璃取图 GDI 读屏", 60000);
+
         /// <summary>整叠卡片连续「全黑」的轮数。只有整轮所有能取到画面的卡片都黑才计一轮，见 <see cref="CaptureAll"/>。</summary>
         static int _blankRounds;
 
@@ -158,7 +166,12 @@ namespace MirrorpondHUD.Ui
             _fps = frameRate;
             _shadow = shadow;
 
-            if (sourceChanged) ReleaseFrameSource();
+            if (sourceChanged)
+            {
+                ReleaseFrameSource();
+                // 取图方式被用户改了：旧退避计划随旧源一起作废，新方式立刻尝试。
+                _frameSourceDeadUntil = DateTime.MinValue;
+            }
 
             if (lookChanged)
             {
@@ -323,6 +336,14 @@ namespace MirrorpondHUD.Ui
             if (!EnsureSharedSurface(RoundUp(width), RoundUp(height))) return;
 
             IntPtr screen = GetDC(IntPtr.Zero);
+            if (screen == IntPtr.Zero)
+            {
+                // P1-7：GetDC 失败这一轮什么都做不了（连 GDI 位图都画不了），
+                // 节流器保证这类持续性失败不会每秒刷一条日志。
+                _gdiFailure.Failure("GetDC(IntPtr.Zero) 返回 null");
+                return;
+            }
+
             System.Diagnostics.Stopwatch clock = DiagnoseRaw ? System.Diagnostics.Stopwatch.StartNew() : null;
             bool fromDuplication = false;
 
@@ -331,19 +352,46 @@ namespace MirrorpondHUD.Ui
                 DesktopFrameSource source = EnsureFrameSource();
                 if (source != null)
                 {
-                    _frameSourceIdle = DateTime.UtcNow;
-                    fromDuplication = source.TryReadInto(_sharedBits, _sharedWidth * 4, left, top, width, height);
+                    bool ok = source.TryReadInto(_sharedBits, _sharedWidth * 4, left, top, width, height);
+                    fromDuplication = ok;
+                    // P1-7：只有真的读到帧才能刷新闲置计时——以前拿完源就刷新，
+                    // 死源会因为永不到 5 秒闲置而一直占着（也不会被释放）。
+                    if (ok) _frameSourceIdle = DateTime.UtcNow;
+
+                    if (!ok && source.IsDead)
+                    {
+                        // P1-7：源已经被判死 → 立刻释放，并按 30s → 60s → 2min 封顶退避重试。
+                        DateTime now = DateTime.UtcNow;
+                        DateTime baseUntil = _frameSourceDeadUntil > now ? _frameSourceDeadUntil : now;
+                        double backoffMs = Math.Min((baseUntil - now).TotalMilliseconds * 2, 120000);
+                        if (backoffMs < 30000) backoffMs = 30000;
+                        ReleaseFrameSource();
+                        _frameSourceDeadUntil = now.AddMilliseconds(backoffMs);
+                        Log.Info("桌面复制源已判死并释放，" + Math.Round(backoffMs / 1000) +
+                                 " 秒后重试重建；期间回退 GDI 读屏");
+                    }
                 }
 
                 if (!fromDuplication)
                 {
-                    BitBlt(_sharedDc, 0, 0, width, height, screen, left, top, Srccopy);
+                    if (BitBlt(_sharedDc, 0, 0, width, height, screen, left, top, Srccopy))
+                    {
+                        _gdiFailure.Success();
+                    }
+                    else
+                    {
+                        // P1-7：BitBlt 失败以前完全静默 —— 卡片会一直显示上一轮的旧图。
+                        _gdiFailure.Failure("BitBlt 失败（GetLastError=" +
+                                            Marshal.GetLastWin32Error() + "）");
+                    }
                 }
             }
             finally
             {
                 ReleaseDC(IntPtr.Zero, screen);
             }
+
+            if (fromDuplication) _gdiFailure.Success();
 
             if (clock != null)
             {
@@ -629,6 +677,9 @@ namespace MirrorpondHUD.Ui
                 ReleaseFrameSource();
             }
 
+            // P1-7：上一轮源被判死 → 退避期内一律走 GDI，不碰重建（重建一次要几十 ms）。
+            if (_frameSource == null && DateTime.UtcNow < _frameSourceDeadUntil) return null;
+
             if (_frameSource != null || _frameSourceTried) return _frameSource;
             _frameSourceTried = true;
 
@@ -638,6 +689,8 @@ namespace MirrorpondHUD.Ui
             {
                 _frameSource = source;
                 _frameSourceIdle = DateTime.UtcNow;
+                // 新源建成了，退避计划作废。
+                _frameSourceDeadUntil = DateTime.MinValue;
                 Log.Info("玻璃取图改用 DXGI 桌面复制（GPU 加速，不再用 GDI 读屏）");
             }
             else
@@ -655,6 +708,8 @@ namespace MirrorpondHUD.Ui
             _frameSource = null;
             _frameSourceTried = false;
             _frameSourceIdle = DateTime.MinValue;
+            // P1-7：这里不清 _frameSourceDeadUntil —— 死源的释放方（CaptureAll）
+            // 会在释放后按“上一次的退避时间 × 2”续算退避，不能被这里抹掉。
         }
 
         static bool EnsureSharedSurface(int width, int height)
@@ -940,7 +995,7 @@ namespace MirrorpondHUD.Ui
                                       IntPtr source, int sourceX, int sourceY, int sourceWidth,
                                       int sourceHeight, uint operation);
 
-        [DllImport("gdi32.dll")]
+        [DllImport("gdi32.dll", SetLastError = true)]
         static extern bool BitBlt(IntPtr destination, int destinationX, int destinationY,
                                   int width, int height, IntPtr source, int sourceX, int sourceY,
                                   uint operation);

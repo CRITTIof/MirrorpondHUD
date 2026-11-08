@@ -128,6 +128,12 @@ namespace MirrorpondHUD.Ui
         bool _dead;
 
         /// <summary>
+        /// P1-7：桌面复制是否已经进入不可用状态（staging 建不上 / 连续失败 / 预热黑帧超限）。
+        /// GlassFeed 据此释放整机源并做退避重试，而不是每一帧空转。
+        /// </summary>
+        public bool IsDead { get { return _dead; } }
+
+        /// <summary>
         /// 按设置里的「取图方式」（Auto / Gpu / Cpu）创建桌面复制。
         /// 失败只表示「这一轮用不了」，调用方照常退回 GDI 读屏，不会没画面。
         /// </summary>
@@ -299,6 +305,9 @@ namespace MirrorpondHUD.Ui
                 int hr = _createTexture(_device, descPtr, IntPtr.Zero, out _staging);
                 if (hr < 0 || _staging == IntPtr.Zero)
                 {
+                    // P1-7：staging 建不上是桌面复制终停的入口之一，必须留 HRESULT。
+                    Log.Warn("DXGI staging 纹理创建失败（" + width + "x" + height +
+                             "，hr=0x" + hr.ToString("X8") + "）");
                     _staging = IntPtr.Zero;
                     return false;
                 }
@@ -312,6 +321,18 @@ namespace MirrorpondHUD.Ui
             _stagingHeight = height;
             _frameAvailable = false;
             return true;
+        }
+
+        /// <summary>
+        /// 把取图源推进到不可用状态（P1-7）。置位是一次性的：第一次进入 dead 时写一条
+        /// 带原因（含 HRESULT）的 WARN，之后 TryReadInto 静默返回 false（调用方退避重试），
+        /// 不再逐帧刷日志。
+        /// </summary>
+        void EnterDead(string reason)
+        {
+            if (_dead) return;
+            _dead = true;
+            Log.Warn("桌面复制进入不可用状态（本轮起回退 GDI，GlassFeed 会退避后重建）: " + reason);
         }
 
         /// <summary>
@@ -329,7 +350,7 @@ namespace MirrorpondHUD.Ui
             if (left + width > _screenWidth) width = _screenWidth - left;
             if (top + height > _screenHeight) height = _screenHeight - top;
             if (width < 1 || height < 1) return false;
-            if (!EnsureStaging(width, height)) { _dead = true; return false; }
+            if (!EnsureStaging(width, height)) { EnterDead("staging 纹理创建失败（详见上方日志）"); return false; }
 
             bool regionKnown = _frameAvailable && _frameLeft == left && _frameTop == top
                                && _frameWidth == width && _frameHeight == height;
@@ -357,7 +378,8 @@ namespace MirrorpondHUD.Ui
                 {
                     if (hr == DxgiErrorAccessLost || hr == DxgiErrorNotFound) DropDuplication();
                     _failures++;
-                    if (_failures > 3) _dead = true;
+                    if (_failures > 3)
+                        EnterDead("AcquireNextFrame 连续失败（hr=0x" + hr.ToString("X8") + "）");
                     return false;
                 }
 
@@ -387,7 +409,8 @@ namespace MirrorpondHUD.Ui
                 if (mapHr < 0)
                 {
                     _failures++;
-                    if (_failures > 3) _dead = true;
+                    if (_failures > 3)
+                        EnterDead("Map 读回失败（hr=0x" + mapHr.ToString("X8") + "）");
                     _frameAvailable = false;
                     return false;
                 }
@@ -423,7 +446,8 @@ namespace MirrorpondHUD.Ui
                         if (blank)
                         {
                             _frameAvailable = false;
-                            if (++_primingAttempts > 6) _dead = true;
+                            if (++_primingAttempts > 6)
+                                EnterDead("预热 " + (_primingAttempts - 1) + " 轮全是黑帧（合成器未给实帧）");
                             return false;
                         }
 
