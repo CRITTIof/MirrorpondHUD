@@ -492,7 +492,10 @@ namespace MirrorpondHUD.Cards
                 Log.Info("已加载卡片插件 " + handle.Name + " " + handle.Version +
                          "（Kind=" + module.Kind + "，entry=" + entryType + "，" +
                          (handle.IsTextOnly ? "文字卡" : "富内容卡") + "，" +
-                         (string.IsNullOrEmpty(shadowDir) ? "源目录（未复制）" : "影子副本") + "）");
+                         (string.IsNullOrEmpty(shadowDir) ? "源目录（未复制）" : "影子副本") +
+                         (string.IsNullOrWhiteSpace(manifest.author)
+                             ? ""
+                             : "，author=" + Safe(manifest.author)) + "）");
                 return handle;
             }
             catch (Exception ex)
