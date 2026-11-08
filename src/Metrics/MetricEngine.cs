@@ -146,6 +146,9 @@ namespace MirrorpondHUD.Core
 
         int _sampleCount;
 
+        // §6：PDH 采集失败的节流日志（状态转移 + 60s 最小间隔，不随采样节奏刷屏）。
+        readonly LogThrottle _pdhFailure = new LogThrottle("PDH 采样", 60000);
+
         public MetricsSnapshot Sample()
         {
             Settings s = _settings;
@@ -154,7 +157,18 @@ namespace MirrorpondHUD.Core
 
             bool collected;
             lock (_pdhGate) { collected = _pdh.Collect(); }
-            if (!collected) snap.Error = "PDH 采集失败";
+            if (collected)
+            {
+                snap.Error = null;
+                // §6：PDH 恢复打点（失败→恢复记一条 Info，平时无输出）。
+                _pdhFailure.Success();
+            }
+            else
+            {
+                // §6：以前只在快照里塞 Error 字符串；持续性失败只在日志里也留痕（节流）。
+                _pdhFailure.Failure("PDH 收集失败（计数器路径或权限问题，UI 显示「数据不可用」）");
+                snap.Error = "PDH 采集失败";
+            }
 
             if (s.Data.ShowCpu) snap.CpuPercent = Clamp01(ReadSum(CpuPath));
             if (s.Data.ShowGpu) SampleGpu(snap, s);

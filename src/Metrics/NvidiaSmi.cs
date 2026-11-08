@@ -30,6 +30,9 @@ namespace MirrorpondHUD.Core
         NvidiaSample _current = new NvidiaSample();
         Task _probe;
 
+        // §6：失败日志节流（状态转移记一条 + 60s 最小间隔的「仍失败」，恢复时记一条）。
+        readonly LogThrottle _probeThrottle = new LogThrottle("nvidia-smi 采样", 60000);
+
         public NvidiaSample Current
         {
             get { lock (_gate) { return _current; } }
@@ -73,18 +76,37 @@ namespace MirrorpondHUD.Core
                 AsyncProcess.Result result =
                     await AsyncProcess.RunAsync(exe, QueryArgs, ProbeTimeoutMs).ConfigureAwait(false);
 
-                if (!result.Started) return;
+                if (!result.Started)
+                {
+                    // §6：以前完全静默——「为什么 GPU 指标一直是空的」无从排查。
+                    // 采样每 0.5s+ 一轮，经节流器只记状态转移与低频的「仍失败」。
+                    _probeThrottle.Failure("nvidia-smi 没有启动（路径 " + exe + "）");
+                    return;
+                }
                 if (result.TimedOut)
                 {
                     Log.Warn("nvidia-smi 超时（" + ProbeTimeoutMs + "ms），已结束进程");
                     return;
                 }
-                if (result.ExitCode != 0) return;
+                if (result.ExitCode != 0)
+                {
+                    _probeThrottle.Failure("nvidia-smi 退出码 " + result.ExitCode +
+                                           (string.IsNullOrEmpty(result.StdErr)
+                                               ? ""
+                                               : "  stderr=" + ClipText(result.StdErr, 120)));
+                    return;
+                }
 
                 NvidiaSample sample = Parse(result.StdOutText);
                 if (sample != null)
                 {
                     lock (_gate) { _current = sample; }
+                    // 有数据了：正常路径打点（失败→恢复会记一条 Info，平时无输出）。
+                    _probeThrottle.Success();
+                }
+                else
+                {
+                    _probeThrottle.Failure("nvidia-smi 输出无法解析: " + ClipText(result.StdOutText, 120));
                 }
             }
             catch (Exception ex)
@@ -119,6 +141,15 @@ namespace MirrorpondHUD.Core
             double v;
             if (double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out v)) return v;
             return double.NaN; // "[N/A]" 之类
+        }
+
+        /// <summary>把进程输出压成单行并限长，留日志诊断用。</summary>
+        static string ClipText(string text, int max)
+        {
+            if (string.IsNullOrEmpty(text)) return "";
+            string flat = text.Replace("\r", " ").Replace("\n", " ").Trim();
+            if (flat.Length <= max) return flat;
+            return flat.Substring(0, max) + "…";
         }
 
         string FindExe()
