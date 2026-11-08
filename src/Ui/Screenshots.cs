@@ -478,7 +478,8 @@ namespace MirrorpondHUD.Ui
             try
             {
                 Settings settings = ConfigStore.Load();
-                var window = new SettingsWindow(settings, s => { }, (x, y, m) => { }, () => { });
+                // ApplySettings 现在返回 bool（P0-2）：截图模式下用恒真 stub。
+                var window = new SettingsWindow(settings, s => true, (x, y, m) => { }, () => { });
                 window.WindowStartupLocation = WindowStartupLocation.Manual;
                 window.ShowInTaskbar = false;
                 window.Left = -20000;

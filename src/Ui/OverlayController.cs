@@ -857,7 +857,7 @@ namespace MirrorpondHUD.Ui
             RenderNow();
         }
 
-        public void ApplySettings(Settings settings)
+        public bool ApplySettings(Settings settings)
         {
             if (_command.IsActive) _command.Exit();
 
@@ -882,7 +882,9 @@ namespace MirrorpondHUD.Ui
             _keys.Configure(_settings.Data.KeyHistoryCount, _settings.Data.RepeatThreshold,
                             _settings.Data.MaxKeyChars);
 
-            ConfigStore.Save(_settings);
+            // 内存里的设置已经生效；落盘失败时必须如实告诉窗口，不能谎报成功（P0-2）。
+            bool saved = SaveSettings();
+
             if (_engine != null) _engine.UpdateSettings(_settings);
 
             if (_hotkeyRouter != null) _hotkeyRouter.Register();
@@ -892,7 +894,8 @@ namespace MirrorpondHUD.Ui
             RefreshVisibility();
             RenderNow();
 
-            Log.Info("设置已应用（卡片 " + _cards.Count + " 张）");
+            Log.Info("设置已应用（卡片 " + _cards.Count + " 张" + (saved ? "" : "，未写入磁盘") + "）");
+            return saved;
         }
 
         /// <summary>按新设置增删 / 重排卡片窗口，保留仍在列表里的窗口和它们的呼出状态。</summary>
@@ -1053,9 +1056,13 @@ namespace MirrorpondHUD.Ui
                 _settingsWindow.SyncAnchor(x, y, monitor);
         }
 
-        void SaveSettings()
+        /// <summary>写设置文件并如实记录失败；调用方（设置窗 / 卡片宿主）按返回值提示（P0-2）。</summary>
+        bool SaveSettings()
         {
-            ConfigStore.Save(_settings);
+            bool saved = ConfigStore.Save(_settings);
+            if (!saved)
+                Log.Warn("设置仅内存生效，写入磁盘失败: " + (ConfigStore.LastSaveError ?? "原因未知"));
+            return saved;
         }
 
         void ApplyAutoStart()

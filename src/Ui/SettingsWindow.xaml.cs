@@ -22,7 +22,7 @@ namespace MirrorpondHUD.Ui
         static readonly int[] RefreshOptions = { 200, 300, 500, 800, 1000, 2000 };
         static readonly int[] NvidiaOptions = { 1000, 2000, 3000, 5000 };
 
-        readonly Action<Settings> _onApply;
+        readonly Func<Settings, bool> _onApply;
         readonly Action<double, double, int> _onPosition;
         readonly Action _onClearKeys;
 
@@ -48,7 +48,7 @@ namespace MirrorpondHUD.Ui
         bool _applyingTheme;
         bool _importingTheme;
 
-        public SettingsWindow(Settings live, Action<Settings> onApply,
+        public SettingsWindow(Settings live, Func<Settings, bool> onApply,
                               Action<double, double, int> onPosition, Action onClearKeys)
         {
             InitializeComponent();
@@ -1651,7 +1651,7 @@ namespace MirrorpondHUD.Ui
                 return;
             }
 
-            if (_onApply != null) _onApply(s);
+            bool saved = _onApply != null && _onApply(s);
 
             // 控制器在 ApplySettings 里直接把传入对象当成 live settings（_settings = settings），
             // 之后热键切模式就落在它上面；记下来供下次保存前的运行时字段合并。
@@ -1672,12 +1672,23 @@ namespace MirrorpondHUD.Ui
             }
             else
             {
-                // 已经保存成功，只是刷新副本失败：保留旧副本，别把界面切成默认值。
+                // 内存里已经应用了，只是刷新副本失败：保留旧副本，别把界面切成默认值。
                 _loadFailed = true;
                 Log.Error("保存后刷新设置副本失败: " + cloneError);
             }
 
             RebuildCardList();
+
+            // 内存已生效但落盘失败＝重启会回滚：状态行必须如实说（P0-2）。
+            if (!saved)
+            {
+                string reason = string.IsNullOrWhiteSpace(ConfigStore.LastSaveError)
+                    ? "原因未知（详见日志）"
+                    : ConfigStore.LastSaveError.Trim();
+                StatusText.Text = "已应用，但保存到磁盘失败：" + reason + "。重启后仍是旧配置（详见日志）";
+                return;
+            }
+
             StatusText.Text = _loadFailed
                 ? "已保存并应用，但刷新设置副本失败（详情见日志）"
                 : "已保存并应用（" + DateTime.Now.ToString("HH:mm:ss") + "）";

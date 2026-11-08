@@ -51,24 +51,23 @@ namespace MirrorpondHUD.Ui
             Update();
 
             int left, top, right, bottom;
-            if (!_tray.Visible)
+            if (_tray.Visible)
             {
-                Log.Info("托盘图标：未启用");
+                if (_tray.TryGetRect(out left, out top, out right, out bottom))
+                    Log.Info("托盘图标：已显示，位置 " + left + "," + top + " - " + right + "," + bottom);
+                else
+                    Log.Warn("托盘图标：已添加但未取得屏幕位置（Win11 默认收在“隐藏图标”里）");
             }
-            else if (_tray.TryGetRect(out left, out top, out right, out bottom))
+            else if (_host.Settings.Behavior.TrayEnabled && _tray.AddFailed)
             {
-                Log.Info("托盘图标：已显示，位置 " + left + "," + top + " - " + right + "," + bottom);
+                // 只兜「设置要求显示但加不进托盘」（安全策略 / Shell 拒绝）这一种情况；
+                // 用户自己在设置里关掉托盘属于正常状态，绝不能强弹设置窗（P0-1）。
+                Log.Warn("托盘不可用（设置要求显示但图标添加失败），已自动打开设置窗口作为兜底入口");
+                Application.Current.Dispatcher.BeginInvoke(new Action(_host.ShowSettings), DispatcherPriority.Background);
             }
             else
             {
-                Log.Warn("托盘图标：已添加但未取得屏幕位置（Win11 默认收在“隐藏图标”里）");
-            }
-
-            // 托盘被安全策略拦掉时不要让用户“无处可点”，直接打开设置窗口。
-            if (!_tray.Visible)
-            {
-                Application.Current.Dispatcher.BeginInvoke(new Action(_host.ShowSettings), DispatcherPriority.Background);
-                Log.Warn("托盘不可用，已自动打开设置窗口作为兜底入口");
+                Log.Info("托盘图标：已按设置关闭");
             }
         }
 

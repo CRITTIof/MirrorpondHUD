@@ -148,6 +148,7 @@ namespace MirrorpondHUD.Ui
         readonly Icon _icon;
 
         bool _added;
+        bool _addFailed;
         bool _disposed;
 
         public event Action ToggleVisibility;
@@ -220,6 +221,13 @@ namespace MirrorpondHUD.Ui
             }
         }
 
+        /// <summary>
+        /// 最近一次 <see cref="Visible"/>=true 请求后图标是否真的加进了托盘。
+        /// 与 <see cref="Visible"/>（getter = <c>_added</c>）分开：设置里的开关关掉托盘时
+        /// <see cref="Visible"/> 也是 false，但那不叫「不可用」（P0-1）。
+        /// </summary>
+        public bool AddFailed { get { return _addFailed; } }
+
         public bool TryGetRect(out int left, out int top, out int right, out int bottom)
         {
             left = top = right = bottom = 0;
@@ -252,12 +260,21 @@ namespace MirrorpondHUD.Ui
 
             if (!Shell_NotifyIcon(NIM_ADD, ref data))
             {
+                // 上游 Visible 属性无法区分「用户关了托盘」和「添加失败」——
+                // 这里把添加失败暴露出去，调用方才能做正确的兜底（P0-1）。
+                _addFailed = true;
                 Log.Warn("Shell_NotifyIcon(NIM_ADD) 失败，err=" + Marshal.GetLastWin32Error());
                 return;
             }
 
+            _addFailed = false;
+
             data.uVersion = NOTIFYICON_VERSION_4;
-            Shell_NotifyIcon(NIM_SETVERSION, ref data);
+            if (!Shell_NotifyIcon(NIM_SETVERSION, ref data))
+            {
+                // 版本协商失败只影响 v4 回调语义（仍按 v0 处理），图标照常可用，不算添加失败。
+                Log.Warn("Shell_NotifyIcon(NIM_SETVERSION) 失败，err=" + Marshal.GetLastWin32Error());
+            }
 
             _added = true;
 
@@ -323,6 +340,7 @@ namespace MirrorpondHUD.Ui
         {
             Log.Info("检测到任务栏重建（Explorer 重启），重新添加托盘图标");
             _added = false;
+            _addFailed = false;
             AddIcon();
         }
 

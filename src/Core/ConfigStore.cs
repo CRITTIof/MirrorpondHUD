@@ -29,6 +29,12 @@ namespace MirrorpondHUD.Core
         /// <summary>配置来自更高 SchemaVersion：只读加载，Save 拒绝覆盖。</summary>
         public static bool LastLoadReadOnly { get; private set; }
 
+        /// <summary>
+        /// 最近一次 <see cref="Save"/> 失败的原因；成功会被清空。
+        /// 设置窗 / 控制器用它在界面上如实提示「保存失败」，而不是谎报成功（P0-2）。
+        /// </summary>
+        public static string LastSaveError { get; private set; } = "";
+
         public static string Path
         {
             get
@@ -75,6 +81,7 @@ namespace MirrorpondHUD.Core
             bool recovered = false;
             bool future = false;
             bool empty = false;
+            bool brokenBackupFailed = false;
 
             string file = Path;
             bool exists = File.Exists(file);
@@ -87,31 +94,43 @@ namespace MirrorpondHUD.Core
                 {
                     if (corrupted)
                     {
-                        TryBackupBroken();
-                        Log.Warn("设置文件损坏，已备份为 .broken-*");
-                        LastLoadWarning = "设置文件损坏，原文件已备份为 .broken-*。";
+                        brokenBackupFailed = !TryBackupBroken();
+                        if (brokenBackupFailed)
+                        {
+                            Log.Error("设置文件损坏，且备份失败（磁盘满 / 只读 / 文件被占用）。" +
+                                      "后续不会把默认设置覆盖到原文件上，请先把 settings.json 手动拷出再处理");
+                            LastLoadWarning = "设置文件损坏，且备份失败：请先把 " + file + " 手动拷出（详情见日志）";
+                        }
+                        else
+                        {
+                            Log.Warn("设置文件损坏，已备份为 .broken-*");
+                            LastLoadWarning = "设置文件损坏，原文件已备份为 .broken-*。";
+                        }
                     }
                     else
                     {
                         LastLoadWarning = "设置文件为空。";
                     }
 
-                    Settings backupSettings;
-                    bool backupMigrated;
-                    bool backupFuture;
-                    if (TryLoadBackup(out backupSettings, out backupMigrated, out backupFuture))
+                    if (!brokenBackupFailed)
                     {
-                        settings = backupSettings;
-                        migrated = backupMigrated;
-                        future = backupFuture;
-                        recovered = true;
-                        LastLoadWarning += " 已从 settings.json.bak 恢复。";
-                        Log.Warn("已从 settings.json.bak 恢复设置");
-                    }
-                    else
-                    {
-                        settings = new Settings();
-                        LastLoadWarning += " 没有可用的备份，已使用默认设置。";
+                        Settings backupSettings;
+                        bool backupMigrated;
+                        bool backupFuture;
+                        if (TryLoadBackup(out backupSettings, out backupMigrated, out backupFuture))
+                        {
+                            settings = backupSettings;
+                            migrated = backupMigrated;
+                            future = backupFuture;
+                            recovered = true;
+                            LastLoadWarning += " 已从 settings.json.bak 恢复。";
+                            Log.Warn("已从 settings.json.bak 恢复设置");
+                        }
+                        else
+                        {
+                            settings = new Settings();
+                            LastLoadWarning += " 没有可用的备份，已使用默认设置。";
+                        }
                     }
                 }
             }
@@ -147,7 +166,8 @@ namespace MirrorpondHUD.Core
             catch (Exception ex)
             {
                 Log.Error("设置归一化失败，使用默认设置", ex);
-                TryBackupBroken();
+
+                bool localizedBackupFailed = !TryBackupBroken();
                 settings = new Settings();
                 try
                 {
@@ -160,12 +180,24 @@ namespace MirrorpondHUD.Core
                 }
 
                 corrupted = true;
-                LastLoadWarning = "设置归一化失败，已使用默认设置；原文件已备份为 .broken-*。";
+                if (localizedBackupFailed)
+                {
+                    LastLoadWarning = "设置归一化失败，且损坏现场备份失败：请先把 " + file +
+                                      " 手动拷出（详情见日志）；本次不会写入默认设置。";
+                }
+                else
+                {
+                    LastLoadWarning = "设置归一化失败，已使用默认设置；原文件已备份为 .broken-*。";
+                }
+
+                // 归一化失败且备不下来的现场绝不能被默认值覆盖。
+                if (localizedBackupFailed) brokenBackupFailed = true;
             }
 
             // 损坏恢复后立刻落盘，避免每次启动重复处理。
             // 从 .bak 恢复时不要再把损坏的主文件复制回 .bak。
-            if (!LastLoadReadOnly)
+            // 但「损坏现场备份失败」时必须中止：没有备份就不允许用默认值覆盖原文件（P1-2）。
+            if (!LastLoadReadOnly && !brokenBackupFailed)
             {
                 bool keepBackup = !recovered;
                 if (migrated || recovered || corrupted || empty)
@@ -257,10 +289,16 @@ namespace MirrorpondHUD.Core
 
         static bool SaveCore(Settings settings, bool backup)
         {
-            if (settings == null) return false;
+            if (settings == null)
+            {
+                LastSaveError = "设置对象为空";
+                return false;
+            }
+
             if (LastLoadReadOnly)
             {
-                Log.Warn("配置来自更高版本，只读模式拒绝保存，避免降级覆盖");
+                LastSaveError = "配置来自更高 SchemaVersion，当前版本只读（降级覆盖会破坏新配置）";
+                Log.Warn("配置来自更高版本，只读模式拒绝保存");
                 return false;
             }
 
@@ -298,6 +336,7 @@ namespace MirrorpondHUD.Core
                             catch (Exception copyEx)
                             {
                                 Log.Error("设置回退备份失败，已中止保存", copyEx);
+                                LastSaveError = "旧配置备份失败（磁盘满 / 只读 / 文件被占用），已中止保存";
                                 return false;
                             }
 
@@ -316,11 +355,13 @@ namespace MirrorpondHUD.Core
 
                 tmp = null;
                 Log.Info("设置已保存: " + file);
+                LastSaveError = "";
                 return true;
             }
             catch (Exception ex)
             {
                 Log.Error("保存设置失败", ex);
+                LastSaveError = DescribeIoError(ex, "写入失败");
                 return false;
             }
             finally
@@ -329,6 +370,54 @@ namespace MirrorpondHUD.Core
                 {
                     try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
                 }
+            }
+        }
+
+        /// <summary>把写盘异常整理成一句能指导用户行动的原因（进设置窗状态行与日志）。</summary>
+        static string DescribeIoError(Exception ex, string prefix)
+        {
+            string message = string.IsNullOrEmpty(ex.Message) ? "未知错误" : ex.Message;
+            while (message.EndsWith("\r\n") || message.EndsWith("\n") || message.EndsWith("\r"))
+                message = message.Substring(0, message.Length - Environment.NewLine.Length);
+
+            if (ex is UnauthorizedAccessException)
+                return prefix + "：访问被拒绝（配置目录或文件只读 / 被更高权限进程占用）";
+            if (ex is IOException io && IsDiskFull(io))
+                return prefix + "：磁盘空间不足";
+            if (ex is DirectoryNotFoundException || ex is FileNotFoundException)
+                return prefix + "：配置目录或文件不见了（被移动 / 删除？）";
+
+            return prefix + "：" + message;
+        }
+
+        static bool IsDiskFull(IOException ex)
+        {
+            // Win32 ERROR_DISK_FULL = 0x27, ERROR_DISK_QUOTA_EXCEEDED = 0x4B1;HResult 低 16 位即可。
+            int hresult = ex.HResult & 0xFFFF;
+            return hresult == 0x0027 || hresult == 0x04B1 || hresult == 0x0070;
+        }
+
+        /// <summary>校验损坏配置的备份；失败返回 false（调用方必须当作「没有备份」处理）。</summary>
+        static bool TryBackupBroken()
+        {
+            try
+            {
+                string file = Path;
+                if (File.Exists(file))
+                {
+                    string bad = file + ".broken-" + DateTime.Now.ToString("yyyyMMdd-HHmmss");
+                    File.Copy(file, bad, true);
+                    Log.Warn("已备份损坏的配置文件到 " + bad);
+                    return true;
+                }
+
+                return true;    // 没有主文件就不存在「损坏现场」，不算失败
+            }
+            catch (Exception ex)
+            {
+                // 磁盘满 / 只读 / 杀软锁文件：再保存就会把损坏现场永久覆盖掉。
+                Log.Error("备份损坏的配置文件失败（现场已被保留在原文件里）: " + ex.Message, ex);
+                return false;
             }
         }
 
@@ -345,21 +434,6 @@ namespace MirrorpondHUD.Core
                 }
                 stream.Flush(true);
             }
-        }
-
-        static void TryBackupBroken()
-        {
-            try
-            {
-                string file = Path;
-                if (File.Exists(file))
-                {
-                    string bad = file + ".broken-" + DateTime.Now.ToString("yyyyMMdd-HHmmss");
-                    File.Copy(file, bad, true);
-                    Log.Warn("已备份损坏的配置文件到 " + bad);
-                }
-            }
-            catch { }
         }
     }
 }
