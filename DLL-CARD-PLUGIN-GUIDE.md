@@ -229,7 +229,7 @@ namespace MyCard
 
 ### 3.2 图标
 
-`Icon` 使用 ReiconFont 码位，推荐直接引用 `MirrorpondHUD.Core.Icons`：
+`Icon` 使用 Lucide 码位（2.26.0 起设置页与卡片模块图标统一 Lucide），推荐直接引用 `MirrorpondHUD.Core.Icons`。
 
 | 常量 | 用途 | 常量 | 用途 |
 |---|---|---|---|
@@ -239,7 +239,7 @@ namespace MyCard
 | `Icons.Agent` | AI / 对话 | `Icons.Volume` / `Icons.Microphone` | 音频 |
 | `Icons.Add` / `Icons.Search` / `Icons.Trash` / `Icons.Move` | 操作 | `Icons.Video` / `Icons.Clock` / `Icons.Play` / `Icons.PauseMedia` | 媒体 |
 
-也可以直接写任意 ReiconFont 码位（`""` 等）；不要用普通 Unicode emoji，宿主卡片字体里没有对应字形时会变成方框。
+也可以直接写任意 Lucide 码位（推荐用 `LucideIcons` 里的常量，或 `LucideIcons.Get("cpu")` 查询）；不要用普通 Unicode emoji，宿主卡片字体里没有对应字形时会变成方框。键帽仍由 Reicon 专门绘制，不要用 Reicon 图标码位充当卡片图标。
 
 ---
 
@@ -889,7 +889,7 @@ var text = new TextBlock
 - `FontFamily`：宿主内嵌字体，插件无需复制 TTF。
 
 图标字体只负责“字形”；大小用 `FontSize` / `CardIcon.Size`，颜色用 `Foreground`（`CardIcon.ApplyStyle` 自动取卡片前景色）。
-ReiconFont 仍保留给键帽 / 现有设置页图标；新卡片图标优先 Lucide。
+Lucide 负责全部卡片 / 设置页图标；ReiconFont 只保留键帽字形（U+E000–U+E056），不再用于新图标。
 
 
 ![Lucide 图标示例](docs/lucide-icons.png)

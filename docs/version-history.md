@@ -1,4 +1,4 @@
-# 版本修改记录（2.4.1 → 2.25.0）
+# 版本修改记录（2.4.1 → 2.26.0）
 
 > 范围：本文只记录**这一轮接手后我做的版本**（v2.4.1 起）。v2.4.0 及更早是既有历史，不在本文档里。
 > 数据全部取自仓库真实提交（`git diff --shortstat <上一版>..<本版>`），文件行的 `+ / -` 就是实际增删行数。
@@ -10,10 +10,10 @@
 > `f67a255` / `5f8933c` / `ef70cea`，**未发布、未合并**）；`v2.14.5`（`a0fe549`）/ `v2.14.6`（`3e6abc6`）
 > 已推送到 `origin/feature/runtime-card-loading`；
 > `v2.14.7`（`abcbcec`）/ `v2.14.8`（`633e9d6`）已随文档同步提交 `d73d2ec` 推送到同一分支（未发布、未合并）；
-> `v2.14.9`（`aba873a`）已推送；`v2.15.0`（`78d3381`）已推送（文档同步提交 `2eba9b4`）；`v2.16.0`（代码 `6406d96`，文档同步 `d1fd414`）**已推送并快进合并到 `main`**；`v2.17.0`（`27b8bbd`）/ `v2.18.0`（`1e1c6ac`）/ `v2.19.0`（`d21773c`）**已推送并快进合并到 `main`**；`v2.20.0`（代码 `d8f36ab`，文档 `de64021`）**已推送并快进合并到 `main`**；`v2.21.0`（代码 `0d687e9`，文档 `4911e1b`）**已推送并快进合并到 `main`**，未打 tag、未发布 Release；`v2.22.0`（代码为 `73837aa`–`2907be0` 的 12 个提交，文档同步本次提交）**已合并 `main`**，未打 tag、未发布 Release。 `v2.23.0`（本轮 6 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.24.0`（本轮 4 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.25.0`（本轮 2 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。
+> `v2.14.9`（`aba873a`）已推送；`v2.15.0`（`78d3381`）已推送（文档同步提交 `2eba9b4`）；`v2.16.0`（代码 `6406d96`，文档同步 `d1fd414`）**已推送并快进合并到 `main`**；`v2.17.0`（`27b8bbd`）/ `v2.18.0`（`1e1c6ac`）/ `v2.19.0`（`d21773c`）**已推送并快进合并到 `main`**；`v2.20.0`（代码 `d8f36ab`，文档 `de64021`）**已推送并快进合并到 `main`**；`v2.21.0`（代码 `0d687e9`，文档 `4911e1b`）**已推送并快进合并到 `main`**，未打 tag、未发布 Release；`v2.22.0`（代码为 `73837aa`–`2907be0` 的 12 个提交，文档同步本次提交）**已合并 `main`**，未打 tag、未发布 Release。 `v2.23.0`（本轮 6 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.24.0`（本轮 4 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.25.0`（本轮 2 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.26.0`（本轮 2 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。
 > `v2.14.1` / `v2.14.2` / `v2.14.4` 的规模用对应提交的 `git show --shortstat`；`v2.14.3` / `v2.14.5` / `v2.14.6`
 > 按当时提交前工作区的 `git diff --shortstat` 计算；`v2.14.7` / `v2.14.8` 用对应提交的 `git show --shortstat`；
-> `v2.14.9` 用提交前工作区的 `git diff --shortstat -- MirrorpondHUD.csproj src`；`v2.15.0` 用 `git show --shortstat 78d3381`；`v2.16.0` 用 `git show --shortstat 6406d96`；`v2.17.0` 用 `git show --shortstat 27b8bbd`；`v2.18.0` 用 `git show --shortstat 1e1c6ac`；`v2.19.0` 用 `git show --shortstat d21773c`；`v2.20.0` 用 `git show --shortstat d8f36ab`；`v2.21.0` 用 `git show --shortstat 0d687e9`（文档同步另计；评审指出的 `d6e1af3` 是未合并的游离提交，实际合并进 main 的是 `0d687e9`）；`v2.22.0` 用 `git diff --shortstat b366e32..4899f3f`（30 文件，+1116 / −246；版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.23.0` 用 `git diff --shortstat 6da03f0..HEAD`（58 文件，+6304 / −4618；版本号 15 文件 +15 / −15 与版本记录另计）。 `v2.24.0` 用 `git diff --shortstat 96acd1b..HEAD`（55 文件，+1876 / −301；版本号 15 文件 +15 / −15 与版本记录另计）。 `v2.25.0` 用 `git diff --shortstat 29efb91..HEAD`（24 文件，+520 / −153；版本号 15 文件 +15 / −15 与版本记录另计）。
+> `v2.14.9` 用提交前工作区的 `git diff --shortstat -- MirrorpondHUD.csproj src`；`v2.15.0` 用 `git show --shortstat 78d3381`；`v2.16.0` 用 `git show --shortstat 6406d96`；`v2.17.0` 用 `git show --shortstat 27b8bbd`；`v2.18.0` 用 `git show --shortstat 1e1c6ac`；`v2.19.0` 用 `git show --shortstat d21773c`；`v2.20.0` 用 `git show --shortstat d8f36ab`；`v2.21.0` 用 `git show --shortstat 0d687e9`（文档同步另计；评审指出的 `d6e1af3` 是未合并的游离提交，实际合并进 main 的是 `0d687e9`）；`v2.22.0` 用 `git diff --shortstat b366e32..4899f3f`（30 文件，+1116 / −246；版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.23.0` 用 `git diff --shortstat 6da03f0..HEAD`（58 文件，+6304 / −4618；版本号 15 文件 +15 / −15 与版本记录另计）。 `v2.24.0` 用 `git diff --shortstat 96acd1b..HEAD`（55 文件，+1876 / −301；版本号 15 文件 +15 / −15 与版本记录另计）。 `v2.25.0` 用 `git diff --shortstat 29efb91..HEAD`（24 文件，+520 / −153；版本号 15 文件 +15 / −15 与版本记录另计）。 `v2.26.0` 源码改动 14 文件，+165 / −87（版本号 15 文件 +15 / −15 与文档同步另计）。
 
 ## 0. 总览
 
@@ -78,6 +78,7 @@
 | v2.23.0 | 2026-11-10 | 本轮 6 个提交 | 2026-11 审阅第二批收尾 + 第三批结构性拆分：StationView / OverlayController / SettingsWindow / SelfTest 拆分；原子写共用 + CommandLineMode；剩余日志 / 契约 / 文档 / 风格收尾 | 58 文件，+6304 / −4618（版本号与版本记录另计） |
 | v2.24.0 | 2026-11-10 | 本轮 4 个提交 | Schema 7（玻璃模糊字段合并 / DesktopFeed 更名 / Chat 别名迁移）、GlassRuntimeState 单源、回收站删除、UiKit 控件画廊、外部引用清理 | 55 文件，+1876 / −301（版本号与版本记录另计） |
 | v2.25.0 | 2026-11-10 | 本轮 2 个提交 | 卡片拖动跟随、呼出/消失 160ms 淡入淡出 + 8px、补位/自动对齐 180ms ease-out | 24 文件，+520 / −153（版本号与版本记录另计） |
+| v2.26.0 | 2026-11-10 | 本轮 2 个提交 | 非常驻卡（命令卡）呼出/收起动画 + 布局调度不再打断动画；Reicon 图标换 Lucide（键帽保留） | 14 文件，+165 / −87（版本号与版本记录另计） |
 
 ---
 
@@ -2689,7 +2690,61 @@ JSON 绑定错误静默置空等。2.22.0 按「失败必须可见」铁律完�
 
 ---
 
-## 60. 不在版本里的东西
+## 60. v2.26.0（本轮 2 个提交，分支 `feature/lucide-icons`，未合并 main）
+
+### 背景
+
+2.25.0 虽然给普通卡片加了呼出 / 消失 / 补位动画，但命令卡走的是 `CommandModeController` 里的
+无动画 `ShowCard/HideCard` 重载，用户按 F9 呼出时仍然是瞬切；同时窗口刚 `Show()` 触发的
+`SizeChanged → Schedule → Layout()` 会用 `ApplyPosition(false)` 把位置动画直接吸到目标位，
+160ms 滑入可能被截成 1 帧。图标侧则长期是 Reicon 与 Lucide 混用：Lucide 已用于 `CardIcon`，
+但设置页页签 / 按钮、模块图标、媒体播放状态和硬件占位符仍走 Reicon 图标码位。
+
+本轮把非常驻卡（命令卡、媒体卡）统一到同一条动画路径，修掉布局调度打断动画的问题；
+同时把可替换的 Reicon 图标全部换成 Lucide，只把键帽 PUA 字形留给 Reicon。
+
+### 改动
+
+1. **命令卡动画**：`ICommandModeHost.ShowCard/HideCard` 增加 `animate` 参数；
+   `CommandModeController.Enter/Exit` 传 `true`，命令卡与媒体卡共用 160ms 淡入淡出 + 8px 滑动，
+   出现时下方卡片 180ms 让位、收起后 180ms 补位。键盘焦点 / 面板初始化顺序保持不变。
+2. **布局调度不打断动画**：`OverlayWindow` 新增 `IsPositionMotionActive`；`ApplyPosition(false)`
+   在本窗口已有位置动画且可见时改走动画路径，从当前位置续接新目标。这样窗口刚 `Show()` 的
+   `SizeChanged` 重排不会再让呼出滑入瞬移，补位中的其他卡片也不会被直接吸到终点。
+3. **图标换 Lucide**：`Icons` 的所有码位改为 `LucideIcons` 常量（CPU / GPU / RAM / ROM / 网络 /
+   USB / 音频 / 软件 / 界面），并登记 `IsIconChar`；`TextCanvas` 图标 run 改用
+   `LucideIcons.FontFamily`，键帽仍用 Reicon；设置页 `Theme.xaml` / `SettingsWindow.xaml` 改用
+   `LucideFont`，添加卡片菜单、卡片模块 / 预设图标、媒体播放状态同步；硬件占位符
+   `{cpu_icon}` 等现在输出 Lucide 字形。
+4. **自检**：`CardIconSelfTest` 增加图标字符登记、键帽码位不误判、图标不落进 U+E000–U+E056
+   的断言，防止以后重新按整段 PUA 区间判断。
+5. **版本**：宿主 / Contracts / UiKit / 6 个插件工程与 manifest 统一 2.26.0；插件 API 仍为 2，
+   契约无破坏性变更，Schema 仍为 7。
+
+### 验证
+
+- `dotnet build -c Release`：**0 警告 0 错误**；
+- `--selftest`：**退出码 0、失败项 0**；
+- `--screenshot-settings` / `--screenshot-cards` / `--screenshot` 退出码 0，设置页页签、
+  添加 / 搜索 / 移动 / 删除按钮、卡片模块图标、硬件占位符均显示 Lucide 字形；
+- 用日志里的热键宿主窗口直接投递 `WM_HOTKEY`，逐帧读取各卡片窗口 `GetWindowRect`：
+  命令卡呼出 `top 365 → 357`（8px），下方卡片 `357 → 467`、`467 → 577`；
+  收起命令卡 `357 → 349`，下方卡片反向回到 `467 → 357`、`577 → 467`，
+  轨迹为多帧渐变而不是单帧跳变；
+- `--smoke 3 --smoke-visible` 退出码 0；退出时既有的插件弱引用 WARN 仍是基线行为。
+
+### 风险 / 未验证
+
+- `CopyFromScreen` 抓不到 WPF 分层窗口，动画验收改用窗口位置轨迹；内容透明度动画只验证了
+  代码路径和最终可见性，没有逐帧抓 alpha；
+- 旧配置里如果用户把 Reicon 图标码位直接粘进内容模板（而不是用 `{cpu_icon}` 占位符），
+  升级后会按普通 PUA 字符处理，可能显示方框；默认内容和占位符不受影响；
+- 命令卡是交互卡，呼出 160ms 内窗口在移动且仍可命中；收起路径已禁用内容命中测试；
+- 未做多显示器 / 高 DPI / RDP / 长时拖动压测，也未做逐帧 CPU 预算。
+
+---
+
+## 61. 不在版本里的东西
 
 - 验收脚本、样张与测量脚本都在仓库外维护，**没有提交**。
 - 发布：`main` 与标签已推送到 [github.com/CRITTIof/MirrorpondHUD](https://github.com/CRITTIof/MirrorpondHUD)；
@@ -2698,7 +2753,7 @@ JSON 绑定错误静默置空等。2.22.0 按「失败必须可见」铁律完�
   更早的 Release 正文与附件保留原样，v2.4.0 的 Release 已删除（tag `v2.4.0` 保留，历史仍可检出）。
 - 仓库追踪的文件共 205 个（v2.21.0 时 174 个；2.23.0 结构性拆分 +20，2.24.0 +7，2.25.0 新增 CardMotion +1），`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
 
-## 61. 已知代价（跨版本）
+## 62. 已知代价（跨版本）
 
 - 桌面亚克力为了不拍到自己，会把卡片排除在截屏之外 —— 这个模式下截图 / 录屏里**看不到卡片**，观感只能靠肉眼与离屏渲染验证。
 - 兼容实现每帧对身后窗口做 `PrintWindow`，拖动时最多 ~21 帧/秒；要更高只能走桌面亚克力（DXGI）。

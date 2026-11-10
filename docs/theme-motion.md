@@ -7,7 +7,7 @@
 > | 启动动画 | 欢迎语打字 / 退格、光标样式、入场节奏 | 有，但参数写死在代码里 |
 > | 基本外观 | 颜色、字体、字号、圆角、内边距、描边、背景图、宽度 | 有，散在 `Style` / `Overlay` / `Cli` |
 > | 特殊外观 | 面板、按钮、滑块、输入框、滚动条这些控件的样式 | 有，但只有「跟随前景色推导的灰阶」，没有第二个形状 |
-> | 行为动画 | 非常驻卡片的出现 / 消失、下方卡片让位 | **没有**，现在是瞬切 |
+> | 行为动画 | 非常驻卡片的出现 / 消失、下方卡片让位 | 2.25.0 起已实现，2.26.0 补齐非常驻卡（见 §9） |
 >
 > 分工：**静态外观的字段映射与 `.mptheme` 文件格式见 [theme-system.md](theme-system.md)**（那份文档已经把颜色 / 字体 /
 > 形状 / 面板尺寸的映射、导入导出、回滚写完了）。本文只补它没覆盖的部分：启动动画、控件样式、行为动画，
@@ -96,7 +96,7 @@ if (_settings.Style.Acrylic) CaptureGlass();   // ← 每次移动都抓一次
 | 启动动画 | `OverlayController.BeginIntro/IntroTick/FinishIntro`（`_introTimer` 20 ms）、`TextCanvas.DrawCursor` | 4 个相位：欢迎语打字 → 停留 650 ms → 退格 → 内容打字；速度 = `Behavior.TypeSpeedMs`；光标 5 种样式 + 闪烁；只播第一张非交互卡 | 时长 / 停留 / 延迟 / 缓动全写死；只有一种形态；没有「每张卡依次入场」；没有淡入 / 滑入 |
 | 基本外观 | `StyleSettings`（25+ 字段）、`OverlaySettings.CornerRadius/Shadow`、`CliSettings` | 见 theme-system.md §1 | `Accent / Danger / Muted / Border / Panel / Scrollbar / MonoFont` 这些 token（theme-system.md 阶段 1 已列出） |
 | 特殊外观 | `CardButton`（3 语气 × 固定圆角底 + 描边）、`CardTextBox`（底 0.07 / 描边 0.24）、`CliUi.CliEntryPanel`（底 0.045 / 描边 0.10）、`CliScrollBars`（宽 7、拇指 0.18 / 0.40）、`Theme.xaml`（设置页 8 个画刷 + 7 处内联十六进制） | 全部硬编码透明度，按前景色推导 | 形状维度（填充 / 描边 / 幽灵）、密度、滑块粗细与拇指形状、面板层级与缩进、模板替换、设置页换肤 |
-| 行为动画 | `OverlayController.ShowCard/HideCard/LayoutCards` | `Opacity=0 → Show → Opacity=1`，位置直接写目标值 | 出现 / 消失动画、让位动画、打断规则 |
+| 行为动画 | `OverlayController.ShowCard/HideCard/LayoutCards` | 160ms 显隐 + 180ms 补位；2.26.0 起命令卡也走同一路径 | 主题化参数、stagger、逐帧预算降级 |
 
 另外两处**已经踩过的坑**值得提前避开：
 
@@ -351,7 +351,7 @@ theme.controls.templates.button = "assets/button.xaml"
 - 滑块 / 描边在浅色底上偏淡：深色主题的 `scrollbar 0.18` 在浅色底上建议 ≥ 0.28（`paper.mptheme` 用的 0.30）；
 - `accent` 在浅色底上要换更深的色阶（`#2F6FEB` 在 `#F6F7F9` 上 4.6:1 刚好过线，`#4C8DFF` 只有 3.1:1，不够）。
 
-## 9. 行为动画：出现 / 消失 / 让位（2.25.0 已落地）
+## 9. 行为动画：出现 / 消失 / 让位（2.25.0 起，2.26.0 补齐非常驻卡）
 
 ### 9.1 实际行为
 
@@ -359,6 +359,8 @@ theme.controls.templates.button = "assets/button.xaml"
   把其余已显示窗口按总位移的增量平移；拖动期间不重排、不落盘、不触发自动对齐翻边。
 - **呼出 / 消失**：160ms。窗口从目标位下方 8px 滑回目标位（呼出）或向下方滑出 8px（消失），
   同时 `OverlaySurface.Opacity` 0 ↔ 1；消失等淡出完成才真正 `Hide`，期间被再次呼出会取消旧隐藏回调。
+- **非常驻卡（含命令卡）**：2.26.0 把 `CommandModeController` 的无动画 `ShowCard/HideCard` 重载接到
+  `animate=true` 路径，媒体卡与命令卡现在走同一套呼出 / 收起动画；出现时下方卡片让位、消失后补位。
 - **补位**：松手、呼出、消失后走 `CardLayoutCoordinator.LayoutAnimated()`，每个已显示窗口用
   180ms 三次 ease-out 从当前位置移到新位置；新卡直接落在目标位，由内容淡入负责入场。
 - **自动对齐翻边**：对齐方式为 Auto 时，`ResolveAlign` 仍按「锚点 + 整叠中心」判断屏幕左右半边；
@@ -384,6 +386,9 @@ CardMotion.FrameIntervalMs  = 15
 
 - 每个窗口同一时刻只有一条位置动画；新目标会 `StopPositionMotion` 后从当前 `Left/Top` 接上，
   不会从旧起点重来；
+- 布局调度（窗口刚 `Show()` 的 `SizeChanged → Schedule → Layout()`）不再用 `ApplyPosition(false)`
+  直接把窗口吸到目标位：2.26.0 起 `OverlayWindow.ApplyPosition` 发现本窗口已有位置动画时改走
+  动画路径，从当前位置续接新目标，避免 160ms 呼出滑入被截成 1 帧；其他卡片同理保留 180ms 补位。
 - 内容淡入淡出用 `_contentMotionVersion` 作废旧完成回调；消失播到一半再呼出时，
   旧隐藏回调不会执行；
 - 拖动开始会取消所有卡片的补位动画，避免手和被拖窗口抢位置；

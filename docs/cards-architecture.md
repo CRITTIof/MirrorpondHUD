@@ -74,7 +74,7 @@ public interface ICardModule
 {
     string Kind { get; }            // 配置里的 Kind，稳定标识
     string DisplayName { get; }     // 设置页显示名
-    string Icon { get; }            // ReiconFont 图标字符
+    string Icon { get; }            // Lucide 图标字符（见 Core.Icons）
     string DefaultContent { get; }  // 内容模板为空时的默认值
     bool SupportsContent { get; }
     bool IsInteractive { get; }     // 独占键盘（命令行）
@@ -379,7 +379,7 @@ ffmpeg 路线把视频解成逐帧原始像素，什么格式都能放（代价�
 - ffmpeg 逐帧解码的进度 = 已读帧数 / 探测到的帧率，卡片底部进度条直接用这个值；
 - ffmpeg 路线有声音：第二条 ffmpeg 进程只取音频，`atempo` 跟随倍速，输出 48 kHz / 立体声 / 16 bit PCM
   交给 `WaveOutPlayer`；暂停时同时停读管道与音频设备；
-- 右上角状态行：播放 / 暂停图标（ReiconFont `Play` / `PauseMedia`）+ `当前 / 总时长`，
+- 右上角状态行：播放 / 暂停图标（Lucide `Play` / `PauseMedia`）+ `当前 / 总时长`，
   速度不是 1× 时追加 `· 1.5×`，垫一层深色圆角小底保证浅色背景上也看得清。
 
 ### 媒体卡通用热键
@@ -499,7 +499,7 @@ ffmpeg 路线把视频解成逐帧原始像素，什么格式都能放（代价�
 | 进度条 `CardProgress` | 下载 / 编译 / 任务进度（确定或不确定态） | 轻：纯显示，不需要鼠标；但要有「不确定」动画 → `DispatcherTimer` |
 | 状态灯 / 徽标 `CardBadge` | 「在线 / 离线 / 有 3 条待处理」 | 轻：纯显示，配合 `NeedsMouseInput = false` 也能用 |
 | 小图表 `CardSparkline` | CPU / 网络的历史曲线、环形进度 | 中：要维护环形缓冲 + 自绘；值变化频繁时注意不要每帧重建几何 |
-| 图标按钮 `CardIconButton` | 用 Reicon 字形代替文字的紧凑按钮 | 轻：`CardButton` 多一个 ctor，字体换成 ReiconFont、字号按 `IconScale` |
+| 图标按钮 `CardIconButton` | 用 Lucide 字形代替文字的紧凑按钮 | 轻：`CardButton` 多一个 ctor，字体换成 LucideFont、字号按 `IconScale` |
 | 可折叠面板 `CardExpander` | 收起长内容（问答历史、命令历史） | 中：展开时要重算卡片高度，`SizeToContent` 会整窗跳；需要动画的话更麻烦 |
 | 卡片内标签页 `CardTabs` | 一张卡里放多页内容（信息 / 设置 / 日志） | 中：内容宿主 + 选中态；和「一张卡一个内容」的现有契约冲突，得改宿主 |
 | 滚动列表 `CardList`（虚拟化） | 多行列表（进程、下载、消息） | 重：分层窗口里滚动 + 焦点 + 虚拟化都要自己接；卡片高度要固定 |

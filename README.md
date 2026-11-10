@@ -32,7 +32,7 @@
 - **按顺序堆叠** — 设置页里的顺序就是叠层上的顺序；第一张对齐到锚点，其余按各自的「与上方卡片间距」向下排列，解锁后拖动任意一张会移动整叠；「对齐方式」可选自动 / 左对齐 / 右对齐，让所有卡片共线的是卡片边缘而不是文字边缘
 - **实时数据** — CPU / GPU / 磁盘 / 网络 / 内存 / 分区空间 / 时间 / 运行时长，PDH 性能计数器采样，独立线程不卡 UI
 - **模板化内容** — `{cpu:0.0}%`、`{net_down}`、`{cpu_icon} CPU {cpu:0.0}%`，支持 .NET 格式串与对齐；每张卡片单独编辑内容
-- **Reicon 图标** — 内嵌 [ReiconFont](https://github.com/CRITTIof/reicon-font)：87 个键帽字形、软件 / 硬件 / 界面图标；CPU、GPU、RAM、ROM、网络上下行图标已接入信息显示，设置页的页签与增删移动按钮也使用它。图标大小按正文的 1.15 倍（1.0 = 与文字等高），垂直方向按字形墨迹自动居中，不用为了图标把整行字号调大
+- **Lucide 图标** — 卡片 / 设置页图标统一使用内嵌 [Lucide](https://lucide.dev)（ISC）：CPU、GPU、RAM、ROM、网络上下行、媒体播放状态、设置页页签与增删移动按钮都走 Lucide 字形；图标大小按正文的 1.15 倍（1.0 = 与文字等高），垂直方向按字形墨迹自动居中。按键仍用内嵌 [ReiconFont](https://github.com/CRITTIof/reicon-font) 的 87 个键帽字形
 - **按键显示** — 全局键盘钩子，最近按键、重复折叠（`A×6`）、最大字符数限制，按键以键帽字形显示
 - **快捷命令行** — 命令行是一张普通卡片，按自己的热键展开；**工具 / 工作目录 / 超时都在这张卡片自己身上**，所以可以同时放 CMD、PowerShell、WSL 三张卡片各用各的
 - **CLI 交互面板** — AI 对话与命令行现在是**同一套面板**（终端版式、同一套角色与滑块）：每一条命令 / 每一轮问答都是一块**内部小面板**，各带自己的滚动条，互不挤占；整块面板的宽度、高度上限、小面板高度、最多保留条数都在「外观 → CLI 交互面板」里调
@@ -42,7 +42,7 @@
 - **毛玻璃背景** — 三种实现：**系统亚克力**（卡片下面一块独立底板，DWM / GPU 实时模糊身后的桌面与窗口，进程侧零开销）、**兼容**（按像素拼出卡片后面的画面再缩小模糊，任何 Windows 都能用、半径可调）和**桌面取样（DesktopFeed）**（自己截屏，能糊到动态壁纸 / 视频这类 `PrintWindow` 抓不到的东西，代价是**卡片不会出现在截图里**）。**默认关闭、暂不推荐**——见 [docs/glass-implementations.md](docs/glass-implementations.md)
 - **外观可调** — 字体字号、图标倍率、描边、背景图、透明度、圆角、投影、固定宽度；尺寸只增不减，数值变化时不跳动
 - **启动动画** — 打字 / 退格动画 + 模拟光标（方块 / 竖线 / 下划线 / 空心框 / 关闭）
-- **卡片动效** — 拖动时整叠卡片同位移跟随；呼出 / 消失 160ms 淡入淡出 + 8px 滑动；松手或显隐后 180ms ease-out 补位；自动对齐拖到屏幕另一侧松手时动画翻边
+- **卡片动效** — 拖动时整叠卡片同位移跟随；呼出 / 消失 160ms 淡入淡出 + 8px 滑动（命令卡 / 媒体卡同样）；松手或显隐后 180ms ease-out 补位；自动对齐拖到屏幕另一侧松手时动画翻边
 - **托盘常驻** — 单实例唤醒、开机自启、可自定义的全局热键、鼠标穿透锁定
 - **无依赖** — 单文件 exe，目标机器不需要安装 .NET
 
@@ -189,7 +189,7 @@ mock-chat-1                                        [轮询]
 | `{keys}` / `{key_count}` | 最近按键 / 累计次数 | `{time}` `{date}` | 时间 / 日期 |
 | `{weekday_zh}` / `{weekday_zh_short}` | 星期（中文：星期一 / 周一） | `{weekday_en}` / `{weekday_en_short}` | 星期（英文：Monday / Mon） |
 | `{weekday}` | 星期（跟随系统区域，旧配置沿用） | `{uptime}` `{host}` `{user}` | 运行时长 / 计算机名 / 用户名 |
-| `{cpu_icon}` `{gpu_icon}` `{mem_icon}` `{disk_icon}` `{net_up_icon}` `{net_down_icon}` | Reicon 图标 | | |
+| `{cpu_icon}` `{gpu_icon}` `{mem_icon}` `{disk_icon}` `{net_up_icon}` `{net_down_icon}` | Lucide 图标 | | |
 
 设置页每张卡片下方都有占位符下拉框，选中即插入到光标处。键盘显示可调数量、折叠阈值与最大字符数（默认 18），
 超过上限从最旧的按键开始丢弃（`Back` / `Cap` / `ins` 等特殊键用短名字）。
@@ -310,7 +310,8 @@ src/
   Text/                  模板引擎、占位符、按键名
   Ui/                    叠层窗口、绘制、毛玻璃、设置窗口、托盘、热键、自启
 docs/                    设计文档与截图
-assets/keycaps/          ReiconFont 与映射文档
+assets/keycaps/          ReiconFont 键帽字体与映射文档
+assets/icons/            Lucide 图标字体、码位表与 ISC 许可证
 tools/                   开发脚本（make_logo.py 生成多尺寸 logo.ico），不参与构建
 ```
 
@@ -324,7 +325,7 @@ tools/                   开发脚本（make_logo.py 生成多尺寸 logo.ico）
 - [docs/theme-motion.md](docs/theme-motion.md) — 主题的动效与控件样式调研：启动动画参数化、出现 / 消失 / 让位动画、按钮面板滑块 token 与受控模板、设置页换肤（含分层窗口动画实测）
 - [docs/legacy-audit.md](docs/legacy-audit.md) — 源码遗留审计：与 v2.9.4 同源的检查、13 条遗留（颜色解析 / 异步 void / 静态缓存 / 死字段等）与清理顺序
 - [docs/file-transfer-station.md](docs/file-transfer-station.md) — 文件中转站调研与设计：拖入 / 列表 / 引用与复制、状态持久化、拖出与锁定语义、M1–M3 路线
-- [docs/version-history.md](docs/version-history.md) — v2.4.1 → 2.25.0 每个版本改了什么、动了哪些文件（含实测数据与提交号）
+- [docs/version-history.md](docs/version-history.md) — v2.4.1 → 2.26.0 每个版本改了什么、动了哪些文件（含实测数据与提交号）
 - [DLL-CARD-PLUGIN-GUIDE.md](DLL-CARD-PLUGIN-GUIDE.md) — DLL 卡片插件开发指南（自包含）：工程引用、manifest、最小文字卡/富卡完整代码、全部契约签名、CardSettings/Extras、UiKit 控件目录、构建安装调试、安全与检查清单
 - [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) — 第三方字体与许可证（Lucide ISC、ReiconFont OFL）
 - [docs/review-p1-fixes.md](docs/review-p1-fixes.md) — 2.12.2 评审报告 P1-1..P1-10 的修复对照、验证与已知剩余
@@ -360,7 +361,7 @@ tools/                   开发脚本（make_logo.py 生成多尺寸 logo.ico）
 - **Stack layout** — list order is screen order; the first card is anchored at a monitor-relative X/Y, every following card keeps its own gap to the previous one; dragging any card moves the whole stack. *Alignment* (auto / left / right) lines up card edges, not text, and *auto* switches sides with the half of the screen the stack sits on
 - **Live metrics** — CPU / GPU / disk / network / memory / drives / uptime through PDH counters on a background thread
 - **Templated content** — `{cpu:0.0}%`, `{net_down}`, `{cpu_icon} CPU {cpu:0.0}%`; every card has its own template
-- **Reicon icons** — embedded [ReiconFont](https://github.com/CRITTIof/reicon-font) keycaps and icons. Icons render at 1.15× the text size (1.0 = same height as text) and are vertically centred by their ink bounds — no need to inflate the whole line
+- **Lucide icons** — card and settings icons use the embedded [Lucide](https://lucide.dev) font (ISC): CPU / GPU / RAM / ROM, network in / out, media play-state, settings tabs and add / move / delete controls all use Lucide glyphs; icons render at 1.15× the text size and are vertically centred by their ink bounds. Keycaps still use the embedded [ReiconFont](https://github.com/CRITTIof/reicon-font) glyphs
 - **Click-through** — the overlay never blocks the desktop unless unlocked with `F8`
 - **Command line cards** — each card owns its tool, working directory, output cap and timeout, so a CMD card, a PowerShell card and a WSL card can coexist
 - **CLI panels** — the AI chat and command line cards now share one panel: terminal layout, the same colours and scrollbars. Every command / every Q&A round is its own inner panel with its own scrollbar, so records never fight over one thumb; panel width, height cap, inner-panel cap and how many records to keep live under *Appearance → CLI panel*
@@ -455,6 +456,6 @@ dotnet build samples\RuntimeCardExample\RuntimeCardExample.csproj -c Release
 
 ## Credits and license
 
-MIT — see [LICENSE](LICENSE). Keycap and icon glyphs come from [ReiconFont](https://github.com/CRITTIof/reicon-font), licensed under the SIL Open Font License 1.1 (`assets/keycaps/OFL.txt`, mapping in `assets/keycaps/MAPPING.md`).
+MIT — see [LICENSE](LICENSE). Keycap glyphs come from [ReiconFont](https://github.com/CRITTIof/reicon-font), licensed under the SIL Open Font License 1.1 (`assets/keycaps/OFL.txt`, mapping in `assets/keycaps/MAPPING.md`); card / settings icons come from [Lucide](https://lucide.dev), licensed under ISC (`assets/icons/LICENSE.txt`).
 
 Design notes: [docs/cards-architecture.md](docs/cards-architecture.md) (module contract, rich cards, per-card settings) and [docs/glass-implementations.md](docs/glass-implementations.md) (the two frosted-glass implementations, their flaws and the measurements behind them).
