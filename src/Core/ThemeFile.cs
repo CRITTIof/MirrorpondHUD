@@ -172,8 +172,23 @@ namespace MirrorpondHUD.Core
         /// </summary>
         public static bool TryImport(string path, Settings source, out Settings applied, out string error)
         {
+            string stage;
+            if (TryImportCore(path, source, out applied, out stage, out error))
+                return true;
+
+            // 失败必须可见（AGENTS §5）：设置窗只会显示一句 error，事后排障只能靠这条日志。
+            // 只记路径、失败阶段与错误串，不记主题文件内容（可能含用户自定义文本）。
+            Log.Warn("主题导入失败  文件=" + (path ?? "(空)") + "  阶段=" + stage + "  原因=" + error);
+            return false;
+        }
+
+        /// <summary>导入的实际流程；stage 供公开入口在失败时写日志，error 文案与旧实现逐字一致。</summary>
+        static bool TryImportCore(string path, Settings source, out Settings applied,
+                                  out string stage, out string error)
+        {
             applied = null;
             error = null;
+            stage = "读取主题文件";
 
             string json;
             string readError;
@@ -183,6 +198,7 @@ namespace MirrorpondHUD.Core
                 return false;
             }
 
+            stage = "解析主题文件";
             ThemeDocument document;
             string parseError;
             if (!TryParse(json, out document, out parseError))
@@ -191,6 +207,7 @@ namespace MirrorpondHUD.Core
                 return false;
             }
 
+            stage = "复制当前设置";
             Settings duplicate;
             try
             {
@@ -203,6 +220,7 @@ namespace MirrorpondHUD.Core
                 return false;
             }
 
+            stage = "套用主题";
             try
             {
                 document.ApplyTo(duplicate);
@@ -241,7 +259,9 @@ namespace MirrorpondHUD.Core
                 return false;
             }
 
-            // 普通文件先看大小，避免白读 1 MB 才拒绝；拿不到长度的路径（如网络异常）忽略异常，走下面的有界读取。
+            // 普通文件先看大小，避免白读 1 MB 才拒绝。长度探测只是「提前拒绝」的快速路径：
+            // 目录 / 网络路径 / 权限问题在这里失败时，下面的有界读取仍会给出真实错误，
+            // 所以这里只留 DEBUG 级痕迹，不阻断导入。
             try
             {
                 var info = new FileInfo(path);
@@ -251,7 +271,10 @@ namespace MirrorpondHUD.Core
                     return false;
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Log.Debug("主题文件长度探测失败，继续有界读取: " + ex.Message);
+            }
 
             try
             {
@@ -307,10 +330,26 @@ namespace MirrorpondHUD.Core
         /// <summary>把当前外观写成 `.mptheme`（UTF-8 无 BOM）。失败返回 false。</summary>
         public static bool TryExport(Settings settings, string path, out string error)
         {
+            string stage;
+            if (TryExportCore(settings, path, out stage, out error))
+                return true;
+
+            // 失败必须可见（AGENTS §5）：设置窗只显示 error，排障时要靠日志区分
+            // 「生成主题内容失败」与「写出主题文件失败」。
+            Log.Warn("主题导出失败  文件=" + (path ?? "(空)") + "  阶段=" + stage + "  原因=" + error);
+            return false;
+        }
+
+        /// <summary>导出的实际流程；拆成两步只为在失败日志里区分阶段，error 文案与旧实现一致。</summary>
+        static bool TryExportCore(Settings settings, string path, out string stage, out string error)
+        {
             error = null;
+            stage = "生成主题内容";
             try
             {
-                File.WriteAllText(path, Export(settings), new UTF8Encoding(false));
+                string text = Export(settings);
+                stage = "写出主题文件";
+                File.WriteAllText(path, text, new UTF8Encoding(false));
                 return true;
             }
             catch (Exception ex)

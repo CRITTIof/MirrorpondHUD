@@ -87,49 +87,27 @@ namespace MirrorpondHUD.Core
 
         static bool WriteCore(string path, string text)
         {
-            string tmp = path + ".tmp";
-            try
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(path));
-                WriteDurable(tmp, text ?? "");
+            // 临时文件 → Replace（生成 .bak）→ 失败回退 Copy+Move 的细节统一在 AtomicFile；
+            // 这里只保留卡片状态自己的日志上下文（文件名）。
+            AtomicFile.WriteResult result = AtomicFile.Write(path, text, true);
 
-                if (File.Exists(path))
-                {
-                    string backup = path + ".bak";
-                    try
-                    {
-                        File.Replace(tmp, path, backup, true);
-                    }
-                    catch (Exception ex)
-                    {
-                        // Replace 失败时先备份再覆盖；备份失败必须中止，不能无备份覆盖。
-                        Log.Warn("卡片状态原子替换失败，回退到备份+覆盖: " + ex.Message);
-                        try
-                        {
-                            File.Copy(path, backup, true);
-                        }
-                        catch (Exception copyEx)
-                        {
-                            Log.Error("卡片状态回退备份失败，已中止写入(" + fileNameOf(path) + ")", copyEx);
-                            try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
-                            return false;
-                        }
+            if (result.ReplaceError != null)
+                Log.Warn("卡片状态原子替换失败，回退到备份+覆盖: " + result.ReplaceError.Message);
 
-                        File.Move(tmp, path, true);
-                    }
-                }
-                else
-                {
-                    File.Move(tmp, path, true);
-                }
-                return true;
-            }
-            catch (Exception ex)
+            if (result.BackupError != null)
             {
-                Log.Warn("写入卡片状态失败(" + fileNameOf(path) + "): " + ex.Message);
-                try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
+                Log.Error("卡片状态回退备份失败，已中止写入(" + fileNameOf(path) + ")", result.BackupError);
                 return false;
             }
+
+            if (!result.Success)
+            {
+                string message = result.Error != null ? result.Error.Message : "未知错误";
+                Log.Warn("写入卡片状态失败(" + fileNameOf(path) + "): " + message);
+                return false;
+            }
+
+            return true;
         }
 
         static string fileNameOf(string path)
@@ -153,20 +131,6 @@ namespace MirrorpondHUD.Core
             {
                 Log.Warn("删除卡片状态失败(" + fileName + "): " + ex.Message);
                 return false;
-            }
-        }
-
-        static void WriteDurable(string path, string text)
-        {
-            using (var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None,
-                                               4096, FileOptions.WriteThrough))
-            {
-                using (var writer = new StreamWriter(stream, new UTF8Encoding(false), 4096, true))
-                {
-                    writer.Write(text);
-                    writer.Flush();
-                }
-                stream.Flush(true);
             }
         }
 

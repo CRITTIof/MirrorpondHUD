@@ -228,7 +228,7 @@ namespace MirrorpondHUD.Core
                 bool needsSave;
                 bool bad;
                 bool isFuture;
-                settings = SettingsMigration.Load(text, out needsSave, out bad, out isFuture);
+                settings = SettingsLoader.Load(text, out needsSave, out bad, out isFuture);
                 migrated = needsSave;
                 corrupted = bad;
                 future = isFuture;
@@ -258,7 +258,7 @@ namespace MirrorpondHUD.Core
                 bool needsSave;
                 bool bad;
                 bool isFuture;
-                Settings loaded = SettingsMigration.Load(text, out needsSave, out bad, out isFuture);
+                Settings loaded = SettingsLoader.Load(text, out needsSave, out bad, out isFuture);
                 if (bad) return false;
 
                 settings = loaded;
@@ -302,58 +302,38 @@ namespace MirrorpondHUD.Core
                 return false;
             }
 
-            string tmp = null;
             try
             {
                 settings.Normalize();
                 NormalizeCards(settings);
 
                 string file = Path;
-                string dir = System.IO.Path.GetDirectoryName(file);
-                if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
 
-                tmp = file + ".tmp";
-                WriteDurable(tmp, Json.Serialize(settings));
+                // 临时文件 → Replace（生成 .bak）→ 失败回退 Copy+Move 的细节统一在 AtomicFile；
+                // 这里只负责把结果翻成设置窗能显示的 LastSaveError 与日志（P0-2 / P1-2）。
+                AtomicFile.WriteResult result = AtomicFile.Write(file, Json.Serialize(settings), backup);
 
-                if (File.Exists(file))
+                if (result.ReplaceError != null)
+                    Log.Warn("设置原子替换失败，回退到备份+覆盖: " + result.ReplaceError.Message);
+
+                if (result.BackupError != null)
                 {
-                    if (backup)
-                    {
-                        string bak = file + ".bak";
-                        try
-                        {
-                            File.Replace(tmp, file, bak, true);
-                        }
-                        catch (Exception ex)
-                        {
-                            // 某些文件系统 / 杀软会拒绝 Replace：退回“先备份再覆盖”。
-                            // 备份失败必须中止，绝不能无备份覆盖主文件。
-                            Log.Warn("设置原子替换失败，回退到备份+覆盖: " + ex.Message);
-                            try
-                            {
-                                File.Copy(file, bak, true);
-                            }
-                            catch (Exception copyEx)
-                            {
-                                Log.Error("设置回退备份失败，已中止保存", copyEx);
-                                LastSaveError = "旧配置备份失败（磁盘满 / 只读 / 文件被占用），已中止保存";
-                                return false;
-                            }
-
-                            File.Move(tmp, file, true);
-                        }
-                    }
-                    else
-                    {
-                        File.Move(tmp, file, true);
-                    }
-                }
-                else
-                {
-                    File.Move(tmp, file, true);
+                    // 备份失败必须中止：没有备份就不允许覆盖旧配置。
+                    Log.Error("设置回退备份失败，已中止保存", result.BackupError);
+                    LastSaveError = "旧配置备份失败（磁盘满 / 只读 / 文件被占用），已中止保存";
+                    return false;
                 }
 
-                tmp = null;
+                if (!result.Success)
+                {
+                    Exception error = result.Error;
+                    Log.Error("保存设置失败", error);
+                    LastSaveError = error != null
+                        ? DescribeIoError(error, "写入失败")
+                        : "写入失败：未知错误";
+                    return false;
+                }
+
                 Log.Info("设置已保存: " + file);
                 LastSaveError = "";
                 return true;
@@ -363,13 +343,6 @@ namespace MirrorpondHUD.Core
                 Log.Error("保存设置失败", ex);
                 LastSaveError = DescribeIoError(ex, "写入失败");
                 return false;
-            }
-            finally
-            {
-                if (tmp != null)
-                {
-                    try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
-                }
             }
         }
 
@@ -418,21 +391,6 @@ namespace MirrorpondHUD.Core
                 // 磁盘满 / 只读 / 杀软锁文件：再保存就会把损坏现场永久覆盖掉。
                 Log.Error("备份损坏的配置文件失败（现场已被保留在原文件里）: " + ex.Message, ex);
                 return false;
-            }
-        }
-
-        /// <summary>写到临时文件并尽量落盘（WriteThrough + Flush(true)）。</summary>
-        static void WriteDurable(string path, string text)
-        {
-            using (var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None,
-                                               4096, FileOptions.WriteThrough))
-            {
-                using (var writer = new StreamWriter(stream, new UTF8Encoding(false), 4096, true))
-                {
-                    writer.Write(text ?? "");
-                    writer.Flush();
-                }
-                stream.Flush(true);
             }
         }
     }

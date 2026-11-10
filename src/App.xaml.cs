@@ -58,7 +58,8 @@ namespace MirrorpondHUD
             Log.Info("App 启动  参数=[" + string.Join(" ", e.Args) + "]  版本=" +
                      typeof(App).Assembly.GetName().Version + "  日志=" + Log.FilePath);
             Log.Info("进程完整性级别: " + ProcessIntegrity.Name + "（" +
-                     ProcessIntegrity.Level.ToString("X") + "）");
+                     ProcessIntegrity.Level.ToString("X") + "）" +
+                     (ProcessIntegrity.Level < 0 ? "  查询失败: " + ProcessIntegrity.LastErrorText : ""));
 
             if (ProcessIntegrity.IsRestricted)
             {
@@ -108,44 +109,12 @@ namespace MirrorpondHUD
                 if (pluginReport.HasErrors)
                     Log.Warn("运行时插件有 " + pluginReport.Errors.Count + " 个加载失败，详见上面的 WARN");
 
-                string shotCards = GetOption(args, "--screenshot-cards");
-                if (shotCards != null)
+                // 截图 / 自检这类「跑完即退出」的模式仍在启动 try 内执行：
+                // 内部未捕获的异常走下面的初始化失败路径（记录 + 提示 + Shutdown(1)）。
+                int immediateExitCode;
+                if (CommandLineMode.TryRunImmediate(args, out immediateExitCode))
                 {
-                    Screenshots.CaptureCards(shotCards);
-                    Shutdown(0);
-                    return;
-                }
-
-                string shot = GetOption(args, "--screenshot");
-                if (shot != null)
-                {
-                    Screenshots.CaptureOverlay(shot);
-                    Shutdown(0);
-                    return;
-                }
-
-                string shotSettings = GetOption(args, "--screenshot-settings");
-                if (shotSettings != null)
-                {
-                    Screenshots.CaptureSettings(shotSettings);
-                    Shutdown(0);
-                    return;
-                }
-
-                string shotWidgets = GetOption(args, "--screenshot-widgets");
-                if (shotWidgets != null)
-                {
-                    Screenshots.CaptureWidgets(shotWidgets);
-                    Shutdown(0);
-                    return;
-                }
-
-                if (args.Contains("--selftest"))
-                {
-                    // SelfTest 自己负责收集失败并返回失败数，不在这里包 finally：
-                    // 让它内部未捕获的异常走下面的初始化失败路径。
-                    int failures = SelfTest.Run();
-                    Shutdown(failures);
+                    Shutdown(immediateExitCode);
                     return;
                 }
 
@@ -174,30 +143,8 @@ namespace MirrorpondHUD
                 return;
             }
 
-            string smoke = GetOption(args, "--smoke");
-            if (smoke != null)
-            {
-                args.Remove(smoke);
-                args.Remove("--smoke");
-                bool visible = args.Remove("--smoke-visible");
-                if (visible) args.Add("--visible");
-                else if (!args.Contains("--minimized")) args.Add("--minimized");
-
-                int seconds;
-                if (!int.TryParse(smoke, out seconds)) seconds = 6;
-
-                var timer = new System.Windows.Threading.DispatcherTimer
-                {
-                    Interval = TimeSpan.FromSeconds(Math.Max(1, seconds))
-                };
-                timer.Tick += (s, a) =>
-                {
-                    timer.Stop();
-                    Log.Info("冒烟测试结束，退出");
-                    Shutdown(0);
-                };
-                timer.Start();
-            }
+            // --smoke：摘参数、改写可见性开关并起计时器；其余参数原样交给 OverlayController。
+            CommandLineMode.StartSmokeIfRequested(args, Shutdown);
 
             try
             {
@@ -231,19 +178,6 @@ namespace MirrorpondHUD
                     return true;
             }
             return false;
-        }
-
-        static string GetOption(List<string> args, string name)
-        {
-            int index = args.IndexOf(name);
-            if (index >= 0 && index + 1 < args.Count) return args[index + 1];
-
-            for (int i = 0; i < args.Count; i++)
-            {
-                if (args[i].StartsWith(name + "=", StringComparison.OrdinalIgnoreCase))
-                    return args[i].Substring(name.Length + 1);
-            }
-            return null;
         }
 
         protected override void OnExit(ExitEventArgs e)

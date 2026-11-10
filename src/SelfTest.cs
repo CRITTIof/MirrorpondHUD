@@ -200,39 +200,48 @@ namespace MirrorpondHUD
             return failures;
         }
 
-        /// <summary>不依赖系统的纯逻辑回归检查。</summary>
+        /// <summary>不依赖系统的纯逻辑回归检查：只按顺序调度各领域自检，断言与文案都在下面的方法里。</summary>
         static void RunUnitChecks(StringBuilder sb, ref int failures)
         {
+            var results = new UnitCheckResults();
+
+            results.TemplateOk = RunTemplateChecks(out results.UnknownOk);
+            results.CollapseOk = RunKeyCollapseChecks(out results.ThresholdOk);
+            results.KeyNameOk = RunKeyNameChecks(out results.KeyLimitOk, out results.KeyOverflowOk);
+            results.StateStoreOk = RunCardStateStoreChecks();
+            results.GlassPolicyOk = RunGlassPolicyChecks();
+            results.ThemeOk = RunThemeTokenChecks();
+            results.ThemeFileOk = RunThemeFileChecks();
+            results.ThemeRejectOk = RunThemeRejectChecks();
+            results.ThemeCatalogOk = RunThemeCatalogChecks();
+            results.CloneGuardOk = RunCloneGuardChecks();
+            results.SingleInteractiveOk = RunSingleInteractiveChecks();
+            results.WidgetsOk = RunSharedWidgetChecks();
+            results.Widgets2Ok = RunInteractiveWidgetChecks();
+            results.FormControlsOk = RunFormControlsChecks();
+            results.DataControlsOk = RunDataControlsChecks();
+            results.ChartControlsOk = RunChartControlsChecks();
+            results.OverlayControlsOk = RunOverlayControlsChecks();
+            results.IconFontOk = RunIconFontChecks();
+            results.ContextHostOk = RunContextHostChecks();
+            results.ShellOk = RunShellChecks();
+            results.ConfigOk = RunConfigChecks(out results.ConfigRepairOk);
+            results.CardOk = RunCardRegistryChecks();
+            results.PluginSelfTestOk = RunPluginSelfTestChecks(sb);
+            results.SecretOk = RunSecretStoreChecks();
+            results.RenderOk = RunRenderContextChecks();
+
+            if (!results.AllPassed())
+                failures++;
+
+            ReportUnitChecks(sb, results);
+        }
+
+        /// <summary>模板渲染：占位符格式化、双花括号转义与未知占位符收集。</summary>
+        static bool RunTemplateChecks(out bool unknownOk)
+        {
             bool templateOk = false;
-            bool unknownOk = false;
-            bool collapseOk = false;
-            bool thresholdOk = false;
-            bool configOk = false;
-            bool configRepairOk = false;
-            bool cardOk = false;
-            bool keyNameOk = false;
-            bool keyLimitOk = false;
-            bool keyOverflowOk = false;
-            bool secretOk = false;
-            bool stateStoreOk = false;
-            bool renderOk = false;
-            bool themeOk = false;
-            bool glassPolicyOk = false;
-            bool themeFileOk = false;
-            bool themeRejectOk = false;
-            bool themeCatalogOk = false;
-            bool cloneGuardOk = false;
-            bool singleInteractiveOk = false;
-            bool widgetsOk = false;
-            bool widgets2Ok = false;
-            bool formControlsOk = false;
-            bool dataControlsOk = false;
-            bool chartControlsOk = false;
-            bool overlayControlsOk = false;
-            bool iconFontOk = false;
-            bool contextHostOk = false;
-            bool shellOk = false;
-            bool pluginSelfTestOk = false;
+            unknownOk = false;
             try
             {
                 var vars = new Dictionary<string, object> { { "cpu", 23.44 }, { "n", 5 } };
@@ -246,8 +255,14 @@ namespace MirrorpondHUD
             {
                 Log.Error("模板自检异常", ex);
             }
+            return templateOk;
+        }
 
-
+        /// <summary>按键历史：连续按键折叠，以及超过阈值时展开。</summary>
+        static bool RunKeyCollapseChecks(out bool thresholdOk)
+        {
+            bool collapseOk = false;
+            thresholdOk = false;
             try
             {
                 var longRun = new KeyHistory();
@@ -266,8 +281,15 @@ namespace MirrorpondHUD
             {
                 Log.Error("按键折叠自检异常", ex);
             }
+            return collapseOk;
+        }
 
-
+        /// <summary>按键名映射与最大字符数：超长时丢弃最旧的按键。</summary>
+        static bool RunKeyNameChecks(out bool keyLimitOk, out bool keyOverflowOk)
+        {
+            bool keyNameOk = false;
+            keyLimitOk = false;
+            keyOverflowOk = false;
             try
             {
                 keyNameOk = KeyNames.Of(0x08) == "Back"
@@ -290,8 +312,13 @@ namespace MirrorpondHUD
             {
                 Log.Error("按键长度自检异常", ex);
             }
+            return keyNameOk;
+        }
 
-
+        /// <summary>每卡状态存储（P1-12）：原子写、回读一致、拒绝路径穿越、不留 .tmp。</summary>
+        static bool RunCardStateStoreChecks()
+        {
+            bool stateStoreOk = false;
             try
             {
                 // 每卡状态存储（P1-12）：原子写、回读一致、拒绝路径穿越、不留 .tmp
@@ -317,8 +344,13 @@ namespace MirrorpondHUD
             {
                 Log.Error("卡片状态存储自检异常", ex);
             }
+            return stateStoreOk;
+        }
 
-
+        /// <summary>毛玻璃实现选择（P2-1）：设置与两块底板可用性 → 实现的纯决策表。</summary>
+        static bool RunGlassPolicyChecks()
+        {
+            bool glassPolicyOk = false;
             try
             {
                 // P2-1：毛玻璃实现选择是纯决策——设置 + 两块底板可用性 → 实现，窗口只按结果接线。
@@ -335,8 +367,13 @@ namespace MirrorpondHUD
             {
                 Log.Error("毛玻璃策略自检异常", ex);
             }
+            return glassPolicyOk;
+        }
 
-
+        /// <summary>外观令牌与颜色校验（P1）：默认派生值、严格 7 位前景、非法值回落。</summary>
+        static bool RunThemeTokenChecks()
+        {
+            bool themeOk = false;
             try
             {
                 // 外观令牌（P1）：默认派生值必须等于旧 alpha 常量，非法值要被归一化掉。
@@ -384,128 +421,158 @@ namespace MirrorpondHUD
             {
                 Log.Error("外观令牌自检异常", ex);
             }
+            return themeOk;
+        }
 
-
+        /// <summary>主题文件（P3/P4）：往返一致与仓库示例主题解析；异常收尾与原单 try 块一致。</summary>
+        static bool RunThemeFileChecks()
+        {
+            bool themeFileOk = false;
             try
             {
-                // P3：导出 → 解析 → 套用 → 再导出，字段与外观必须一致（含软色的数字写法）。
-                var source = new Settings();
-                source.Style = new StyleSettings
-                {
-                    FontFamily = "Segoe UI",
-                    FontSize = 17,
-                    Bold = true,
-                    Foreground = "#101820",
-                    Background = "#FAFAF7",
-                    BackgroundOpacity = 0.9,
-                    Padding = 12,
-                    LineHeight = 4,
-                    TextAlignment = "Center",
-                    TextOutline = true,
-                    OutlineColor = "#FFFFFF",
-                    OutlineThickness = 1.5,
-                    IconScale = 1.3,
-                    Accent = "#4C8DFF",
-                    Danger = "#E57B6E",
-                    Muted = "#73E6EDF3",
-                    Border = "#1A101820",
-                    Panel = "#0B101820",
-                    Scrollbar = "#2E101820",
-                    ScrollbarHot = "#66101820",
-                    MonoFont = "Consolas"
-                };
-                source.Overlay = new OverlaySettings { CornerRadius = 12, Shadow = false };
-                source.Cli = new CliSettings { MaxWidth = 500, MaxHeight = 440, EntryMaxHeight = 150, MaxEntries = 8 };
-
-                string json = ThemeFile.Export(source, "往返测试");
-
-                ThemeDocument parsed;
-                string error;
-                bool parseOk = ThemeFile.TryParse(json, out parsed, out error)
-                            && parsed != null
-                            && parsed.Name == "往返测试"
-                            && parsed.Schema == ThemeFile.SupportedSchema;
-
-                var applied = new Settings();
-                if (parsed != null) parsed.ApplyTo(applied);
-                applied.Normalize();
-
-                bool same = applied.Style.FontFamily == source.Style.FontFamily
-                         && applied.Style.FontSize == source.Style.FontSize
-                         && applied.Style.Bold == source.Style.Bold
-                         && applied.Style.Foreground == source.Style.Foreground
-                         && applied.Style.Background == source.Style.Background
-                         && Math.Abs(applied.Style.BackgroundOpacity - source.Style.BackgroundOpacity) < 1e-9
-                         && applied.Style.Padding == source.Style.Padding
-                         && applied.Style.LineHeight == source.Style.LineHeight
-                         && applied.Style.TextAlignment == source.Style.TextAlignment
-                         && applied.Style.TextOutline == source.Style.TextOutline
-                         && applied.Style.OutlineColor == source.Style.OutlineColor
-                         && Math.Abs(applied.Style.OutlineThickness - source.Style.OutlineThickness) < 1e-9
-                         && Math.Abs(applied.Style.IconScale - source.Style.IconScale) < 1e-9
-                         && applied.Style.Accent == source.Style.Accent
-                         && applied.Style.Danger == source.Style.Danger
-                         && applied.Style.Muted == source.Style.Muted
-                         && applied.Style.Border == source.Style.Border
-                         && applied.Style.Panel == source.Style.Panel
-                         && applied.Style.Scrollbar == source.Style.Scrollbar
-                         && applied.Style.ScrollbarHot == source.Style.ScrollbarHot
-                         && applied.Style.MonoFont == source.Style.MonoFont
-                         && applied.Overlay.CornerRadius == source.Overlay.CornerRadius
-                         && applied.Overlay.Shadow == source.Overlay.Shadow
-                         && applied.Cli.MaxWidth == source.Cli.MaxWidth
-                         && applied.Cli.MaxHeight == source.Cli.MaxHeight
-                         && applied.Cli.EntryMaxHeight == source.Cli.EntryMaxHeight
-                         && applied.Cli.MaxEntries == source.Cli.MaxEntries;
-
-                // 软色写数字 = 按前景派生：0.45 * 255 ≈ 0x73
-                const string softJson = "{\"schema\":1,\"appearance\":{\"colors\":{\"foreground\":\"#E6EDF3\",\"muted\":0.45}}}";
-                ThemeDocument soft;
-                bool softParsed = ThemeFile.TryParse(softJson, out soft, out error);
-                var softApplied = new Settings();
-                if (soft != null) soft.ApplyTo(softApplied);
-                bool alphaOk = softParsed && softApplied.Style.Muted == "#73E6EDF3";
-
-                bool stable = ThemeFile.Export(applied, "往返测试") == json;
-
-                // 仓库里的示例主题（docs/themes/*.mptheme）必须都能解析并套用；发布版没有 docs 目录时跳过。
-                bool samplesOk = true;
-                DirectoryInfo dir = new DirectoryInfo(AppContext.BaseDirectory);
-                for (int i = 0; i < 6 && dir != null; i++)
-                {
-                    string themes = Path.Combine(dir.FullName, "docs", "themes");
-                    if (Directory.Exists(themes))
-                    {
-                        string[] files = Directory.GetFiles(themes, "*.mptheme");
-                        samplesOk = files.Length > 0;
-                        foreach (string file in files)
-                        {
-                            ThemeDocument sample;
-                            string sampleError;
-                            if (!ThemeFile.TryParse(File.ReadAllText(file), out sample, out sampleError))
-                            {
-                                samplesOk = false;
-                                Log.Error("示例主题解析失败 " + Path.GetFileName(file) + ": " + sampleError);
-                                continue;
-                            }
-
-                            var probe = new Settings();
-                            sample.ApplyTo(probe);
-                            if (probe.Style.Foreground != sample.Colors.Foreground) samplesOk = false;
-                        }
-                        break;
-                    }
-                    dir = dir.Parent;
-                }
-
-                themeFileOk = parseOk && same && alphaOk && stable && samplesOk;
+                bool roundTripOk = CheckThemeRoundTrip();
+                bool samplesOk = CheckThemeSamples();
+                themeFileOk = roundTripOk && samplesOk;
             }
             catch (Exception ex)
             {
                 Log.Error("主题文件自检异常", ex);
             }
+            return themeFileOk;
+        }
 
+        /// <summary>主题往返：导出 → 解析 → 套用 → 再导出，字段与外观必须一致（含软色数字写法）。</summary>
+        static bool CheckThemeRoundTrip()
+        {
+            // P3：导出 → 解析 → 套用 → 再导出，字段与外观必须一致（含软色的数字写法）。
+            var source = new Settings();
+            source.Style = new StyleSettings
+            {
+                FontFamily = "Segoe UI",
+                FontSize = 17,
+                Bold = true,
+                Foreground = "#101820",
+                Background = "#FAFAF7",
+                BackgroundOpacity = 0.9,
+                Padding = 12,
+                LineHeight = 4,
+                TextAlignment = "Center",
+                TextOutline = true,
+                OutlineColor = "#FFFFFF",
+                OutlineThickness = 1.5,
+                IconScale = 1.3,
+                Accent = "#4C8DFF",
+                Danger = "#E57B6E",
+                Muted = "#73E6EDF3",
+                Border = "#1A101820",
+                Panel = "#0B101820",
+                Scrollbar = "#2E101820",
+                ScrollbarHot = "#66101820",
+                MonoFont = "Consolas"
+            };
+            source.Overlay = new OverlaySettings { CornerRadius = 12, Shadow = false };
+            source.Cli = new CliSettings { MaxWidth = 500, MaxHeight = 440, EntryMaxHeight = 150, MaxEntries = 8 };
 
+            string json = ThemeFile.Export(source, "往返测试");
+
+            ThemeDocument parsed;
+            string error;
+            bool parseOk = ThemeFile.TryParse(json, out parsed, out error)
+                        && parsed != null
+                        && parsed.Name == "往返测试"
+                        && parsed.Schema == ThemeFile.SupportedSchema;
+
+            var applied = new Settings();
+            if (parsed != null) parsed.ApplyTo(applied);
+            applied.Normalize();
+
+            bool same = ThemeSettingsEqual(applied, source);
+
+            // 软色写数字 = 按前景派生：0.45 * 255 ≈ 0x73
+            const string softJson = "{\"schema\":1,\"appearance\":{\"colors\":{\"foreground\":\"#E6EDF3\",\"muted\":0.45}}}";
+            ThemeDocument soft;
+            bool softParsed = ThemeFile.TryParse(softJson, out soft, out error);
+            var softApplied = new Settings();
+            if (soft != null) soft.ApplyTo(softApplied);
+            bool alphaOk = softParsed && softApplied.Style.Muted == "#73E6EDF3";
+
+            bool stable = ThemeFile.Export(applied, "往返测试") == json;
+
+            return parseOk && same && alphaOk && stable;
+        }
+
+        /// <summary>仓库示例主题（docs/themes/*.mptheme）必须都能解析并套用；发布版没有 docs 目录时跳过。</summary>
+        static bool CheckThemeSamples()
+        {
+            // 仓库里的示例主题（docs/themes/*.mptheme）必须都能解析并套用；发布版没有 docs 目录时跳过。
+            bool samplesOk = true;
+            DirectoryInfo dir = new DirectoryInfo(AppContext.BaseDirectory);
+            for (int i = 0; i < 6 && dir != null; i++)
+            {
+                string themes = Path.Combine(dir.FullName, "docs", "themes");
+                if (Directory.Exists(themes))
+                {
+                    string[] files = Directory.GetFiles(themes, "*.mptheme");
+                    samplesOk = files.Length > 0;
+                    foreach (string file in files)
+                    {
+                        ThemeDocument sample;
+                        string sampleError;
+                        if (!ThemeFile.TryParse(File.ReadAllText(file), out sample, out sampleError))
+                        {
+                            samplesOk = false;
+                            Log.Error("示例主题解析失败 " + Path.GetFileName(file) + ": " + sampleError);
+                            continue;
+                        }
+
+                        var probe = new Settings();
+                        sample.ApplyTo(probe);
+                        if (probe.Style.Foreground != sample.Colors.Foreground) samplesOk = false;
+                    }
+                    break;
+                }
+                dir = dir.Parent;
+            }
+
+            return samplesOk;
+        }
+
+        /// <summary>主题往返前后逐字段比对；单独成方法只为让 CheckThemeRoundTrip 保持在 60 行内。</summary>
+        static bool ThemeSettingsEqual(Settings applied, Settings source)
+        {
+            return applied.Style.FontFamily == source.Style.FontFamily
+                && applied.Style.FontSize == source.Style.FontSize
+                && applied.Style.Bold == source.Style.Bold
+                && applied.Style.Foreground == source.Style.Foreground
+                && applied.Style.Background == source.Style.Background
+                && Math.Abs(applied.Style.BackgroundOpacity - source.Style.BackgroundOpacity) < 1e-9
+                && applied.Style.Padding == source.Style.Padding
+                && applied.Style.LineHeight == source.Style.LineHeight
+                && applied.Style.TextAlignment == source.Style.TextAlignment
+                && applied.Style.TextOutline == source.Style.TextOutline
+                && applied.Style.OutlineColor == source.Style.OutlineColor
+                && Math.Abs(applied.Style.OutlineThickness - source.Style.OutlineThickness) < 1e-9
+                && Math.Abs(applied.Style.IconScale - source.Style.IconScale) < 1e-9
+                && applied.Style.Accent == source.Style.Accent
+                && applied.Style.Danger == source.Style.Danger
+                && applied.Style.Muted == source.Style.Muted
+                && applied.Style.Border == source.Style.Border
+                && applied.Style.Panel == source.Style.Panel
+                && applied.Style.Scrollbar == source.Style.Scrollbar
+                && applied.Style.ScrollbarHot == source.Style.ScrollbarHot
+                && applied.Style.MonoFont == source.Style.MonoFont
+                && applied.Overlay.CornerRadius == source.Overlay.CornerRadius
+                && applied.Overlay.Shadow == source.Overlay.Shadow
+                && applied.Cli.MaxWidth == source.Cli.MaxWidth
+                && applied.Cli.MaxHeight == source.Cli.MaxHeight
+                && applied.Cli.EntryMaxHeight == source.Cli.EntryMaxHeight
+                && applied.Cli.MaxEntries == source.Cli.MaxEntries;
+        }
+
+        /// <summary>主题文件校验：高版本 / 坏颜色 / 越界 / 缺 appearance / 超大文件均拒绝。</summary>
+        static bool RunThemeRejectChecks()
+        {
+            bool themeRejectOk = false;
             try
             {
                 string error;
@@ -550,8 +617,13 @@ namespace MirrorpondHUD
             {
                 Log.Error("主题文件校验自检异常", ex);
             }
+            return themeRejectOk;
+        }
 
-
+        /// <summary>内置主题目录（P4）：EmbeddedResource 编进程序集，发布版不依赖 docs 目录。</summary>
+        static bool RunThemeCatalogChecks()
+        {
+            bool themeCatalogOk = false;
             try
             {
                 // P4：三份示例主题以 EmbeddedResource 编进程序集，发布版不再依赖 docs 目录。
@@ -565,8 +637,13 @@ namespace MirrorpondHUD
             {
                 Log.Error("内置主题自检异常", ex);
             }
+            return themeCatalogOk;
+        }
 
-
+        /// <summary>设置副本（#7）：克隆失败必须返回 false + null，不能用默认值顶替。</summary>
+        static bool RunCloneGuardChecks()
+        {
+            bool cloneGuardOk = false;
             try
             {
                 // #7：克隆失败必须返回 false + null，绝不能拿 new Settings() 顶替（那会写默认值回盘）。
@@ -585,8 +662,13 @@ namespace MirrorpondHUD
             {
                 Log.Error("设置副本自检异常", ex);
             }
+            return cloneGuardOk;
+        }
 
-
+        /// <summary>交互卡唯一：默认配置一张，再加一张应被计数拦下。</summary>
+        static bool RunSingleInteractiveChecks()
+        {
+            bool singleInteractiveOk = false;
             try
             {
                 // 宿主只认第一张交互卡：默认配置正好一张；再加一张命令行应被数出来（设置页会拦住）。
@@ -602,8 +684,13 @@ namespace MirrorpondHUD
             {
                 Log.Error("交互卡唯一性自检异常", ex);
             }
+            return singleInteractiveOk;
+        }
 
-
+        /// <summary>共享控件（2.10.0）：CardList 空态/计数/选中，CardStatus 忙碌/进度/错误。</summary>
+        static bool RunSharedWidgetChecks()
+        {
+            bool widgetsOk = false;
             try
             {
                 // 2.10.0 共享控件：列表的空状态 / 计数 / 选中，状态行的忙碌 / 进度 / 错误态。
@@ -638,8 +725,13 @@ namespace MirrorpondHUD
             {
                 Log.Error("共享控件自检异常", ex);
             }
+            return widgetsOk;
+        }
 
-
+        /// <summary>共享控件（2.10.1）：Header 按钮可点、Input 回车提交、DropOverlay 显隐。</summary>
+        static bool RunInteractiveWidgetChecks()
+        {
+            bool widgets2Ok = false;
             try
             {
                 // 2.10.1 共享控件：Header/Toolbar 的按钮可点，Input 回车提交，DropOverlay 显隐。
@@ -683,8 +775,13 @@ namespace MirrorpondHUD
             {
                 Log.Error("共享控件（交互）自检异常", ex);
             }
+            return widgets2Ok;
+        }
 
-
+        /// <summary>表单控件：滑块 / 开关 / 下拉 / 数字 / 颜色 / 分段与声明式表单。</summary>
+        static bool RunFormControlsChecks()
+        {
+            bool formControlsOk = false;
             try
             {
                 // UiKit 表单控件：滑块 / 开关 / 下拉 / 数字 / 颜色 / 分段 + 声明式表单。
@@ -712,8 +809,13 @@ namespace MirrorpondHUD
             {
                 Log.Error("表单控件自检异常", ex);
             }
+            return formControlsOk;
+        }
 
-
+        /// <summary>数据控件（UiKit 自检）：Table / Badge / Tag / Metric / Gauge / Ring。</summary>
+        static bool RunDataControlsChecks()
+        {
+            bool dataControlsOk = false;
             try
             {
                 string dataError = CardDataSelfTest.Run();
@@ -724,8 +826,13 @@ namespace MirrorpondHUD
             {
                 Log.Error("数据控件自检异常", ex);
             }
+            return dataControlsOk;
+        }
 
-
+        /// <summary>图表 / 树 / 时间线（UiKit 自检）：空数据、数据操作与离屏渲染。</summary>
+        static bool RunChartControlsChecks()
+        {
+            bool chartControlsOk = false;
             try
             {
                 string chartError = CardChartSelfTest.Run();
@@ -736,8 +843,13 @@ namespace MirrorpondHUD
             {
                 Log.Error("图表 / 树 / 时间线自检异常", ex);
             }
+            return chartControlsOk;
+        }
 
-
+        /// <summary>浮层 / 交互控件（UiKit 自检）：Modal / Dialog / Popover / Tooltip / ContextMenu / Toast。</summary>
+        static bool RunOverlayControlsChecks()
+        {
+            bool overlayControlsOk = false;
             try
             {
                 string overlayError = CardOverlaySelfTest.Run();
@@ -748,8 +860,13 @@ namespace MirrorpondHUD
             {
                 Log.Error("浮层 / 交互控件自检异常", ex);
             }
+            return overlayControlsOk;
+        }
 
-
+        /// <summary>图标字体：Lucide 码位查询、字体族与 CardIcon 真实渲染。</summary>
+        static bool RunIconFontChecks()
+        {
+            bool iconFontOk = false;
             try
             {
                 string iconError = CardIconSelfTest.Run();
@@ -760,8 +877,13 @@ namespace MirrorpondHUD
             {
                 Log.Error("图标字体自检异常", ex);
             }
+            return iconFontOk;
+        }
 
-
+        /// <summary>渲染上下文（2.10.2）：富内容创建上下文透传这张卡片的 ICardHost。</summary>
+        static bool RunContextHostChecks()
+        {
+            bool contextHostOk = false;
             try
             {
                 // 2.10.2：富内容的渲染上下文要把这张卡片的 ICardHost 透传给内容控件。
@@ -776,8 +898,13 @@ namespace MirrorpondHUD
             {
                 Log.Error("渲染上下文 Host 自检异常", ex);
             }
+            return contextHostOk;
+        }
 
-
+        /// <summary>Shell 图标缓存、缩略图请求与拖出阈值（2.10.3）。</summary>
+        static bool RunShellChecks()
+        {
+            bool shellOk = false;
             try
             {
                 // 2.10.3：Shell 图标缓存一致、缩略图请求不会挂住；拖出阈值与空输入。
@@ -798,8 +925,14 @@ namespace MirrorpondHUD
             {
                 Log.Error("Shell / 拖出自检异常", ex);
             }
+            return shellOk;
+        }
 
-
+        /// <summary>配置层：默认卡片 / JSON 往返（含 Extras）/ 顶层 null 块；修复段共用原单 try 的异常收尾。</summary>
+        static bool RunConfigChecks(out bool configRepairOk)
+        {
+            bool configOk = false;
+            configRepairOk = false;
             try
             {
                 // 配置层：默认卡片 / JSON 往返（含通用 Extras）/ 顶层 null 块 / 旧 Schema 按损坏 / 未来版本只读 / 未知 Kind 保留。
@@ -840,132 +973,177 @@ namespace MirrorpondHUD
 
                 configOk = defaultsOk && roundTripOk && nullOk;
 
-                bool needsSave;
-                bool corrupted;
-                bool futureFlag;
-                Settings broken = SettingsMigration.Load("{\"SchemaVersion\":6,", out needsSave, out corrupted);
-                bool brokenOk = corrupted && !needsSave && broken != null;
-
-                Settings oldSchema = SettingsMigration.Load("{\"SchemaVersion\":1,\"Cards\":[]}", out needsSave, out corrupted);
-                bool oldOk = corrupted && !needsSave && oldSchema != null;
-
-                Settings unversioned = SettingsMigration.Load(
-                    "{\"Cards\":[{\"Id\":\"c1\",\"Kind\":\"infotext\",\"Name\":\"文本\"}]}",
-                    out needsSave, out corrupted);
-                bool unversionedOk = !corrupted && needsSave && unversioned.Cards.Count == 1
-                                  && unversioned.Cards[0].Kind == "infotext";
-
-                Settings future = SettingsMigration.Load("{\"SchemaVersion\":999,\"Cards\":[]}",
-                                                          out needsSave, out corrupted, out futureFlag);
-                bool futureOk = !corrupted && futureFlag && !needsSave && future != null;
-
-                Settings overflow = SettingsMigration.Load("{\"SchemaVersion\":1e300,\"Cards\":[]}",
-                                                           out needsSave, out corrupted, out futureFlag);
-                bool overflowOk = corrupted && !needsSave;
-
-                // 未知 Kind（例如插件卸载）：保留原配置，不改写成默认卡。
-                var unknownSettings = new Settings();
-                unknownSettings.Cards.Add(new CardSettings
-                {
-                    Id = "plugin-missing", Kind = "example-clock", Name = "插件卡", Content = "插件内容",
-                    Extras = new Dictionary<string, object> { { "plugin", "keep" } }
-                });
-                CardModel.Normalize(unknownSettings);
-                bool unknownKindOk = unknownSettings.Cards.Count == 1
-                                  && unknownSettings.Cards[0].Kind == "example-clock"
-                                  && unknownSettings.Cards[0].Content == "插件内容"
-                                  && unknownSettings.Cards[0].Extras.ContainsKey("plugin");
-
-                // 状态存储：原子写、损坏回退 .bak、拒绝路径穿越、删除。
-                string atomicId = "selftest-atomic-" + Guid.NewGuid().ToString("N");
-                string atomicDir = CardStateStore.DirectoryFor(atomicId);
-                bool atomicOk = false;
-                try
-                {
-                    CardStateStore.Write(atomicId, "state.json", "{\"v\":1}");
-                    CardStateStore.Write(atomicId, "state.json", "{\"v\":2}");
-                    string main = Path.Combine(atomicDir, "state.json");
-                    bool current = CardStateStore.Read(atomicId, "state.json") == "{\"v\":2}";
-                    File.WriteAllText(main, "{bad");
-                    bool recoveredFromBak = CardStateStore.Read(atomicId, "state.json") == "{\"v\":1}";
-                    bool rejected = CardStateStore.Write(atomicId, "..\\escape.txt", "x") == false
-                                 && CardStateStore.Read(atomicId, "..\\escape.txt") == null;
-                    bool deleted = CardStateStore.Delete(atomicId, "state.json");
-                    bool gone = CardStateStore.Read(atomicId, "state.json") == null;
-                    atomicOk = current && recoveredFromBak && rejected && deleted && gone;
-                }
-                finally
-                {
-                    try { if (Directory.Exists(atomicDir)) Directory.Delete(atomicDir, true); } catch { }
-                }
-
-                configRepairOk = brokenOk && oldOk && unversionedOk && futureOk && overflowOk
-                              && unknownKindOk && atomicOk;
+                configRepairOk = CheckConfigRepair();
             }
             catch (Exception ex)
             {
                 Log.Error("配置修复自检异常", ex);
             }
+            return configOk;
+        }
 
+        /// <summary>配置修复：SettingsLoader 版本校验 + 状态存储原子写；异常冒泡给 RunConfigChecks 统一记录。</summary>
+        static bool CheckConfigRepair()
+        {
+            bool settingsLoaderOk = CheckSettingsLoader();
+            bool atomicOk = CheckCardStateAtomic();
+            return settingsLoaderOk && atomicOk;
+        }
+
+        /// <summary>设置加载：损坏 / 旧 Schema / 无版本 / 未来版本只读 / 数字溢出 / 未知 Kind 保留。</summary>
+        static bool CheckSettingsLoader()
+        {
+            bool needsSave;
+            bool corrupted;
+            bool futureFlag;
+            Settings broken = SettingsLoader.Load("{\"SchemaVersion\":6,", out needsSave, out corrupted);
+            bool brokenOk = corrupted && !needsSave && broken != null;
+
+            Settings oldSchema = SettingsLoader.Load("{\"SchemaVersion\":1,\"Cards\":[]}", out needsSave, out corrupted);
+            bool oldOk = corrupted && !needsSave && oldSchema != null;
+
+            Settings unversioned = SettingsLoader.Load(
+                "{\"Cards\":[{\"Id\":\"c1\",\"Kind\":\"infotext\",\"Name\":\"文本\"}]}",
+                out needsSave, out corrupted);
+            bool unversionedOk = !corrupted && needsSave && unversioned.Cards.Count == 1
+                              && unversioned.Cards[0].Kind == "infotext";
+
+            Settings future = SettingsLoader.Load("{\"SchemaVersion\":999,\"Cards\":[]}",
+                                                      out needsSave, out corrupted, out futureFlag);
+            bool futureOk = !corrupted && futureFlag && !needsSave && future != null;
+
+            Settings overflow = SettingsLoader.Load("{\"SchemaVersion\":1e300,\"Cards\":[]}",
+                                                       out needsSave, out corrupted, out futureFlag);
+            bool overflowOk = corrupted && !needsSave;
+
+            // 未知 Kind（例如插件卸载）：保留原配置，不改写成默认卡。
+            var unknownSettings = new Settings();
+            unknownSettings.Cards.Add(new CardSettings
+            {
+                Id = "plugin-missing", Kind = "example-clock", Name = "插件卡", Content = "插件内容",
+                Extras = new Dictionary<string, object> { { "plugin", "keep" } }
+            });
+            CardModel.Normalize(unknownSettings);
+            bool unknownKindOk = unknownSettings.Cards.Count == 1
+                              && unknownSettings.Cards[0].Kind == "example-clock"
+                              && unknownSettings.Cards[0].Content == "插件内容"
+                              && unknownSettings.Cards[0].Extras.ContainsKey("plugin");
+
+            return brokenOk && oldOk && unversionedOk && futureOk && overflowOk && unknownKindOk;
+        }
+
+        /// <summary>状态存储：原子写、损坏回退 .bak、拒绝路径穿越、删除；清理逻辑保持原 try/finally。</summary>
+        static bool CheckCardStateAtomic()
+        {
+            // 状态存储：原子写、损坏回退 .bak、拒绝路径穿越、删除。
+            string atomicId = "selftest-atomic-" + Guid.NewGuid().ToString("N");
+            string atomicDir = CardStateStore.DirectoryFor(atomicId);
+            bool atomicOk = false;
             try
             {
-                // 契约边界：插件 API 在 Contracts；宿主实现与配置归一化钩子仍在宿主程序集。
-                bool contractsOk = string.Equals(typeof(ICardModule).Assembly.GetName().Name, "MirrorpondHUD.Contracts", StringComparison.Ordinal)
-                                && typeof(CardRenderContext).Assembly == typeof(ICardModule).Assembly
-                                && typeof(Settings).Assembly == typeof(ICardModule).Assembly
-                                && typeof(SecretStore).Assembly == typeof(ICardModule).Assembly
-                                && string.Equals(typeof(CardRegistry).Assembly.GetName().Name, "MirrorpondHUD", StringComparison.Ordinal)
-                                && ConfigStore.SettingsNormalizer != null;
+                CardStateStore.Write(atomicId, "state.json", "{\"v\":1}");
+                CardStateStore.Write(atomicId, "state.json", "{\"v\":2}");
+                string main = Path.Combine(atomicDir, "state.json");
+                bool current = CardStateStore.Read(atomicId, "state.json") == "{\"v\":2}";
+                File.WriteAllText(main, "{bad");
+                bool recoveredFromBak = CardStateStore.Read(atomicId, "state.json") == "{\"v\":1}";
+                bool rejected = CardStateStore.Write(atomicId, "..\\escape.txt", "x") == false
+                             && CardStateStore.Read(atomicId, "..\\escape.txt") == null;
+                bool deleted = CardStateStore.Delete(atomicId, "state.json");
+                bool gone = CardStateStore.Read(atomicId, "state.json") == null;
+                atomicOk = current && recoveredFromBak && rejected && deleted && gone;
+            }
+            finally
+            {
+                try { if (Directory.Exists(atomicDir)) Directory.Delete(atomicDir, true); } catch { }
+            }
 
-                // 注册表：6 个内置卡片插件必须全部注册；Kind 唯一且元数据完整。
-                string[] requiredKinds = { "infotext", "command", "media", "chat", "dropstation", "buttons" };
-                IList<ICardModule> modules = CardRegistry.Modules;
-                var kinds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                var missing = new List<string>();
-                bool metadataOk = true;
-                foreach (ICardModule module in modules)
-                {
-                    if (module == null) { metadataOk = false; continue; }
-                    string kind = (module.Kind ?? "").Trim();
-                    if (kind.Length == 0 || !kinds.Add(kind)) metadataOk = false;
-                    if (string.IsNullOrWhiteSpace(module.DisplayName) || string.IsNullOrWhiteSpace(module.Icon)) metadataOk = false;
-                }
-                foreach (string required in requiredKinds)
-                    if (!kinds.Contains(required)) missing.Add(required);
-                bool registryOk = modules.Count >= requiredKinds.Length && missing.Count == 0 && metadataOk;
+            return atomicOk;
+        }
 
-                // 未知 Kind 必须有占位模块（保留 Kind、不可交互、给出提示）。
-                ICardModule missingModule = CardRegistry.Get("selftest-missing-plugin");
-                string missingText = missingModule.Render(new CardRenderContext(
-                    new Settings(), Screenshots.DemoSnapshot(), null,
-                    new CardSettings { Kind = "selftest-missing-plugin" }));
-                bool placeholderOk = missingModule.Kind == "selftest-missing-plugin"
-                                  && missingModule.DisplayName == "插件不可用"
-                                  && !missingModule.IsInteractive
-                                  && missingText.IndexOf("插件不可用", StringComparison.Ordinal) >= 0;
-
-                // 宿主默认内容模板仍可用（CardDefaults 保留在宿主）。
-                bool cardDefaultsOk = CardDefaults.MetricsContent.IndexOf("{cpu", StringComparison.Ordinal) >= 0
-                                   && CardDefaults.ClockContent.IndexOf("{time", StringComparison.Ordinal) >= 0
-                                   && CardDefaults.KeysContent.IndexOf("{keys", StringComparison.Ordinal) >= 0
-                                   && CardDefaults.TextContent.IndexOf("{host", StringComparison.Ordinal) >= 0;
-
-                // 默认卡片：3 张信息文本 + 命令行 + 媒体，且交互卡只有 1 张。
-                var defaultCards = CardModel.CreateDefaultCards();
-                var defaultKinds = new List<string>();
-                foreach (CardSettings item in defaultCards) defaultKinds.Add(item.Kind);
-                bool defaultCardsOk = defaultCards.Count == 5
-                                   && defaultKinds.FindAll(k => k == "infotext").Count == 3
-                                   && defaultKinds.Contains("command") && defaultKinds.Contains("media")
-                                   && CardModel.CountInteractive(defaultCards) == 1;
-
-                cardOk = contractsOk && registryOk && placeholderOk && cardDefaultsOk && defaultCardsOk;
+        /// <summary>卡片契约与注册表：6 个内置 Kind 齐全、未知 Kind 占位、默认卡片；异常收尾与原单 try 一致。</summary>
+        static bool RunCardRegistryChecks()
+        {
+            bool cardOk = false;
+            try
+            {
+                bool contractsOk = CheckContractsAndRegistry();
+                bool cardDefaultsOk = CheckCardDefaults();
+                cardOk = contractsOk && cardDefaultsOk;
             }
             catch (Exception ex)
             {
                 Log.Error("卡片注册表自检异常", ex);
             }
+            return cardOk;
+        }
 
+        /// <summary>契约边界与注册表：插件 API 在 Contracts，宿主实现与归一化钩子仍在宿主程序集。</summary>
+        static bool CheckContractsAndRegistry()
+        {
+            // 契约边界：插件 API 在 Contracts；宿主实现与配置归一化钩子仍在宿主程序集。
+            bool contractsOk = string.Equals(typeof(ICardModule).Assembly.GetName().Name, "MirrorpondHUD.Contracts", StringComparison.Ordinal)
+                            && typeof(CardRenderContext).Assembly == typeof(ICardModule).Assembly
+                            && typeof(Settings).Assembly == typeof(ICardModule).Assembly
+                            && typeof(SecretStore).Assembly == typeof(ICardModule).Assembly
+                            && string.Equals(typeof(CardRegistry).Assembly.GetName().Name, "MirrorpondHUD", StringComparison.Ordinal)
+                            && ConfigStore.SettingsNormalizer != null;
+
+            // 注册表：6 个内置卡片插件必须全部注册；Kind 唯一且元数据完整。
+            string[] requiredKinds = { "infotext", "command", "media", "chat", "dropstation", "buttons" };
+            IList<ICardModule> modules = CardRegistry.Modules;
+            var kinds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var missing = new List<string>();
+            bool metadataOk = true;
+            foreach (ICardModule module in modules)
+            {
+                if (module == null) { metadataOk = false; continue; }
+                string kind = (module.Kind ?? "").Trim();
+                if (kind.Length == 0 || !kinds.Add(kind)) metadataOk = false;
+                if (string.IsNullOrWhiteSpace(module.DisplayName) || string.IsNullOrWhiteSpace(module.Icon)) metadataOk = false;
+            }
+            foreach (string required in requiredKinds)
+                if (!kinds.Contains(required)) missing.Add(required);
+            bool registryOk = modules.Count >= requiredKinds.Length && missing.Count == 0 && metadataOk;
+
+            // 未知 Kind 必须有占位模块（保留 Kind、不可交互、给出提示）。
+            ICardModule missingModule = CardRegistry.Get("selftest-missing-plugin");
+            string missingText = missingModule.Render(new CardRenderContext(
+                new Settings(), Screenshots.DemoSnapshot(), null,
+                new CardSettings { Kind = "selftest-missing-plugin" }));
+            bool placeholderOk = missingModule.Kind == "selftest-missing-plugin"
+                              && missingModule.DisplayName == "插件不可用"
+                              && !missingModule.IsInteractive
+                              && missingText.IndexOf("插件不可用", StringComparison.Ordinal) >= 0;
+
+            return contractsOk && registryOk && placeholderOk;
+        }
+
+        /// <summary>宿主默认内容模板与默认卡片布局（3 张信息文本 + 命令行 + 媒体）。</summary>
+        static bool CheckCardDefaults()
+        {
+            // 宿主默认内容模板仍可用（CardDefaults 保留在宿主）。
+            bool cardDefaultsOk = CardDefaults.MetricsContent.IndexOf("{cpu", StringComparison.Ordinal) >= 0
+                               && CardDefaults.ClockContent.IndexOf("{time", StringComparison.Ordinal) >= 0
+                               && CardDefaults.KeysContent.IndexOf("{keys", StringComparison.Ordinal) >= 0
+                               && CardDefaults.TextContent.IndexOf("{host", StringComparison.Ordinal) >= 0;
+
+            // 默认卡片：3 张信息文本 + 命令行 + 媒体，且交互卡只有 1 张。
+            var defaultCards = CardModel.CreateDefaultCards();
+            var defaultKinds = new List<string>();
+            foreach (CardSettings item in defaultCards) defaultKinds.Add(item.Kind);
+            bool defaultCardsOk = defaultCards.Count == 5
+                               && defaultKinds.FindAll(k => k == "infotext").Count == 3
+                               && defaultKinds.Contains("command") && defaultKinds.Contains("media")
+                               && CardModel.CountInteractive(defaultCards) == 1;
+
+            return cardDefaultsOk && defaultCardsOk;
+        }
+
+        /// <summary>通用插件自检：遍历实现 ICardSelfTest 的模块；结论写进自检输出。</summary>
+        static bool RunPluginSelfTestChecks(StringBuilder sb)
+        {
+            bool pluginSelfTestOk = false;
             try
             {
                 // 通用插件自检：宿主不认具体卡片类型，遍历实现 ICardSelfTest 的模块。
@@ -997,7 +1175,13 @@ namespace MirrorpondHUD
             {
                 Log.Error("插件自检异常", ex);
             }
+            return pluginSelfTestOk;
+        }
 
+        /// <summary>字符串加密：DPAPI 往返，明文不落盘（SecretStore 在契约程序集）。</summary>
+        static bool RunSecretStoreChecks()
+        {
+            bool secretOk = false;
             try
             {
                 // 字符串加密：DPAPI 往返；明文不落盘（SecretStore 在契约程序集，插件与宿主共用）。
@@ -1014,7 +1198,13 @@ namespace MirrorpondHUD
             {
                 Log.Error("Key 加密自检异常", ex);
             }
+            return secretOk;
+        }
 
+        /// <summary>渲染上下文：共享变量表按帧复用、宿主透传与模块刷新节奏。</summary>
+        static bool RunRenderContextChecks()
+        {
+            bool renderOk = false;
             try
             {
                 // 渲染上下文：一帧一份变量表（同一个字典实例被复用）+ 富内容宿主透传 + 模块刷新节奏。
@@ -1037,49 +1227,92 @@ namespace MirrorpondHUD
             {
                 Log.Error("渲染上下文自检异常", ex);
             }
+            return renderOk;
+        }
 
-
-            if (!(templateOk && unknownOk && collapseOk && thresholdOk && configOk && configRepairOk && cardOk &&
-                  keyNameOk && keyLimitOk && keyOverflowOk && stateStoreOk && renderOk &&
-                  glassPolicyOk && themeOk && themeFileOk && themeRejectOk && themeCatalogOk && cloneGuardOk &&
-                  singleInteractiveOk && widgetsOk && widgets2Ok && formControlsOk && dataControlsOk &&
-                  chartControlsOk && overlayControlsOk && iconFontOk && contextHostOk && shellOk && secretOk && pluginSelfTestOk))
-                failures++;
-
+        /// <summary>集中输出逻辑自检结论；输出顺序与拆分前完全一致。</summary>
+        static void ReportUnitChecks(StringBuilder sb, UnitCheckResults results)
+        {
             Fix(sb, "逻辑自检", string.Format(
                 "模板={0} 未知占位符={1} 折叠={2} 阈值内展开={3} 配置读写={4} 卡片模块={5} 键名={6} 按键长度={7} 超长截断={8} 状态存储={9} 渲染节流={10} 毛玻璃策略={11}",
-                templateOk ? "OK" : "FAIL",
-                unknownOk ? "OK" : "FAIL",
-                collapseOk ? "OK" : "FAIL",
-                thresholdOk ? "OK" : "FAIL",
-                configOk ? "OK" : "FAIL",
-                cardOk ? "OK" : "FAIL",
-                keyNameOk ? "OK" : "FAIL",
-                keyLimitOk ? "OK" : "FAIL",
-                keyOverflowOk ? "OK" : "FAIL",
-                stateStoreOk ? "OK" : "FAIL",
-                renderOk ? "OK" : "FAIL",
-                glassPolicyOk ? "OK" : "FAIL"));
+                results.TemplateOk ? "OK" : "FAIL",
+                results.UnknownOk ? "OK" : "FAIL",
+                results.CollapseOk ? "OK" : "FAIL",
+                results.ThresholdOk ? "OK" : "FAIL",
+                results.ConfigOk ? "OK" : "FAIL",
+                results.CardOk ? "OK" : "FAIL",
+                results.KeyNameOk ? "OK" : "FAIL",
+                results.KeyLimitOk ? "OK" : "FAIL",
+                results.KeyOverflowOk ? "OK" : "FAIL",
+                results.StateStoreOk ? "OK" : "FAIL",
+                results.RenderOk ? "OK" : "FAIL",
+                results.GlassPolicyOk ? "OK" : "FAIL"));
 
-            Fix(sb, "外观令牌", themeOk ? "OK（派生值 = 旧 alpha 常量，非法值回落而不是变白）" : "FAIL");
-            Fix(sb, "配置修复", configRepairOk
+            Fix(sb, "外观令牌", results.ThemeOk ? "OK（派生值 = 旧 alpha 常量，非法值回落而不是变白）" : "FAIL");
+            Fix(sb, "配置修复", results.ConfigRepairOk
                 ? "OK（null 判空 / 损坏标记 / 旧 Schema 按损坏 / 未来版本只读 / 未知 Kind 保留 / 状态 .bak 回退）" : "FAIL");
-            Fix(sb, "主题文件", themeFileOk ? "OK（导出 → 解析 → 套用 → 再导出一致，数字透明度按前景派生）" : "FAIL");
-            Fix(sb, "主题文件校验", themeRejectOk ? "OK（高版本 / 坏颜色 / 越界 / 缺 appearance 均拒绝，坏文件不动当前设置）" : "FAIL");
-            Fix(sb, "内置主题", themeCatalogOk ? "OK（已编进程序集并全部解析）" : "FAIL");
-            Fix(sb, "设置副本", cloneGuardOk ? "OK（克隆失败返回 null + 原因，不退回默认值）" : "FAIL");
-            Fix(sb, "交互卡唯一", singleInteractiveOk ? "OK（默认一张；第二张会被设置页 / 校验拦住）" : "FAIL");
-            Fix(sb, "共享控件", widgetsOk ? "OK（CardList 空态/计数/选中；CardStatus 忙碌/进度/错误）" : "FAIL");
-            Fix(sb, "共享控件（交互）", widgets2Ok ? "OK（Header 按钮可点；Input 提交；DropOverlay 显隐）" : "FAIL");
-            Fix(sb, "表单控件", formControlsOk ? "OK（Slider / Toggle / Select / Number / Color / Segmented / Form）" : "FAIL");
-            Fix(sb, "数据控件", dataControlsOk ? "OK（Table 排序 / 选中 / 空态；Badge / Tag / Metric / Gauge / Ring）" : "FAIL");
-            Fix(sb, "图表 / 树 / 时间线", chartControlsOk ? "OK（Sparkline / Line / Bar / Tree / Timeline 离屏渲染）" : "FAIL");
-            Fix(sb, "浮层 / 交互控件", overlayControlsOk ? "OK（Modal / Dialog / Popover / Tooltip / ContextMenu / Toast）" : "FAIL");
-            Fix(sb, "图标字体", iconFontOk ? "OK（Lucide 码位 / 查询 / CardIcon 渲染）" : "FAIL");
-            Fix(sb, "渲染上下文", contextHostOk ? "OK（富内容创建上下文透传 ICardHost）" : "FAIL");
-            Fix(sb, "Key 加密", secretOk ? "OK（DPAPI 往返；明文不落盘）" : "FAIL");
-            Fix(sb, "卡片注册", cardOk ? "OK（6 个内置 Kind 齐全；契约在 Contracts；未知 Kind 占位）" : "FAIL");
-            Fix(sb, "Shell / 拖出", shellOk ? "OK（图标缓存一致；空输入安全）" : "FAIL");
+            Fix(sb, "主题文件", results.ThemeFileOk ? "OK（导出 → 解析 → 套用 → 再导出一致，数字透明度按前景派生）" : "FAIL");
+            Fix(sb, "主题文件校验", results.ThemeRejectOk ? "OK（高版本 / 坏颜色 / 越界 / 缺 appearance 均拒绝，坏文件不动当前设置）" : "FAIL");
+            Fix(sb, "内置主题", results.ThemeCatalogOk ? "OK（已编进程序集并全部解析）" : "FAIL");
+            Fix(sb, "设置副本", results.CloneGuardOk ? "OK（克隆失败返回 null + 原因，不退回默认值）" : "FAIL");
+            Fix(sb, "交互卡唯一", results.SingleInteractiveOk ? "OK（默认一张；第二张会被设置页 / 校验拦住）" : "FAIL");
+            Fix(sb, "共享控件", results.WidgetsOk ? "OK（CardList 空态/计数/选中；CardStatus 忙碌/进度/错误）" : "FAIL");
+            Fix(sb, "共享控件（交互）", results.Widgets2Ok ? "OK（Header 按钮可点；Input 提交；DropOverlay 显隐）" : "FAIL");
+            Fix(sb, "表单控件", results.FormControlsOk ? "OK（Slider / Toggle / Select / Number / Color / Segmented / Form）" : "FAIL");
+            Fix(sb, "数据控件", results.DataControlsOk ? "OK（Table 排序 / 选中 / 空态；Badge / Tag / Metric / Gauge / Ring）" : "FAIL");
+            Fix(sb, "图表 / 树 / 时间线", results.ChartControlsOk ? "OK（Sparkline / Line / Bar / Tree / Timeline 离屏渲染）" : "FAIL");
+            Fix(sb, "浮层 / 交互控件", results.OverlayControlsOk ? "OK（Modal / Dialog / Popover / Tooltip / ContextMenu / Toast）" : "FAIL");
+            Fix(sb, "图标字体", results.IconFontOk ? "OK（Lucide 码位 / 查询 / CardIcon 渲染）" : "FAIL");
+            Fix(sb, "渲染上下文", results.ContextHostOk ? "OK（富内容创建上下文透传 ICardHost）" : "FAIL");
+            Fix(sb, "Key 加密", results.SecretOk ? "OK（DPAPI 往返；明文不落盘）" : "FAIL");
+            Fix(sb, "卡片注册", results.CardOk ? "OK（6 个内置 Kind 齐全；契约在 Contracts；未知 Kind 占位）" : "FAIL");
+            Fix(sb, "Shell / 拖出", results.ShellOk ? "OK（图标缓存一致；空输入安全）" : "FAIL");
+        }
+
+        /// <summary>RunUnitChecks 的领域结果。各领域只返回布尔，汇总处只加一次失败，保持拆分前语义。</summary>
+        sealed class UnitCheckResults
+        {
+            public bool TemplateOk;
+            public bool UnknownOk;
+            public bool CollapseOk;
+            public bool ThresholdOk;
+            public bool ConfigOk;
+            public bool ConfigRepairOk;
+            public bool CardOk;
+            public bool KeyNameOk;
+            public bool KeyLimitOk;
+            public bool KeyOverflowOk;
+            public bool SecretOk;
+            public bool StateStoreOk;
+            public bool RenderOk;
+            public bool ThemeOk;
+            public bool GlassPolicyOk;
+            public bool ThemeFileOk;
+            public bool ThemeRejectOk;
+            public bool ThemeCatalogOk;
+            public bool CloneGuardOk;
+            public bool SingleInteractiveOk;
+            public bool WidgetsOk;
+            public bool Widgets2Ok;
+            public bool FormControlsOk;
+            public bool DataControlsOk;
+            public bool ChartControlsOk;
+            public bool OverlayControlsOk;
+            public bool IconFontOk;
+            public bool ContextHostOk;
+            public bool ShellOk;
+            public bool PluginSelfTestOk;
+
+            /// <summary>任一领域失败即整体失败（对应拆分前末尾那一次 failures++）。</summary>
+            public bool AllPassed()
+            {
+                return TemplateOk && UnknownOk && CollapseOk && ThresholdOk && ConfigOk && ConfigRepairOk && CardOk &&
+                       KeyNameOk && KeyLimitOk && KeyOverflowOk && StateStoreOk && RenderOk &&
+                       GlassPolicyOk && ThemeOk && ThemeFileOk && ThemeRejectOk && ThemeCatalogOk && CloneGuardOk &&
+                       SingleInteractiveOk && WidgetsOk && Widgets2Ok && FormControlsOk && DataControlsOk &&
+                       ChartControlsOk && OverlayControlsOk && IconFontOk && ContextHostOk && ShellOk && SecretOk &&
+                       PluginSelfTestOk;
+            }
         }
 
 

@@ -9,7 +9,7 @@ namespace MirrorpondHUD.Core
     /// 更旧的版本按损坏处理，由 ConfigStore 备份后使用默认设置。
     /// 更高版本只读加载，避免降级覆盖。
     /// </summary>
-    internal static class SettingsMigration
+    internal static class SettingsLoader
     {
         public static Settings Load(string json, out bool needsSave, out bool corrupted)
         {
