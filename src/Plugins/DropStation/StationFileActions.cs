@@ -8,8 +8,8 @@ using MirrorpondHUD.Ui.Controls;
 namespace MirrorpondHUD.Cards
 {
     /// <summary>
-    /// 文件操作：打开 / 定位 / 复制路径 / 打开接收目录 / 不可逆删除 / 移除丢失项。
-    /// 从 StationView 抽出后，视图只负责选择、列表与状态行回填；所有用户可见文案保持原样。
+    /// 文件操作：打开 / 定位 / 复制路径 / 打开接收目录 / 移到回收站 / 移除丢失项。
+    /// 从 StationView 抽出后，视图只负责选择、列表与状态行回填；用户可见文案集中在操作层，避免两处各写一套。
     /// </summary>
     internal sealed class StationFileActions
     {
@@ -89,7 +89,7 @@ namespace MirrorpondHUD.Cards
             }
         }
 
-        /// <summary>是否至少有一个选中项是「接收目录内、且仍存在」的条目（右键菜单删除项的可用态）。</summary>
+        /// <summary>是否至少有一个选中项是「接收目录内、且仍存在」的条目（右键菜单「移到回收站」的可用态）。</summary>
         public bool HasDeletable(List<StationItem> selected)
         {
             foreach (StationItem candidate in selected)
@@ -111,36 +111,39 @@ namespace MirrorpondHUD.Cards
         }
 
         /// <summary>
-        /// 不可逆删除：只允许删「接收目录内、且仍存在」的条目，确认框与失败项都保持原样。
-        /// 返回实际删除的条数，供视图决定是否清理连选锚点。
+        /// 移到回收站：只允许处理「接收目录内、且仍存在」的条目，确认框与失败项都保持原样。
+        /// 逐项调用 <see cref="RecycleBin.TryMoveToRecycleBin"/>，成功才从列表移除并计入 recycled；
+        /// 失败计入 failed 并收集「文件名（返回码）」。失败绝不回退到 File.Delete / Directory.Delete，
+        /// 否则“可从回收站还原”的承诺会在最需要它的时候（文件被占用 / 权限不足）悄悄失效。
+        /// 返回实际移到回收站的条数，供视图决定是否清理连选锚点。
         /// </summary>
         public int DeleteFiles(Window owner, List<StationItem> selected, IList<StationItem> items)
         {
-            var deletable = new List<StationItem>();
+            var recyclable = new List<StationItem>();
             foreach (StationItem item in selected)
             {
                 if (string.IsNullOrEmpty(item.StoredPath)) continue;
                 if (!StationFiles.IsInside(_station.Directory, item.StoredPath)) continue;
-                if (item.PathExists()) deletable.Add(item);
+                if (item.PathExists()) recyclable.Add(item);
             }
 
-            if (deletable.Count == 0)
+            if (recyclable.Count == 0)
             {
-                _setStatus("选中的条目没有可删除的接收目录文件。", CardStatusKind.Warning);
+                _setStatus("选中的条目没有可移到回收站的接收目录文件。", CardStatusKind.Warning);
                 return 0;
             }
 
             MessageBoxResult answer;
             string message;
-            if (deletable.Count == 1)
+            if (recyclable.Count == 1)
             {
-                message = deletable[0].IsDirectory
-                    ? "确定删除这个文件夹及其内容？\n\n" + deletable[0].Name
-                    : "确定删除这个文件？\n\n" + deletable[0].Name;
+                message = recyclable[0].IsDirectory
+                    ? "确定把这个文件夹及其内容移到回收站（可从回收站还原）？\n\n" + recyclable[0].Name
+                    : "确定把这个文件移到回收站（可从回收站还原）？\n\n" + recyclable[0].Name;
             }
             else
             {
-                message = "确定删除选中的 " + deletable.Count + " 项？\n\n文件夹会连同内容一起删除。";
+                message = "确定把选中的 " + recyclable.Count + " 项移到回收站？\n\n文件夹会连同内容一起移到回收站（可从回收站还原）。";
             }
 
             if (owner == null)
@@ -150,39 +153,36 @@ namespace MirrorpondHUD.Cards
 
             if (answer != MessageBoxResult.Yes) return 0;
 
-            int deleted = 0;
+            int recycled = 0;
             int failed = 0;
             var failures = new List<string>();
-            foreach (StationItem item in deletable)
+            foreach (StationItem item in recyclable)
             {
-                try
-                {
-                    if (item.IsDirectory || Directory.Exists(item.StoredPath))
-                        Directory.Delete(item.StoredPath, true);
-                    else
-                        File.Delete(item.StoredPath);
-                    items.Remove(item);
-                    deleted++;
-                }
-                catch (Exception ex)
+                int errorCode;
+                if (!RecycleBin.TryMoveToRecycleBin(owner, item.StoredPath, out errorCode))
                 {
                     failed++;
-                    // 不可逆删除的失败必须留底：哪个文件、为什么，否则静默半删后数据去向无从追查。
-                    failures.Add(item.Name + "（" + ex.Message + "）");
+                    // 失败必须留底：哪个文件、哪个返回码，否则静默半删后数据去向无从追查。
+                    string failedName = string.IsNullOrEmpty(item.Name) ? item.StoredPath : item.Name;
+                    failures.Add(failedName + "（返回码 " + errorCode + "）");
+                    continue;
                 }
+
+                items.Remove(item);
+                recycled++;
             }
 
             if (failed > 0)
-                Log.Warn("中转站不可逆删除失败 " + failed + "/" + deletable.Count + " 项: " +
+                Log.Warn("中转站移到回收站失败 " + failed + "/" + recyclable.Count + " 项: " +
                          string.Join("；", failures.ToArray()));
 
-            if (deleted > 0) _persistAndRebuild();
+            if (recycled > 0) _persistAndRebuild();
 
             if (failed == 0)
-                _setStatus(deleted > 1 ? "已删除 " + deleted + " 项" : "已删除", CardStatusKind.Normal);
+                _setStatus("已移到回收站 " + recycled + " 项", CardStatusKind.Normal);
             else
-                _setStatus("已删除 " + deleted + " 项，失败 " + failed + " 项", CardStatusKind.Warning);
-            return deleted;
+                _setStatus("已移到回收站 " + recycled + " 项，失败 " + failed + " 项", CardStatusKind.Warning);
+            return recycled;
         }
 
         /// <summary>移除列表里的丢失项（只清列表，不删文件）；返回移除条数，供视图清理连选锚点。</summary>
@@ -265,7 +265,7 @@ namespace MirrorpondHUD.Cards
             catch { return path; }
         }
 
-        /// <summary>路径是否位于接收目录内部（用于禁止删除接收目录之外的文件）。</summary>
+        /// <summary>路径是否位于接收目录内部（用于禁止把接收目录之外的文件移到回收站）。</summary>
         public static bool IsInside(string directory, string path)
         {
             if (string.IsNullOrWhiteSpace(directory) || string.IsNullOrWhiteSpace(path)) return false;

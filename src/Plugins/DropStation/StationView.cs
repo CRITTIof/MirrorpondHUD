@@ -497,9 +497,9 @@ namespace MirrorpondHUD.Cards
             remove.Click += (s, e) => RemoveSelected();
             menu.Items.Add(remove);
 
-            var delete = new MenuItem { Header = "删除文件…" };
-            delete.Click += (s, e) => DeleteSelectedFiles();
-            menu.Items.Add(delete);
+            var recycle = new MenuItem { Header = "移到回收站…" };
+            recycle.Click += (s, e) => RecycleSelectedFiles();
+            menu.Items.Add(recycle);
 
             menu.Items.Add(new Separator());
 
@@ -512,14 +512,14 @@ namespace MirrorpondHUD.Cards
                 List<StationItem> selected = _selection.SelectedItems();
                 StationItem item = selected.Count == 0 ? null : selected[0];
 
-                delete.IsEnabled = _files.HasDeletable(selected);
+                recycle.IsEnabled = _files.HasDeletable(selected);
                 open.IsEnabled = item != null;
                 reveal.IsEnabled = item != null;
                 copy.IsEnabled = item != null;
                 remove.IsEnabled = item != null;
 
                 remove.Header = selected.Count > 1 ? "从列表移除 " + selected.Count + " 项" : "从列表移除";
-                delete.Header = selected.Count > 1 ? "删除选中项…" : "删除文件 / 文件夹…";
+                recycle.Header = selected.Count > 1 ? "把选中项移到回收站…" : "移到回收站…";
 
                 int missingCount = _files.CountMissing(_items);
                 missing.Header = missingCount == 0 ? "移除丢失项" : "移除 " + missingCount + " 个丢失项";
@@ -536,7 +536,7 @@ namespace MirrorpondHUD.Cards
             if (_files.RemoveMissing(_items) > 0) _selection.Anchor = null;
         }
 
-        void DeleteSelectedFiles()
+        void RecycleSelectedFiles()
         {
             if (_files.DeleteFiles(Window.GetWindow(this), _selection.SelectedItems(), _items) > 0)
                 _selection.Anchor = null;
@@ -641,7 +641,7 @@ namespace MirrorpondHUD.Cards
         void PersistAndRebuild()
         {
             // 只读时 Persist 是空操作；状态行必须说清楚「内存里改了、磁盘没写」，
-            // 否则用户会以为添加 / 删除已经保存。
+            // 否则用户会以为添加 / 移到回收站已经保存。
             if (_store.IsReadOnly)
             {
                 Rebuild();
