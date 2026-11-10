@@ -289,10 +289,9 @@ public sealed class DropStationCard : RichCardModuleBase,
 - 命令行的**外观与尺寸**不在这里：两块 CLI 面板共用 `Settings.Cli`（最大宽度 / 最大高度 / 内部小面板最大高度 / 最多保留条数）
 - 命令行卡强制 `Resident=false`、无内容模板
 
-旧配置由 `Core/SettingsMigration.cs` 一次性迁移：v0/v1（单窗口，全局 `Content` + `X/Y/Visible`）
-走 `LegacySettings`；v2 把全局 `Command` 复制进每张命令行卡片；
-v4 → v5 把 `Command` 搬进 `Extras.command`；v5 → v6 把 `Media` / `Chat` 分别搬进 `Extras.media` / `Extras.chat`。
-迁移只搬对应种类的卡片，其它卡片以前那份拷贝从没被读过，不写进新配置。迁移后立刻写回。
+2.14.7 起**不再迁移旧 Schema**：`SchemaVersion` 低于当前的配置按损坏处理（备份为 `.broken-*` 后使用默认设置），
+只接受当前版本以及「缺版本号但结构符合当前格式」的文件。读取与版本校验在 `src/Core/SettingsLoader.cs`
+（原 `SettingsMigration`，2.23.0 更名；迁移分支已全部删除）。
 
 ## 4. 布局：一条垂直堆叠
 

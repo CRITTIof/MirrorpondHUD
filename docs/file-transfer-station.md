@@ -123,6 +123,8 @@ public sealed class StationSettings
 
 - 写：`ICardHost.WriteState("items.json", json)`，每次增删 / 复制完成 / 剪枝后写；
 - 读：`ReadState`，失败 / 损坏 → 空列表 + 日志（不要因为状态坏了打不开卡片）；
+- 版本：`formatVersion` 高于当前支持的 1 时拒绝加载、只记一条 Warn、后续所有写盘为空操作
+  （绝不覆盖原文件），卡片状态行显示只读提示；缺字段按 1 处理；
 - 剪枝：超过 `MaxEntries` 从最旧开始丢**列表项**，不删文件；
 - 启动时轻量校验：`File.Exists(storedPath)` → 不在就标 `missing`，不自动删；
 - 不把列表塞进 `settings.json`（配置会变大、和 `Normalize` 打架，见 P1-12）。

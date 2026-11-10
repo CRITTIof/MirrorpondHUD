@@ -905,26 +905,32 @@ ReiconFont 仍保留给键帽 / 现有设置页图标；新卡片图标优先 Lu
 | `ICardSelfTest` | 插件 → 宿主 | 插件自带回归；`--selftest` 会逐个调用，返回 null / 空串表示通过 |
 
 ```csharp
-public sealed class MyCard : RichCardModuleBase, ICardHostAware, ICardSelfTest, ICardPresetSource
+public sealed class MyCard : RichCardModuleBase, ICardSelfTest, ICardPresetSource
 {
-    ICardHost _host;
+    public override FrameworkElement CreateContent(CardRenderContext context)
+    {
+        // 富内容控件自己保存 host；模块是单例，不能把 host 存进模块字段。
+        return new MyCardView(context.Host);
+    }
 
-    public void Attach(ICardHost host) { _host = host; }
-    public void Detach(ICardHost host) { _host = null; }
+    // 运行期改了 Extras 需要落盘时：bool saved = context.Host.SaveSettings();
+    // 宿主服务（剪贴板 / 图标 / 拖出 / 打开）：context.Host.Shell.TryGetClipboardFiles(out var paths);
 
-    // 运行期改了 Extras 需要落盘时：bool saved = _host.SaveSettings();
-    // 宿主服务（剪贴板 / 图标 / 拖出 / 打开）：_host.Shell.TryGetClipboardFiles(out var paths);
-
-    public string RunSelfTest() => null;   // 返回失败说明字符串即视为失败
+    public string RunSelfTest() { return null; }   // 返回失败说明字符串即视为失败
 }
 ```
 
-模块实现 `ICardHostAware` 可在建卡时拿到 `ICardHost`：
+新插件拿 `ICardHost` 的正确方式是 `CreateContent(CardRenderContext)` 里的 `context.Host`：它和当前这张卡
+一一对应，`UpdateContent` / `OnVisibilityChanged` 也能从内容控件拿到同一份宿主服务。
+
+`ICardHostAware` 是 apiVersion 2 **保留的兼容扩展点**，不是死代码，但内置卡都不实现它。原因是模块是单例、
+`Attach(host)` 不携带卡片 / 内容标识，同种卡有多张时无法知道 host 属于哪一张。只有「该种卡最多一张」
+或不需要把 host 与具体卡片关联的模块才适合用它；`Attach` 里也不要把 host 存成模块的长期字段：
 
 ```csharp
 public void Attach(ICardHost host)
 {
-    // 不要存进单例字段；存进当前内容控件或状态文件
+    // 单例模块只做与具体卡片无关的登记；多卡种类请改用 context.Host 传给内容控件。
 }
 
 public void Detach(ICardHost host) { }
@@ -982,12 +988,14 @@ CLI 面板可实现 `IClifFocusTarget`（`CliPanelView` 已实现）。
 
 - 模块实例是**单例**，一张卡的富内容控件按卡片分别创建；不要把某张卡的 `ICardHost` /
   `CardSettings` / 控件存进模块字段；
-- `ICardHostAware.Attach(host)` 在卡片创建 / 应用设置时调用，`Detach(host)` 在删卡 / 退出时调用；
+- 新插件优先在 `CreateContent` 里用 `context.Host` 拿宿主服务；`ICardHostAware.Attach(host)` 在卡片
+  创建 / 应用设置时调用、`Detach(host)` 在删卡 / 退出时调用，但只适合单张卡种类，原因见 §7；
 - 富内容控件实现 `IDisposable` 时，卡片销毁会调用 `Dispose()`；`OnVisibilityChanged(content, false)`
   适合暂停视频 / 动图 / 轮询；
 - `ICardHost.RequestRender()` / `RequestLayout()` 通知宿主数据或尺寸变化；
 - 退出时宿主先调用 `ICardModuleLifetime.OnPluginUnloading()`，再请求卸载可收集 ALC。这里必须停掉
-  自己的线程 / 定时器、注销静态事件、释放文件句柄；否则 ALC 可能延迟回收；
+  自己的线程 / 定时器、注销静态事件、释放文件句柄；否则 ALC 可能延迟回收。内置卡没有常驻线程，
+  都不实现这个接口；它是给需要自己持有资源的第三方插件保留的稳定扩展点；
 - 插件的 `Content` / `Extras` / 状态文件在重启后继续有效；不会因为插件缺失被宿主改写。
 
 更新插件的推荐步骤：

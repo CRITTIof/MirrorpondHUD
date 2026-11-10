@@ -111,8 +111,10 @@
 **下一刀就是把取图从 GDI 换成 DXGI 桌面复制**（下面 4.2 的验证结果），那是唯一能改掉「取图」这条路的办法。
 
 诊断开关：`MIRRORPOND_GLASS_DEBUG=1`（每 5 秒一次取样统计 + 导出 BMP）、
-`MIRRORPOND_GLASS_TRACE=1`（每画一帧往 `%TEMP%\mirrorpond-trace.log` 写一行亮度，
-`hud-test/compare.py` 靠它算延迟）、`MIRRORPOND_RAW_TRACE=1`（每轮原始取样图的逐带亮度）。
+`MIRRORPOND_GLASS_TRACE=1`（每画一帧往主日志 `mirrorpond.log` 写一行
+`GLASS HH:mm:ss.fff CAP 宽x高 luma=…`，`hud-test/compare.py` 从主日志筛 `GLASS ` 行即可；
+不再另写 `%TEMP%\mirrorpond-trace.log`，避免两套输出对不上）、
+`MIRRORPOND_RAW_TRACE=1`（每轮原始取样图的逐带亮度，同样写主日志）。
 
 ### 4.2 GPU 能不能加速：能，但要换的是「取图」不是「模糊」
 

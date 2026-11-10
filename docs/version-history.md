@@ -1,4 +1,4 @@
-# 版本修改记录（2.4.1 → 2.22.0）
+# 版本修改记录（2.4.1 → 2.23.0）
 
 > 范围：本文只记录**这一轮接手后我做的版本**（v2.4.1 起）。v2.4.0 及更早是既有历史，不在本文档里。
 > 数据全部取自仓库真实提交（`git diff --shortstat <上一版>..<本版>`），文件行的 `+ / -` 就是实际增删行数。
@@ -10,10 +10,10 @@
 > `f67a255` / `5f8933c` / `ef70cea`，**未发布、未合并**）；`v2.14.5`（`a0fe549`）/ `v2.14.6`（`3e6abc6`）
 > 已推送到 `origin/feature/runtime-card-loading`；
 > `v2.14.7`（`abcbcec`）/ `v2.14.8`（`633e9d6`）已随文档同步提交 `d73d2ec` 推送到同一分支（未发布、未合并）；
-> `v2.14.9`（`aba873a`）已推送；`v2.15.0`（`78d3381`）已推送（文档同步提交 `2eba9b4`）；`v2.16.0`（代码 `6406d96`，文档同步 `d1fd414`）**已推送并快进合并到 `main`**；`v2.17.0`（`27b8bbd`）/ `v2.18.0`（`1e1c6ac`）/ `v2.19.0`（`d21773c`）**已推送并快进合并到 `main`**；`v2.20.0`（代码 `d8f36ab`，文档 `de64021`）**已推送并快进合并到 `main`**；`v2.21.0`（代码 `0d687e9`，文档 `4911e1b`）**已推送并快进合并到 `main`**，未打 tag、未发布 Release；`v2.22.0`（代码为 `73837aa`–`2907be0` 的 12 个提交，文档同步本次提交）**已合并 `main`**，未打 tag、未发布 Release。
+> `v2.14.9`（`aba873a`）已推送；`v2.15.0`（`78d3381`）已推送（文档同步提交 `2eba9b4`）；`v2.16.0`（代码 `6406d96`，文档同步 `d1fd414`）**已推送并快进合并到 `main`**；`v2.17.0`（`27b8bbd`）/ `v2.18.0`（`1e1c6ac`）/ `v2.19.0`（`d21773c`）**已推送并快进合并到 `main`**；`v2.20.0`（代码 `d8f36ab`，文档 `de64021`）**已推送并快进合并到 `main`**；`v2.21.0`（代码 `0d687e9`，文档 `4911e1b`）**已推送并快进合并到 `main`**，未打 tag、未发布 Release；`v2.22.0`（代码为 `73837aa`–`2907be0` 的 12 个提交，文档同步本次提交）**已合并 `main`**，未打 tag、未发布 Release。 `v2.23.0`（本轮 6 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。
 > `v2.14.1` / `v2.14.2` / `v2.14.4` 的规模用对应提交的 `git show --shortstat`；`v2.14.3` / `v2.14.5` / `v2.14.6`
 > 按当时提交前工作区的 `git diff --shortstat` 计算；`v2.14.7` / `v2.14.8` 用对应提交的 `git show --shortstat`；
-> `v2.14.9` 用提交前工作区的 `git diff --shortstat -- MirrorpondHUD.csproj src`；`v2.15.0` 用 `git show --shortstat 78d3381`；`v2.16.0` 用 `git show --shortstat 6406d96`；`v2.17.0` 用 `git show --shortstat 27b8bbd`；`v2.18.0` 用 `git show --shortstat 1e1c6ac`；`v2.19.0` 用 `git show --shortstat d21773c`；`v2.20.0` 用 `git show --shortstat d8f36ab`；`v2.21.0` 用 `git show --shortstat d6e1af3`（文档同步另计）；`v2.22.0` 用 `git diff --shortstat b366e32..4899f3f`（30 文件，+1116 / −246；版本号 15 文件 +15 / −15 与文档同步另计）。
+> `v2.14.9` 用提交前工作区的 `git diff --shortstat -- MirrorpondHUD.csproj src`；`v2.15.0` 用 `git show --shortstat 78d3381`；`v2.16.0` 用 `git show --shortstat 6406d96`；`v2.17.0` 用 `git show --shortstat 27b8bbd`；`v2.18.0` 用 `git show --shortstat 1e1c6ac`；`v2.19.0` 用 `git show --shortstat d21773c`；`v2.20.0` 用 `git show --shortstat d8f36ab`；`v2.21.0` 用 `git show --shortstat 0d687e9`（文档同步另计；评审指出的 `d6e1af3` 是未合并的游离提交，实际合并进 main 的是 `0d687e9`）；`v2.22.0` 用 `git diff --shortstat b366e32..4899f3f`（30 文件，+1116 / −246；版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.23.0` 用 `git diff --shortstat 6da03f0..HEAD`（58 文件，+6304 / −4618；版本号 15 文件 +15 / −15 与版本记录另计）。
 
 ## 0. 总览
 
@@ -75,6 +75,7 @@
 | v2.20.0 | 2026-11-01 | `d8f36ab` | 移除卡片热插拔 / 热重载（`PluginDevReloader`、`--plugin-dev`、运行时注册表替换）；插件更新统一重启；根指南重写为自包含开发手册 | 24 文件，+32 / −767（文档同步另计） |
 | v2.21.0 | 2026-11-01 | `0d687e9` | 引入 Lucide 1.66.0 开源图标字体（ISC）：2292 个码位常量 / 查询表、`CardIcon`、图标自检、许可证与文档；控件章节详写 | 23 文件，+7169 / −16（文档同步另计） |
 | v2.22.0 | 2026-11-08 | `73837aa`…`2907be0`（12 个提交） | 2026-11 代码审阅 P0/P1：失败可见化（托盘 / 保存 / 启动 / 对话 / 中转站 / 命令行 / 媒体 / 桌面取图 / 指标 / JSON）、Log 重写 + `LogThrottle`、新增 `AGENTS.md` | 30 文件，+1116 / −246（版本号 15 文件另计、文档同步另计） |
+| v2.23.0 | 2026-11-10 | 本轮 6 个提交 | 2026-11 审阅第二批收尾 + 第三批结构性拆分：StationView / OverlayController / SettingsWindow / SelfTest 拆分；原子写共用 + CommandLineMode；剩余日志 / 契约 / 文档 / 风格收尾 | 58 文件，+6304 / −4618（版本号与版本记录另计） |
 
 ---
 
@@ -2519,24 +2520,81 @@ JSON 绑定错误静默置空等。2.22.0 按「失败必须可见」铁律完�
 
 ### 风险 / 未验证
 
-- 结构性项按评审结论推迟：`GlassRuntimeState` 单一数据源、Acrylic / Glass 双套模糊字段合并、Dwm→DesktopFeed 更名、
-  StationView / OverlayController / SettingsWindow 拆分、`StationState.FormatVersion`、回收站删除（本批次以加强日志替代）、
-  Chat 模式别名（`polling` / `poll` / `continuous`，有意保留）；
+- 2.22.0 当时推迟的结构性项里，StationView / OverlayController / SettingsWindow 拆分与 `StationState.FormatVersion`
+  已在 2.23.0 完成；仍推迟：`GlassRuntimeState` 单一数据源、Acrylic / Glass 双套模糊字段合并、Dwm→DesktopFeed 更名、
+  回收站删除（本批次以加强日志替代）、Chat 模式别名（`polling` / `poll` / `continuous`，有意保留）；
 - `-re` 回退、桌面复制退避、DPAPI Key 往返只在自检与日志层验证，未做长时间真机压测 / 断驱动 / 断网演练；
 - 本批次未逐模式重跑 `--screenshot-*` 无头截图（UI 改动以状态行文案与日志为主，渲染分支未动）。
 
 ---
 
-## 57. 不在版本里的东西
+## 57. v2.23.0（本轮 6 个提交，分支 `feature/lucide-icons`，未合并 main）
+
+### 背景
+
+2026-11-02 的代码审阅报告在 v2.22.0 里完成了 P0 与大部分 P1，并把第二批的结构性项写成「按需」。
+本轮继续处理剩余收尾项，并按用户选择完成第三批结构性拆分：把 4.5 万行项目里最长的几个类
+（`StationView` / `OverlayController` / `SettingsWindow` / `SelfTest.RunUnitChecks`）拆成职责文件，
+同时补上 P1-8 死契约文档、§5.2 命名失真与只写字段、§7.2 / §7.3 剩余日志缺口，以及全仓风格收尾。
+
+### 改动
+
+1. **P1-8（契约）**：`ICardHostAware` / `ICardModuleLifetime` 保留为 apiVersion 2 的稳定扩展点，
+   在 Contracts 注释与 `DLL-CARD-PLUGIN-GUIDE.md` 里明确「内置卡不实现、第三方插件可用」，
+   并修掉指南里「模块字段保存 host」与契约自相矛盾的示例；卸载探针仍由 `App.OnExit` 调用（2.22.0 已接回）。
+2. **§5.2（命名 / 只写字段 / 文档）**：`SettingsMigration` 更名 `SettingsLoader`（只读取 + 版本校验，不再迁移）；
+   `StationState.FormatVersion` 变成真实契约（高于当前版本拒绝加载、三重写闸保证不覆盖原文件、状态行可见只读提示）；
+   修正版本记录里 `d6e1af3` → 实际合并的 `0d687e9`，并把仓库文件数从过时的 117 更新为 195。
+   `GlassRuntimeState` 单一数据源、Acrylic / Glass 双套模糊字段合并、Dwm→DesktopFeed 更名仍按 AGENTS §10 推迟。
+3. **§7.2 / §7.3（日志）**：`ProcessIntegrity` 失败保留 Win32 错误码与可读原因；ffmpeg 失败日志补实际 argv 与退出码；
+   `MIRRORPOND_GLASS_TRACE` 统一写主日志，移除 `%TEMP%\mirrorpond-trace.log` 第二套输出；
+   `Json.Bind` 无法创建目标类型时不再静默返回 null；`ThemeFile` 导入 / 导出所有失败路径补 Warn；
+   120ms 渲染循环的卡片失败改 `LogThrottle`（每卡状态转移 + 30s 最小间隔）。
+4. **审阅第三批 11（StationView）**：拆出 `StationStore`（items.json 纯逻辑 / P1-6 合并 / FormatVersion）、
+   `StationCopyController`（复制 / 移动队列 / 晚到结果）、`StationFileActions`、`StationSelection`、`StationRow`；
+   `DropStationCard.cs` 从 1877 行降到 357 行，`StationView.cs` 686 行。
+5. **审阅第三批 12（OverlayController / 玻璃）**：`OverlayController` 从 1169 行降到 825 行，拆出
+   `SettingsApplier` / `RenderScheduler`；经核实玻璃代码实际在 `OverlayWindow.xaml.cs`，把底板 / 取图 / 定时器 / 降级
+   整体下沉到 `GlassRuntime`（窗口只留访问器与薄委托），窗口 878 → 666 行；未新建 `GlassRuntimeState` 模型。
+6. **审阅第三批 13（SettingsWindow）**：1921 行 / 88 方法拆成 10 个文件（9 个 partial + `SettingsDeviceCatalog`），
+   每个 <350 行；设备枚举从 UI 线程逻辑里下沉，失败按可见日志处理。
+7. **审阅第三批 14（存储 / 启动模式）**：`ConfigStore` 与 `CardStateStore` 共用 `AtomicFile`（临时文件 → Replace →
+   失败回退 Copy+Move，备份失败中止、原文件不被破坏）；`App.OnStartup` 的截图 / 自检 / 冒烟分支抽 `CommandLineMode`，
+   启动 try、退出码、执行顺序不变。
+8. **审阅第三批 15（SelfTest）**：`RunUnitChecks` 从 880 行降到 35 行，按领域拆成 25 个 <60 行方法与 8 个内部
+   Check 助手；失败计数仍保持「任一领域失败 +1」的原语义；UiKit 四份自检助手经核对只是相似、不合并。
+9. **风格**：去掉 `Native.cs` 的文件 BOM；新增文件统一 UTF-8 无 BOM / CRLF / 4 空格 / 中文注释；保留所有
+   P0/P1/P2 编号注释。未引入 `.editorconfig` / `TreatWarningsAsErrors`（报告长期项，另立批次）。
+10. **版本**：宿主 / Contracts / UiKit / 6 个插件工程与 manifest 统一 2.23.0；插件 API 仍为 2，契约无破坏性变更。
+
+### 验证
+
+- 干净构建 0 警告 0 错误；
+- `--selftest` 连续两次退出码 0、失败项 0（日志确认采样 / 主题 / 配置修复 / 插件自检全通过）；
+- 四种 `--screenshot*` 与 `--smoke 3` 全部退出码 0，无 ERROR / WARN；生成设置 / 卡片 / 控件 / 叠层 PNG 正常；
+- 6 个内置插件仍从 `plugins/cards` 加载，退出时弱引用回收日志正常。
+
+### 风险 / 未验证
+
+- 结构性拆分以「行为不变」为目标，逐方法对照 HEAD；但 SettingsWindow 五页、玻璃拖动补帧、中转站复制 / 取消
+  只做了截图、smoke 与自检，未做长时间人工点击 / 断网 / 断驱动演练；
+- `--smoke 3` 只覆盖启动与短时运行，未做长稳 / 多显示器 / 高 DPI / RDP 重连；
+- 采样自检在并行构建负载下曾出现一次 15 秒内无首帧的瞬态，空闲重跑连续通过；已保留 15 秒上限，未改采样实现；
+- 报告第三批 15 的「示例插件 / 控件画廊」未做（本轮选项只要求四个结构性拆分）；
+- `GlassRuntimeState` 单源、双套模糊字段、Dwm 命名、回收站删除、Chat 历史别名仍按既有决定保留。
+
+---
+
+## 58. 不在版本里的东西
 
 - 验收脚本、样张与测量脚本（`cmd-e2e.ps1`、`drag-glass.ps1`、`measure-*.py`、`shots/` 等）都在仓库外的 `hud-test/` 里，**没有提交**。
 - 发布：`main` 与标签已推送到 [github.com/CRITTIof/MirrorpondHUD](https://github.com/CRITTIof/MirrorpondHUD)；
   [v2.9.2 Release](https://github.com/CRITTIof/MirrorpondHUD/releases/tag/v2.9.2) 只有两个附件
   （`MirrorpondHUD-x64-requires-dotnet.exe`、`MirrorpondHUD-arm64-requires-dotnet.exe`，均需 .NET 8 桌面运行时，已自签名）；
   更早的 Release 正文与附件保留原样，v2.4.0 的 Release 已删除（tag `v2.4.0` 保留，历史仍可检出）。
-- 仓库追踪的文件共 117 个，`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
+- 仓库追踪的文件共 197 个（v2.21.0 时 174 个；2.23.0 结构性拆分新增 20 个源文件），`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
 
-## 58. 已知代价（跨版本）
+## 59. 已知代价（跨版本）
 
 - 桌面亚克力为了不拍到自己，会把卡片排除在截屏之外 —— 这个模式下截图 / 录屏里**看不到卡片**，观感只能靠肉眼与离屏渲染验证。
 - 兼容实现每帧对身后窗口做 `PrintWindow`，拖动时最多 ~21 帧/秒；要更高只能走桌面亚克力（DXGI）。
