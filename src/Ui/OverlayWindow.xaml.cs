@@ -1,13 +1,10 @@
 using System;
-using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Threading;
-using System.Threading.Tasks;
 using System.Windows.Media;
-using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using MirrorpondHUD.Core;
 using MirrorpondHUD.Ui.Controls;
@@ -22,22 +19,22 @@ namespace MirrorpondHUD.Ui
         bool _closed;
         bool _commandMode;
         IntPtr _previousForeground;
-        DispatcherTimer _glassTimer;
-
-        /// <summary>两块底板（系统亚克力 / 桌面亚克力）。谁 active 由 <see cref="GlassPolicy"/> 决定。</summary>
-        readonly SystemAcrylicBackdrop _systemBackdrop = new SystemAcrylicBackdrop();
-        readonly DesktopAcrylicBackdrop _desktopBackdrop = new DesktopAcrylicBackdrop();
 
         /// <summary>
-        /// 有一块底板正在卡片下面画模糊。三种实现是互斥的：谁在干活谁就是 true，
-        /// 切换实现时另一块必须收掉（否则会留下没人管的玻璃板）。
+        /// 毛玻璃运行时（2026-11 审阅第三批第 12 项）：底板选择 / 截屏排除 / 兼容取图定时器
+        /// 全部在 <see cref="GlassRuntime"/> 里，窗口只负责通知变化与提供自身句柄。
         /// </summary>
-        bool BackdropActive { get { return _systemBackdrop.IsActive || _desktopBackdrop.IsActive; } }
+        readonly GlassRuntime _glassRuntime;
 
         /// <summary>底板需要的窗口参数（外观 + 可见性），抽出来是为了让底板类不直接读 _settings。</summary>
         internal string GlassTintColor { get { return _settings.Style.Background; } }
         internal bool GlassShadow { get { return _settings.Overlay.Shadow; } }
         internal bool GlassVisible { get { return IsVisible; } }
+
+        // 玻璃运行时读的窗口状态：设置对象会被 Apply / RefreshSettings 换成新的，必须每次现读。
+        internal Settings GlassSettings { get { return _settings; } }
+        internal bool GlassHandleReady { get { return _handleReady; } }
+        internal bool GlassClosed { get { return _closed; } }
 
         bool _interactive;
 
@@ -85,20 +82,21 @@ namespace MirrorpondHUD.Ui
         {
             InitializeComponent();
             _settings = settings;
+            _glassRuntime = new GlassRuntime(this);
 
             SourceInitialized += OnSourceInitialized;
             Deactivated += (s, e) => { if (_settings.Overlay.Topmost) EnsureTopmost(); };
 
             // 亚克力底板要跟着卡片走：位置 / 尺寸 / 可见性 / DPI 任何一个变了都重摆。
-            LocationChanged += (s, e) => UpdateBackdrop();
-            SizeChanged += (s, e) => UpdateBackdrop();
-            IsVisibleChanged += (s, e) => UpdateBackdrop();
-            DpiChanged += (s, e) => UpdateBackdrop();
+            LocationChanged += (s, e) => _glassRuntime.UpdateBackdrop();
+            SizeChanged += (s, e) => _glassRuntime.UpdateBackdrop();
+            IsVisibleChanged += (s, e) => _glassRuntime.UpdateBackdrop();
+            DpiChanged += (s, e) => _glassRuntime.UpdateBackdrop();
             Closed += (s, e) =>
             {
                 _closed = true;
                 StopTimers();
-                ReleaseBackdrop();
+                _glassRuntime.Dispose();
             };
 
             BuildContextMenu();
@@ -108,7 +106,7 @@ namespace MirrorpondHUD.Ui
         {
             _handleReady = true;
             ApplyPosition();
-            UpdateGlassCapture();
+            _glassRuntime.UpdateGlassCapture();
             UpdateClickThrough();
             EnsureTopmost();
 
@@ -126,7 +124,7 @@ namespace MirrorpondHUD.Ui
                 {
                     // 非置顶时也要给一次机会：桌面亚克力因瞬态黑屏失败过以后，
                     // 冷却结束靠这里自动重试，而不是等用户改设置。
-                    UpdateBackdrop();
+                    _glassRuntime.UpdateBackdrop();
                 }
             };
             _topmostTimer.Start();
@@ -136,11 +134,10 @@ namespace MirrorpondHUD.Ui
         {
             _settings = settings;
             // 设置变了就再给两块底板一次机会（底板对象保留，不重建）
-            _systemBackdrop.ResetAvailability();
-            _desktopBackdrop.ResetAvailability();
+            _glassRuntime.ResetAvailability();
             Surface.ClearContent();
             Surface.Apply(settings, text, false);
-            if (_handleReady) UpdateGlassCapture();
+            if (_handleReady) _glassRuntime.UpdateGlassCapture();
             Topmost = settings.Overlay.Topmost;
             UpdateClickThrough();
             UpdateMenuHeaders();
@@ -150,11 +147,10 @@ namespace MirrorpondHUD.Ui
         public void ApplyRich(Settings settings, FrameworkElement content)
         {
             _settings = settings;
-            _systemBackdrop.ResetAvailability();
-            _desktopBackdrop.ResetAvailability();
+            _glassRuntime.ResetAvailability();
             Surface.Apply(settings, "");
             Surface.SetContent(content);
-            if (_handleReady) UpdateGlassCapture();
+            if (_handleReady) _glassRuntime.UpdateGlassCapture();
             Topmost = settings.Overlay.Topmost;
             UpdateClickThrough();
             UpdateMenuHeaders();
@@ -183,7 +179,7 @@ namespace MirrorpondHUD.Ui
         {
             _settings = settings;
             Surface.Apply(settings, Surface.Text);
-            if (_handleReady) UpdateGlassCapture();
+            if (_handleReady) _glassRuntime.UpdateGlassCapture();
         }
 
         public void SetText(string text, bool cursor)
@@ -296,9 +292,9 @@ namespace MirrorpondHUD.Ui
 
             Left = left;
             Top = top;
-            UpdateBackdrop();
+            _glassRuntime.UpdateBackdrop();
 
-            if (_settings.Style.Acrylic) CaptureGlass();
+            if (_settings.Style.Acrylic) _glassRuntime.CaptureGlass();
         }
 
         public void UpdateClickThrough()
@@ -333,7 +329,7 @@ namespace MirrorpondHUD.Ui
                 Native.SwpNoMove | Native.SwpNoSize | Native.SwpNoActivate | Native.SwpNoOwnerZorder);
 
             // 卡片重新置顶后，底板要重新插回它正下方（别的置顶窗口可能插进来）。
-            UpdateBackdrop();
+            _glassRuntime.UpdateBackdrop();
 
             // 置顶之后自己的子窗口（视频）会被压下去，通知内容层重新摆好。
             Action handler = RaisedTopmost;
@@ -341,93 +337,22 @@ namespace MirrorpondHUD.Ui
         }
 
         // ==================== 毛玻璃 ====================
-        // 三种实现：
-        // 1) 系统亚克力（默认）：卡片下面一个独立的底板窗口，挂未文档化的 accent 亚克力，
-        //    DWM / GPU 负责模糊，进程侧零逐帧工作，模糊半径由系统决定；
-        // 2) 桌面亚克力：截屏 + 自己模糊，把结果**画进卡片自己的内容层**（见 GlassFeed）。
-        //    代价：为了让截屏不拍到自己，卡片必须排除在截屏之外 —— 这个模式下截图 / 录像里没有卡片；
-        // 3) 兼容：把卡片后面的画面拼出来（枚举窗口 + PrintWindow + 壁纸），缩小模糊后当底色，
-        //    可调半径与帧率，任何系统都能用。
-        // 1 / 2 不可用时自动退回 3。
+        // 三种实现（系统亚克力 / 桌面亚克力 / 兼容取样）的选择与生命周期已经搬进
+        // GlassRuntime；窗口只保留底板回调与「什么时候通知」，不保留同名字段，避免双真相。
 
         /// <summary>
-        /// 决定这一帧由谁提供模糊：纯决策在 <see cref="GlassPolicy"/>，这里只负责
-        /// 「收掉不该用的底板 → 让该用的那块接管」。两块互斥，切走时必须先 Retire，
-        /// 否则会留下没人管的玻璃板（系统亚克力会留灰板，桌面亚克力会留「卡片不进截图」）。
-        /// </summary>
-        void UpdateBackdrop()
-        {
-            if (!_handleReady) return;
-
-            // 取样参数（取图方式 / 模糊强度 / 刷新帧率 / 是否留投影边）随时可能被改。
-            // 放在 acrylic 判断之前，免得「先关毛玻璃改设置、再打开」时沿用旧参数。
-            GlassFeed.Configure(_settings.Style.GlassSource, _settings.Style.GlassBlur,
-                                _settings.Style.GlassFps, _settings.Overlay.Shadow);
-
-            GlassBackdropKind kind = GlassPolicy.Resolve(
-                _settings.Style.Acrylic, _settings.Style.GlassMode,
-                !_systemBackdrop.IsUnavailable, !_desktopBackdrop.IsUnavailable);
-
-            if (kind != GlassBackdropKind.SystemAcrylic) _systemBackdrop.Retire(this);
-            if (kind != GlassBackdropKind.DesktopAcrylic) _desktopBackdrop.Retire(this);
-
-            string reason;
-            bool applied;
-
-            switch (kind)
-            {
-                case GlassBackdropKind.SystemAcrylic:
-                    applied = _systemBackdrop.Apply(this, out reason);
-                    break;
-
-                case GlassBackdropKind.DesktopAcrylic:
-                    applied = _desktopBackdrop.Apply(this, out reason);
-                    break;
-
-                default:
-                    return;   // 没有底板接管：兼容取样的截屏路径照常工作
-            }
-
-            if (!applied)
-            {
-                HideBackdrops();
-                if (!string.IsNullOrEmpty(reason))
-                    Log.Warn("毛玻璃底板不可用（" + reason + "），改用截屏取样");
-            }
-        }
-
-        /// <summary>
-        /// 取不到背景（连续几帧取样全黑：截屏被安全策略挡掉，或者屏幕本来就是黑的）。
-        /// 标记这块底板不可用、收掉，再按剩下的选择重新决定。
+        /// 桌面亚克力取样连续全黑时由 GlassFeed 回调：转给玻璃运行时标记不可用并重新决策。
+        /// 这个委托在 GlassBackdrops 里 attach 时按窗口类型取得，所以入口必须留在窗口上。
         /// </summary>
         internal void OnDesktopAcrylicUnavailable(string reason)
         {
-            if (_desktopBackdrop.IsUnavailable) return;
-
-            _desktopBackdrop.MarkUnavailable();
-            Log.Warn("桌面亚克力不可用（" + reason + "），毛玻璃退回系统亚克力底板");
-
-            // 顺序：先撤掉截屏排除，再按「系统」那条路重新决定用哪块底板
-            _desktopBackdrop.Retire(this);
-            UpdateGlassCapture();
-        }
-
-        /// <summary>关掉毛玻璃 / 切回兼容实现：两块底板和截屏排除都要撤掉。</summary>
-        void HideBackdrops()
-        {
-            _systemBackdrop.Retire(this);
-            _desktopBackdrop.Retire(this);
-        }
-
-        void ReleaseBackdrop()
-        {
-            HideBackdrops();
-            _systemBackdrop.Dispose();
+            _glassRuntime.OnDesktopAcrylicUnavailable(reason);
         }
 
         /// <summary>
-        /// 窗口关闭时停掉两个 DispatcherTimer（P2-4）。原来只 ReleaseBackdrop，
-        /// 定时器仍每 2.5 秒 / 每帧把已关闭的窗口整棵可视树钉在 Dispatcher 上。
+        /// 窗口关闭时停掉置顶刷新定时器（P2-4）。原来只 ReleaseBackdrop，
+        /// 定时器仍每 2.5 秒把已关闭的窗口整棵可视树钉在 Dispatcher 上。
+        /// 玻璃取图定时器随 <see cref="GlassRuntime.Dispose"/> 一起停。
         /// </summary>
         void StopTimers()
         {
@@ -436,143 +361,6 @@ namespace MirrorpondHUD.Ui
                 try { _topmostTimer.Stop(); } catch { }
                 _topmostTimer = null;
             }
-
-            if (_glassTimer != null)
-            {
-                try { _glassTimer.Stop(); } catch { }
-                _glassTimer = null;
-            }
-        }
-
-        void UpdateGlassCapture()
-        {
-            if (!_handleReady) return;
-
-            UpdateBackdrop();
-
-            // 系统亚克力由底板窗口在卡片下面画模糊，卡片内部这层要关掉，也不用跑定时器；
-            // 桌面亚克力的模糊图**正是画在卡片内部**（GlassFeed），这里不能清。
-            if (BackdropActive)
-            {
-                if (_glassTimer != null) _glassTimer.Stop();
-                if (_systemBackdrop.IsActive) Surface.ClearGlass();
-                return;
-            }
-
-            bool enabled = _settings.Style.Acrylic;
-
-            if (!enabled)
-            {
-                if (_glassTimer != null) _glassTimer.Stop();
-                Surface.ClearGlass();
-                return;
-            }
-
-            int fps = Math.Max(2, Math.Min(30, _settings.Style.AcrylicFps));
-            var interval = TimeSpan.FromMilliseconds(1000.0 / fps);
-
-            if (_glassTimer == null)
-            {
-                _glassTimer = new DispatcherTimer(DispatcherPriority.Background)
-                {
-                    Interval = interval
-                };
-                _glassTimer.Tick += (s, e) => CaptureGlass();
-            }
-            else
-            {
-                _glassTimer.Interval = interval;
-            }
-
-            if (!_glassTimer.IsEnabled)
-            {
-                _glassTimer.Start();
-                Log.Info("毛玻璃背景已启用（" + fps + " 帧/秒，模糊 " + _settings.Style.AcrylicBlur + "px）");
-            }
-
-            CaptureGlass();
-        }
-
-        bool _glassBusy;
-
-        /// <summary>
-        /// 兼容实现每画出一帧玻璃就记一条 GLAS 时间戳（MIRRORPOND_GLASS_TRACE=1）。
-        /// 卡片排除在截屏之外以后没法靠截图验收，只能靠这种时间戳量刷新节奏。
-        /// </summary>
-        bool TraceGlassFrames
-        {
-            get
-            {
-                string value = Environment.GetEnvironmentVariable("MIRRORPOND_GLASS_TRACE");
-                return value == "1" || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
-            }
-        }
-
-        void CaptureGlass()
-        {
-            if (_closed) return;                            // 窗口已关闭：不再抓屏，也不写 UI
-            if (BackdropActive) return;                     // 系统底板接管时不抓屏
-            if (!_settings.Style.Acrylic || !_handleReady || _glassBusy) return;
-            if (!IsVisible || WindowState == WindowState.Minimized) return;
-
-            IntPtr hwnd = new WindowInteropHelper(this).Handle;
-            if (hwnd == IntPtr.Zero) return;
-
-            Native.Rect rect;
-            if (!Native.GetWindowRect(hwnd, out rect)) return;
-
-            int width = rect.Right - rect.Left;
-            int height = rect.Bottom - rect.Top;
-            if (width < 8 || height < 8) return;
-
-            int left = rect.Left;
-            int top = rect.Top;
-            double blur = _settings.Style.AcrylicBlur;
-
-            // 卡片后面可能压着好几个窗口，甚至只压着桌面：
-            // FindLayers 会按 z 序收集（桌面垫底），Grab 再逐点选最上层的那一层。
-            List<GlassCapture.Layer> layers = GlassCapture.FindLayers(left, top, width, height);
-            if (layers.Count == 0)
-            {
-                Surface.ClearGlass();
-                return;
-            }
-
-            _glassBusy = true;
-
-            Task.Run(() =>
-            {
-                BitmapSource image = null;
-                try
-                {
-                    image = GlassCapture.Grab(layers, left, top, width, height, blur);
-                }
-                catch (Exception ex)
-                {
-                    Log.Warn("毛玻璃取样失败: " + ex.Message);
-                }
-
-                try
-                {
-                    Dispatcher.BeginInvoke(new Action(() =>
-                    {
-                        _glassBusy = false;
-                        // 审阅 §21：Closed 只停了定时器，Start 之前投递的抓屏完成后仍会写 UI。
-                        // 窗口关闭后到达的在途结果直接丢弃。
-                        if (_closed) return;
-                        if (image != null)
-                        {
-                            Surface.SetGlass(image);
-                            if (TraceGlassFrames)
-                                Log.Info("GLAS " + DateTime.Now.ToString("HH:mm:ss.fff") + " hwnd=" + hwnd.ToInt64());
-                        }
-                    }));
-                }
-                catch
-                {
-                    _glassBusy = false;
-                }
-            });
         }
 
         /// <summary>
@@ -694,8 +482,8 @@ namespace MirrorpondHUD.Ui
 
             bool acrylic = _settings.Style.Acrylic;
             string mode = Settings.NormalizeGlassMode(_settings.Style.GlassMode);
-            bool dwm = acrylic && mode == "Dwm" && !_desktopBackdrop.IsUnavailable;
-            bool compat = acrylic && !dwm && !BackdropActive;   // 兼容实现（截屏拼接）
+            bool dwm = acrylic && mode == "Dwm" && !_glassRuntime.DesktopAcrylicUnavailable;
+            bool compat = acrylic && !dwm && !_glassRuntime.BackdropActive;   // 兼容实现（截屏拼接）
 
             if (!dwm && !compat) return;
 
@@ -705,7 +493,7 @@ namespace MirrorpondHUD.Ui
                 _dragFrameQueued = false;
                 if (!_dragging) return;
                 if (dwm) GlassFeed.RequestFrame(false);
-                else if (compat) CaptureGlass();
+                else if (compat) _glassRuntime.CaptureGlass();
             }), DispatcherPriority.Render);
         }
 
@@ -730,7 +518,7 @@ namespace MirrorpondHUD.Ui
             double dy = Top - _dragStartWindow.Y;
             int monitor = DetectMonitor();
 
-            CaptureGlass();
+            _glassRuntime.CaptureGlass();
             GlassFeed.RequestFrame(true);
 
             Action<double, double, int> handler = Moved;
