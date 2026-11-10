@@ -299,6 +299,12 @@ namespace MirrorpondHUD.Ui
         {
             if (!_handleReady) return;
 
+            // 显示 / 隐藏 / 补位已经在这张窗口上跑位置动画时，布局调度（窗口刚 Show 出来的
+            // SizeChanged 就会触发一次）不能把窗口直接吸到目标位——那会把 160ms 呼出滑入
+            // 截成 1 帧。这里改走动画路径，从当前位置接到新目标，视觉上保持连续。
+            if (!animate && IsPositionMotionActive && IsVisible && !_closed)
+                animate = true;
+
             double left = _settings.Overlay.X;
             double top = _settings.Overlay.Y;
 
@@ -410,6 +416,12 @@ namespace MirrorpondHUD.Ui
             _moveTimer = null;
         }
 
+        /// <summary>当前是否有位置动画在跑；布局协调器据此避免瞬移打断呼出 / 补位。</summary>
+        public bool IsPositionMotionActive
+        {
+            get { return _moveTimer != null; }
+        }
+
         /// <summary>呼出前把内容压透明，窗口本身保持可见以完成布局测量。</summary>
         public void PrepareShowMotion()
         {
@@ -480,6 +492,10 @@ namespace MirrorpondHUD.Ui
             }
 
             StopPositionMotion();
+
+            // 淡出可能发生在呼出淡入的中途：先把当前透明度记下来，再取消旧动画。
+            // 否则 CancelContentMotion 会把 Opacity 恢复成 1，视觉上会先闪一下再淡出。
+            double fromOpacity = Surface.Opacity;
             CancelContentMotion();
             Surface.IsHitTestVisible = false;
 
@@ -489,7 +505,7 @@ namespace MirrorpondHUD.Ui
 
             AnimateTo(Left, Top - CardMotion.HideOffset, CardMotion.HideDurationMs);
 
-            var opacity = new DoubleAnimation(1, 0, duration)
+            var opacity = new DoubleAnimation(fromOpacity, 0, duration)
             {
                 EasingFunction = ease,
                 FillBehavior = FillBehavior.HoldEnd

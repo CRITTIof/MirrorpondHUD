@@ -15,8 +15,8 @@ namespace MirrorpondHUD.Ui
 
         void FinishIntro();
         void ShowOverlay();
-        void ShowCard(CardSlot slot, string text);
-        void HideCard(CardSlot slot);
+        void ShowCard(CardSlot slot, string text, bool animate);
+        void HideCard(CardSlot slot, bool animate);
         void RenderNow();
         void UpdateCommandInfo();
         void SetKeyboardSuppressed(bool suppressed);
@@ -75,7 +75,10 @@ namespace MirrorpondHUD.Ui
             _host.SetKeyboardSuppressed(true);
 
             slot.Summoned = true;
-            _host.ShowCard(slot, "");
+
+            // 交互卡也是非常驻卡：和媒体卡一样走 160ms 呼出 + 其余卡片 180ms 让位。
+            // 键盘焦点在 ShowCard 之后才接管，淡入期间输入不会丢。
+            _host.ShowCard(slot, "", true);
             slot.Window.EnsureTopmost();
             slot.Window.ResetStableSize();
 
@@ -136,7 +139,9 @@ namespace MirrorpondHUD.Ui
                 slot.Window.EndCommandInput();
                 slot.Window.ResetStableSize();
                 slot.Summoned = false;
-                _host.HideCard(slot);
+
+                // 先标记不占位并让其余卡片补位，面板本身淡出后再真正 Hide。
+                _host.HideCard(slot, true);
             }
 
             _host.SetKeyboardSuppressed(false);

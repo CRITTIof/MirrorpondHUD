@@ -18,7 +18,7 @@ namespace MirrorpondHUD.Cards
         /// <summary>设置页里显示的名字（同种卡片可以有多个，名字可重名）。</summary>
         string DisplayName { get; }
 
-        /// <summary>ReiconFont 图标字符（U+E100 / U+E200 / U+E300 区）。</summary>
+        /// <summary>Lucide 图标字符（见 <see cref="MirrorpondHUD.Core.Icons"/>）；设置页用 LucideFont 绘制。</summary>
         string Icon { get; }
 
         /// <summary>内容模板为空时使用的默认内容。</summary>

@@ -29,7 +29,7 @@
         <TabControl x:Name="Tabs" Grid.Row="1">
 
             <!-- ==================== 内容（卡片管理） ==================== -->
-            <TabItem Header="内容" Tag="&#xE300;">
+            <TabItem Header="内容" Tag="&#xE0FF;">
                 <Grid Margin="18,14,18,14">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
@@ -41,7 +41,7 @@
                             <Button x:Name="AddCardButton" Click="AddCardClick" Padding="12,6"
                                     ToolTip="选择一种卡片添加到列表末尾">
                                 <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="&#xE308;" FontFamily="{StaticResource ReiconFont}" FontSize="15"
+                                    <TextBlock Text="&#xE13D;" FontFamily="{StaticResource LucideFont}" FontSize="15"
                                                Foreground="{StaticResource Accent}" VerticalAlignment="Center" />
                                     <TextBlock Text="添加卡片" Margin="7,0,0,0" VerticalAlignment="Center" />
                                 </StackPanel>
@@ -49,7 +49,7 @@
                         </StackPanel>
 
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                            <TextBlock Text="&#xE305;" FontFamily="{StaticResource ReiconFont}" FontSize="14"
+                            <TextBlock Text="&#xE151;" FontFamily="{StaticResource LucideFont}" FontSize="14"
                                        Foreground="#9CA3AF" VerticalAlignment="Center" Margin="0,0,7,0" />
                             <TextBox x:Name="SearchBox" Width="200" TextChanged="SearchBoxTextChanged"
                                      ToolTip="按卡片名称 / 类型筛选" />
@@ -73,7 +73,7 @@
                                                     <Grid>
                                                         <StackPanel Orientation="Horizontal">
                                                             <TextBlock Text="{Binding Icon}"
-                                                                       FontFamily="{StaticResource ReiconFont}"
+                                                                       FontFamily="{StaticResource LucideFont}"
                                                                        FontSize="16" Foreground="{StaticResource Accent}"
                                                                        VerticalAlignment="Center" />
                                                             <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold"
@@ -88,14 +88,14 @@
                                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                                                             <Button Style="{StaticResource IconButton}" Tag="{Binding}"
                                                                     Click="MoveCardClick" ToolTip="调整显示顺序">
-                                                                <TextBlock Text="&#xE307;"
-                                                                           FontFamily="{StaticResource ReiconFont}"
+                                                                <TextBlock Text="&#xE0EB;"
+                                                                           FontFamily="{StaticResource LucideFont}"
                                                                            FontSize="14" />
                                                             </Button>
                                                             <Button Style="{StaticResource IconButton}" Tag="{Binding}"
                                                                     Click="DeleteCardClick" ToolTip="删除这张卡片">
-                                                                <TextBlock Text="&#xE306;"
-                                                                           FontFamily="{StaticResource ReiconFont}"
+                                                                <TextBlock Text="&#xE18E;"
+                                                                           FontFamily="{StaticResource LucideFont}"
                                                                            FontSize="14" />
                                                             </Button>
                                                             <Button Style="{StaticResource IconButton}" Tag="{Binding}"
@@ -206,7 +206,7 @@
             </TabItem>
 
             <!-- ==================== 外观 ==================== -->
-            <TabItem Header="外观" Tag="&#xE301;">
+            <TabItem Header="外观" Tag="&#xE1DD;">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="18,16,18,24">
 
@@ -554,7 +554,7 @@
             </TabItem>
 
             <!-- ==================== 数据源 ==================== -->
-            <TabItem Header="数据源" Tag="&#xE302;">
+            <TabItem Header="数据源" Tag="&#xE0AD;">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="18,16,18,24">
 
@@ -607,7 +607,7 @@
             </TabItem>
 
             <!-- ==================== 行为 ==================== -->
-            <TabItem Header="行为" Tag="&#xE303;">
+            <TabItem Header="行为" Tag="&#xE29A;">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="18,16,18,24">
 
@@ -693,7 +693,7 @@
             </TabItem>
 
             <!-- ==================== 热键 ==================== -->
-            <TabItem Header="热键" Tag="&#xE304;">
+            <TabItem Header="热键" Tag="&#xE284;">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel Margin="18,16,18,24">
                     <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap"

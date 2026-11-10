@@ -1067,23 +1067,10 @@ namespace MirrorpondHUD.Ui.Controls.Media
 
         // ==================== 状态行 ====================
 
-        static FontFamily _iconFont;
-
+        // 播放 / 暂停状态图标：2.26.0 起统一用 Lucide，不再从 Reicon 资源里取。
         static FontFamily IconFont()
         {
-            if (_iconFont != null) return _iconFont;
-
-            try
-            {
-                var found = Application.Current == null ? null : Application.Current.TryFindResource("ReiconFont");
-                _iconFont = found as FontFamily;
-            }
-            catch { }
-
-            if (_iconFont == null)
-                _iconFont = new FontFamily("pack://application:,,,/assets/keycaps/#ReiconFont");
-
-            return _iconFont;
+            return LucideIcons.FontFamily;
         }
 
         /// <summary>右上角：播放 / 暂停状态、当前时长 / 总时长、非 1× 时的速度。</summary>

@@ -3,7 +3,7 @@ namespace MirrorpondHUD.Cards
     /// <summary>内置卡片的默认内容模板（只属于宿主实现，不进插件契约程序集）。</summary>
     internal static class CardDefaults
     {
-        /// <summary>系统信息卡：CPU / 内存 / GPU / 网络 / 磁盘，前置 ReiconFont 图标。</summary>
+        /// <summary>系统信息卡：CPU / 内存 / GPU / 网络 / 磁盘，前置 Lucide 图标。</summary>
         public const string MetricsContent =
             "{cpu_icon} {cpu:0.0}%   {mem_icon} {mem_pct:0}%   {gpu_icon} {gpu:0.0}%\n" +
             "{net_down_icon} {net_down}   {net_up_icon} {net_up}   {disk_icon} {disk:0.0}%";

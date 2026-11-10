@@ -89,7 +89,7 @@ namespace MirrorpondHUD.Ui
                 header.Children.Add(new TextBlock
                 {
                     Text = module.Icon,
-                    FontFamily = (FontFamily)FindResource("ReiconFont"),
+                    FontFamily = (FontFamily)FindResource("LucideFont"),
                     FontSize = 15,
                     Foreground = (Brush)FindResource("Accent"),
                     VerticalAlignment = VerticalAlignment.Center

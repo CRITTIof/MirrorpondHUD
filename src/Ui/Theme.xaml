@@ -11,7 +11,9 @@
     <SolidColorBrush x:Key="TextSecondary" Color="#6B7280" />
     <SolidColorBrush x:Key="Danger" Color="#D14343" />
 
-    <!-- ReiconFont：内嵌的键帽 / 图标字体（设置页的页签图标、增删移动按钮都用它） -->
+    <!-- LucideFont：设置页页签 / 按钮 / 卡片模块图标统一使用的图标字体 -->
+    <FontFamily x:Key="LucideFont">pack://application:,,,/assets/icons/#lucide</FontFamily>
+    <!-- ReiconFont：只保留键帽字形（U+E000–U+E056）；卡片内容里的键帽仍由 TextCanvas 直接加载 -->
     <FontFamily x:Key="ReiconFont">pack://application:,,,/assets/keycaps/#ReiconFont</FontFamily>
 
 
@@ -333,9 +335,9 @@
                             Padding="14,10,12,10"
                             Margin="8,2,8,0">
                         <StackPanel Orientation="Horizontal">
-                            <!-- 页签图标：ReiconFont 的界面图标（U+E300 起），内容由 TabItem.Tag 指定 -->
+                            <!-- 页签图标：Lucide 图标字体，内容由 TabItem.Tag 指定 -->
                             <TextBlock Text="{TemplateBinding Tag}"
-                                       FontFamily="{StaticResource ReiconFont}"
+                                       FontFamily="{StaticResource LucideFont}"
                                        FontSize="17"
                                        Foreground="{TemplateBinding Foreground}"
                                        VerticalAlignment="Center" />

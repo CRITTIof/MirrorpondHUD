@@ -122,8 +122,8 @@ namespace MirrorpondHUD.Ui
                 _owner.RefreshVisibility();
             }
 
-            public void ShowCard(CardSlot slot, string text) { _owner.ShowCard(slot, text); }
-            public void HideCard(CardSlot slot) { _owner.HideCard(slot); }
+            public void ShowCard(CardSlot slot, string text, bool animate) { _owner.ShowCard(slot, text, animate); }
+            public void HideCard(CardSlot slot, bool animate) { _owner.HideCard(slot, animate); }
             public void RenderNow() { _owner.RenderNow(); }
             public void UpdateCommandInfo() { _owner.UpdateCommandInfo(); }
 

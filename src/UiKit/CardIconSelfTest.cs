@@ -22,6 +22,14 @@ namespace MirrorpondHUD.Ui.Controls
                 if (LucideIcons.Get("__no_such_icon__").Length != 0) return "Lucide 未知图标没有返回空串";
                 if (string.IsNullOrEmpty(LucideIcons.TriangleAlert)) return "Lucide 告警图标为空";
 
+                // 2.26.0：卡片图标统一改 Lucide，但文本画布必须把键帽的 PUA 码位留给 Reicon。
+                if (!Icons.IsIconChar(Icons.Cpu[0])) return "Icons.Cpu 没有被登记为图标字符";
+                if (!Icons.IsIconChar(Icons.Terminal[0])) return "Icons.Terminal 没有被登记为图标字符";
+                if (!Icons.IsIconChar(Icons.TabBehavior[0])) return "Icons.TabBehavior 没有被登记为图标字符";
+                if (Icons.IsIconChar('\uE000')) return "键帽码位 U+E000 被误判为图标";
+                if (Icons.IsIconChar('\uE042')) return "未登记的 Lucide 码位被误判为图标";
+                if (Icons.Cpu[0] <= '\uE056') return "Icons.Cpu 落在键帽码位区间";
+
                 var icon = new CardIcon(LucideIcons.Cpu) { Size = 24, Width = 64, Height = 64 };
                 icon.ApplyStyle(new StyleSettings
                 {

@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Threading;
+using MirrorpondHUD.Core;
 
 namespace MirrorpondHUD.Ui
 {
@@ -79,12 +80,13 @@ namespace MirrorpondHUD.Ui
             return c >= '\uE000' && c <= '\uE056';
         }
 
-        /// <summary>Reicon 图标字形：软件 U+E100、硬件 U+E200、界面 U+E300。</summary>
+        /// <summary>
+        /// 图标字形：只认 <see cref="Icons"/> 登记过的 Lucide 码位。不能按 U+E100–U+E3FF 整段判断：
+        /// Lucide 和键帽字体共用 PUA，整段判断会把键帽（U+E000–U+E056）误当图标。
+        /// </summary>
         static bool IsIconChar(char c)
         {
-            return (c >= '\uE100' && c <= '\uE1FF')
-                || (c >= '\uE200' && c <= '\uE2FF')
-                || (c >= '\uE300' && c <= '\uE3FF');
+            return Icons.IsIconChar(c);
         }
 
         public TextCanvas()
@@ -180,8 +182,7 @@ namespace MirrorpondHUD.Ui
 
         /// <summary>
         /// 图标大小倍率：图标字形按「正文同字号」绘制，再乘这个倍率。
-        /// 实测 Reicon 方框字形的墨迹高约 0.74 em，和数字高度（约 0.72 em）基本一致，
-        /// 所以 1.0 = 图标与文字等高；默认 1.15 让图标略大一圈，观感上才不显小。
+        /// Lucide 是线条图标，视觉重量比实心字形轻，默认 1.15 让图标略大一圈；
         /// 垂直方向不再靠倍率凑，而是逐个字形按墨迹中心对齐正文（见 TextRun.OffsetY）。
         /// </summary>
         public double IconScale
@@ -448,7 +449,7 @@ namespace MirrorpondHUD.Ui
 
         /// <summary>
         /// 字形墨迹范围缓存（键 = 字体|字号|字重|文本）。对齐图标要用真实墨迹而不是字体度量：
-        /// Reicon 的方框字形在 em 框里上下留白不对称，按 ascent / descent 算出来的中心会偏上。
+        /// Lucide 线条图标在 em 框里上下留白不对称，按 ascent / descent 算出来的中心会偏。
         /// </summary>
         static readonly Dictionary<string, Rect> InkCache = new Dictionary<string, Rect>(StringComparer.Ordinal);
 
@@ -463,7 +464,9 @@ namespace MirrorpondHUD.Ui
         TextRun CreateRun(string text, RunKind kind)
         {
             bool icon = kind == RunKind.Icon;
-            FontFamily family = (icon || kind == RunKind.Keycap) ? KeycapFamily : _fontFamily;
+            FontFamily family = icon
+                ? LucideIcons.FontFamily
+                : (kind == RunKind.Keycap ? KeycapFamily : _fontFamily);
             FontWeight weight = kind == RunKind.Text ? _fontWeight : FontWeights.Normal;
             double size = icon ? _fontSize * _iconScale : _fontSize;
 
@@ -555,7 +558,7 @@ namespace MirrorpondHUD.Ui
             return RunKind.Text;
         }
 
-        /// <summary>把一行拆成「普通文字 / 键帽 / 图标」三种 run；后两种用内嵌字体的 PUA 字形绘制。</summary>
+        /// <summary>把一行拆成「普通文字 / 键帽 / 图标」三种 run；键帽用 Reicon、图标用 Lucide 绘制。</summary>
         TextLine BuildLine(string line)
         {
             var result = new TextLine();

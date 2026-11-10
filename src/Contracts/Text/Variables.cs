@@ -98,7 +98,7 @@ namespace MirrorpondHUD.Core
             map["keys"] = rendered.Length == 0 ? "—" : Keycaps.FromRendered(rendered);
             map["key_count"] = keys == null ? 0 : keys.Total;
 
-            // ---------- 硬件图标（ReiconFont U+E200–U+E205） ----------
+            // ---------- 硬件图标（Lucide，2.26.0 起不再用 Reicon 图标码位） ----------
             map["cpu_icon"] = Icons.Cpu;
             map["gpu_icon"] = Icons.Gpu;
             map["mem_icon"] = Icons.Ram;
