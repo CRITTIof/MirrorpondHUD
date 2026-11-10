@@ -45,12 +45,18 @@ namespace MirrorpondHUD.Cards
     /// 模块想在卡片创建 / 销毁时拿到 <see cref="ICardHost"/>。宿主在「建卡」和「应用设置」时调用
     /// <see cref="Attach"/>，卡片被删掉 / 程序退出时调用 <see cref="Detach"/>。
     ///
-    /// 约定：模块是单例，**不能把 host 存进字段**；需要跨次使用的状态请放进内容控件或状态文件。
+    /// 这是 apiVersion 2 的**稳定扩展点**，不是死代码：内置卡没有跨次宿主状态，所以都不实现它；
+    /// 第三方插件可以按需实现。但模块是单例、Attach 不携带卡片 / 内容标识，因此**不能把 host
+    /// 存进模块字段**（同种卡有多张时会串）。新插件应优先在 <c>CreateContent</c> 里用
+    /// <see cref="CardRenderContext.Host"/> 把 host 交给当前这张卡的内容控件；只有在
+    /// 「该种卡最多一张」或不需要把 host 与具体卡片关联时才适合实现本接口。
     /// </summary>
     public interface ICardHostAware
     {
+        /// <summary>卡片创建 / 应用设置时调用。不要长期保存 host，见接口说明。</summary>
         void Attach(ICardHost host);
 
+        /// <summary>删卡 / 退出时与 <see cref="Attach"/> 成对调用。</summary>
         void Detach(ICardHost host);
     }
 }

@@ -332,8 +332,17 @@ namespace MirrorpondHUD.Core
             if (node is Dictionary<string, object> map)
             {
                 object inst;
-                try { inst = Activator.CreateInstance(target); }
-                catch { return null; }
+                try
+                {
+                    inst = Activator.CreateInstance(target);
+                }
+                catch (Exception ex)
+                {
+                    // §6.9：没有无参构造 / 构造函数抛异常时，以前会静默丢掉整个对象字段。
+                    Log.Warn("JSON 绑定失败：无法创建 " + target.Name + "（" + ex.GetType().Name + ": "
+                             + ex.Message + "），该字段回落到默认值");
+                    return null;
+                }
 
                 foreach (var f in target.GetFields(BindingFlags.Public | BindingFlags.Instance))
                 {

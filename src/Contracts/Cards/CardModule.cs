@@ -59,9 +59,13 @@ namespace MirrorpondHUD.Cards
     /// 插件模块可选的生命周期回调：宿主退出、卸载插件 ALC 之前调用，
     /// 插件应在这里停掉自己的线程 / 定时器、解绑静态事件。
     /// 插件替换 / 更新统一在宿主重启后生效，没有热插拔。
+    ///
+    /// 这是 apiVersion 2 的**稳定扩展点**，不是死代码：内置卡没有常驻线程 / 静态事件，
+    /// 所以都不实现它；需要自己持有资源的第三方插件应在退出前实现本回调，否则 ALC 可能延迟回收。
     /// </summary>
     public interface ICardModuleLifetime
     {
+        /// <summary>宿主退出、ALC 卸载前调用；实现必须可重复调用且不抛异常。</summary>
         void OnPluginUnloading();
     }
 

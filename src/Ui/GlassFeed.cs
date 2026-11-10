@@ -829,12 +829,13 @@ namespace MirrorpondHUD.Ui
         }
 
         // ==================== 逐帧追踪 ====================
-        // MIRRORPOND_GLASS_TRACE=1：每画一帧写一行「时间 + 尺寸 + 平均亮度」，
+        // MIRRORPOND_GLASS_TRACE=1：每画一帧记一条「GLASS + 时间 + CAP + 尺寸 + 平均亮度」，
         // hud-test/compare.py 靠它算「屏幕上换了窗口 → 玻璃上的画面多久跟着变」。
+        // 统一写到主日志（mirrorpond.log，由 Log 轮转），不再另写 %TEMP%\mirrorpond-trace.log：
+        // 审阅 §7.2 指出两套输出互不相干，排障时很难把 CAP 与 RAWB / 其他日志对齐。
+        // 需要时从主日志筛 "GLASS " 行即可。
 
         static bool? _trace;
-        static System.IO.StreamWriter _traceWriter;
-        static readonly object TraceLock = new object();
 
         static bool Trace
         {
@@ -851,7 +852,7 @@ namespace MirrorpondHUD.Ui
 
         static void TraceFrame(byte[] buffer, int w, int h)
         {
-            if (!Trace) return;
+            if (!Trace || buffer == null) return;
 
             long sum = 0;
             int count = 0;
@@ -861,24 +862,8 @@ namespace MirrorpondHUD.Ui
                 count++;
             }
 
-            lock (TraceLock)
-            {
-                try
-                {
-                    if (_traceWriter == null)
-                    {
-                        string path = System.IO.Path.Combine(
-                            System.IO.Path.GetTempPath(), "mirrorpond-trace.log");
-                        _traceWriter = new System.IO.StreamWriter(path, false) { AutoFlush = true };
-                    }
-                    _traceWriter.WriteLine(DateTime.Now.ToString("HH:mm:ss.fff") + " CAP " + w + "x" + h
-                                           + " luma=" + (count == 0 ? 0 : sum / count));
-                }
-                catch (Exception ex)
-                {
-                    Log.Warn("玻璃帧追踪写入失败: " + ex.Message);
-                }
-            }
+            Log.Info("GLASS " + DateTime.Now.ToString("HH:mm:ss.fff") + " CAP " + w + "x" + h
+                     + " luma=" + (count == 0 ? 0 : sum / count));
         }
 
         static bool? _rawTrace;

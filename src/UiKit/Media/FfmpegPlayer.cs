@@ -62,6 +62,8 @@ namespace MirrorpondHUD.Ui.Controls.Media
 
         string _ffmpeg = "";
         string _path = "";
+        /// <summary>最近一次视频解码启动的实际 argv 摘要，只在失败时写日志（审阅 §7.2：失败原因要可行动）。</summary>
+        string _lastVideoArgs = "";
         int _width;
         int _height;
         double _fps = 25;
@@ -223,6 +225,9 @@ namespace MirrorpondHUD.Ui.Controls.Media
             psi.ArgumentList.Add("-pix_fmt");
             psi.ArgumentList.Add("bgra");
             psi.ArgumentList.Add("pipe:1");
+
+            // 先记下实际参数，再启动：Process.Start / 首帧失败时日志能直接看到是 -readrate 还是 -re 分支。
+            _lastVideoArgs = DescribeArguments(psi);
 
             Process process = Process.Start(psi);
             if (process == null) throw new InvalidOperationException("ffmpeg 没有启动");
@@ -486,7 +491,8 @@ namespace MirrorpondHUD.Ui.Controls.Media
                             }
                             if (switched)
                             {
-                                Log.Warn("ffmpeg 不支持 -readrate（0 帧输出），已改用 -re 回退，以 1× 播放");
+                                Log.Warn("ffmpeg 不支持 -readrate（0 帧输出），已改用 -re 回退，以 1× 播放  "
+                                         + DescribeLaunch());
                                 LoopRestart(run, 0);
                                 continue;
                             }
@@ -777,11 +783,66 @@ namespace MirrorpondHUD.Ui.Controls.Media
 
         void RaiseFailed(string message)
         {
+            // 审阅 §7.2：只报「没有解出画面」不够排障，必须带上实际 argv 与进程退出码。
+            Log.Warn("ffmpeg 失败: " + message + "  " + DescribeLaunch());
+
             Action<string> handler = Failed;
             if (handler != null)
             {
                 try { handler(message); } catch { }
             }
+        }
+
+        /// <summary>给日志用的 argv 摘要：参数本身不含密钥，仍截断到 400 字避免刷屏。</summary>
+        static string DescribeArguments(ProcessStartInfo psi)
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.Append(psi.FileName);
+            foreach (string arg in psi.ArgumentList)
+            {
+                sb.Append(' ');
+                if (arg.IndexOf(' ') >= 0 || arg.IndexOf('"') >= 0)
+                {
+                    sb.Append('"').Append(arg.Replace("\"", "\\\"")).Append('"');
+                }
+                else
+                {
+                    sb.Append(arg);
+                }
+            }
+            if (sb.Length > 400) return sb.ToString(0, 400) + "…";
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// 失败时补一行可行动诊断：最近一次启动的 argv + 当前进程退出码。
+        /// 进程可能已经被 Stop / Dispose 回收，读退出码失败属于良性竞态，如实标注即可。
+        /// </summary>
+        string DescribeLaunch()
+        {
+            string args = _lastVideoArgs;
+            Process process;
+            lock (_sync) { process = _process; }
+
+            string state;
+            if (process == null)
+            {
+                state = "进程=null";
+            }
+            else
+            {
+                try
+                {
+                    state = process.HasExited ? "退出码=" + process.ExitCode : "进程仍在运行";
+                }
+                catch (Exception ex)
+                {
+                    // 句柄已被 Dispose / 回收：拿不到退出码，但失败本身仍要报。
+                    state = "退出码不可读(" + ex.GetType().Name + ")";
+                }
+            }
+
+            return "argv=" + (string.IsNullOrEmpty(args) ? "(未记录)" : args) + "  " + state;
         }
 
         /// <summary>P1-6：音频不可用的通知；处理器异常不影响播放线程。</summary>
