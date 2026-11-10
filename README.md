@@ -42,6 +42,7 @@
 - **毛玻璃背景** — 三种实现：**系统亚克力**（卡片下面一块独立底板，DWM / GPU 实时模糊身后的桌面与窗口，进程侧零开销）、**兼容**（按像素拼出卡片后面的画面再缩小模糊，任何 Windows 都能用、半径可调）和**桌面取样（DesktopFeed）**（自己截屏，能糊到动态壁纸 / 视频这类 `PrintWindow` 抓不到的东西，代价是**卡片不会出现在截图里**）。**默认关闭、暂不推荐**——见 [docs/glass-implementations.md](docs/glass-implementations.md)
 - **外观可调** — 字体字号、图标倍率、描边、背景图、透明度、圆角、投影、固定宽度；尺寸只增不减，数值变化时不跳动
 - **启动动画** — 打字 / 退格动画 + 模拟光标（方块 / 竖线 / 下划线 / 空心框 / 关闭）
+- **卡片动效** — 拖动时整叠卡片同位移跟随；呼出 / 消失 160ms 淡入淡出 + 8px 滑动；松手或显隐后 180ms ease-out 补位；自动对齐拖到屏幕另一侧松手时动画翻边
 - **托盘常驻** — 单实例唤醒、开机自启、可自定义的全局热键、鼠标穿透锁定
 - **无依赖** — 单文件 exe，目标机器不需要安装 .NET
 
@@ -323,7 +324,7 @@ tools/                   开发脚本（make_logo.py 生成多尺寸 logo.ico）
 - [docs/theme-motion.md](docs/theme-motion.md) — 主题的动效与控件样式调研：启动动画参数化、出现 / 消失 / 让位动画、按钮面板滑块 token 与受控模板、设置页换肤（含分层窗口动画实测）
 - [docs/legacy-audit.md](docs/legacy-audit.md) — 源码遗留审计：与 v2.9.4 同源的检查、13 条遗留（颜色解析 / 异步 void / 静态缓存 / 死字段等）与清理顺序
 - [docs/file-transfer-station.md](docs/file-transfer-station.md) — 文件中转站调研与设计：拖入 / 列表 / 引用与复制、状态持久化、拖出与锁定语义、M1–M3 路线
-- [docs/version-history.md](docs/version-history.md) — v2.4.1 → 2.24.0 每个版本改了什么、动了哪些文件（含实测数据与提交号）
+- [docs/version-history.md](docs/version-history.md) — v2.4.1 → 2.25.0 每个版本改了什么、动了哪些文件（含实测数据与提交号）
 - [DLL-CARD-PLUGIN-GUIDE.md](DLL-CARD-PLUGIN-GUIDE.md) — DLL 卡片插件开发指南（自包含）：工程引用、manifest、最小文字卡/富卡完整代码、全部契约签名、CardSettings/Extras、UiKit 控件目录、构建安装调试、安全与检查清单
 - [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) — 第三方字体与许可证（Lucide ISC、ReiconFont OFL）
 - [docs/review-p1-fixes.md](docs/review-p1-fixes.md) — 2.12.2 评审报告 P1-1..P1-10 的修复对照、验证与已知剩余

@@ -1,4 +1,4 @@
-# 版本修改记录（2.4.1 → 2.24.0）
+# 版本修改记录（2.4.1 → 2.25.0）
 
 > 范围：本文只记录**这一轮接手后我做的版本**（v2.4.1 起）。v2.4.0 及更早是既有历史，不在本文档里。
 > 数据全部取自仓库真实提交（`git diff --shortstat <上一版>..<本版>`），文件行的 `+ / -` 就是实际增删行数。
@@ -10,10 +10,10 @@
 > `f67a255` / `5f8933c` / `ef70cea`，**未发布、未合并**）；`v2.14.5`（`a0fe549`）/ `v2.14.6`（`3e6abc6`）
 > 已推送到 `origin/feature/runtime-card-loading`；
 > `v2.14.7`（`abcbcec`）/ `v2.14.8`（`633e9d6`）已随文档同步提交 `d73d2ec` 推送到同一分支（未发布、未合并）；
-> `v2.14.9`（`aba873a`）已推送；`v2.15.0`（`78d3381`）已推送（文档同步提交 `2eba9b4`）；`v2.16.0`（代码 `6406d96`，文档同步 `d1fd414`）**已推送并快进合并到 `main`**；`v2.17.0`（`27b8bbd`）/ `v2.18.0`（`1e1c6ac`）/ `v2.19.0`（`d21773c`）**已推送并快进合并到 `main`**；`v2.20.0`（代码 `d8f36ab`，文档 `de64021`）**已推送并快进合并到 `main`**；`v2.21.0`（代码 `0d687e9`，文档 `4911e1b`）**已推送并快进合并到 `main`**，未打 tag、未发布 Release；`v2.22.0`（代码为 `73837aa`–`2907be0` 的 12 个提交，文档同步本次提交）**已合并 `main`**，未打 tag、未发布 Release。 `v2.23.0`（本轮 6 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.24.0`（本轮 4 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。
+> `v2.14.9`（`aba873a`）已推送；`v2.15.0`（`78d3381`）已推送（文档同步提交 `2eba9b4`）；`v2.16.0`（代码 `6406d96`，文档同步 `d1fd414`）**已推送并快进合并到 `main`**；`v2.17.0`（`27b8bbd`）/ `v2.18.0`（`1e1c6ac`）/ `v2.19.0`（`d21773c`）**已推送并快进合并到 `main`**；`v2.20.0`（代码 `d8f36ab`，文档 `de64021`）**已推送并快进合并到 `main`**；`v2.21.0`（代码 `0d687e9`，文档 `4911e1b`）**已推送并快进合并到 `main`**，未打 tag、未发布 Release；`v2.22.0`（代码为 `73837aa`–`2907be0` 的 12 个提交，文档同步本次提交）**已合并 `main`**，未打 tag、未发布 Release。 `v2.23.0`（本轮 6 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.24.0`（本轮 4 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.25.0`（本轮 2 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。
 > `v2.14.1` / `v2.14.2` / `v2.14.4` 的规模用对应提交的 `git show --shortstat`；`v2.14.3` / `v2.14.5` / `v2.14.6`
 > 按当时提交前工作区的 `git diff --shortstat` 计算；`v2.14.7` / `v2.14.8` 用对应提交的 `git show --shortstat`；
-> `v2.14.9` 用提交前工作区的 `git diff --shortstat -- MirrorpondHUD.csproj src`；`v2.15.0` 用 `git show --shortstat 78d3381`；`v2.16.0` 用 `git show --shortstat 6406d96`；`v2.17.0` 用 `git show --shortstat 27b8bbd`；`v2.18.0` 用 `git show --shortstat 1e1c6ac`；`v2.19.0` 用 `git show --shortstat d21773c`；`v2.20.0` 用 `git show --shortstat d8f36ab`；`v2.21.0` 用 `git show --shortstat 0d687e9`（文档同步另计；评审指出的 `d6e1af3` 是未合并的游离提交，实际合并进 main 的是 `0d687e9`）；`v2.22.0` 用 `git diff --shortstat b366e32..4899f3f`（30 文件，+1116 / −246；版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.23.0` 用 `git diff --shortstat 6da03f0..HEAD`（58 文件，+6304 / −4618；版本号 15 文件 +15 / −15 与版本记录另计）。 `v2.24.0` 用 `git diff --shortstat 96acd1b..HEAD`（55 文件，+1876 / −301；版本号 15 文件 +15 / −15 与版本记录另计）。
+> `v2.14.9` 用提交前工作区的 `git diff --shortstat -- MirrorpondHUD.csproj src`；`v2.15.0` 用 `git show --shortstat 78d3381`；`v2.16.0` 用 `git show --shortstat 6406d96`；`v2.17.0` 用 `git show --shortstat 27b8bbd`；`v2.18.0` 用 `git show --shortstat 1e1c6ac`；`v2.19.0` 用 `git show --shortstat d21773c`；`v2.20.0` 用 `git show --shortstat d8f36ab`；`v2.21.0` 用 `git show --shortstat 0d687e9`（文档同步另计；评审指出的 `d6e1af3` 是未合并的游离提交，实际合并进 main 的是 `0d687e9`）；`v2.22.0` 用 `git diff --shortstat b366e32..4899f3f`（30 文件，+1116 / −246；版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.23.0` 用 `git diff --shortstat 6da03f0..HEAD`（58 文件，+6304 / −4618；版本号 15 文件 +15 / −15 与版本记录另计）。 `v2.24.0` 用 `git diff --shortstat 96acd1b..HEAD`（55 文件，+1876 / −301；版本号 15 文件 +15 / −15 与版本记录另计）。 `v2.25.0` 用 `git diff --shortstat 29efb91..HEAD`（24 文件，+520 / −153；版本号 15 文件 +15 / −15 与版本记录另计）。
 
 ## 0. 总览
 
@@ -77,6 +77,7 @@
 | v2.22.0 | 2026-11-08 | `73837aa`…`2907be0`（12 个提交） | 2026-11 代码审阅 P0/P1：失败可见化（托盘 / 保存 / 启动 / 对话 / 中转站 / 命令行 / 媒体 / 桌面取图 / 指标 / JSON）、Log 重写 + `LogThrottle`、新增 `AGENTS.md` | 30 文件，+1116 / −246（版本号 15 文件另计、文档同步另计） |
 | v2.23.0 | 2026-11-10 | 本轮 6 个提交 | 2026-11 审阅第二批收尾 + 第三批结构性拆分：StationView / OverlayController / SettingsWindow / SelfTest 拆分；原子写共用 + CommandLineMode；剩余日志 / 契约 / 文档 / 风格收尾 | 58 文件，+6304 / −4618（版本号与版本记录另计） |
 | v2.24.0 | 2026-11-10 | 本轮 4 个提交 | Schema 7（玻璃模糊字段合并 / DesktopFeed 更名 / Chat 别名迁移）、GlassRuntimeState 单源、回收站删除、UiKit 控件画廊、外部引用清理 | 55 文件，+1876 / −301（版本号与版本记录另计） |
+| v2.25.0 | 2026-11-10 | 本轮 2 个提交 | 卡片拖动跟随、呼出/消失 160ms 淡入淡出 + 8px、补位/自动对齐 180ms ease-out | 24 文件，+520 / −153（版本号与版本记录另计） |
 
 ---
 
@@ -2644,16 +2645,60 @@ JSON 绑定错误静默置空等。2.22.0 按「失败必须可见」铁律完�
 
 ---
 
-## 59. 不在版本里的东西
+## 59. v2.25.0（本轮 2 个提交，分支 `feature/lucide-icons`，未合并 main）
+
+### 背景
+
+2.24.0 后卡片仍只有「瞬移」：拖动时只动被拖的那张，松手后整叠跳位；呼出 / 消失直接切换；
+自动对齐只在松手后的重排里瞬跳。本轮按 A 方案（克制专业）补齐拖动跟随、呼出 / 消失、补位与
+自动对齐翻边动画，并保证截图 / 自检仍能稳定出图。
+
+### 改动
+
+1. **拖动跟随**：`OverlayWindow` 新增 `DragStarted` / `Dragging` 事件；`SettingsApplier.BeginCardDrag`
+   取消所有补位动画，`OnCardDragging` 把其余已显示窗口按总位移增量平移；锚点在松手前不动，
+   松手后 `OnCardMoved` 才落盘并动画重排。
+2. **呼出 / 消失**：160ms。窗口从目标位下方 8px 滑回（呼出）或向下方滑出（消失），同时
+   `OverlaySurface.Opacity` 0 ↔ 1；消失等淡出完成才 `Hide`，期间再呼出会作废旧隐藏回调。
+   8px 用窗口位置动画而不是内容 transform —— 窗口尺寸等于卡片尺寸，平移内容会被裁掉。
+3. **补位**：`CardLayoutCoordinator.LayoutAnimated()` 用每窗口 180ms 三次 ease-out；
+   Show/Hide 后其余卡片补位；数据驱动的高度变化 / 启动 / 设置重建保持瞬切。
+4. **自动对齐翻边**：Auto 模式仍在松手后由 `ResolveAlign` 按锚点 + 整叠中心判断屏幕左右半边，
+   翻边随 180ms 补位动画完成，不再瞬跳。
+5. **中断与截图**：每个窗口同一时刻只有一条位置动画，新目标从当前值接上；内容淡入淡出用版本号
+   作废旧回调；`CardMotion.Enabled=false` 作用于截图 / `--selftest`，避免抓到中间帧。
+6. **版本**：宿主 / Contracts / UiKit / 6 个插件工程与 manifest 统一 2.25.0；插件 API 仍为 2。
+
+### 验证
+
+- `dotnet build -c Release`：**0 警告 0 错误**；
+- `--selftest`：**退出码 0、失败项 0**；
+- 四种 `--screenshot*` 全部退出码 0（截图模式关闭动效，出图稳定）；
+- `--smoke 3 --smoke-visible` 多次退出码 0，无动画相关异常；退出时既有的插件弱引用 WARN
+  在 2.24 基线用同一份 settings 也能复现（3/6），与本次动效无关；
+- 代码路径覆盖：拖动增量跟随、松手 `LayoutAnimated`、呼出/消失的 `ShowCard/HideCard(true)`、
+  `CardMotion.Enabled=false` 的截图路径；未做人工拖拽逐帧录屏。
+
+### 风险 / 未验证
+
+- 逐帧移动窗口会触发 `LocationChanged → GlassRuntime.UpdateBackdrop`；180ms 短动画下可用，
+  但兼容取样（PrintWindow）仍是最重路径，未做逐帧预算 / stagger / 主题化参数；
+- 自动对齐翻边只在松手时发生（A 方案选择），不是在拖动中实时翻；
+- 交互卡片（AI 对话 / 命令行）未单独做动画回归，理论路径与普通卡相同；
+- 未做多显示器 / 高 DPI / RDP / 长时拖动压测。
+
+---
+
+## 60. 不在版本里的东西
 
 - 验收脚本、样张与测量脚本都在仓库外维护，**没有提交**。
 - 发布：`main` 与标签已推送到 [github.com/CRITTIof/MirrorpondHUD](https://github.com/CRITTIof/MirrorpondHUD)；
   [v2.9.2 Release](https://github.com/CRITTIof/MirrorpondHUD/releases/tag/v2.9.2) 只有两个附件
   （`MirrorpondHUD-x64-requires-dotnet.exe`、`MirrorpondHUD-arm64-requires-dotnet.exe`，均需 .NET 8 桌面运行时，已自签名）；
   更早的 Release 正文与附件保留原样，v2.4.0 的 Release 已删除（tag `v2.4.0` 保留，历史仍可检出）。
-- 仓库追踪的文件共 204 个（v2.21.0 时 174 个；2.23.0 结构性拆分 +20，2.24.0 新增 GlassRuntimeState / RecycleBin / UiKitGallery +7），`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
+- 仓库追踪的文件共 205 个（v2.21.0 时 174 个；2.23.0 结构性拆分 +20，2.24.0 +7，2.25.0 新增 CardMotion +1），`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
 
-## 60. 已知代价（跨版本）
+## 61. 已知代价（跨版本）
 
 - 桌面亚克力为了不拍到自己，会把卡片排除在截屏之外 —— 这个模式下截图 / 录屏里**看不到卡片**，观感只能靠肉眼与离屏渲染验证。
 - 兼容实现每帧对身后窗口做 `PrintWindow`，拖动时最多 ~21 帧/秒；要更高只能走桌面亚克力（DXGI）。
