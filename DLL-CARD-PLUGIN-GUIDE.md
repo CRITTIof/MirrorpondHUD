@@ -1,4 +1,4 @@
-# DLL 卡片插件开发指南（2.21.0+）
+# DLL 卡片插件开发指南（2.24.0+）
 
 本文面向要在 MirrorpondHUD 里添加**运行时卡片插件**的开发者。插件是一个独立的 .NET 8 WPF 类库（DLL），
 通过 `plugins/cards/<id>/manifest.json` 被宿主加载，可以贡献文字卡或富内容卡，并复用宿主的设置页、
@@ -13,6 +13,10 @@
 >
 > **2.16.0 起，6 张内置卡片本身就是 DLL 插件**（`src/Plugins/*`，manifest id `builtin.*`），宿主不再内置任何
 > `ICardModule`；你的用户插件和内置插件走同一条加载路径、同一套契约与宿主服务。
+>
+> **示例工程**：`samples/RuntimeCardExample`（最小文字卡）与 `samples/UiKitGallery`
+> （27 个 UiKit 控件类的画廊，用来验证公共控件 API；都不并入宿主构建）。
+
 
 ---
 

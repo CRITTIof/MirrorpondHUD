@@ -1,4 +1,4 @@
-# 版本修改记录（2.4.1 → 2.23.0）
+# 版本修改记录（2.4.1 → 2.24.0）
 
 > 范围：本文只记录**这一轮接手后我做的版本**（v2.4.1 起）。v2.4.0 及更早是既有历史，不在本文档里。
 > 数据全部取自仓库真实提交（`git diff --shortstat <上一版>..<本版>`），文件行的 `+ / -` 就是实际增删行数。
@@ -10,10 +10,10 @@
 > `f67a255` / `5f8933c` / `ef70cea`，**未发布、未合并**）；`v2.14.5`（`a0fe549`）/ `v2.14.6`（`3e6abc6`）
 > 已推送到 `origin/feature/runtime-card-loading`；
 > `v2.14.7`（`abcbcec`）/ `v2.14.8`（`633e9d6`）已随文档同步提交 `d73d2ec` 推送到同一分支（未发布、未合并）；
-> `v2.14.9`（`aba873a`）已推送；`v2.15.0`（`78d3381`）已推送（文档同步提交 `2eba9b4`）；`v2.16.0`（代码 `6406d96`，文档同步 `d1fd414`）**已推送并快进合并到 `main`**；`v2.17.0`（`27b8bbd`）/ `v2.18.0`（`1e1c6ac`）/ `v2.19.0`（`d21773c`）**已推送并快进合并到 `main`**；`v2.20.0`（代码 `d8f36ab`，文档 `de64021`）**已推送并快进合并到 `main`**；`v2.21.0`（代码 `0d687e9`，文档 `4911e1b`）**已推送并快进合并到 `main`**，未打 tag、未发布 Release；`v2.22.0`（代码为 `73837aa`–`2907be0` 的 12 个提交，文档同步本次提交）**已合并 `main`**，未打 tag、未发布 Release。 `v2.23.0`（本轮 6 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。
+> `v2.14.9`（`aba873a`）已推送；`v2.15.0`（`78d3381`）已推送（文档同步提交 `2eba9b4`）；`v2.16.0`（代码 `6406d96`，文档同步 `d1fd414`）**已推送并快进合并到 `main`**；`v2.17.0`（`27b8bbd`）/ `v2.18.0`（`1e1c6ac`）/ `v2.19.0`（`d21773c`）**已推送并快进合并到 `main`**；`v2.20.0`（代码 `d8f36ab`，文档 `de64021`）**已推送并快进合并到 `main`**；`v2.21.0`（代码 `0d687e9`，文档 `4911e1b`）**已推送并快进合并到 `main`**，未打 tag、未发布 Release；`v2.22.0`（代码为 `73837aa`–`2907be0` 的 12 个提交，文档同步本次提交）**已合并 `main`**，未打 tag、未发布 Release。 `v2.23.0`（本轮 6 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.24.0`（本轮 4 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。
 > `v2.14.1` / `v2.14.2` / `v2.14.4` 的规模用对应提交的 `git show --shortstat`；`v2.14.3` / `v2.14.5` / `v2.14.6`
 > 按当时提交前工作区的 `git diff --shortstat` 计算；`v2.14.7` / `v2.14.8` 用对应提交的 `git show --shortstat`；
-> `v2.14.9` 用提交前工作区的 `git diff --shortstat -- MirrorpondHUD.csproj src`；`v2.15.0` 用 `git show --shortstat 78d3381`；`v2.16.0` 用 `git show --shortstat 6406d96`；`v2.17.0` 用 `git show --shortstat 27b8bbd`；`v2.18.0` 用 `git show --shortstat 1e1c6ac`；`v2.19.0` 用 `git show --shortstat d21773c`；`v2.20.0` 用 `git show --shortstat d8f36ab`；`v2.21.0` 用 `git show --shortstat 0d687e9`（文档同步另计；评审指出的 `d6e1af3` 是未合并的游离提交，实际合并进 main 的是 `0d687e9`）；`v2.22.0` 用 `git diff --shortstat b366e32..4899f3f`（30 文件，+1116 / −246；版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.23.0` 用 `git diff --shortstat 6da03f0..HEAD`（58 文件，+6304 / −4618；版本号 15 文件 +15 / −15 与版本记录另计）。
+> `v2.14.9` 用提交前工作区的 `git diff --shortstat -- MirrorpondHUD.csproj src`；`v2.15.0` 用 `git show --shortstat 78d3381`；`v2.16.0` 用 `git show --shortstat 6406d96`；`v2.17.0` 用 `git show --shortstat 27b8bbd`；`v2.18.0` 用 `git show --shortstat 1e1c6ac`；`v2.19.0` 用 `git show --shortstat d21773c`；`v2.20.0` 用 `git show --shortstat d8f36ab`；`v2.21.0` 用 `git show --shortstat 0d687e9`（文档同步另计；评审指出的 `d6e1af3` 是未合并的游离提交，实际合并进 main 的是 `0d687e9`）；`v2.22.0` 用 `git diff --shortstat b366e32..4899f3f`（30 文件，+1116 / −246；版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.23.0` 用 `git diff --shortstat 6da03f0..HEAD`（58 文件，+6304 / −4618；版本号 15 文件 +15 / −15 与版本记录另计）。 `v2.24.0` 用 `git diff --shortstat 96acd1b..HEAD`（55 文件，+1876 / −301；版本号 15 文件 +15 / −15 与版本记录另计）。
 
 ## 0. 总览
 
@@ -76,6 +76,7 @@
 | v2.21.0 | 2026-11-01 | `0d687e9` | 引入 Lucide 1.66.0 开源图标字体（ISC）：2292 个码位常量 / 查询表、`CardIcon`、图标自检、许可证与文档；控件章节详写 | 23 文件，+7169 / −16（文档同步另计） |
 | v2.22.0 | 2026-11-08 | `73837aa`…`2907be0`（12 个提交） | 2026-11 代码审阅 P0/P1：失败可见化（托盘 / 保存 / 启动 / 对话 / 中转站 / 命令行 / 媒体 / 桌面取图 / 指标 / JSON）、Log 重写 + `LogThrottle`、新增 `AGENTS.md` | 30 文件，+1116 / −246（版本号 15 文件另计、文档同步另计） |
 | v2.23.0 | 2026-11-10 | 本轮 6 个提交 | 2026-11 审阅第二批收尾 + 第三批结构性拆分：StationView / OverlayController / SettingsWindow / SelfTest 拆分；原子写共用 + CommandLineMode；剩余日志 / 契约 / 文档 / 风格收尾 | 58 文件，+6304 / −4618（版本号与版本记录另计） |
+| v2.24.0 | 2026-11-10 | 本轮 4 个提交 | Schema 7（玻璃模糊字段合并 / DesktopFeed 更名 / Chat 别名迁移）、GlassRuntimeState 单源、回收站删除、UiKit 控件画廊、外部引用清理 | 55 文件，+1876 / −301（版本号与版本记录另计） |
 
 ---
 
@@ -1339,7 +1340,7 @@ M2 时文件夹仍被拒绝；M3 把列表管理补上后，文件夹成为最�
 
 ### 背景
 
-`MirrorpondHUD-2.12.2-review.md` 列出 10 条 P1：配置 null / 损坏恢复 / 原子写 / 明文 Key 备份、聊天卡旧配置回滚、中转站视图生命周期、WaveOut 释放竞态、外部进程阻塞、PDH 并发、API URL 安全。2.13.2 之前只做了上帝类拆分，这些数据与线程安全项都没有动。
+`外部审阅报告（未提交）` 列出 10 条 P1：配置 null / 损坏恢复 / 原子写 / 明文 Key 备份、聊天卡旧配置回滚、中转站视图生命周期、WaveOut 释放竞态、外部进程阻塞、PDH 并发、API URL 安全。2.13.2 之前只做了上帝类拆分，这些数据与线程安全项都没有动。
 
 ### 改动
 
@@ -1414,7 +1415,7 @@ M2 时文件夹仍被拒绝；M3 把列表管理补上后，文件夹成为最�
 
 ### 背景
 
-`MirrorpondHUD-2.13.4-review.md` 指出 8 处“头痛砍头”/半修与多条 P1/P2。本轮修 P1 与“先修”高风险项：中转站孤儿文件与合并截断、热键路由抵消旧绑定、Chat 设置窗旧快照、DPAPI/备份顺序、缺版本号/溢出、Replace 回退备份失败、命令脱敏、解码器切换、媒体 UI Join。
+`外部审阅报告（未提交）` 指出 8 处“头痛砍头”/半修与多条 P1/P2。本轮修 P1 与“先修”高风险项：中转站孤儿文件与合并截断、热键路由抵消旧绑定、Chat 设置窗旧快照、DPAPI/备份顺序、缺版本号/溢出、Replace 回退备份失败、命令脱敏、解码器切换、媒体 UI Join。
 
 ### 改动
 
@@ -1481,14 +1482,14 @@ v2.12.2 的调研文档提出 `plugins/cards/*.dll` 运行时扩展卡片；本�
 
 v2.13.6 的 spike 只做到「重启加载可信本地插件」：插件缺失时 `Kind` 能被保留，但界面仍会回退成默认卡；
 插件 DLL 被宿主锁住，开发时只能反复重启；没有清单校验、没有加载报告，也没有热重载。独立风险复核
-（`%TEMP%\hot-reload-review\report.md`）指出影子复制回退、Kind 校验、设置页引用、ALC 回收证据与发布数据保护等方向。
+（仓库外临时审阅报告，未提交）指出影子复制回退、Kind 校验、设置页引用、ALC 回收证据与发布数据保护等方向。
 本轮把**生产默认路径**补齐（仍是重启生效），并把 `--plugin-dev` 做成只在开发期使用的纯文字卡热重载。
 
 ### 改动
 
 1. **插件影子复制**：加载前把 `<exe>/plugins/cards/<id>/`（或 `%LOCALAPPDATA%\MirrorpondHUD\plugins\cards\<id>`）整目录复制到
    `%LOCALAPPDATA%\MirrorpondHUD\plugin-cache\<id>-<时间戳>-<随机>` 再加载，源目录不再被锁，运行中可覆盖 / 删除 DLL，
-   下次加载用新文件；启动时清理上一轮残留（日志「已清理插件影子缓存 N 个」）。`LocalAppData` 不可用时影子根退到 `%TEMP%`；
+   下次加载用新文件；启动时清理上一轮残留（日志「已清理插件影子缓存 N 个」）。`LocalAppData` 不可用时影子根退到系统临时目录；
    复制失败则回退源目录直接加载（WARN，源 DLL 被锁，热重载可能不可用），坏插件不影响宿主启动。
 2. **缺失插件占位卡**：`CardRegistry.Get` 对未注册且不是旧别名的 `Kind` 返回按原 Kind 渲染的 `UnavailableCardModule`
    （「插件不可用：<kind>」+ 重新安装提示）。占位模块不进入 `Modules`，因此不会出现在「添加卡片」菜单；
@@ -1731,7 +1732,7 @@ v2.13.6 / v2.14.0 的运行时插件走的是方案 A：插件直接引用 `Mirr
 - 旧插件加载：2.13.6 / 2.14.0 编译、引用 `MirrorpondHUD.dll` 的二进制经 `TypeForwardedTo` 加载成功，selftest 通过。
 - 新插件加载：只引用 `MirrorpondHUD.Contracts` 的 `ExampleClockCard` 加载成功
   （日志「已加载卡片插件 Example Clock 0.1.0」，模块数内置 6 + 外部 1）。
-- `--plugin-dev --smoke` 冒烟中示例插件经历热重载 / 模块替换，日志正常（`%TEMP%\contract-hot\mirrorpond.log`）。
+- `--plugin-dev --smoke` 冒烟中示例插件经历热重载 / 模块替换，日志正常（仓库外临时日志，未提交）。
 
 ### 风险
 
@@ -1852,7 +1853,7 @@ v2.13.6 / v2.14.0 的运行时插件走的是方案 A：插件直接引用 `Mirr
 ### 背景
 
 2.14.5 已把共享 WPF 控件拆到 `MirrorpondHUD.UiKit`，插件程序集边界完成并推送（`a0fe549`）。
-按 2.14.5 clean 副本的两份审阅报告（`%TEMP%\review-clean\plugin.md`、`architecture.md`），
+按 2.14.5 clean 副本的两份审阅报告（仓库外临时报告，未提交），
 本轮只做**低风险清理**与一处让错误更早暴露的加载期校验，不动契约结构、不做用户配置迁移：
 
 - 删死代码 / 无调用重载；
@@ -1899,12 +1900,12 @@ v2.13.6 / v2.14.0 的运行时插件走的是方案 A：插件直接引用 `Mirr
 - 引用宿主的测试插件（host-ref）被明确拒绝，日志出现「卡片插件引用了宿主程序集，已拒绝…」；宿主照常启动，不崩溃。
 - 正常示例插件（只引用 `MirrorpondHUD.Contracts`、`apiVersion=2`）加载成功。
 - 2.14.5 clean 审阅的验证保留：干净副本构建 / `--selftest` / `--smoke` / API2 示例加载 / API1 拒绝 /
-  旧 Kind 运行时路径 / legacy schema 迁移，合计 **30/30 PASS**（脚本与日志见 `%TEMP%\review-clean\`）。
+  旧 Kind 运行时路径 / legacy schema 迁移，合计 **30/30 PASS**（脚本与日志在仓库外临时目录（未提交））。
 
 ### 审阅发现与未处理项
 
-2.14.5 clean 副本有两份审阅报告：`%TEMP%\review-clean\plugin.md`（不必要的兼容层与历史遗留）与
-`%TEMP%\review-clean\architecture.md`（契约边界 / 架构）。2.14.6 只采纳低风险项，以下**未处理**，留待后续版本：
+2.14.5 clean 副本有两份审阅报告：仓库外临时审阅报告（未提交）（不必要的兼容层与历史遗留）与
+仓库外临时架构报告（未提交）（契约边界 / 架构）。2.14.6 只采纳低风险项，以下**未处理**，留待后续版本：
 
 - **旧 Kind 别名链（metrics / clock / keys / text）仍是活运行时路径**：老配置每次启动都靠运行时别名渲染，
   直接删会让这些卡片显示「插件不可用」。需要先做 **SchemaVersion=7 迁移**（把旧 Kind 直接写成
@@ -2065,7 +2066,7 @@ v2.13.6 / v2.14.0 的运行时插件走的是方案 A：插件直接引用 `Mirr
 
 ### 背景
 
-2.14.8 的最终复核报告（`%TEMP%\review-clean\final.md`）结论：**55/55 PASS、无 P0**，
+2.14.8 的最终复核报告（仓库外临时复核报告（未提交））结论：**55/55 PASS、无 P0**，
 但列出 P1 × 2（`CardSettings` 契约默认值/注释、README 配置块说明）与 P2 × 11（注释 / 文档 / 测试夹具残留）。
 本轮按“无用户、可修改”继续收尾，只修 P1 两项与部分低风险 P2，不改任何运行行为。
 
@@ -2113,7 +2114,7 @@ v2.13.6 / v2.14.0 的运行时插件走的是方案 A：插件直接引用 `Mirr
 
 ### 审阅现状与剩余项
 
-最终复核报告（`%TEMP%\review-clean\final.md`）确认：无 P0；`ICardLegacyAlias` / `TryResolveAlias` /
+最终复核报告（仓库外临时复核报告（未提交））确认：无 P0；`ICardLegacyAlias` / `TryResolveAlias` /
 `LegacySettings` / `TypeForwardedTo` / `Settings.Default*Content` 等旧兼容路径在 `src` 已 0 处。
 2.14.9 已修 P1-1、P1-2，以及 P2-1（Schema 注释）、P2-2（ConfigStore 注释）、P2-3 的 `Truncate` 部分、
 P2-4（占位文案）、P2-6（ALC 注释 / 旧别名日志）、P2-7（InferPreset 注释）、P2-8 的 SelfTest 夹具部分。
@@ -2545,9 +2546,9 @@ JSON 绑定错误静默置空等。2.22.0 按「失败必须可见」铁律完�
 2. **§5.2（命名 / 只写字段 / 文档）**：`SettingsMigration` 更名 `SettingsLoader`（只读取 + 版本校验，不再迁移）；
    `StationState.FormatVersion` 变成真实契约（高于当前版本拒绝加载、三重写闸保证不覆盖原文件、状态行可见只读提示）；
    修正版本记录里 `d6e1af3` → 实际合并的 `0d687e9`，并把仓库文件数从过时的 117 更新为 195。
-   `GlassRuntimeState` 单一数据源、Acrylic / Glass 双套模糊字段合并、Dwm→DesktopFeed 更名仍按 AGENTS §10 推迟。
+   `GlassRuntimeState` 单一数据源、Acrylic / Glass 双套模糊字段合并、Dwm→DesktopFeed 更名在本轮按 AGENTS §10 推迟，2.24.0 已完成。
 3. **§7.2 / §7.3（日志）**：`ProcessIntegrity` 失败保留 Win32 错误码与可读原因；ffmpeg 失败日志补实际 argv 与退出码；
-   `MIRRORPOND_GLASS_TRACE` 统一写主日志，移除 `%TEMP%\mirrorpond-trace.log` 第二套输出；
+   `MIRRORPOND_GLASS_TRACE` 统一写主日志，移除临时 trace 文件的第二套输出；
    `Json.Bind` 无法创建目标类型时不再静默返回 null；`ThemeFile` 导入 / 导出所有失败路径补 Warn；
    120ms 渲染循环的卡片失败改 `LogThrottle`（每卡状态转移 + 30s 最小间隔）。
 4. **审阅第三批 11（StationView）**：拆出 `StationStore`（items.json 纯逻辑 / P1-6 合并 / FormatVersion）、
@@ -2585,16 +2586,74 @@ JSON 绑定错误静默置空等。2.22.0 按「失败必须可见」铁律完�
 
 ---
 
-## 58. 不在版本里的东西
+## 58. v2.24.0（本轮 4 个提交，分支 `feature/lucide-icons`，未合并 main）
 
-- 验收脚本、样张与测量脚本（`cmd-e2e.ps1`、`drag-glass.ps1`、`measure-*.py`、`shots/` 等）都在仓库外的 `hud-test/` 里，**没有提交**。
+### 背景
+
+2.23.0 完成了审阅第三批的结构性拆分，但按 AGENTS.md §10 仍保留了四项「已评审决定推迟」的事项：
+`GlassRuntimeState` 单一数据源、Acrylic / Glass 双套模糊参数、`Dwm` 命名、Chat 历史别名。
+本轮按用户要求把它们全部落地，并补上中转站回收站删除、UiKit 控件画廊示例插件，以及全仓注释 / 文档里
+对仓库外文件的引用清理。
+
+### 改动
+
+1. **Schema 7**：`Settings.CurrentSchemaVersion = 7`；删除 `AcrylicBlur` / `AcrylicFps` / `GlassBlur` / `GlassFps`，
+   合并为 `BlurRadius`（0–60，默认 18）/ `BlurFps`（2–30，默认 10），兼容与桌面取样共用；
+   `SettingsLoader` 增加唯一的 v6→v7 一次性迁移：按旧 `GlassMode` 选对应那组参数、旧 `Dwm` 等值归一 `DesktopFeed`、
+   `Cards[].Extras.chat.Mode` 的 `continuous` / `poll` / `polling` 改写 `Context`；迁移后重新序列化再反序列化，
+   `needsSave=true`、旧键删除；v<6 仍按损坏、v>7 仍只读。
+2. **GlassRuntimeState**：新增 `src/Ui/GlassRuntimeState.cs`（Kind / Reason / LastError / 可用性 + `Describe()`）；
+   `GlassRuntime` 独占当前状态，`SetState` 是唯一状态与日志出口（只在实现 / 原因变化时记一条，降级 Warn、恢复 Info），
+   取代原先「`GlassPolicy.Resolve` 算一次、OverlayWindow 拖动再算一次、设置窗只看下拉框」的三份实现。
+3. **DesktopFeed**：`GlassMode` 的 `Dwm` 更名 `DesktopFeed`，`GlassPolicy.Resolve`、设置窗下拉框、`GlassFeed` 配置、
+   拖动补帧全部走同一模式名；`OverlayWindow` 拖动补帧改读 `GlassRuntime.State.Kind`，不再本地重算。
+4. **设置窗玻璃 UI**：删除 `AcrylicBlur` / `AcrylicFps` 两行，只保留一套 `GlassBlur` / `GlassFps` 控件并绑定
+   `BlurRadius` / `BlurFps`；System 隐藏可调项，Compat / DesktopFeed 显示，`GlassSource` 仅 DesktopFeed 显示；
+   末尾追加运行期「当前实际：…」，降级时用户能看出自己选的实现没生效。
+5. **Chat 别名**：`ChatSettings.NormalizeMode` 只接受 `context`（大小写不敏感）→ `Context`，其余→ `Single`；
+   `continuous` / `poll` / `polling` 只在 v6→v7 迁移里改写，运行期不再兼容。
+6. **回收站删除**：新增 `RecycleBin`（`SHFileOperation` + `FOF_ALLOWUNDO` 等四 flag，`fFlags` 用 ushort、
+   `pFrom` 用双 NUL 的 IntPtr，x64/ARM64 布局正确）；中转站右键「移到回收站」、确认框与状态行同步；
+   失败只报返回码并保留条目，绝不回退 `File.Delete` / `Directory.Delete`。
+7. **UiKit 控件画廊**：新增 `samples/UiKitGallery`（独立类库 + manifest，apiVersion 2，不并入宿主），
+   实际实例化 27 个 UiKit 控件类 / 28 个实例；颜色字号走主题令牌，交互留本地状态；README 给出构建与安装步骤。
+8. **外部引用清理**：移除注释 / 文档里的临时目录产物、仓库外测试脚本、原型绝对路径与外部审阅报告文件名，
+   改写为「仓库外临时产物（未提交）」；两张旧模式截图按 DesktopFeed 更名；示例 / 资源 README 的
+   失效相对链接修正；AGENTS §10 与 README 的 Schema / 术语 / 回收站说明同步。
+9. **版本**：宿主 / Contracts / UiKit / 6 个插件工程与 manifest 统一 2.24.0；插件 API 仍为 2，契约无破坏性变更。
+
+### 验证
+
+- `dotnet build -c Release`：**0 警告 0 错误**；
+- `--selftest`：**退出码 0、失败项 0**；现有 Schema 6 配置实际完成 v6→v7 迁移，日志确认旧键删除、DesktopFeed 与
+  BlurRadius / BlurFps 写入；SelfTest 的 v6 桌面 / 兼容双夹具、Chat 别名迁移断言通过；
+- 三种玻璃实现用 `--smoke 3 --smoke-visible` 实测：System→「系统亚克力」、DesktopFeed→「桌面取样」并走 DXGI、
+  Compat→「兼容取样」8 帧/24px；`GlassRuntimeState` 日志与实际实现一致；
+- 四种 `--screenshot*` 与 `--smoke 3` 全部退出码 0；设置窗在 DesktopFeed 配置下正常打开；
+- `samples/UiKitGallery` 单独 `dotnet build -c Release`：**0 警告 0 错误**，27 个控件类全部显式实例化。
+
+### 风险 / 未验证
+
+- `SHFileOperation` 的 `pFrom` 受 `MAX_PATH` 限制，超长路径会以非 0 返回码失败并留在列表（后续需 `IFileOperation`）；
+  按设计失败不回退永久删除；
+- 回收站不可用（网络盘 / 策略禁用）时行为取决于 Windows Shell，代码保证只报错、不自行永久删除；
+- 画廊只做独立构建验证，未安装到宿主 `plugins/cards` 实跑；`CardIcon` 的 Lucide pack URI 仅按指南验证可编译；
+- 玻璃三模式只做短时 smoke / 截图验证，未做多显示器、高 DPI、RDP 重连、长时间拖动压测；
+- v6→v7 只覆盖 Schema 6；更旧 Schema 仍按损坏备份，这是 2.14.7 起既有策略；
+- DWM 仍出现在「系统亚克力 / 合成器」语境（`WCA_ACCENT_POLICY`、`DwmFlush` 等），这是 API 名称，不是模式名。
+
+---
+
+## 59. 不在版本里的东西
+
+- 验收脚本、样张与测量脚本都在仓库外维护，**没有提交**。
 - 发布：`main` 与标签已推送到 [github.com/CRITTIof/MirrorpondHUD](https://github.com/CRITTIof/MirrorpondHUD)；
   [v2.9.2 Release](https://github.com/CRITTIof/MirrorpondHUD/releases/tag/v2.9.2) 只有两个附件
   （`MirrorpondHUD-x64-requires-dotnet.exe`、`MirrorpondHUD-arm64-requires-dotnet.exe`，均需 .NET 8 桌面运行时，已自签名）；
   更早的 Release 正文与附件保留原样，v2.4.0 的 Release 已删除（tag `v2.4.0` 保留，历史仍可检出）。
-- 仓库追踪的文件共 197 个（v2.21.0 时 174 个；2.23.0 结构性拆分新增 20 个源文件），`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
+- 仓库追踪的文件共 204 个（v2.21.0 时 174 个；2.23.0 结构性拆分 +20，2.24.0 新增 GlassRuntimeState / RecycleBin / UiKitGallery +7），`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
 
-## 59. 已知代价（跨版本）
+## 60. 已知代价（跨版本）
 
 - 桌面亚克力为了不拍到自己，会把卡片排除在截屏之外 —— 这个模式下截图 / 录屏里**看不到卡片**，观感只能靠肉眼与离屏渲染验证。
 - 兼容实现每帧对身后窗口做 `PrintWindow`，拖动时最多 ~21 帧/秒；要更高只能走桌面亚克力（DXGI）。

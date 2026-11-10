@@ -111,8 +111,8 @@ build.bat / publish.bat          :: 构建 / 发布（publish 默认单文件）
 - 提交前自检清单：`dotnet build -c Release` 0 警告 0 错误 → `--selftest` 退出 0 → 若涉及 UI 行为，顺手跑一次对应 `--screenshot-*` 模式确认渲染没坏。
 - 不要顺手重排无关代码 / 大幅移动文件；本项目大量 P-Invoke 结构体偏移、反射字段名（`PluginManifest` 的 camelCase 即 JSON 键名）对口依赖原始布局。
 
-## 10. 已知的历史包袱（别"顺手清理"）
+## 10. 仍有效的约定（别"顺手清理"）
 
-- `GlassRuntimeState` 与 Acrylic/Glass 双套模糊参数是**已评审决定推迟**的重构，动它们要单独立项。
-- Chat 模式的别名（`polling` / `poll` / `continuous` → `Context`）是**有意保留**的兼容行为。
+- 2.24.0 已清理 `GlassRuntimeState` 单源、Acrylic/Glass 双套模糊参数、`Dwm` 命名与 Chat 历史别名；
+  新代码不得再引入旧字段 / 旧 mode 值（v6→v7 一次性迁移在 `SettingsLoader` 里）。
 - 宿主与插件间的"宿主服务的 Config 永远是新树"约定、Cards↔UiKit 的渲染管线是大量测试与评审的凝练，改动前先读对应区域的注释。

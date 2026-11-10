@@ -39,7 +39,7 @@
 - **媒体卡片** — 一张卡片显示图片 / 位图 / 动图（GIF）/ 视频，可调缩放方式、宽高、透明度、循环、静音、倍速，并可选择是否按外观的圆角裁圆；卡片顶部显示文件名（过长省略），视频底部带播放进度条；系统解不开的视频会自动改用 ffmpeg
 - **AI 对话卡片** — 一张**命令行样式**的终端卡：第一行模型名、第二行 `>` 提示符输入、下面每轮问答各一块内部小面板（各自滚动）。走 OpenAI 兼容接口，**每张卡自己一套**接口地址 / 模型 / Key（所以能同时挂两个模型）；单次（每次不带历史）与轮询（保留上下文连续对话）用全局热键切换，卡片上不放按钮
 - **Key 加密** — API Key 用 Windows DPAPI（当前用户）加密后再写进 `settings.json`，文件里只有 `dpapi:…` 密文；设置页也不回显，已填过就显示「已填写 API Key，重新输入以更换」
-- **毛玻璃背景** — 三种实现：**系统亚克力**（卡片下面一块独立底板，DWM / GPU 实时模糊身后的桌面与窗口，进程侧零开销）、**兼容**（按像素拼出卡片后面的画面再缩小模糊，任何 Windows 都能用、半径可调）和**桌面亚克力**（DWM 材质底板自己截屏，能糊到动态壁纸 / 视频这类 `PrintWindow` 抓不到的东西，代价是**卡片不会出现在截图里**）。**默认关闭、暂不推荐**——见 [docs/glass-implementations.md](docs/glass-implementations.md)
+- **毛玻璃背景** — 三种实现：**系统亚克力**（卡片下面一块独立底板，DWM / GPU 实时模糊身后的桌面与窗口，进程侧零开销）、**兼容**（按像素拼出卡片后面的画面再缩小模糊，任何 Windows 都能用、半径可调）和**桌面取样（DesktopFeed）**（自己截屏，能糊到动态壁纸 / 视频这类 `PrintWindow` 抓不到的东西，代价是**卡片不会出现在截图里**）。**默认关闭、暂不推荐**——见 [docs/glass-implementations.md](docs/glass-implementations.md)
 - **外观可调** — 字体字号、图标倍率、描边、背景图、透明度、圆角、投影、固定宽度；尺寸只增不减，数值变化时不跳动
 - **启动动画** — 打字 / 退格动画 + 模拟光标（方块 / 竖线 / 下划线 / 空心框 / 关闭）
 - **托盘常驻** — 单实例唤醒、开机自启、可自定义的全局热键、鼠标穿透锁定
@@ -105,7 +105,7 @@ run.bat
 | 命令行 | 提示符 / 历史 / 输入 | 独占键盘，按自己的热键展开；工具与超时是**每张卡片独立**的 |
 | 媒体 | 图片 / 位图 / 动图 / 视频 | 顶部文件名、视频进度条；文件、缩放、透明度、解码器都在卡片里 |
 | AI 对话 | 模型名 / `>` 输入行 / 终端记录 | 命令行样式；OpenAI 兼容接口，每张卡一套地址 / 模型 / Key；单次 / 轮询走全局热键，Key 用 DPAPI 加密存储 |
-| 文件中转站 | 拖入的文件 / 文件夹列表（图标 / 名称 / 大小） | 引用 / 复制 / 移动；拖入 / 拖出 / 从剪贴板粘贴；搜索过滤、Ctrl/Shift 多选与批量移除 / 删除 / 复制路径；文件夹递归收纳（保留子目录）；复制显示进度与速度、可取消；列表存每卡状态文件，不塞 settings.json |
+| 文件中转站 | 拖入的文件 / 文件夹列表（图标 / 名称 / 大小） | 引用 / 复制 / 移动；拖入 / 拖出 / 从剪贴板粘贴；搜索过滤、Ctrl/Shift 多选与批量移除 / 移到回收站 / 复制路径；文件夹递归收纳（保留子目录）；复制显示进度与速度、可取消；列表存每卡状态文件，不塞 settings.json |
 | 按钮演示（实验） | 三种语气的按钮 + 输入框回显 | 验证 `CardButton` / `CardTextBox` 与「不点击穿透」的交互卡片 |
 
 ![媒体卡片](docs/media-cards.png)
@@ -200,10 +200,10 @@ mock-chat-1                                        [轮询]
 
 ```json
 {
-  "SchemaVersion": 6,
+  "SchemaVersion": 7,
   "Overlay": { "X": 1483, "Y": 127, "Monitor": 0, "Locked": true, "CornerRadius": 10 },
   "Style": { "FontFamily": "JetBrains Mono NL", "FontSize": 15, "BackgroundOpacity": 0.3,
-             "IconScale": 1.15, "Acrylic": false, "AcrylicBlur": 12, "AcrylicFps": 15 },
+             "IconScale": 1.15, "Acrylic": false, "BlurRadius": 18, "BlurFps": 10 },
   "Cli": { "MaxWidth": 460, "MaxHeight": 420, "EntryMaxHeight": 140, "MaxEntries": 12 },
   "Cards": [
     {
@@ -225,8 +225,9 @@ mock-chat-1                                        [轮询]
 }
 ```
 
-- `SchemaVersion` 当前为 6；项目仍在开发阶段，**2.14.7 起不再迁移旧版配置**：
-  更低的 SchemaVersion 会按损坏备份（`.broken-时间戳`）并使用默认设置；当前 6 与缺版本号的当前格式仍接受
+- `SchemaVersion` 当前为 7；项目仍在开发阶段，**2.14.7 起不再迁移旧版配置**，只保留 2.24.0 的
+  v6→v7 一次性迁移（合并玻璃模糊字段、`Dwm`→`DesktopFeed`、Chat 旧模式→`Context`）：
+  更低版本会按损坏备份（`.broken-时间戳`）并使用默认设置；当前 7 与缺版本号的当前格式仍接受
 - `Cards` 的顺序就是叠层顺序；`Spacing` 是与上一张可见卡片的间距
 - `Resident=false` 的卡片必须有 `Hotkey`，否则保存时会提示
 - `Extras.command` 属于每张命令行卡片：工具、自定义模板、工作目录、行截断、行数、超时
@@ -286,12 +287,12 @@ dotnet build samples\RuntimeCardExample\RuntimeCardExample.csproj -c Release
 - 模型回答目前是**非流式**（整段返回后才显示），没有打字机效果
 - **毛玻璃暂时不推荐开启（默认关闭）**。系统亚克力靠未文档化的 DWM 接口，圆角卡片会露直角补角、
   亮度只由色调决定；兼容实现每帧对身后每个窗口做 `PrintWindow`，5 张卡实测约 40% 单核，且抓不到动态壁纸 /
-  独占全屏。第三条「桌面亚克力」自己截屏 + 模糊，再把结果画进卡片内容层（4 张卡约 3–8% 单核，可调帧率，能糊到动态壁纸和视频），
+  独占全屏。第三条「桌面取样（DesktopFeed）」自己截屏 + 模糊，再把结果画进卡片内容层（4 张卡约 3–8% 单核，可调帧率，能糊到动态壁纸和视频），
   代价是**开了它卡片就不会出现在截图 / 录屏里**——自截屏必须把自己排除在捕获之外；取图默认走 DXGI 桌面复制，模糊强度 / 刷新帧率 / 取图方式都在
   **设置 → 外观 → 高级（实验性）** 里可调。三条路的实测与选择建议见
   **[docs/glass-implementations.md](docs/glass-implementations.md)**。只想要半透明卡片的话，把「背景不透明度」
   调到 0.5–0.7 即可，没有额外开销
-- 运行期插件（`plugins/cards/*.dll`）：把可信本地插件放进 `plugins/cards/<id>/`（便携目录）或 `%LOCALAPPDATA%\MirrorpondHUD\plugins\cards\<id>/`（manifest + DLL），**重启宿主后**出现在「添加卡片」。插件只引用 `MirrorpondHUD.Contracts`（需要共享控件时再加 `MirrorpondHUD.UiKit`），不引用宿主 DLL；宿主会拒绝仍引用 `MirrorpondHUD` 的插件。2.16.0 起 6 张内置卡也全部是 DLL 插件（宿主内置 0、运行时插件 6），2.17.0–2.19.0 陆续补齐数据展示、图表、树/时间线、浮层交互等 UiKit 控件；2.21.0 引入 Lucide 开源图标字体（ISC）与 `CardIcon` / `LucideIcons`。**本项目不提供热插拔 / 热重载**：安装、更新、删除插件都通过替换目录并重启宿主生效；`--plugin-dev` 已移除。插件缺失时卡片显示「插件不可用」占位并保留原 `Kind` / `Extras`。完整制作指南见根目录 [DLL-CARD-PLUGIN-GUIDE.md](DLL-CARD-PLUGIN-GUIDE.md)，设计与安全边界见 [docs/runtime-card-extensions.md](docs/runtime-card-extensions.md)。`AssemblyLoadContext` 不是安全沙箱，只加载可信本地插件；加一种内置卡片 = 在 `src/Plugins` 新增一个插件工程（manifest id `builtin.*`），文字卡继承 `CardModuleBase`，图片 / 视频等富内容卡继承 `RichCardModuleBase`。
+- 运行期插件（`plugins/cards/*.dll`）：把可信本地插件放进 `plugins/cards/<id>/`（便携目录）或 `%LOCALAPPDATA%\MirrorpondHUD\plugins\cards\<id>/`（manifest + DLL），**重启宿主后**出现在「添加卡片」。插件只引用 `MirrorpondHUD.Contracts`（需要共享控件时再加 `MirrorpondHUD.UiKit`），不引用宿主 DLL；宿主会拒绝仍引用 `MirrorpondHUD` 的插件。2.16.0 起 6 张内置卡也全部是 DLL 插件（宿主内置 0、运行时插件 6），2.17.0–2.19.0 陆续补齐数据展示、图表、树/时间线、浮层交互等 UiKit 控件；2.21.0 引入 Lucide 开源图标字体（ISC）与 `CardIcon` / `LucideIcons`。**本项目不提供热插拔 / 热重载**：安装、更新、删除插件都通过替换目录并重启宿主生效；`--plugin-dev` 已移除。插件缺失时卡片显示「插件不可用」占位并保留原 `Kind` / `Extras`。完整制作指南见根目录 [DLL-CARD-PLUGIN-GUIDE.md](DLL-CARD-PLUGIN-GUIDE.md)，设计与安全边界见 [docs/runtime-card-extensions.md](docs/runtime-card-extensions.md)。`AssemblyLoadContext` 不是安全沙箱，只加载可信本地插件；加一种内置卡片 = 在 `src/Plugins` 新增一个插件工程（manifest id `builtin.*`），文字卡继承 `CardModuleBase`，图片 / 视频等富内容卡继承 `RichCardModuleBase`。 两个可直接参考的示例工程：`samples/RuntimeCardExample`（最小文字卡）与 `samples/UiKitGallery`（27 个 UiKit 控件类的画廊，不并入宿主构建）。
   图片 / 视频这类富内容卡继承 `RichCardModuleBase`，宿主不用改
 
 ## 🗂️ 目录结构
@@ -316,13 +317,13 @@ tools/                   开发脚本（make_logo.py 生成多尺寸 logo.ico）
 
 - [docs/cards-architecture.md](docs/cards-architecture.md) — 模块化卡片架构、富内容契约与扩展方式
 - [docs/modularity-review.md](docs/modularity-review.md) — 模块化现状评审：扩展点盘点、P0 / P1 / P2 问题清单（含文件行号）与分阶段落地路线
-- [docs/glass-implementations.md](docs/glass-implementations.md) — 毛玻璃的两种实现（系统亚克力 / 截屏取样）：各自的毛病与实测数据，中英双语
+- [docs/glass-implementations.md](docs/glass-implementations.md) — 毛玻璃的三种实现（系统亚克力 / 桌面取样 / 兼容取样）：各自的毛病与实测数据，中英双语
 - [docs/theme-system.md](docs/theme-system.md) — 外观主题方案：`.mptheme` 单文件格式、字段映射、导入 / 导出与回滚流程（草案 + 三份示例主题）
 - [docs/theme-rewrite-prerequisites.md](docs/theme-rewrite-prerequisites.md) — 外观重写的前置：令牌层 / CLI 面板换肤 / 主题文件 / 设置页入口的分步计划与验收清单（附仓库历史文件审计）
 - [docs/theme-motion.md](docs/theme-motion.md) — 主题的动效与控件样式调研：启动动画参数化、出现 / 消失 / 让位动画、按钮面板滑块 token 与受控模板、设置页换肤（含分层窗口动画实测）
 - [docs/legacy-audit.md](docs/legacy-audit.md) — 源码遗留审计：与 v2.9.4 同源的检查、13 条遗留（颜色解析 / 异步 void / 静态缓存 / 死字段等）与清理顺序
 - [docs/file-transfer-station.md](docs/file-transfer-station.md) — 文件中转站调研与设计：拖入 / 列表 / 引用与复制、状态持久化、拖出与锁定语义、M1–M3 路线
-- [docs/version-history.md](docs/version-history.md) — v2.4.1 → 2.23.0 每个版本改了什么、动了哪些文件（含实测数据与提交号）
+- [docs/version-history.md](docs/version-history.md) — v2.4.1 → 2.24.0 每个版本改了什么、动了哪些文件（含实测数据与提交号）
 - [DLL-CARD-PLUGIN-GUIDE.md](DLL-CARD-PLUGIN-GUIDE.md) — DLL 卡片插件开发指南（自包含）：工程引用、manifest、最小文字卡/富卡完整代码、全部契约签名、CardSettings/Extras、UiKit 控件目录、构建安装调试、安全与检查清单
 - [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) — 第三方字体与许可证（Lucide ISC、ReiconFont OFL）
 - [docs/review-p1-fixes.md](docs/review-p1-fixes.md) — 2.12.2 评审报告 P1-1..P1-10 的修复对照、验证与已知剩余
@@ -365,7 +366,7 @@ tools/                   开发脚本（make_logo.py 生成多尺寸 logo.ico）
 - **AI chat card** — a terminal-styled card: model name on the first line, a `>` prompt input line, one inner panel per Q&A round below. Any OpenAI-compatible endpoint; each card owns its base URL, model and key, so two models can run side by side. Single shot vs. context chat is switched with a global hotkey (no buttons on the card)
 - **Encrypted key storage** — API keys are encrypted with Windows DPAPI (current user) before being written to `settings.json`, which only holds `dpapi:…` blobs; the settings field never echoes the key, it shows *API Key already set, type a new one to replace*
 - **Media cards** — one card per image / bitmap / animated GIF / video, with fit mode, size, opacity, loop, mute, speed and an optional corner-rounding toggle; the card keeps the text-card backing and adds a filename header plus a progress bar under videos; Media Foundation decodes first and ffmpeg takes over when it cannot
-- **Frosted glass** — three implementations: **system acrylic** (a separate backdrop window under each card, blurred live by DWM / the GPU at zero cost in this process), **compat** (windows behind the card are composed per pixel, downscaled and blurred; adjustable radius, works on any Windows) and **desktop acrylic** (a DWM material backdrop that captures the screen itself, so it can blur animated wallpapers and video that `PrintWindow` cannot see — at the cost of the cards never appearing in screenshots). **Off by default and not recommended yet**, see [docs/glass-implementations.md](docs/glass-implementations.md)
+- **Frosted glass** — three implementations: **system acrylic** (a separate backdrop window under each card, blurred live by DWM / the GPU at zero cost in this process), **compat** (windows behind the card are composed per pixel, downscaled and blurred; adjustable radius, works on any Windows) and **desktop feed** (captures the screen itself and blurs it, so it can blur animated wallpapers and video that `PrintWindow` cannot see — at the cost of the cards never appearing in screenshots). **Off by default and not recommended yet**, see [docs/glass-implementations.md](docs/glass-implementations.md)
 - **No runtime needed** — self-contained single-file builds for x64 and ARM64
 
 ## Quick start
@@ -414,7 +415,7 @@ Images, bitmaps and animated GIFs are drawn inside the layered card window; vide
 
 ## Configuration
 
-Everything is stored in `settings.json` next to the executable (`SchemaVersion: 6`). There is no legacy migration in this development phase (since 2.14.7): configs with an older SchemaVersion are backed up as corrupted and replaced by defaults, while schema 6 and the current format without a version field are still accepted. `Cards[]` holds `Id`, `Kind`, `Name`, `Resident`, `Hotkey`, `Spacing`, `Content`, plus per-card `Extras.command` (tool / template / working directory / truncation / timeout), `Extras.media` (file / fit / size / opacity / loop / mute / speed) and `Extras.chat` (base URL / model / encrypted key / mode / system prompt / timeout / width). The list order is the on-screen order; appearance stays global.
+Everything is stored in `settings.json` next to the executable (`SchemaVersion: 7`). There is no legacy migration in this development phase (since 2.14.7), except the one-time v6→v7 migration in 2.24.0 (merged blur fields, `Dwm`→`DesktopFeed`, old chat mode→`Context`): older configs are backed up as corrupted and replaced by defaults, while schema 7 and the current format without a version field are still accepted. `Cards[]` holds `Id`, `Kind`, `Name`, `Resident`, `Hotkey`, `Spacing`, `Content`, plus per-card `Extras.command` (tool / template / working directory / truncation / timeout), `Extras.media` (file / fit / size / opacity / loop / mute / speed) and `Extras.chat` (base URL / model / encrypted key / mode / system prompt / timeout). The list order is the on-screen order; appearance stays global.
 
 ## Known limitations
 
@@ -428,7 +429,7 @@ Everything is stored in `settings.json` next to the executable (`SchemaVersion: 
   undocumented DWM call, shows square corner slivers under rounded cards and takes its brightness from the
   tint only; the compat path calls `PrintWindow` for every window behind every card each frame (≈ 40% of one
   core with 5 cards), and cannot see animated wallpapers or exclusive-fullscreen windows. The third path,
-  *desktop acrylic*, uses a DWM material backdrop that captures the screen itself (≈ 3% of one core for 4
+  *desktop feed*, captures the screen itself (≈ 3% of one core for 4
   cards, and it does blur animated wallpapers and video), but **while it is active the cards do not appear in
   screenshots or recordings** — a self-capturing window has to exclude itself. Measured numbers, the full list
   of flaws and how to choose: **[docs/glass-implementations.md](docs/glass-implementations.md)** (bilingual).

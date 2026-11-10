@@ -107,7 +107,7 @@ if (_settings.Style.Acrylic) CaptureGlass();   // ← 每次移动都抓一次
 
 ## 4. 实测：分层窗口上几种动画方式的成本
 
-**方法**：仓库外写的 PoC（`%TEMP%\hud-motion-poc`，不提交），5 个 `AllowsTransparency` 窗口，两种尺寸
+**方法**：仓库外写的临时 PoC（未提交；不进入仓库），5 个 `AllowsTransparency` 窗口，两种尺寸
 （320×72 与 460×420），`CompositionTarget.Rendering` 驱动 150 帧，`Process.TotalProcessorTime` 差值算 CPU，
 每次模式跑一遍、共 3 遍取中位；测量期间关掉 HUD。环境：Windows 11 26200、DPI 100%、`ClientAreaAnimation = True`。
 

@@ -6,7 +6,7 @@
 
 > **没有热插拔 / 热重载**：安装、更新、删除插件都必须替换目录并重启宿主。`--plugin-dev` 已移除。
 
-完整、可不读源码直接照做的制作指南见根目录 [DLL-CARD-PLUGIN-GUIDE.md](../DLL-CARD-PLUGIN-GUIDE.md)。
+完整、可不读源码直接照做的制作指南见根目录 [DLL-CARD-PLUGIN-GUIDE.md](../../DLL-CARD-PLUGIN-GUIDE.md)。
 
 ## 构建
 
