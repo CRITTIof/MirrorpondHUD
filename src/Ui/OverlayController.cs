@@ -220,6 +220,25 @@ namespace MirrorpondHUD.Ui
 
         public Settings CurrentSettings { get { return _settings; } }
 
+        /// <summary>
+        /// 当前实际生效的毛玻璃状态：取第一张有窗口的卡片（同一次运行里各卡片的实现一致，
+        /// 只是降级时机可能差一帧）。设置窗用它显示「当前实际」，不再只按用户选的下拉框猜。
+        /// 还没有卡片窗口时返回「未启用」。
+        /// </summary>
+        internal GlassRuntimeState CurrentGlassState
+        {
+            get
+            {
+                foreach (CardSlot slot in _cards)
+                {
+                    if (slot == null || slot.Window == null) continue;
+                    return slot.Window.GlassState;
+                }
+
+                return new GlassRuntimeState(GlassBackdropKind.None, "", "", true, true);
+            }
+        }
+
         public void Start()
         {
             Log.Info("=== 开始启动 ===");
@@ -711,7 +730,9 @@ namespace MirrorpondHUD.Ui
 
             if (_settingsWindow == null)
             {
-                _settingsWindow = new SettingsWindow(_settings, ApplySettings, ApplyAnchor, ClearKeys);
+                // 第 5 个参数把「当前实际实现」提供给设置窗：下拉框是用户的期望，运行时状态才是事实。
+                _settingsWindow = new SettingsWindow(_settings, ApplySettings, ApplyAnchor, ClearKeys,
+                                                     () => CurrentGlassState);
                 if (_settingsWindow.LoadFailed)
                 {
                     _settingsWindow.CloseForReal();

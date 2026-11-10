@@ -9,7 +9,7 @@
 
 | 位置 | 内容 | 问题 |
 |---|---|---|
-| `settings.json` → `Style` | 25 个字段：字体、字号、加粗、前景 / 背景色、不透明度、内边距、行高、对齐、描边、背景图、固定宽度、卡片对齐、图标倍率、毛玻璃 4 项 | 外观和材质混在一起；没法整体导出 / 分享 |
+| `settings.json` → `Style` | 字体、字号、加粗、前景 / 背景色、不透明度、内边距、行高、对齐、描边、背景图、固定宽度、卡片对齐、图标倍率、毛玻璃 5 项 | 外观和材质混在一起；没法整体导出 / 分享 |
 | `settings.json` → `Overlay` | `CornerRadius`、`Shadow` | 圆角是外观，却不在 `Style` 里 |
 | `settings.json` → `Cli` | `MaxWidth / MaxHeight / EntryMaxHeight / MaxEntries` | 面板尺寸属于主题的一部分 |
 | `src/Ui/Theme.xaml` | 设置页自己的色板（`Accent`、`WindowBg`、`CardBg`、`BorderSoft`、`TextPrimary`、`TextSecondary`、`Danger`） | 与卡片外观无关，但换肤时容易漏掉 |
@@ -102,9 +102,11 @@
 | `outline.*` | `Style.TextOutline` / `OutlineColor` / `OutlineThickness` | 现有字段 |
 | `cliPanel.*` | `Cli.*` | 2.4.5 新增的四个字段 |
 
-**故意不放进主题**：`Acrylic` / `GlassMode` / `GlassSource` / `GlassBlur` / `GlassFps`、卡片列表与内容、位置与显示器、
+**故意不放进主题**：`Acrylic` / `GlassMode` / `GlassSource` / `BlurRadius` / `BlurFps`、卡片列表与内容、位置与显示器、
 热键、`Behavior`（刷新率 / 启动动画）、`Data`、API Key。理由见开头：这些是能力与布署参数，不是外观；混进来会让
-「套用主题」意外改掉性能与取图行为。
+「套用主题」意外改掉性能与取图行为。2.24.0（Schema 7）起原来的 `AcrylicBlur` / `AcrylicFps` / `GlassBlur` /
+`GlassFps` 两套模糊字段已合并为 `BlurRadius`（0–60，默认 18）/ `BlurFps`（2–30，默认 10），兼容实现与桌面取样共用；
+`settings.json` 里形如 `"Acrylic": true, "GlassMode": "DesktopFeed", "BlurRadius": 18, "BlurFps": 10`。
 
 ## 4. 加载、生效与回滚
 
@@ -118,6 +120,8 @@
                 ──► 失败：不改任何内存 / 磁盘状态，弹一行原因
 ```
 
+- **毛玻璃不参与主题校验**：`BlurRadius` / `BlurFps` 不属于 `.mptheme` 字段，由 `settings.json` 直接保存；
+  `Settings.Normalize` 把它们分别夹紧到 0–60 / 2–30，主题导入只覆盖上表 appearance 映射到的字段，不会碰这两个值；
 - **导入**：菜单「外观 → 导入主题…」，文件对话框限 `*.mptheme;*.json`；
 - **导出**：把当前 `Style` / `Overlay.CornerRadius` / `Overlay.Shadow` / `Cli` 写成一个 `.mptheme`（颜色用当前值），
   这样「调好一套再另存为主题」是零学习成本的；
@@ -165,7 +169,7 @@
 
 用户明确要求「不把已有亚克力毛玻璃当作主题」，这条在技术上也是对的：
 
-- 毛玻璃是**取图 + 模糊**的实现选择（DWM 底板 / DXGI 桌面复制 / GDI 读屏 / 兼容 PrintWindow），2.4.4 实测 4 张卡在
+- 毛玻璃是**取图 + 模糊**的实现选择（`System` 系统亚克力底板 / `DesktopFeed` 桌面取样（DXGI 或 GDI）/ `Compat` PrintWindow），2.4.4 实测 4 张卡在
   10 帧/秒下约占单核 6–8%；把它塞进主题文件，等于「换个配色顺手把 CPU 开销也换了」；
 - 桌面亚克力还会把卡片**排除在截屏之外**（截图 / 录像里看不到卡片），这是隐私与录制行为，不该由外观文件决定；
 - 同一套配色在「无背景 / 纯色 / 毛玻璃 / 背景图」四种材质下都应该成立，所以主题只描述颜色与几何，材质单独在设置里选。

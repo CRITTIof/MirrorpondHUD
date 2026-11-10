@@ -36,6 +36,12 @@ namespace MirrorpondHUD.Ui
         internal bool GlassHandleReady { get { return _handleReady; } }
         internal bool GlassClosed { get { return _closed; } }
 
+        /// <summary>
+        /// 当前实际生效的玻璃实现（运行时单一状态源）。设置窗的「当前实际」与拖动补帧都读这里，
+        /// 不再各自按 <c>Style.GlassMode</c> 重算 —— 用户选 DesktopFeed 但已经降级的场景只有运行时知道。
+        /// </summary>
+        internal GlassRuntimeState GlassState { get { return _glassRuntime.State; } }
+
         bool _interactive;
 
         /// <summary>卡片内容需要鼠标 / 键盘（见 IRichCardModule.NeedsMouseInput）：这张卡不穿透。</summary>
@@ -337,11 +343,12 @@ namespace MirrorpondHUD.Ui
         }
 
         // ==================== 毛玻璃 ====================
-        // 三种实现（系统亚克力 / 桌面亚克力 / 兼容取样）的选择与生命周期已经搬进
+        // 三种实现（系统亚克力 / 桌面取样 / 兼容取样）的选择与生命周期已经搬进
         // GlassRuntime；窗口只保留底板回调与「什么时候通知」，不保留同名字段，避免双真相。
+        // 实际生效的是哪一种只由 GlassRuntime.State 说了算（见上面的 GlassState）。
 
         /// <summary>
-        /// 桌面亚克力取样连续全黑时由 GlassFeed 回调：转给玻璃运行时标记不可用并重新决策。
+        /// 桌面取样连续全黑时由 GlassFeed 回调：转给玻璃运行时标记不可用并重新决策。
         /// 这个委托在 GlassBackdrops 里 attach 时按窗口类型取得，所以入口必须留在窗口上。
         /// </summary>
         internal void OnDesktopAcrylicUnavailable(string reason)
@@ -480,19 +487,20 @@ namespace MirrorpondHUD.Ui
         {
             if (_dragFrameQueued) return;
 
-            bool acrylic = _settings.Style.Acrylic;
-            string mode = Settings.NormalizeGlassMode(_settings.Style.GlassMode);
-            bool dwm = acrylic && mode == "Dwm" && !_glassRuntime.DesktopAcrylicUnavailable;
-            bool compat = acrylic && !dwm && !_glassRuntime.BackdropActive;   // 兼容实现（截屏拼接）
+            // 实际用哪种实现只看运行时状态：设置里选的实现可能已经降级（远程桌面 / 接口失效），
+            // 以前这里自己 NormalizeGlassMode 再算一遍，会和真实实现脱节。
+            GlassBackdropKind kind = _glassRuntime.State.Kind;
+            bool desktop = kind == GlassBackdropKind.DesktopAcrylic;
+            bool compat = kind == GlassBackdropKind.CompatCapture;
 
-            if (!dwm && !compat) return;
+            if (!desktop && !compat) return;
 
             _dragFrameQueued = true;
             Dispatcher.BeginInvoke(new Action(() =>
             {
                 _dragFrameQueued = false;
                 if (!_dragging) return;
-                if (dwm) GlassFeed.RequestFrame(false);
+                if (desktop) GlassFeed.RequestFrame(false);
                 else if (compat) _glassRuntime.CaptureGlass();
             }), DispatcherPriority.Render);
         }

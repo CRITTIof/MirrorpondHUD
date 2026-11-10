@@ -830,8 +830,8 @@ namespace MirrorpondHUD.Ui
 
         // ==================== 逐帧追踪 ====================
         // MIRRORPOND_GLASS_TRACE=1：每画一帧记一条「GLASS + 时间 + CAP + 尺寸 + 平均亮度」，
-        // hud-test/compare.py 靠它算「屏幕上换了窗口 → 玻璃上的画面多久跟着变」。
-        // 统一写到主日志（mirrorpond.log，由 Log 轮转），不再另写 %TEMP%\mirrorpond-trace.log：
+        // 仓库外的对比脚本（未提交）靠它算「屏幕上换了窗口 → 玻璃上的画面多久跟着变」。
+        // 统一写到主日志（mirrorpond.log，由 Log 轮转），不再另写临时 trace 文件：
         // 审阅 §7.2 指出两套输出互不相干，排障时很难把 CAP 与 RAWB / 其他日志对齐。
         // 需要时从主日志筛 "GLASS " 行即可。
 

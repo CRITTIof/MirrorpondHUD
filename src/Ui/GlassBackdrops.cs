@@ -24,7 +24,7 @@ namespace MirrorpondHUD.Ui
 
             switch (Settings.NormalizeGlassMode(mode))
             {
-                case "Dwm":
+                case "DesktopFeed":
                     if (desktopAvailable) return GlassBackdropKind.DesktopAcrylic;
                     return systemAvailable ? GlassBackdropKind.SystemAcrylic : GlassBackdropKind.CompatCapture;
 
@@ -120,7 +120,7 @@ namespace MirrorpondHUD.Ui
     }
 
     /// <summary>
-    /// 桌面亚克力：截屏 + 自己模糊，把结果画进卡片自己的内容层（<see cref="GlassFeed"/>）。
+    /// 桌面取样（设置值 DesktopFeed）：截屏 + 自己模糊，把结果画进卡片自己的内容层（<see cref="GlassFeed"/>）。
     /// 代价是卡片必须排除在截屏之外，否则取样会把自己拍进去。
     /// </summary>
     internal sealed class DesktopAcrylicBackdrop : IGlassBackdrop
@@ -194,7 +194,7 @@ namespace MirrorpondHUD.Ui
 
             GlassFeed.Attach(window, window.OnDesktopAcrylicUnavailable);
 
-            if (first) Log.Info("毛玻璃背景已启用（桌面亚克力：截屏 + 模糊后画进卡片，卡片不进截图）");
+            if (first) Log.Info("毛玻璃背景已启用（桌面取样：截屏 + 模糊后画进卡片，卡片不进截图）");
             return true;
         }
 

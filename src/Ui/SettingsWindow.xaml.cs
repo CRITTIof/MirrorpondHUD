@@ -28,6 +28,8 @@ namespace MirrorpondHUD.Ui
         readonly Func<Settings, bool> _onApply;
         readonly Action<double, double, int> _onPosition;
         readonly Action _onClearKeys;
+        /// <summary>读「当前实际玻璃实现」；无头截图等没有宿主的场景为 null。</summary>
+        readonly Func<GlassRuntimeState> _glassState;
 
         Settings _working;
         /// <summary>
@@ -43,14 +45,21 @@ namespace MirrorpondHUD.Ui
         bool _reallyClose;
         bool _loadFailed;
 
-        public SettingsWindow(Settings live, Func<Settings, bool> onApply,
-                              Action<double, double, int> onPosition, Action onClearKeys)
+        /// <summary>
+        /// 第 5 个参数读「当前实际玻璃实现」（可为 null：无头截图等没有宿主窗口的场景）。
+        /// 参数类型 GlassRuntimeState 是程序集内部类型，所以构造函数保持 internal ——
+        /// 设置窗只由宿主（OverlayController）与无头截图（Screenshots）创建，没有跨程序集调用点。
+        /// </summary>
+        internal SettingsWindow(Settings live, Func<Settings, bool> onApply,
+                                Action<double, double, int> onPosition, Action onClearKeys,
+                                Func<GlassRuntimeState> glassState = null)
         {
             InitializeComponent();
 
             _onApply = onApply;
             _onPosition = onPosition;
             _onClearKeys = onClearKeys;
+            _glassState = glassState;
             _liveSettings = live;
             try { VersionText.Text = "v" + typeof(SettingsWindow).Assembly.GetName().Version; } catch { }
 
@@ -80,8 +89,6 @@ namespace MirrorpondHUD.Ui
             AcrylicCheck.Unchecked += (s, e) => UiChanged();
             GlassModeCombo.SelectionChanged += (s, e) => { UiChanged(); UpdateGlassUiState(); };
             GlassSourceCombo.SelectionChanged += (s, e) => { UiChanged(); UpdateGlassUiState(); };
-            AcrylicBlurSlider.ValueChanged += (s, e) => UiChanged();
-            AcrylicFpsSlider.ValueChanged += (s, e) => UiChanged();
             GlassBlurSlider.ValueChanged += (s, e) => UiChanged();
             GlassFpsSlider.ValueChanged += (s, e) => UiChanged();
             IconScaleSlider.ValueChanged += (s, e) => UiChanged();

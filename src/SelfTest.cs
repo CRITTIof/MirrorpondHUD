@@ -354,11 +354,12 @@ namespace MirrorpondHUD
             try
             {
                 // P2-1：毛玻璃实现选择是纯决策——设置 + 两块底板可用性 → 实现，窗口只按结果接线。
+                // 2.24.0 起桌面模式名为 DesktopFeed（旧 Dwm 由 Schema 7 迁移归一）。
                 glassPolicyOk =
-                    GlassPolicy.Resolve(false, "Dwm", true, true) == GlassBackdropKind.None
-                 && GlassPolicy.Resolve(true, "Dwm", true, true) == GlassBackdropKind.DesktopAcrylic
-                 && GlassPolicy.Resolve(true, "Dwm", true, false) == GlassBackdropKind.SystemAcrylic
-                 && GlassPolicy.Resolve(true, "Dwm", false, false) == GlassBackdropKind.CompatCapture
+                    GlassPolicy.Resolve(false, "DesktopFeed", true, true) == GlassBackdropKind.None
+                 && GlassPolicy.Resolve(true, "DesktopFeed", true, true) == GlassBackdropKind.DesktopAcrylic
+                 && GlassPolicy.Resolve(true, "DesktopFeed", true, false) == GlassBackdropKind.SystemAcrylic
+                 && GlassPolicy.Resolve(true, "DesktopFeed", false, false) == GlassBackdropKind.CompatCapture
                  && GlassPolicy.Resolve(true, "System", true, true) == GlassBackdropKind.SystemAcrylic
                  && GlassPolicy.Resolve(true, "System", false, true) == GlassBackdropKind.CompatCapture
                  && GlassPolicy.Resolve(true, "Compat", true, true) == GlassBackdropKind.CompatCapture;
@@ -964,7 +965,7 @@ namespace MirrorpondHUD
                                 && roundTrip.Cards[0].Extras.ContainsKey("command");
 
                 Settings nullBlocks = Json.Deserialize<Settings>(
-                    "{\"SchemaVersion\":6,\"Style\":null,\"Overlay\":null,\"Cli\":null," +
+                    "{\"SchemaVersion\":7,\"Style\":null,\"Overlay\":null,\"Cli\":null," +
                     "\"Data\":null,\"Behavior\":null,\"Hotkeys\":null,\"Cards\":null}");
                 nullBlocks.Normalize();
                 bool nullOk = nullBlocks.Style != null && nullBlocks.Overlay != null && nullBlocks.Cli != null
@@ -990,13 +991,13 @@ namespace MirrorpondHUD
             return settingsLoaderOk && atomicOk;
         }
 
-        /// <summary>设置加载：损坏 / 旧 Schema / 无版本 / 未来版本只读 / 数字溢出 / 未知 Kind 保留。</summary>
+        /// <summary>设置加载：损坏 / 旧 Schema / v6→v7 迁移 / 无版本 / 未来版本只读 / 数字溢出 / 未知 Kind 保留。</summary>
         static bool CheckSettingsLoader()
         {
             bool needsSave;
             bool corrupted;
             bool futureFlag;
-            Settings broken = SettingsLoader.Load("{\"SchemaVersion\":6,", out needsSave, out corrupted);
+            Settings broken = SettingsLoader.Load("{\"SchemaVersion\":7,", out needsSave, out corrupted);
             bool brokenOk = corrupted && !needsSave && broken != null;
 
             Settings oldSchema = SettingsLoader.Load("{\"SchemaVersion\":1,\"Cards\":[]}", out needsSave, out corrupted);
@@ -1016,6 +1017,41 @@ namespace MirrorpondHUD
                                                        out needsSave, out corrupted, out futureFlag);
             bool overflowOk = corrupted && !needsSave;
 
+            // Schema 7（2.24.0）：v6 一次性迁移——玻璃模糊字段合并、GlassMode 的 Dwm 更名 DesktopFeed、
+            // Chat 模式别名改写 Context；迁移后必须需要落盘（needsSave）且不能再按损坏处理。
+            const string legacyV6 =
+                "{\"SchemaVersion\":6,\"Style\":{\"GlassMode\":\"Dwm\",\"GlassBlur\":26,\"GlassFps\":12," +
+                "\"AcrylicBlur\":12,\"AcrylicFps\":15},\"Cards\":[{\"Id\":\"chat-legacy\",\"Kind\":\"chat\"," +
+                "\"Name\":\"旧对话\",\"Extras\":{\"chat\":{\"Mode\":\"polling\"}}}]}";
+            Settings v6 = SettingsLoader.Load(legacyV6, out needsSave, out corrupted);
+            bool v6ChatModeOk = false;
+            if (v6.Cards != null && v6.Cards.Count == 1 && v6.Cards[0].Extras != null)
+            {
+                object chatNode;
+                if (v6.Cards[0].Extras.TryGetValue("chat", out chatNode))
+                {
+                    var chat = chatNode as Dictionary<string, object>;
+                    object modeNode;
+                    if (chat != null && chat.TryGetValue("Mode", out modeNode))
+                        v6ChatModeOk = string.Equals(Convert.ToString(modeNode), "Context", StringComparison.Ordinal);
+                }
+            }
+            bool v6Ok = !corrupted && needsSave && v6.SchemaVersion == 7
+                     && v6.Style.GlassMode == "DesktopFeed"
+                     && v6.Style.BlurRadius == 26
+                     && v6.Style.BlurFps == 12
+                     && v6ChatModeOk;
+
+            // 非桌面模式取 AcrylicBlur / AcrylicFps 那一套，Compat 归一后保持 Compat。
+            const string legacyV6Compat =
+                "{\"SchemaVersion\":6,\"Style\":{\"GlassMode\":\"Compat\",\"GlassBlur\":26,\"GlassFps\":12," +
+                "\"AcrylicBlur\":7,\"AcrylicFps\":20},\"Cards\":[]}";
+            Settings v6Compat = SettingsLoader.Load(legacyV6Compat, out needsSave, out corrupted);
+            bool v6CompatOk = !corrupted && needsSave && v6Compat.SchemaVersion == 7
+                           && v6Compat.Style.GlassMode == "Compat"
+                           && v6Compat.Style.BlurRadius == 7
+                           && v6Compat.Style.BlurFps == 20;
+
             // 未知 Kind（例如插件卸载）：保留原配置，不改写成默认卡。
             var unknownSettings = new Settings();
             unknownSettings.Cards.Add(new CardSettings
@@ -1029,7 +1065,8 @@ namespace MirrorpondHUD
                               && unknownSettings.Cards[0].Content == "插件内容"
                               && unknownSettings.Cards[0].Extras.ContainsKey("plugin");
 
-            return brokenOk && oldOk && unversionedOk && futureOk && overflowOk && unknownKindOk;
+            return brokenOk && oldOk && unversionedOk && futureOk && overflowOk
+                && v6Ok && v6CompatOk && unknownKindOk;
         }
 
         /// <summary>状态存储：原子写、损坏回退 .bak、拒绝路径穿越、删除；清理逻辑保持原 try/finally。</summary>

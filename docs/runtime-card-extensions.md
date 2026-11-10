@@ -13,7 +13,7 @@
 > 运行时替换注册表、`PluginDevReloader` 已全部删除。
 > 已实现（方案 B，2.14.1–2.16.0）：独立 `MirrorpondHUD.Contracts` 契约程序集与 `MirrorpondHUD.UiKit` 共享控件程序集；
 > 插件只引用 Contracts（可选 UiKit）、不引用宿主；插件 ALC 对宿主 / Contracts / UiKit 都走默认 ALC；插件 API=2；
-> 2.14.7 起旧 Kind 别名与旧 SchemaVersion 迁移已删除（旧配置不再兼容）；2.14.8 起内置卡专用 DTO / DPAPI /
+> 2.14.7 起旧 Kind 别名与旧 SchemaVersion 链式迁移已删除（旧配置不再兼容；仅保留 2.24.0 的 v6→v7 一次性迁移）；2.14.8 起内置卡专用 DTO / DPAPI /
 > 默认内容迁回宿主；2.16.0 起内置卡片本身就是插件，宿主只做加载与通用服务。
 > 未实现：签名 / 哈希 / 白名单；安全沙箱；插件市场 / 自动更新；插件 API 版本迁移 UI。
 > 运行期不提供任何热插拔 / 卸载按钮。
@@ -146,9 +146,12 @@ Contracts（示例不需要 UiKit）。示例见 `samples/RuntimeCardExample`。
 **兼容性（2.14.4 / 2.14.7 起）**：宿主不再做 `TypeForwardedTo`（2.14.4）；2.14.3 及之前编译 / `apiVersion=1`
 的旧插件不兼容，`apiVersion=1` 的旧 manifest 被拒绝（日志「卡片插件 API 版本不兼容: … api=1（宿主支持 2）」）；
 插件程序集若仍引用宿主 `MirrorpondHUD`，2.14.6 起在加载时直接拒绝（日志「卡片插件引用了宿主程序集，已拒绝…」）。
-旧配置同样不再兼容：2.14.7 删除旧 Kind 别名（`metrics` / `clock` / `keys` / `text` 不再转成 `infotext`）与旧
-SchemaVersion 迁移，旧配置会按损坏备份并使用默认设置。插件 ALC 对宿主 / Contracts / UiKit 三个程序集都返回
-`null`，由默认 ALC 提供。
+旧配置：2.14.7 删除旧 Kind 别名（`metrics` / `clock` / `keys` / `text` 不再转成 `infotext`），0–5 的旧 SchemaVersion
+链路不再迁移、按损坏备份并使用默认设置。**2.24.0 的 Schema 7 是唯一例外**：提供 v6→v7 一次性迁移——玻璃模糊
+字段合并为 `BlurRadius` / `BlurFps`、`GlassMode` 的 `Dwm` 更名 `DesktopFeed`、`Extras.chat.Mode` 的
+`continuous` / `poll` / `polling` 改写为 `Context`；迁移成功后写回 Schema 7。2.24.0 起 `ChatSettings.Mode`
+只接受 `Single` / `Context`，不再保留历史别名。插件 ALC 对宿主 / Contracts / UiKit 三个程序集都返回 `null`，
+由默认 ALC 提供。
 
 **剩余代价**：
 
@@ -322,7 +325,8 @@ card.Kind = CardRegistry.ResolveKind(card.Kind);   // 旧行为：未知 → _mo
 4. 如果插件重新出现，原卡片在**重启宿主后**自动恢复（`Extras` 原样还在）；
 5. 2.14.7 起旧 Kind 别名链已删除：`metrics` / `clock` / `keys` / `text` 不再自动转成 `infotext`，这类旧配置会按
    未知 Kind 显示「插件不可用」（`Kind` / `Extras` 不被改写），需要手工改成 `infotext` + 对应 `Preset`；
-   旧 SchemaVersion 也不再迁移，按损坏备份后使用默认设置。
+   旧 SchemaVersion 链式迁移（0–5）也不再支持，按损坏备份后使用默认设置；2.24.0 的 Schema 7 只保留
+   v6→v7 一次性迁移，更旧版本不参与。
 
 这一条比 ALC 技术细节更重要：**插件生态最怕的是卸载插件后配置被宿主改写。**
 
@@ -333,7 +337,8 @@ card.Kind = CardRegistry.ResolveKind(card.Kind);   // 旧行为：未知 → _mo
 - **2.14.4 起不再做类型转发**：2.14.1–2.14.3 曾用宿主 `TypeForwardedTo` 兼容旧二进制，2.14.4 删除；
   引用宿主 `MirrorpondHUD.dll` 的旧插件必须重编译（改引 Contracts / UiKit）并把 `apiVersion` 升到 2；
 - **2.14.7 起不再迁移旧配置**：旧 Kind 别名、SettingsMigration 的 0/1/2/3/4/5 分支全部删除；旧配置按损坏处理
-  （备份 `.broken-*` + 默认设置），当前 SchemaVersion=6 与缺版本号的当前格式仍接受；
+  （备份 `.broken-*` + 默认设置）；2.24.0 例外提供 v6→v7 一次性迁移（合并玻璃模糊字段 / `Dwm`→`DesktopFeed` /
+  Chat 模式别名→`Context`），当前 SchemaVersion=7 与缺版本号的当前格式仍接受；
 - 不使用“靠运行时异常猜兼容”；
 - 设置页 / 日志里显示插件版本、宿主版本、拒绝原因。
 

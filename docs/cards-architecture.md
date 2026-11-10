@@ -251,7 +251,7 @@ public sealed class DropStationCard : RichCardModuleBase,
 ## 3. 配置模型
 
 ```json
-"SchemaVersion": 6,
+"SchemaVersion": 7,
 "Cards": [
   {
     "Id": "3f6c...",
@@ -289,9 +289,15 @@ public sealed class DropStationCard : RichCardModuleBase,
 - 命令行的**外观与尺寸**不在这里：两块 CLI 面板共用 `Settings.Cli`（最大宽度 / 最大高度 / 内部小面板最大高度 / 最多保留条数）
 - 命令行卡强制 `Resident=false`、无内容模板
 
-2.14.7 起**不再迁移旧 Schema**：`SchemaVersion` 低于当前的配置按损坏处理（备份为 `.broken-*` 后使用默认设置），
+2.14.7 起**不再迁移历史 Schema**：`SchemaVersion` 低于当前的配置按损坏处理（备份为 `.broken-*` 后使用默认设置），
 只接受当前版本以及「缺版本号但结构符合当前格式」的文件。读取与版本校验在 `src/Core/SettingsLoader.cs`
-（原 `SettingsMigration`，2.23.0 更名；迁移分支已全部删除）。
+（原 `SettingsMigration`，2.23.0 更名；0–5 的旧迁移分支已全部删除）。
+
+2.24.0 的 **Schema 7** 是唯一例外，提供一次 **v6→v7** 迁移：`Style.AcrylicBlur` / `AcrylicFps` / `GlassBlur` /
+`GlassFps` 按旧 `GlassMode` 选一组（桌面模式取 `GlassBlur` / `GlassFps`，其余取 `AcrylicBlur` / `AcrylicFps`）
+合并为 `BlurRadius`（默认 18）/ `BlurFps`（默认 10）；`GlassMode` 的 `Dwm` 更名 `DesktopFeed`（`System` / `Compat`
+保持不变）；`Cards[].Extras.chat.Mode` 的 `continuous` / `poll` / `polling` 改写成 `Context`；迁移成功后
+`SchemaVersion` 写为 7 并立刻回写磁盘。更旧的 0–5 仍按损坏处理，v7 之后的更高版本仍只读加载。
 
 ## 4. 布局：一条垂直堆叠
 
@@ -426,7 +432,8 @@ ffmpeg 路线把视频解成逐帧原始像素，什么格式都能放（代价�
 - 请求：`POST {Chat.BaseUrl}/chat/completions`，`Authorization: Bearer <明文 Key>`（可空），
   响应取 `choices[0].message.content`（也兼容 `content` 是 `[{type,text}]` 数组、以及 `choices[0].text`）。
 - `ChatSettings.Mode`：`Single` 每次只发当前提问；`Context`（轮询）把最近 12 条消息一起发回去，
-  形成连续对话。热键切换会写回设置并立刻落盘，重启还是那个模式；切模式时清空这一张卡的上下文。
+  形成连续对话。2.24.0 起只接受 `Single` / `Context`，原来的 `polling` / `poll` / `continuous` 别名已移除，
+  旧配置由 Schema 7 的 v6→v7 迁移一次性改写。热键切换会写回设置并立刻落盘，重启还是那个模式；切模式时清空这一张卡的上下文。
 - 上下文只在内存里：卡片隐藏 / 重建 / 重启就清空。回答期间输入框只读而不禁用，
   焦点一直留在提示符后面，连着问不用重新点；点卡片任意位置都会把焦点拉回输入行。
 - 每张卡片自己的 `Chat.SystemPrompt` / `TimeoutSeconds` / `Width` 都在「设置 → 内容 → AI 接口」里。

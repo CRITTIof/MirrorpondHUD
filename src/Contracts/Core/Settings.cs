@@ -8,8 +8,10 @@ namespace MirrorpondHUD.Core
     {
         /// <summary>
         /// 当前配置结构版本。2.14.7 起不再迁移历史 Schema；旧文件按损坏备份后用默认设置。
+        /// 2.24.0 是唯一例外：为合并玻璃模糊字段、把 GlassMode 的 Dwm 更名 DesktopFeed、
+        /// 移除 Chat 模式历史别名，提供 v6→v7 一次性迁移（见 SettingsLoader）。
         /// </summary>
-        public const int CurrentSchemaVersion = 6;
+        public const int CurrentSchemaVersion = 7;
         public int SchemaVersion = 0;
 
 
@@ -45,14 +47,12 @@ namespace MirrorpondHUD.Core
             Style.OutlineThickness = Clamp(Style.OutlineThickness, 0.2, 10);
             Style.FixedWidth = Clamp(Style.FixedWidth, 0, 4000);
             Style.ImageOpacity = Clamp(Style.ImageOpacity, 0, 1);
-            Style.AcrylicBlur = Clamp(Style.AcrylicBlur, 0, 60);
-            Style.AcrylicFps = (int)Clamp(Style.AcrylicFps, 2, 30);
+            Style.BlurRadius = (int)Clamp(Style.BlurRadius, 0, 60);
+            Style.BlurFps = (int)Clamp(Style.BlurFps, 2, 30);
             Style.IconScale = Clamp(Style.IconScale, 0.5, 3);
             Style.CardAlign = NormalizeCardAlign(Style.CardAlign);
             Style.GlassMode = NormalizeGlassMode(Style.GlassMode);
             Style.GlassSource = NormalizeGlassSource(Style.GlassSource);
-            Style.GlassBlur = (int)Clamp(Style.GlassBlur, 0, 60);
-            Style.GlassFps = (int)Clamp(Style.GlassFps, 2, 30);
             if (string.IsNullOrWhiteSpace(Style.BackgroundImage)) Style.BackgroundImage = "";
             Style.ImageStretch = NormalizeStretch(Style.ImageStretch);
 
@@ -150,17 +150,23 @@ namespace MirrorpondHUD.Core
             }
         }
 
-        /// <summary>毛玻璃实现方式：System（accent 亚克力底板） / Dwm（DWM 桌面亚克力底板） / Compat（截屏取样）。</summary>
+        /// <summary>
+        /// 毛玻璃实现方式：System（accent 亚克力底板） / DesktopFeed（DWM 合成 + 桌面取样模糊） / Compat（截屏取样）。
+        /// 2.24.0 把桌面模式从 Dwm 更名为 DesktopFeed；dwm / acrylic / desktop / multiwindow 等旧值只在
+        /// v6→v7 迁移兜底时出现（见 SettingsLoader），运行期统一归一为 DesktopFeed。
+        /// </summary>
         public static string NormalizeGlassMode(string value)
         {
             switch ((value ?? "").Trim().ToLowerInvariant())
             {
+                case "desktopfeed":
+                case "desktop-feed":
                 case "dwm":
                 case "acrylic":
                 case "desktop":
                 case "multiwindow":
                 case "multi-window":
-                    return "Dwm";
+                    return "DesktopFeed";
                 case "compat":
                 case "compatible":
                 case "compatibility":
@@ -172,7 +178,7 @@ namespace MirrorpondHUD.Core
         }
 
         /// <summary>
-        /// 桌面亚克力的取图后端：Auto（DXGI 能用就用） / Gpu（强制 DXGI 桌面复制） / Cpu（强制 GDI 读屏）。
+        /// 桌面取样的取图后端：Auto（DXGI 能用就用） / Gpu（强制 DXGI 桌面复制） / Cpu（强制 GDI 读屏）。
         /// </summary>
         public static string NormalizeGlassSource(string value)
         {
@@ -333,34 +339,31 @@ namespace MirrorpondHUD.Core
         /// <summary>毛玻璃背景：抓取窗口后面的桌面并模糊。背景不透明度决定玻璃厚度。</summary>
         public bool Acrylic = false;
 
-        /// <summary>毛玻璃模糊强度（像素）。仅兼容实现（截屏取样）使用。</summary>
-        public double AcrylicBlur = 12;
+        /// <summary>
+        /// 毛玻璃模糊强度（像素，按原始分辨率算；取样图缩到 1/2 后再按 1/2 半径模糊）。
+        /// 兼容实现（截屏取样）与桌面取样共用这一个值；2.24.0 起由 v6 的 AcrylicBlur / GlassBlur 合并而来。
+        /// </summary>
+        public int BlurRadius = 18;
 
-        /// <summary>毛玻璃刷新率（帧/秒）。仅兼容实现（截屏取样）使用。</summary>
-        public int AcrylicFps = 15;
+        /// <summary>毛玻璃刷新帧率（帧/秒）：兼容实现与桌面取样共用，每帧读一次屏 + 重新模糊。</summary>
+        public int BlurFps = 10;
 
         /// <summary>
         /// 毛玻璃实现方式：
         /// System = 卡片下面的独立亚克力底板窗口（DWM 合成，进程侧零开销，模糊半径由系统决定）；
-        /// Dwm = 截屏 + 自己模糊，画进卡片内容层（见 Ui.GlassFeed，可调半径 / 帧率 / 取图后端）；
+        /// DesktopFeed = 桌面取样 + 自己模糊，画进卡片内容层（见 Ui.GlassFeed，可调半径 / 帧率 / 取图后端）；
         /// Compat = 截屏取样 + CPU 模糊（v2.1 的 PrintWindow 路线，可调半径 / 帧率）。
         /// 系统不支持（远程桌面 / 接口失效）时自动退回 Compat。
         /// </summary>
         public string GlassMode = "System";
 
         /// <summary>
-        /// 桌面亚克力（<see cref="GlassMode"/> = Dwm）取屏幕像素的后端：
+        /// 桌面取样（<see cref="GlassMode"/> = DesktopFeed）取屏幕像素的后端：
         /// Auto = DXGI 桌面复制可用就用它，不可用退回 GDI 读屏；
         /// Gpu = 强制 DXGI 桌面复制（拿不到就还是退回 GDI，不会没画面）；
         /// Cpu = 强制 GDI BitBlt 读屏（兼容性最好，一轮约 18 ms）。
         /// </summary>
         public string GlassSource = "Auto";
-
-        /// <summary>桌面亚克力的模糊强度（像素，按原始分辨率算；取样图缩到 1/2 后再按 1/2 半径模糊）。</summary>
-        public int GlassBlur = 18;
-
-        /// <summary>桌面亚克力的刷新帧率（帧/秒）：每帧读一次屏 + 重新模糊。</summary>
-        public int GlassFps = 10;
 
         // ==================== 外观令牌（v2.9.0） ====================
         // 颜色为空 = 按前景色派生（派生值等于旧代码里的 alpha 常量，所以默认观感不变）。

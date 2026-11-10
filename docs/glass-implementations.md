@@ -9,7 +9,7 @@
 
 ## 1. 三条路
 
-| | 系统亚克力（默认） | 兼容（截屏取样） | 桌面亚克力（DWM 底板） |
+| | 系统亚克力（默认） | 兼容（截屏取样） | 桌面取样（DesktopFeed） |
 | --- | --- | --- | --- |
 | 做法 | 卡片下面一个**从不绘制的 HWND**，挂未文档化的 `WCA_ACCENT_POLICY = ACRYLICBLURBEHIND`，DWM 在那个矩形里实时模糊 | 枚举卡片矩形内的外部窗口 → `PrintWindow` 逐层取图 → 按像素取「盖住这点的最上层」→ 缩小、多次盒式模糊 | 卡片下面一个**非分层**的 HWND，挂文档化的 `DWMWA_SYSTEMBACKDROP_TYPE = DWMSBT_TRANSIENTWINDOW` + DWM 圆角；材质对非活动窗口不生效，所以底板自己 `BitBlt` 截屏 + 模糊（200 ms 一帧） |
 | 谁在干活 | DWM / GPU | 本进程（后台线程 + 定时器） | 本进程（200 ms 截屏 + CPU 模糊） |
@@ -47,22 +47,22 @@
    D3D 交换链窗口）`PrintWindow` 返回全黑，只能退回静态壁纸；独占全屏 / 硬件覆盖层同理。
 4. **有延迟感**。15 fps 在拖动窗口或滚动网页时看得出来，调高帧率只会更贵。
 
-## 4. 桌面亚克力底板：能用，但截图里看不到卡片
+## 4. 桌面取样（DesktopFeed）：能用，但截图里看不到卡片
 
-这条是从 `C:\Coding\acrylic-multiwindow` 移植的：每张卡片下面一块**非分层**的底板窗口，挂**文档化的**
-`DWMWA_SYSTEMBACKDROP_TYPE = DWMSBT_TRANSIENTWINDOW`（Windows 11 桌面亚克力）加
+这条最早从仓库外的一个原型（acrylic-multiwindow，未提交）移植而来：每张卡片下面一块**非分层**的底板窗口，挂**文档化的**
+`DWMWA_SYSTEMBACKDROP_TYPE = DWMSBT_TRANSIENTWINDOW`（Windows 11 的 DWM 亚克力材质）加
 `DWMWA_WINDOW_CORNER_PREFERENCE` 圆角。它在那边成立，在这里只能算「能用」，原因有三条：
 
 1. **DWM 只给「当前活动窗口」画这层材质。** 卡片是分层窗口，底板又永远不会成为活动窗口，
    所以底板在屏幕上的样子是一块 **`#D3D3D3` 的圆角灰板**，背后没有模糊：
 
-   ![DWM 桌面亚克力底板单独显示时的样子：一块灰板](glass-dwm-plate.png)
+   ![桌面取样底板单独显示时的样子：一块灰板](glass-desktopfeed-plate.png)
 
 2. **于是底板自己截屏。** 这是 multiwindow 项目的 `PersistentAcrylic` 思路：`BitBlt` 屏幕对应区域
    → 缩到 1/2 的 DIB → 两遍方框模糊 → `StretchBlt` 画回窗口，200 ms 一帧。糊出来的内容长这样
    （卡片压在红 / 绿色块上，半边红半边绿被糊成渐变）：
 
-   ![底板截到并模糊后的内容](glass-dwm-sample.png)
+   ![底板截到并模糊后的内容](glass-desktopfeed-sample.png)
 
    > **这里踩过一个坑**：DIB 建好之后必须 `SelectObject` **选进内存 DC**，否则 `StretchBlt` 画在 DC
    > 默认的 1×1 单色位图上，采样永远是**全黑**。第一版漏了这一步，看起来就像「DWM 不支持」，
@@ -112,8 +112,8 @@
 
 诊断开关：`MIRRORPOND_GLASS_DEBUG=1`（每 5 秒一次取样统计 + 导出 BMP）、
 `MIRRORPOND_GLASS_TRACE=1`（每画一帧往主日志 `mirrorpond.log` 写一行
-`GLASS HH:mm:ss.fff CAP 宽x高 luma=…`，`hud-test/compare.py` 从主日志筛 `GLASS ` 行即可；
-不再另写 `%TEMP%\mirrorpond-trace.log`，避免两套输出对不上）、
+`GLASS HH:mm:ss.fff CAP 宽x高 luma=…`，仓库外的对比脚本（未提交）从主日志筛 `GLASS ` 行即可；
+不再另写临时 trace 文件，避免两套输出对不上）、
 `MIRRORPOND_RAW_TRACE=1`（每轮原始取样图的逐带亮度，同样写主日志）。
 
 ### 4.2 GPU 能不能加速：能，但要换的是「取图」不是「模糊」
@@ -170,24 +170,22 @@
 独占全屏切换、远程桌面、混合显卡（画面由核显输出而设备建在独显上）都会退化到 GDI；
 桌面复制会定期把 GPU 从低功耗叫醒，电池机器上要实测；内存多 18 MB（D3D11 设备 + 区域 staging）。
 
-验证用的原型留在 `C:\Users\CRITT\Documents\deepseek-harness\coding\` 里，不进仓库：
-`gpu-lab/`（Vortice 版：复制 + 计时 + compute 模糊链路）、`hud-test/dxprobe/`（无依赖的 vtable 版 + GDI 亮度对照）、
-`hud-test/e2e-behind.sh` + `switch-behind.ps1`（把翻色面板放到卡片下面量端到端延迟）。
+验证用的原型在仓库外（未提交，不随发布）：Vortice 版 GPU 原型（复制 + 计时 + compute 模糊链路）、无依赖的 vtable 版 + GDI 亮度对照，以及把翻色面板放到卡片下面量端到端延迟的脚本。
 
 
 安全网：连续 3 帧采样全黑（比如系统以后又把截屏挡掉）会**自动退回系统亚克力**，日志写明原因：
 
 ```
-[INFO] 毛玻璃改用 DWM 桌面亚克力底板：底板自己截屏模糊，卡片与底板都会从截图里消失
-[WARN] DWM 桌面亚克力底板不可用（底板截屏全黑：…），毛玻璃退回系统亚克力底板
+[INFO] 毛玻璃改用系统亚克力底板：模糊在 DWM / GPU 上完成，进程侧不再抓屏
+[WARN] 毛玻璃运行时：系统亚克力（accent 底板）：桌面取样不可用（取样连续全黑：…）
 ```
 
 ### 4.4 2.4.3：取图方式变成设置项；修掉「玻璃闪一下」
 
 **设置项**：设置 → 外观 → 高级（实验性）→「取图方式」＝ 自动 / GPU 加速（DXGI 桌面复制）/ CPU 读屏（GDI）。
-只对「桌面亚克力」生效 —— 系统亚克力不抓屏、兼容实现走自己的拼图路线，所以那两种模式下这一项是灰的。
+只对「桌面取样（DesktopFeed）」生效 —— 系统亚克力不抓屏、兼容实现走自己的拼图路线，所以那两种模式下这一项是灰的。
 环境变量 `MIRRORPOND_GLASS_SOURCE=gdi|dup` 仍然优先级最高，留着做 A/B。改完不用重启：
-`AcrylicBackdrop.ConfigureSource` 会把现有复制对象丢掉，下一轮按新选择重建。
+`GlassFeed.Configure` 检测到取图方式变化会把现有复制对象丢掉，下一轮按新选择重建。
 
 实测（同一台机器）：
 
@@ -259,7 +257,7 @@ target.Surface.SetGlass(image);      // 卡片内部的 Border + ImageBrush，Co
 - 顺带删掉了底板的 `DWMWA_SYSTEMBACKDROP_TYPE`（DWM 只给活动窗口画材质，这块材质本来就是被盖住的）、
   DWM 圆角、以及「底板不画自己要排除在截屏之外」的一整套逻辑。
 
-**新增设置**（设置 → 外观 → 高级（实验性），只在「桌面亚克力」下出现）：
+**新增设置**（设置 → 外观 → 高级（实验性），只在「桌面取样（DesktopFeed）」下出现）：
 
 | 设置项 | 默认 | 说明 |
 | --- | --- | --- |
@@ -303,7 +301,7 @@ CPU（4 张卡，20 秒平均，占单核）：**5 帧 3.4%、10 帧约 6–8%�
 
 | 模式 | 静止 | 拖动中 |
 | --- | --- | --- |
-| 桌面亚克力（DXGI 桌面复制） | 9.2 帧/秒（按设置的 10） | **34.8 帧/秒**（平均间隔 28.7 ms） |
+| 桌面取样（DesktopFeed，DXGI 桌面复制） | 9.2 帧/秒（按设置的 10） | **34.8 帧/秒**（平均间隔 28.7 ms） |
 | 兼容实现（PrintWindow 拼接） | 5.6–6.3 帧/秒/卡 | **21.1 帧/秒**（被拖动那张卡；受 PrintWindow 单帧成本限制） |
 
 `Key` 的一点：`RequestFrame` 只在有窗口挂接时才动作，所以关掉毛玻璃后不会多跑任何东西。
@@ -315,7 +313,7 @@ CPU（4 张卡，20 秒平均，占单核）：**5 帧 3.4%、10 帧约 6–8%�
 - 圆角必须很大、或者需要在 Win10 / 远程桌面上稳定一致：切**兼容**，把帧率降到 8–10、
   模糊 8–12px，并且只留一两张卡片开玻璃。
 - 想糊到**动态壁纸 / 视频 / 硬件加速窗口**（兼容实现抓不到），并且**接受卡片不进截图**：
-  才用**桌面亚克力**。
+  才用**桌面取样（DesktopFeed）**。
 - 切换位置：设置 → 外观 → 高级（实验性）→「玻璃实现」。
 
 ---
@@ -333,7 +331,7 @@ experiments) is not published with the repository.
 
 ## 1. The three paths
 
-| | System acrylic (default) | Compat (screen sampling) | Desktop acrylic (DWM backdrop) |
+| | System acrylic (default) | Compat (screen sampling) | Desktop sampling (DesktopFeed) |
 | --- | --- | --- | --- |
 | How | A never-drawn HWND under each card with the undocumented `WCA_ACCENT_POLICY = ACRYLICBLURBEHIND`; DWM blurs that rectangle live | Enumerate the windows behind the card → `PrintWindow` each of them → pick the topmost layer per pixel → downscale and box-blur | A **non-layered** HWND under each card with the documented `DWMWA_SYSTEMBACKDROP_TYPE = DWMSBT_TRANSIENTWINDOW` plus DWM rounded corners; the material does not apply to inactive windows, so the backdrop `BitBlt`s the screen and blurs it (one frame per 200 ms) |
 | Who pays | DWM / GPU | This process (worker thread + timer) | This process (a screen capture and a CPU blur every 200 ms) |
@@ -364,18 +362,18 @@ experiments) is not published with the repository.
    `PrintWindow`); exclusive fullscreen and hardware overlays.
 4. **It feels laggy.** 15 fps is visible while dragging or scrolling, and raising the frame rate only costs more.
 
-## 4. Desktop acrylic: it works, but cards are invisible to capture
+## 4. Desktop sampling (DesktopFeed): it works, but cards are invisible to capture
 
-Ported from `C:\Coding\acrylic-multiwindow`: a **non-layered** backdrop HWND per card using the **documented**
+Ported from an out-of-repo prototype (`acrylic-multiwindow`, never committed): a **non-layered** backdrop HWND per card using the **documented**
 `DWMWA_SYSTEMBACKDROP_TYPE = DWMSBT_TRANSIENTWINDOW` (Windows 11 desktop acrylic) plus
 `DWMWA_WINDOW_CORNER_PREFERENCE` rounding. Three things follow:
 
 1. **DWM paints this material only for the active window.** Cards are layered windows and the backdrop never
    becomes active, so on its own the backdrop is a **`#D3D3D3` rounded plate** with no blur behind it
-   (`glass-dwm-plate.png`).
+   (`glass-desktopfeed-plate.png`).
 2. **So the backdrop captures the screen itself** — the `PersistentAcrylic` idea from that project: `BitBlt`
    the region → a half-size DIB → two box-blur passes → `StretchBlt` back into the window, once per 200 ms
-   (`glass-dwm-sample.png` shows what it captures and blurs).
+   (`glass-desktopfeed-sample.png` shows what it captures and blurs).
 
    > **One trap that cost a debugging session**: the DIB must be **selected into the memory DC** with
    > `SelectObject`. Without it `StretchBlt` draws into the DC's default 1×1 monochrome bitmap and every
@@ -440,7 +438,7 @@ Two things worth recording from later work:
   sampling still ticked at the configured 10 fps while the window moved every frame. The exclusion is now throttled to
   once every 2 s, and a drag queues one extra frame per composition pass at `DispatcherPriority.Render`
   (`GlassFeed.RequestFrame`, throttled to 16 ms on the duplication backend and 55 ms on the GDI backend). Measured
-  frame rate: desktop acrylic 9.2 fps idle → **34.8 fps while dragging**; compat 5.6–6.3 fps per card idle → **21.1 fps**
+  frame rate: desktop sampling 9.2 fps idle → **34.8 fps while dragging**; compat 5.6–6.3 fps per card idle → **21.1 fps**
   for the dragged card (bounded by `PrintWindow` cost).
 
 ## 5. So what should you do
@@ -450,5 +448,5 @@ Two things worth recording from later work:
 - Need a large radius, or consistent behaviour on Windows 10 / remote desktop: **compat**, 8–10 fps,
   8–12 px blur, and only one or two cards with glass on.
 - Need to blur an **animated wallpaper, a video, or a GPU-accelerated window** (things `PrintWindow` cannot
-  see) and can live without cards in your screenshots: **desktop acrylic**.
+  see) and can live without cards in your screenshots: **desktop sampling (DesktopFeed)**.
 - Switch it in *Settings → Appearance → Advanced (experimental) → Glass implementation*.

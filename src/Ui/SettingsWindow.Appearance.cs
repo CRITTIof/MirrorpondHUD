@@ -36,8 +36,6 @@ namespace MirrorpondHUD.Ui
             BindNumberBox(OutlineValue, OutlineSlider, "0.0");
             BindNumberBox(ImageOpacityValue, ImageOpacitySlider, "0.00");
             BindNumberBox(FixedWidthValue, FixedWidthSlider, "0");
-            BindNumberBox(AcrylicBlurValue, AcrylicBlurSlider, "0");
-            BindNumberBox(AcrylicFpsValue, AcrylicFpsSlider, "0");
             BindNumberBox(GlassBlurValue, GlassBlurSlider, "0");
             BindNumberBox(GlassFpsValue, GlassFpsSlider, "0");
             BindNumberBox(IconScaleValue, IconScaleSlider, "0.00");
@@ -206,9 +204,10 @@ namespace MirrorpondHUD.Ui
         }
 
         /// <summary>
-        /// 三种实现各有各的参数：系统亚克力由 DWM 决定（没有可调项）；
-        /// 兼容实现用「模糊强度 / 刷新帧率」；桌面亚克力用自己那一组（取样图缩 1/2 后再模糊，
-        /// 所以同样的观感需要更大的「模糊强度」数字）。
+        /// 三种实现共用一组「模糊强度 / 刷新帧率」（Schema 7 起 Acrylic / Glass 双套字段已合并成
+        /// <c>BlurRadius</c> / <c>BlurFps</c>）：系统亚克力由系统决定，另外两种可调；
+        /// 「取图方式」只对桌面取样（DesktopFeed）有意义。
+        /// 末尾追加运行时状态里的「当前实际」，用户才看得出自己选的实现有没有被降级。
         /// </summary>
         void UpdateGlassUiState()
         {
@@ -216,41 +215,20 @@ namespace MirrorpondHUD.Ui
 
             string mode = GlassModeTag();
             bool system = mode == "System";
-            bool dwm = mode == "Dwm";
+            bool desktop = mode == "DesktopFeed";
 
-            // 兼容实现那一组
-            AcrylicBlurRow.Visibility = system || dwm ? Visibility.Collapsed : Visibility.Visible;
-            AcrylicFpsRow.Visibility = system || dwm ? Visibility.Collapsed : Visibility.Visible;
-            AcrylicFpsHint.Visibility = AcrylicFpsRow.Visibility;
-
-            // 桌面亚克力那一组
-            GlassBlurRow.Visibility = dwm ? Visibility.Visible : Visibility.Collapsed;
-            GlassFpsRow.Visibility = dwm ? Visibility.Visible : Visibility.Collapsed;
+            // 系统亚克力的模糊半径 / 帧率由系统决定，不显示可调项；兼容与桌面取样共用同一组参数。
+            GlassBlurRow.Visibility = system ? Visibility.Collapsed : Visibility.Visible;
+            GlassFpsRow.Visibility = system ? Visibility.Collapsed : Visibility.Visible;
             GlassFpsHint.Visibility = GlassFpsRow.Visibility;
-            GlassSourceRow.Visibility = GlassFpsRow.Visibility;
 
-            if (dwm)
-            {
-                AcrylicHint.Text = "抓取卡片后面的画面、模糊后画进卡片自己的内容层（圆角和卡片一致）。"
-                    + "为了让截屏不拍到自己，卡片会被排除在截屏之外 —— 这个模式下截图 / 录屏里看不到卡片。";
-            }
-            else if (system)
-            {
-                AcrylicHint.Text = "由 DWM 在卡片下面的独立底板上画实时亚克力：模糊在 GPU 上完成、进程侧不抓屏，"
-                    + "「模糊强度 / 刷新帧率」由系统决定（这里不可调）。关闭系统透明效果或远程桌面时会自动退回兼容实现。";
-            }
-            else
-            {
-                AcrylicHint.Text = "抓取卡片后面的画面并模糊，当作卡片底色；压在桌面上时直接用壁纸取样（图标不参与）。"
-                    + "把「背景不透明度」调到 0.5 左右更容易看出效果。";
-            }
-
-            // 「取图方式」只对桌面亚克力有意义：系统亚克力不抓屏，兼容实现走的是自己的拼图路线。
-            if (GlassSourceCombo != null) GlassSourceCombo.IsEnabled = dwm;
+            // 「取图方式」只对桌面取样有意义：系统亚克力不抓屏，兼容实现走的是自己的拼图路线。
+            GlassSourceRow.Visibility = desktop ? Visibility.Visible : Visibility.Collapsed;
+            if (GlassSourceCombo != null) GlassSourceCombo.IsEnabled = desktop;
             if (GlassSourceHint != null)
             {
-                GlassSourceHint.Visibility = dwm ? Visibility.Visible : Visibility.Collapsed;
-                if (dwm)
+                GlassSourceHint.Visibility = desktop ? Visibility.Visible : Visibility.Collapsed;
+                if (desktop)
                 {
                     string source = Settings.NormalizeGlassSource(GlassSourceTag());
                     if (source == "Gpu")
@@ -264,6 +242,30 @@ namespace MirrorpondHUD.Ui
                             + "拿不到（独占全屏 / 远程桌面 / 设备被占）自动退回 CPU 读屏（约 18 ms/轮）。";
                 }
             }
+
+            // 每次从基础文案重建，再按需追加「当前实际」——切来切去时不会把同一句重复叠上去。
+            string hint;
+            if (desktop)
+            {
+                hint = "抓取卡片后面的画面、模糊后画进卡片自己的内容层（圆角和卡片一致）。"
+                    + "为了让截屏不拍到自己，卡片会被排除在截屏之外 —— 这个模式下截图 / 录屏里看不到卡片。";
+            }
+            else if (system)
+            {
+                hint = "由 DWM 在卡片下面的独立底板上画实时亚克力：模糊在 GPU 上完成、进程侧不抓屏，"
+                    + "「模糊强度 / 刷新帧率」由系统决定（这里不可调）。关闭系统透明效果或远程桌面时会自动退回兼容实现。";
+            }
+            else
+            {
+                hint = "抓取卡片后面的画面并模糊，当作卡片底色；压在桌面上时直接用壁纸取样（图标不参与）。"
+                    + "把「背景不透明度」调到 0.5 左右更容易看出效果。";
+            }
+
+            GlassRuntimeState state = _glassState == null ? null : _glassState();
+            if (state != null && state.Kind != GlassBackdropKind.None)
+                hint += " 当前实际：" + state.Describe();
+
+            AcrylicHint.Text = hint;
         }
 
         // ==================== 背景图片 ====================

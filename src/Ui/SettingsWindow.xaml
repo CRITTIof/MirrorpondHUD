@@ -497,41 +497,14 @@
                             <TextBlock Text="玻璃实现" VerticalAlignment="Center" />
                             <ComboBox x:Name="GlassModeCombo" Grid.Column="1" Width="300" HorizontalAlignment="Left">
                                 <ComboBoxItem Content="系统亚克力（accent 底板，不抓屏）" Tag="System" />
-                                <ComboBoxItem Content="桌面亚克力（自己截屏 + 模糊，卡片不进截图）" Tag="Dwm" />
+                                <ComboBoxItem Content="桌面取样（截屏 + 模糊，卡片不进截图）" Tag="DesktopFeed" />
                                 <ComboBoxItem Content="兼容（截屏取样，CPU 模糊）" Tag="Compat" />
                             </ComboBox>
                         </Grid>
 
                         <TextBlock x:Name="AcrylicHint" FontSize="12" Foreground="#6B7280" Margin="0,0,0,10"
-                                   Text="抓取卡片后面的画面并模糊，当作卡片底色；压在桌面上时直接用壁纸取样（图标不参与）。把「背景不透明度」调到 0.5 左右更容易看出效果。"
+                                   Text="由 DWM 在卡片下面的独立底板上画实时亚克力：模糊在 GPU 上完成、进程侧不抓屏，「模糊强度 / 刷新帧率」由系统决定（这里不可调）。关闭系统透明效果或远程桌面时会自动退回兼容实现。"
                                    TextWrapping="Wrap" />
-
-                        <Grid x:Name="AcrylicBlurRow" Margin="0,0,0,10">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="110" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="模糊强度" VerticalAlignment="Center" />
-                            <StackPanel Grid.Column="1" Orientation="Horizontal">
-                                <Slider x:Name="AcrylicBlurSlider" Width="260" Minimum="0" Maximum="40" />
-                                <TextBox x:Name="AcrylicBlurValue" Width="58" Margin="10,0,0,0" TextAlignment="Right" />
-                            </StackPanel>
-                        </Grid>
-
-                        <Grid x:Name="AcrylicFpsRow" Margin="0,0,0,10">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="110" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="刷新帧率" VerticalAlignment="Center" />
-                            <StackPanel Grid.Column="1" Orientation="Horizontal">
-                                <Slider x:Name="AcrylicFpsSlider" Width="260" Minimum="2" Maximum="30" />
-                                <TextBox x:Name="AcrylicFpsValue" Width="58" Margin="10,0,0,0" TextAlignment="Right" />
-                                <TextBlock Text="帧/秒" VerticalAlignment="Center" Margin="8,0,0,0" />
-                            </StackPanel>
-                        </Grid>
-                        <TextBlock x:Name="AcrylicFpsHint" Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="110,0,0,0"
-                                   Text="每秒抓几次桌面：15 帧几乎看不出延迟，30 帧更跟手；桌面静止时可调到 8 帧省电。" />
 
                         <Grid x:Name="GlassBlurRow" Margin="0,0,0,10">
                             <Grid.ColumnDefinitions>
@@ -574,7 +547,7 @@
                             </ComboBox>
                         </Grid>
                         <TextBlock x:Name="GlassSourceHint" Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="110,0,0,10"
-                                   Text="只有「桌面亚克力」自己抓屏，所以这一项只对它生效。" />
+                                   Text="只有「桌面取样」自己抓屏，所以这一项只对它生效。" />
 
                     </StackPanel>
                 </ScrollViewer>

@@ -131,15 +131,16 @@ namespace MirrorpondHUD.Core
             TimeoutSeconds = (int)Settings.Clamp(TimeoutSeconds, 5, 300);
         }
 
-        /// <summary>对话模式：Single（单次） / Context（轮询，保留上下文）。</summary>
+        /// <summary>
+        /// 对话模式：Single（单次） / Context（保留上下文连续对话）。
+        /// 2.24.0 起只接受 Context；continuous / poll / polling 的历史别名已移除，
+        /// 旧配置由 Schema 7 的 v6→v7 迁移一次性改写成 Context（见 SettingsLoader）。
+        /// </summary>
         public static string NormalizeMode(string value)
         {
             switch ((value ?? "").Trim().ToLowerInvariant())
             {
                 case "context":
-                case "continuous":
-                case "poll":
-                case "polling":
                     return "Context";
                 default:
                     return "Single";

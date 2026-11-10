@@ -137,8 +137,13 @@ namespace MirrorpondHUD.Cards
 
         public string RunSelfTest()
         {
-            if (ChatSettings.NormalizeMode("polling") != "Context") return "轮询模式归一化失败";
+            // 2.24.0 起只认 Context；continuous / poll / polling 等历史别名不再兼容，未知值一律回落单次。
+            if (ChatSettings.NormalizeMode("context") != "Context") return "Context 模式归一化失败";
+            if (ChatSettings.NormalizeMode(" CONTEXT ") != "Context") return "Context 大小写 / 空白归一化失败";
+            if (ChatSettings.NormalizeMode("Single") != "Single") return "显式单次模式归一化失败";
             if (ChatSettings.NormalizeMode("") != "Single") return "空模式没有归一到单次";
+            if (ChatSettings.NormalizeMode("polling") != "Single") return "已移除的轮询别名没有回落到单次";
+            if (ChatSettings.NormalizeMode("whatever") != "Single") return "未知模式没有回落到单次";
             var chat = new ChatSettings { BaseUrl = " https://example.com/v1/ ", TimeoutSeconds = 999 };
             chat.Normalize();
             if (chat.BaseUrl != "https://example.com/v1") return "BaseUrl 归一化失败";

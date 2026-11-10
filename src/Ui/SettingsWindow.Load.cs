@@ -51,19 +51,17 @@ namespace MirrorpondHUD.Ui
                 FilterFonts("");
                 FontCombo.SelectedItem = _selectedFont;
 
-                // 毛玻璃有三条实现：accent 底板（系统）/ DWM 桌面亚克力底板 / 截屏取样（兼容）。
+                // 毛玻璃有三条实现：accent 底板（系统）/ 桌面取样（DesktopFeed）/ 兼容取样（Compat）。
                 string align = Settings.NormalizeCardAlign(s.Style.CardAlign);
                 CardAlignCombo.SelectedIndex = align == "Left" ? 1 : align == "Right" ? 2 : 0;
 
                 string glassMode = Settings.NormalizeGlassMode(s.Style.GlassMode);
-                GlassModeCombo.SelectedIndex = glassMode == "Compat" ? 2 : glassMode == "Dwm" ? 1 : 0;
+                GlassModeCombo.SelectedIndex = glassMode == "Compat" ? 2 : glassMode == "DesktopFeed" ? 1 : 0;
                 GlassSourceCombo.SelectedIndex = GlassSourceIndex(s.Style.GlassSource);
                 AcrylicCheck.IsEnabled = true;
                 AcrylicCheck.IsChecked = s.Style.Acrylic;
-                AcrylicBlurSlider.Value = s.Style.AcrylicBlur;
-                AcrylicFpsSlider.Value = s.Style.AcrylicFps;
-                GlassBlurSlider.Value = s.Style.GlassBlur;
-                GlassFpsSlider.Value = s.Style.GlassFps;
+                GlassBlurSlider.Value = s.Style.BlurRadius;
+                GlassFpsSlider.Value = s.Style.BlurFps;
                 UpdateGlassUiState();
 
                 CliWidthBox.Text = s.Cli.MaxWidth.ToString("0", CultureInfo.InvariantCulture);
@@ -216,10 +214,9 @@ namespace MirrorpondHUD.Ui
             s.Style.Acrylic = AcrylicCheck.IsChecked == true;
             s.Style.GlassMode = GlassModeTag();
             s.Style.GlassSource = GlassSourceTag();
-            s.Style.AcrylicBlur = Math.Round(AcrylicBlurSlider.Value);
-            s.Style.AcrylicFps = (int)Math.Round(AcrylicFpsSlider.Value);
-            s.Style.GlassBlur = (int)Math.Round(GlassBlurSlider.Value);
-            s.Style.GlassFps = (int)Math.Round(GlassFpsSlider.Value);
+            // Schema 7：Acrylic / Glass 双套模糊字段合并为 BlurRadius / BlurFps，三种实现共用。
+            s.Style.BlurRadius = (int)Math.Round(GlassBlurSlider.Value);
+            s.Style.BlurFps = (int)Math.Round(GlassFpsSlider.Value);
             s.Style.TextAlignment = AlignmentTag();
             s.Style.Padding = Math.Round(PaddingSlider.Value);
             s.Style.LineHeight = Math.Round(LineHeightSlider.Value);
