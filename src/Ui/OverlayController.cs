@@ -256,6 +256,7 @@ namespace MirrorpondHUD.Ui
             bool minimized = !forcedVisible &&
                              ((!autoStarted && _settings.Behavior.StartMinimized) || _args.Contains("--minimized"));
             bool intro = _settings.Behavior.IntroEnabled && !minimized;
+            CardMotion.ApplySettings(_settings);
 
             CreateCards();
             _overlayVisible = !minimized;

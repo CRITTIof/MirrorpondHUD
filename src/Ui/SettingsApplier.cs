@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Windows;
 using MirrorpondHUD.Cards;
 using MirrorpondHUD.Core;
 
@@ -142,6 +143,7 @@ namespace MirrorpondHUD.Ui
 
             _keys.Configure(settings.Data.KeyHistoryCount, settings.Data.RepeatThreshold,
                             settings.Data.MaxKeyChars);
+            CardMotion.ApplySettings(settings);
 
             // 内存里的设置已经生效；落盘失败时必须如实告诉窗口，不能谎报成功（P0-2）。
             bool saved = SaveSettings();
@@ -270,6 +272,8 @@ namespace MirrorpondHUD.Ui
             settings.Overlay.Y += dy;
             settings.Overlay.Monitor = monitor;
 
+            ClampAnchorToWorkArea(slot, settings);
+
             // 松手后才重排：自动对齐可能从屏幕一侧翻到另一侧，这里用 180ms ease-out 让
             // 其余卡片跟过去；被拖卡也从落点滑到最终对齐位。CardMotion.Enabled=false 时
             // ApplyPosition 会直接落位。
@@ -279,6 +283,65 @@ namespace MirrorpondHUD.Ui
             _host.SyncSettingsWindowAnchor(settings.Overlay.X, settings.Overlay.Y, settings.Overlay.Monitor);
 
             Log.Info("叠层移动，锚点=" + settings.Overlay.X + "," + settings.Overlay.Y + " 显示器=" + monitor);
+        }
+
+        /// <summary>
+        /// 拖动松手后把锚点钳在目标显示器工作区内：至少保留一部分卡片可见，
+        /// 并在离边缘 16px 内吸附。只影响锚点，不改变卡片顺序 / 间距。
+        /// </summary>
+        void ClampAnchorToWorkArea(CardSlot slot, Settings settings)
+        {
+            if (slot == null || slot.Window == null) return;
+
+            try
+            {
+                System.Windows.Forms.Screen[] screens = System.Windows.Forms.Screen.AllScreens;
+                if (screens.Length == 0) return;
+
+                int index = Math.Max(0, Math.Min(settings.Overlay.Monitor, screens.Length - 1));
+                System.Drawing.Rectangle work = screens[index].WorkingArea;
+
+                double scaleX = 1.0;
+                double scaleY = 1.0;
+                try
+                {
+                    System.Windows.DpiScale dpi = System.Windows.Media.VisualTreeHelper.GetDpi(slot.Window);
+                    if (dpi.DpiScaleX > 0.1) scaleX = dpi.DpiScaleX;
+                    if (dpi.DpiScaleY > 0.1) scaleY = dpi.DpiScaleY;
+                }
+                catch { }
+
+                double workWidth = work.Width / scaleX;
+                double workHeight = work.Height / scaleY;
+                if (workWidth < 40 || workHeight < 40) return;
+
+                double cardWidth = Math.Max(80, slot.Window.CardWidth);
+                double visible = Math.Min(80, workWidth / 3.0);
+                double minX = visible - cardWidth;
+                double maxX = workWidth - visible;
+                double minY = 0;
+                double maxY = Math.Max(0, workHeight - 40);
+
+                double x = settings.Overlay.X;
+                double y = settings.Overlay.Y;
+
+                if (x < minX + 16) x = minX;
+                else if (x > maxX - 16) x = maxX;
+
+                if (y < minY + 16) y = minY;
+                else if (y > maxY - 16) y = maxY;
+
+                if (Math.Abs(x - settings.Overlay.X) > 0.5 || Math.Abs(y - settings.Overlay.Y) > 0.5)
+                {
+                    settings.Overlay.X = x;
+                    settings.Overlay.Y = y;
+                    Log.Info("叠层位置贴边吸附，锚点=" + Math.Round(x) + "," + Math.Round(y));
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("叠层边缘吸附失败，保留原锚点: " + ex.Message);
+            }
         }
 
         /// <summary>写设置文件并如实记录失败；调用方（设置窗 / 卡片宿主）按返回值提示（P0-2）。</summary>

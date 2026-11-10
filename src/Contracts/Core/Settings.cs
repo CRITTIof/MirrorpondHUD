@@ -469,6 +469,8 @@ namespace MirrorpondHUD.Core
 
         /// <summary>启动时播放"打字 / 退格"欢迎动画。</summary>
         public bool IntroEnabled = true;
+        /// <summary>减少动效：关闭卡片呼出 / 消失 / 补位动画（无障碍 / 远程桌面偏好）。</summary>
+        public bool ReduceMotion = false;
         /// <summary>欢迎语，默认 Welcome Back。</summary>
         public string WelcomeText = "Welcome Back";
         /// <summary>每字符的动画间隔（毫秒），越小越快。</summary>

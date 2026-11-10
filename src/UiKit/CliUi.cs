@@ -626,6 +626,8 @@ namespace MirrorpondHUD.Ui.Controls
 
         void OnInputPreviewKeyDown(object sender, KeyEventArgs e)
         {
+            if (HandleInputKey(e)) return;
+
             if (e.Key == Key.Escape)
             {
                 e.Handled = true;
@@ -638,6 +640,9 @@ namespace MirrorpondHUD.Ui.Controls
             e.Handled = true;
             SubmitInput();
         }
+
+        /// <summary>子类可接管输入框里的特殊按键（例如命令行 ↑/↓ 历史）；返回 true 表示已处理。</summary>
+        protected virtual bool HandleInputKey(KeyEventArgs e) { return false; }
 
         /// <summary>回车：子类接管（AI 发请求 / 命令行跑 shell）。</summary>
         protected abstract void SubmitInput();

@@ -90,6 +90,7 @@ namespace MirrorpondHUD.Ui
                 LoadUi(next);
                 ThemeStatusText.Text = "已套用「" + (string.IsNullOrEmpty(name) ? next.Style.ThemeName : name) +
                                        "」，点“保存并应用”生效";
+                MarkDirty();
             }
             finally
             {

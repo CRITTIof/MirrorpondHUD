@@ -59,7 +59,10 @@
                     <Grid Grid.Row="1">
                         <ScrollViewer x:Name="CardScroll" VerticalScrollBarVisibility="Auto"
                                       HorizontalScrollBarVisibility="Disabled" Padding="0,0,6,0">
-                            <ItemsControl x:Name="CardList">
+                            <ItemsControl x:Name="CardList"
+                                          AllowDrop="True"
+                                          DragOver="CardListDragOver"
+                                          Drop="CardListDrop">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
                                         <Border Background="{StaticResource CardBg}"
@@ -72,6 +75,15 @@
                                                         MouseLeftButtonDown="CardHeaderClick">
                                                     <Grid>
                                                         <StackPanel Orientation="Horizontal">
+                                                            <TextBlock Text="&#xE0EB;"
+                                                                       FontFamily="{StaticResource LucideFont}"
+                                                                       FontSize="13" Foreground="#9CA3AF"
+                                                                       Margin="0,0,7,0" VerticalAlignment="Center"
+                                                                       Cursor="SizeNS" ToolTip="按住拖动排序"
+                                                                       Tag="{Binding}"
+                                                                       PreviewMouseLeftButtonDown="CardDragHandleDown"
+                                                                       PreviewMouseMove="CardDragHandleMove"
+                                                                       PreviewMouseLeftButtonUp="CardDragHandleUp" />
                                                             <TextBlock Text="{Binding Icon}"
                                                                        FontFamily="{StaticResource LucideFont}"
                                                                        FontSize="16" Foreground="{StaticResource Accent}"
@@ -86,6 +98,12 @@
                                                         </StackPanel>
 
                                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                                            <Button Style="{StaticResource IconButton}" Tag="{Binding}"
+                                                                    Click="DuplicateCardClick" ToolTip="复制这张卡片">
+                                                                <TextBlock Text="&#xE09E;"
+                                                                           FontFamily="{StaticResource LucideFont}"
+                                                                           FontSize="14" />
+                                                            </Button>
                                                             <Button Style="{StaticResource IconButton}" Tag="{Binding}"
                                                                     Click="MoveCardClick" ToolTip="调整显示顺序">
                                                                 <TextBlock Text="&#xE0EB;"
@@ -657,6 +675,7 @@
 
                         <TextBlock Text="启动动画" Style="{StaticResource SectionTitle}" Margin="0,16,0,6" />
                         <CheckBox x:Name="IntroCheck" Content="启动时播放打字 / 退格动画" Margin="0,0,0,8" />
+                        <CheckBox x:Name="ReduceMotionCheck" Content="减少动效（关闭卡片显隐 / 补位动画）" Margin="0,0,0,8" />
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                             <TextBlock Text="欢迎语" VerticalAlignment="Center" />
                             <TextBox x:Name="WelcomeBox" Width="220" Margin="8,0,16,0" />

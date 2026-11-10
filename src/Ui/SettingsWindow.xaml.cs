@@ -2,6 +2,8 @@ using System;
 using System.ComponentModel;
 using System.Globalization;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
 using MirrorpondHUD.Cards;
 using MirrorpondHUD.Core;
 
@@ -44,6 +46,10 @@ namespace MirrorpondHUD.Ui
         bool _suppress;
         /// <summary>正在把控件值读回设置树：读取期间不能因为「改外观」把刚套用的主题名清掉。</summary>
         bool _readingUi;
+        /// <summary>有未保存编辑；关闭窗口时据此提示保存 / 放弃。</summary>
+        bool _dirty;
+        /// <summary>上次成功加载 / 保存时的设置快照，用来兜住没有接 UiChanged 的控件。</summary>
+        string _cleanSnapshot;
         bool _reallyClose;
         bool _loadFailed;
 
@@ -85,7 +91,9 @@ namespace MirrorpondHUD.Ui
             BoldCheck.Checked += (s, e) => UiChanged();
             BoldCheck.Unchecked += (s, e) => UiChanged();
             FgBox.TextChanged += (s, e) => UiChanged();
+            FgBox.TextChanged += (s, e) => ValidateColorBox(FgBox, false);
             BgBox.TextChanged += (s, e) => UiChanged();
+            BgBox.TextChanged += (s, e) => ValidateColorBox(BgBox, false);
             BgOpacitySlider.ValueChanged += (s, e) => UiChanged();
             AcrylicCheck.Checked += (s, e) => UiChanged();
             AcrylicCheck.Unchecked += (s, e) => UiChanged();
@@ -105,6 +113,7 @@ namespace MirrorpondHUD.Ui
             OutlineCheck.Checked += (s, e) => UiChanged();
             OutlineCheck.Unchecked += (s, e) => UiChanged();
             OutlineColorBox.TextChanged += (s, e) => UiChanged();
+            OutlineColorBox.TextChanged += (s, e) => ValidateColorBox(OutlineColorBox, true);
             OutlineSlider.ValueChanged += (s, e) => UiChanged();
             ImagePathBox.TextChanged += (s, e) => UiChanged();
             ImageOpacitySlider.ValueChanged += (s, e) => UiChanged();
@@ -129,9 +138,97 @@ namespace MirrorpondHUD.Ui
         void UiChanged()
         {
             if (_suppress) return;
+            MarkDirty();
             if (!_applyingTheme) ClearThemeName();
             UpdateSwatches();
             RenderThemePreview();
+        }
+
+        /// <summary>用户改了任一设置：标题加 *，关闭时提示保存 / 放弃。</summary>
+        void MarkDirty()
+        {
+            if (_suppress || _readingUi) return;
+            _dirty = true;
+            if (!Title.EndsWith(" *", StringComparison.Ordinal)) Title = Title + " *";
+        }
+
+        void ClearDirty()
+        {
+            _dirty = false;
+            if (Title.EndsWith(" *", StringComparison.Ordinal))
+                Title = Title.Substring(0, Title.Length - 2);
+        }
+
+        /// <summary>保存一份“干净”快照；没有显式 UiChanged 的控件也靠它判断是否改过。</summary>
+        void CaptureCleanSnapshot()
+        {
+            try { _cleanSnapshot = _working == null ? null : Json.Serialize(_working); }
+            catch (Exception ex)
+            {
+                _cleanSnapshot = null;
+                Log.Warn("设置脏状态快照失败: " + ex.Message);
+            }
+        }
+
+        /// <summary>关闭前判断是否有未保存编辑。先看显式脏标记，再看控件读回与干净快照。</summary>
+        bool IsDirty()
+        {
+            if (_dirty) return true;
+            if (_working == null || _cleanSnapshot == null) return false;
+
+            try
+            {
+                Settings current = ReadUi();
+                return !string.Equals(Json.Serialize(current), _cleanSnapshot, StringComparison.Ordinal);
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("检查未保存修改失败，按有修改处理: " + ex.Message);
+                return true;
+            }
+        }
+
+        /// <summary>颜色框就地校验：非法值标红并给 ToolTip，不必等到保存才在底部报错。</summary>
+        void ValidateColorBox(TextBox box, bool allowEmpty)
+        {
+            if (box == null) return;
+
+            string text = (box.Text ?? "").Trim();
+            bool ok = allowEmpty
+                ? text.Length == 0 || Settings.IsColorToken(text)
+                : Settings.IsHexColor(text);
+
+            if (ok)
+            {
+                box.ClearValue(Control.BorderBrushProperty);
+                box.ToolTip = null;
+                return;
+            }
+
+            box.BorderBrush = FindResource("Danger") as Brush;
+            box.ToolTip = allowEmpty
+                ? "留空，或填 #RRGGBB / #AARRGGBB"
+                : "需要 7 位 #RRGGBB（透明度请用背景不透明度）";
+        }
+
+        /// <summary>热键框就地校验；空串表示不启用，属于合法值。</summary>
+        void ValidateHotkeyBox(TextBox box)
+        {
+            if (box == null) return;
+
+            uint mods, vk;
+            string text = (box.Text ?? "").Trim();
+            bool ok = text.Length == 0 || HotkeyManager.TryParse(text, out mods, out vk);
+
+            if (ok)
+            {
+                box.ClearValue(Control.BorderBrushProperty);
+                box.ToolTip = null;
+                return;
+            }
+
+            box.BorderBrush = FindResource("Danger") as Brush;
+            box.ToolTip = "无法识别的组合键；支持 Ctrl / Alt / Shift / Win + 键";
         }
 
         // ==================== 恢复默认 / 关闭 ====================
@@ -144,18 +241,42 @@ namespace MirrorpondHUD.Ui
             LoadUi(fresh);
             // 「恢复默认值」是用户的显式意图（含热键与 Chat 模式），保存时不要再被 live 的运行时字段盖回去。
             _skipRuntimeMerge = true;
+            MarkDirty();
             StatusText.Text = "已恢复默认值，点击“保存并应用”生效";
         }
 
         void CloseClick(object sender, RoutedEventArgs e)
         {
-            Hide();
+            // 走 OnClosing 的“未保存”提示；不能直接 Hide，否则修改会被静默丢弃。
+            Close();
         }
 
         protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
         {
             if (!_reallyClose)
             {
+                if (IsDirty())
+                {
+                    MessageBoxResult answer = MessageBox.Show(this,
+                        "设置还有未保存的修改。\n\n是 = 保存并应用后关闭；否 = 放弃修改；取消 = 继续编辑。",
+                        "镜潭一览 · 未保存的修改",
+                        MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
+
+                    if (answer == MessageBoxResult.Cancel)
+                    {
+                        e.Cancel = true;
+                        return;
+                    }
+
+                    if (answer == MessageBoxResult.Yes && !TrySaveSettings())
+                    {
+                        e.Cancel = true;
+                        return;
+                    }
+
+                    if (answer == MessageBoxResult.No) ClearDirty();
+                }
+
                 e.Cancel = true;
                 Hide();
                 return;

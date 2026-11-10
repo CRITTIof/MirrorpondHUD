@@ -111,6 +111,7 @@ namespace MirrorpondHUD.Ui
                 StartMinCheck.IsChecked = s.Behavior.StartMinimized;
                 TrayCheck.IsChecked = s.Behavior.TrayEnabled;
                 IntroCheck.IsChecked = s.Behavior.IntroEnabled;
+                ReduceMotionCheck.IsChecked = s.Behavior.ReduceMotion;
                 WelcomeBox.Text = string.IsNullOrEmpty(s.Behavior.WelcomeText) ? "Welcome Back" : s.Behavior.WelcomeText;
                 TypeSpeedBox.Text = s.Behavior.TypeSpeedMs.ToString(CultureInfo.InvariantCulture);
                 CursorStyleCombo.SelectedIndex = CursorIndex(s.Behavior.CursorStyle);
@@ -124,6 +125,14 @@ namespace MirrorpondHUD.Ui
                 HotkeySettingsBox.Text = s.Hotkeys.OpenSettings;
                 HotkeyLockBox.Text = s.Hotkeys.ToggleLock;
                 BuildCardHotkeyPanel();
+                ValidateColorBox(FgBox, false);
+                ValidateColorBox(BgBox, false);
+                ValidateColorBox(OutlineColorBox, true);
+                ValidateHotkeyBox(HotkeyToggleBox);
+                ValidateHotkeyBox(HotkeySettingsBox);
+                ValidateHotkeyBox(HotkeyLockBox);
+                foreach (KeyValuePair<string, TextBox> pair in _cardHotkeyBoxes)
+                    ValidateHotkeyBox(pair.Value);
 
                 PathText.Text = ConfigStore.Path;
                 StatusText.Text = "";
@@ -136,6 +145,8 @@ namespace MirrorpondHUD.Ui
             UpdateSwatches();
             RebuildCardList();
             RenderThemePreview();
+            ClearDirty();
+            CaptureCleanSnapshot();
             return true;
         }
 
@@ -273,6 +284,7 @@ namespace MirrorpondHUD.Ui
                 s.Behavior.StartMinimized = StartMinCheck.IsChecked == true;
                 s.Behavior.TrayEnabled = TrayCheck.IsChecked == true;
                 s.Behavior.IntroEnabled = IntroCheck.IsChecked == true;
+                s.Behavior.ReduceMotion = ReduceMotionCheck.IsChecked == true;
                 s.Behavior.WelcomeText = (WelcomeBox.Text ?? "").Trim();
                 if (s.Behavior.WelcomeText.Length == 0) s.Behavior.WelcomeText = "Welcome Back";
                 s.Behavior.TypeSpeedMs = Math.Max(8, ParseInt(TypeSpeedBox.Text, s.Behavior.TypeSpeedMs));

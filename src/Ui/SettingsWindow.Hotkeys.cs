@@ -133,6 +133,8 @@ namespace MirrorpondHUD.Ui
             if (key == Key.Escape)
             {
                 box.Text = "";
+                MarkDirty();
+                ValidateHotkeyBox(box);
                 return;
             }
 
@@ -141,6 +143,8 @@ namespace MirrorpondHUD.Ui
             ModifierKeys mods = Keyboard.Modifiers;
             box.Text = HotkeyManager.Format(key, mods);
             box.CaretIndex = box.Text.Length;
+            MarkDirty();
+            ValidateHotkeyBox(box);
         }
 
         /// <summary>「清空」按钮：按钮的 Tag 指向要清空的热键输入框。</summary>
@@ -152,6 +156,8 @@ namespace MirrorpondHUD.Ui
 
             box.Text = "";
             box.CaretIndex = 0;
+            MarkDirty();
+            ValidateHotkeyBox(box);
         }
 
         /// <summary>「内容」页每张卡片的呼出热键清空。</summary>

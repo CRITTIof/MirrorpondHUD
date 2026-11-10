@@ -71,10 +71,16 @@ namespace MirrorpondHUD.Ui
 
         void SaveClick(object sender, RoutedEventArgs e)
         {
+            TrySaveSettings();
+        }
+
+        /// <summary>读取 / 校验 / 应用 / 刷新副本。返回 true 表示已成功写盘，可用于关闭前提示。</summary>
+        bool TrySaveSettings()
+        {
             if (_loadFailed || _working == null)
             {
                 StatusText.Text = "设置副本不可用，已禁止保存（请重开设置窗口；详情见日志）";
-                return;
+                return false;
             }
 
             Settings s;
@@ -85,7 +91,7 @@ namespace MirrorpondHUD.Ui
             catch (Exception ex)
             {
                 StatusText.Text = "读取设置失败：" + ex.Message;
-                return;
+                return false;
             }
 
             // 设置窗打开期间热键可能绕过本窗口改了 live settings；保存前把运行时字段合并回来。
@@ -95,7 +101,7 @@ namespace MirrorpondHUD.Ui
             if (hotkeyError != null)
             {
                 StatusText.Text = hotkeyError;
-                return;
+                return false;
             }
 
             bool saved;
@@ -109,7 +115,7 @@ namespace MirrorpondHUD.Ui
                 // 不能像原来那样异常直接逸出、状态行还停留在上一次的结果。
                 Log.Error("应用设置失败", ex);
                 StatusText.Text = "应用设置失败：" + ex.Message + "（未写入磁盘；详情见日志）";
-                return;
+                return false;
             }
 
             // 控制器在 ApplySettings 里直接把传入对象当成 live settings（_settings = settings），
@@ -145,12 +151,15 @@ namespace MirrorpondHUD.Ui
                     ? "原因未知（详见日志）"
                     : ConfigStore.LastSaveError.Trim();
                 StatusText.Text = "已应用，但保存到磁盘失败：" + reason + "。重启后仍是旧配置（详见日志）";
-                return;
+                return false;
             }
 
             StatusText.Text = _loadFailed
                 ? "已保存并应用，但刷新设置副本失败（详情见日志）"
                 : "已保存并应用（" + DateTime.Now.ToString("HH:mm:ss") + "）";
+            ClearDirty();
+            CaptureCleanSnapshot();
+            return true;
         }
 
         // ==================== 运行时字段合并（P1-5 设置窗快照） ====================

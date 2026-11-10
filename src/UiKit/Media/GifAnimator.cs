@@ -24,6 +24,12 @@ namespace MirrorpondHUD.Ui.Controls.Media
         readonly bool _loop;
         int _index;
 
+        /// <summary>最近一次因为预算被跳过时的原因；UI 用它在卡片状态行提示。</summary>
+        public static string LastSkipReason { get; private set; } = "";
+
+        /// <summary>单张动图允许常驻的解码帧总预算（RGBA 估算）。</summary>
+        const long MaxDecodedBytes = 64L * 1024 * 1024;
+
         GifAnimator(Image target, bool loop)
         {
             _target = target;
@@ -39,6 +45,7 @@ namespace MirrorpondHUD.Ui.Controls.Media
         public static GifAnimator TryCreate(string path, Image target, bool loop)
         {
             if (string.IsNullOrWhiteSpace(path) || target == null) return null;
+            LastSkipReason = "";
 
             GifAnimator animator = null;
             System.Drawing.Bitmap source = null;
@@ -53,6 +60,15 @@ namespace MirrorpondHUD.Ui.Controls.Media
                 var dimension = new FrameDimension(dimensions[0]);
                 int count = source.GetFrameCount(dimension);
                 if (count <= 1) return null;
+
+                long estimated = (long)source.Width * source.Height * 4 * count;
+                if (estimated > MaxDecodedBytes)
+                {
+                    LastSkipReason = "动图约 " + count + " 帧 / " +
+                                     (estimated / 1024.0 / 1024.0).ToString("0") + " MB，超过 64 MB 预算";
+                    Log.Warn("动图帧缓存超预算，退回只显示首帧: " + LastSkipReason);
+                    return null;
+                }
 
                 animator = new GifAnimator(target, loop);
                 animator.CanvasSize = new Size(source.Width, source.Height);

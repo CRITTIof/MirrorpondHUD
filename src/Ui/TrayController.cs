@@ -30,6 +30,8 @@ namespace MirrorpondHUD.Ui
         readonly ITrayHost _host;
         TrayIcon _tray;
         DispatcherTimer _balloonTimer;
+        bool _started;
+        bool _unavailableNotified;
 
         public TrayController(ITrayHost host)
         {
@@ -63,12 +65,15 @@ namespace MirrorpondHUD.Ui
                 // 只兜「设置要求显示但加不进托盘」（安全策略 / Shell 拒绝）这一种情况；
                 // 用户自己在设置里关掉托盘属于正常状态，绝不能强弹设置窗（P0-1）。
                 Log.Warn("托盘不可用（设置要求显示但图标添加失败），已自动打开设置窗口作为兜底入口");
+                _unavailableNotified = true;
                 Application.Current.Dispatcher.BeginInvoke(new Action(_host.ShowSettings), DispatcherPriority.Background);
             }
             else
             {
                 Log.Info("托盘图标：已按设置关闭");
             }
+
+            _started = true;
         }
 
         public void Update()
@@ -79,6 +84,26 @@ namespace MirrorpondHUD.Ui
             _tray.Visible = settings.Behavior.TrayEnabled;
             _tray.SetCommandHotkey(_host.CommandHotkey);
             _tray.Update(_host.OverlayVisible, settings.Overlay.Locked, settings.Behavior.AutoStart);
+
+            // 运行期重新勾选托盘失败：不能只写 WARN，用户会以为图标已经打开。
+            if (!settings.Behavior.TrayEnabled)
+            {
+                _unavailableNotified = false;
+            }
+            else if (_started && _tray.AddFailed && !_unavailableNotified)
+            {
+                _unavailableNotified = true;
+                string reason = "Shell_NotifyIcon 添加失败，可能被安全策略 / 资源管理器拒绝";
+                Log.Warn("运行期重新启用托盘失败: " + reason);
+                MessageBox.Show(
+                    "托盘图标添加失败，程序仍在运行，但托盘入口没有出现。\n\n" +
+                    reason + "\n\n可以按 " + _host.Settings.Hotkeys.OpenSettings + " 打开设置，或重新登录 Windows 后重试。",
+                    "镜潭一览 · 托盘不可用", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            else if (!_tray.AddFailed)
+            {
+                _unavailableNotified = false;
+            }
         }
 
         public void ShowStartupBalloon()

@@ -34,7 +34,7 @@ namespace MirrorpondHUD.Ui
                 if (string.Equals(arg, "--selftest", StringComparison.OrdinalIgnoreCase) ||
                     arg.StartsWith("--screenshot", StringComparison.OrdinalIgnoreCase))
                 {
-                    CardMotion.Enabled = false;
+                    CardMotion.SuppressForCapture();
                     break;
                 }
             }

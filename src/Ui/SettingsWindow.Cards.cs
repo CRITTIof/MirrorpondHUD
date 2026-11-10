@@ -22,6 +22,8 @@ namespace MirrorpondHUD.Ui
     {
         readonly List<CardEditor> _editors = new List<CardEditor>();
         readonly Dictionary<string, bool> _expanded = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        CardEditor _dragEditor;
+        Point _dragStart;
 
         // ==================== 卡片列表 ====================
 
@@ -39,6 +41,7 @@ namespace MirrorpondHUD.Ui
                 editor.PropertyChanged += (s, e) =>
                 {
                     if (e.PropertyName == "IsExpanded") _expanded[id] = editor.IsExpanded;
+                    else MarkDirty();
                 };
                 _editors.Add(editor);
             }
@@ -131,6 +134,7 @@ namespace MirrorpondHUD.Ui
 
             _working.Cards.Add(card);
             _expanded[card.Id] = true;
+            MarkDirty();
 
             SearchBox.Text = "";
             RebuildCardList();
@@ -160,6 +164,7 @@ namespace MirrorpondHUD.Ui
 
             _working.Cards.Remove(editor.Config);
             _expanded.Remove(editor.Config.Id);
+            MarkDirty();
             RebuildCardList();
             StatusText.Text = "已删除卡片「" + editor.DisplayName + "」，保存并应用后生效";
         }
@@ -198,7 +203,131 @@ namespace MirrorpondHUD.Ui
                 editor.Config.Spacing = 12;
 
             RebuildCardList();
+            MarkDirty();
             StatusText.Text = "卡片「" + editor.DisplayName + "」已移动到第 " + (target + 1) + " 位";
+        }
+
+        /// <summary>复制一张卡片：Extras 也一起复制，新 Id / 名称追加“副本”。</summary>
+        void DuplicateCardClick(object sender, RoutedEventArgs e)
+        {
+            CardEditor editor = (sender as FrameworkElement)?.Tag as CardEditor;
+            if (editor == null) return;
+
+            if (editor.Module != null && editor.Module.IsInteractive)
+            {
+                StatusText.Text = "交互卡（命令行 / AI 面板）只能有一张，不能复制。";
+                return;
+            }
+
+            CardSettings copy;
+            try
+            {
+                copy = Json.Deserialize<CardSettings>(Json.Serialize(editor.Config));
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("复制卡片失败: " + ex.Message);
+                StatusText.Text = "复制卡片失败：" + ex.Message;
+                return;
+            }
+
+            if (copy == null)
+            {
+                StatusText.Text = "复制卡片失败：配置为空";
+                return;
+            }
+
+            copy.Id = Guid.NewGuid().ToString("N");
+            copy.Name = string.IsNullOrWhiteSpace(copy.Name)
+                ? (editor.DisplayName + " 副本")
+                : copy.Name + " 副本";
+
+            int index = _working.Cards.IndexOf(editor.Config);
+            _working.Cards.Insert(index < 0 ? _working.Cards.Count : index + 1, copy);
+            CardModel.Normalize(_working);
+            _expanded[copy.Id] = true;
+            RebuildCardList();
+            MarkDirty();
+            StatusText.Text = "已复制卡片「" + editor.DisplayName + "」，保存后生效";
+        }
+
+        // ==================== 拖动排序 ====================
+
+        void CardDragHandleDown(object sender, MouseButtonEventArgs e)
+        {
+            var element = sender as FrameworkElement;
+            _dragEditor = element == null ? null : element.Tag as CardEditor;
+            _dragStart = e.GetPosition(this);
+
+            // 捕获鼠标，否则指针离开小抓手后 PreviewMouseMove 不再进来，拖不起来。
+            if (element != null) element.CaptureMouse();
+            e.Handled = true;
+        }
+
+        void CardDragHandleMove(object sender, MouseEventArgs e)
+        {
+            if (_dragEditor == null || e.LeftButton != MouseButtonState.Pressed) return;
+
+            Point now = e.GetPosition(this);
+            if (Math.Abs(now.X - _dragStart.X) < 4 && Math.Abs(now.Y - _dragStart.Y) < 4) return;
+
+            var element = sender as FrameworkElement;
+            DragDrop.DoDragDrop((DependencyObject)sender, _dragEditor, DragDropEffects.Move);
+            if (element != null && element.IsMouseCaptured) element.ReleaseMouseCapture();
+            _dragEditor = null;
+        }
+
+        void CardDragHandleUp(object sender, MouseButtonEventArgs e)
+        {
+            var element = sender as FrameworkElement;
+            if (element != null && element.IsMouseCaptured) element.ReleaseMouseCapture();
+            _dragEditor = null;
+        }
+
+        void CardListDragOver(object sender, DragEventArgs e)
+        {
+            if (_dragEditor == null) return;
+            e.Effects = DragDropEffects.Move;
+            e.Handled = true;
+        }
+
+        void CardListDrop(object sender, DragEventArgs e)
+        {
+            CardEditor drag = _dragEditor;
+            _dragEditor = null;
+            if (drag == null) return;
+
+            e.Handled = true;
+            CardEditor target = FindCardEditor(e.OriginalSource as DependencyObject);
+            int from = _working.Cards.IndexOf(drag.Config);
+            int to = target == null ? _working.Cards.Count : _working.Cards.IndexOf(target.Config);
+            if (from < 0) return;
+
+            // 放到自己身上 / 原位置后一位都不需要移动。
+            if (to == from || to == from + 1) return;
+
+            _working.Cards.RemoveAt(from);
+            if (to > from) to--;
+            if (to < 0) to = 0;
+            if (to > _working.Cards.Count) to = _working.Cards.Count;
+            _working.Cards.Insert(to, drag.Config);
+
+            RebuildCardList();
+            MarkDirty();
+            StatusText.Text = "卡片「" + drag.DisplayName + "」已移动到第 " + (to + 1) + " 位";
+        }
+
+        static CardEditor FindCardEditor(DependencyObject source)
+        {
+            while (source != null)
+            {
+                var element = source as FrameworkElement;
+                if (element != null && element.DataContext is CardEditor)
+                    return (CardEditor)element.DataContext;
+
+                source = VisualTreeHelper.GetParent(source);
+            }
+            return null;
         }
 
         void ToggleCardClick(object sender, RoutedEventArgs e)

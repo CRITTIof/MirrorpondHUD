@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using MirrorpondHUD.Core;
 using MirrorpondHUD.Ui.Controls;
 
@@ -154,6 +156,8 @@ namespace MirrorpondHUD.Cards
         CancellationTokenSource _cancel;
         bool _running;
         int _session;             // 一次性会话（关闭命令行卡片）后，旧的回填不要再往界面上写
+        readonly List<string> _history = new List<string>();
+        int _historyIndex = -1;
 
         public CommandView(Settings settings, CommandSettings command)
             : base(settings, settings == null ? new CliSettings() : settings.Cli)
@@ -192,6 +196,7 @@ namespace MirrorpondHUD.Cards
             CancelRunning();
             Input.Text = "";
             SetInputReadOnly(false);
+            _historyIndex = -1;
             RefreshHeader();
             SetStatus(IdleHint(), false);
         }
@@ -199,6 +204,45 @@ namespace MirrorpondHUD.Cards
         protected override void SubmitInput()
         {
             RunCommand();
+        }
+
+        /// <summary>↑/↓ 召回最近命令；输入新内容后重置召回位置。</summary>
+        protected override bool HandleInputKey(KeyEventArgs e)
+        {
+            if (Keyboard.Modifiers != ModifierKeys.None) return false;
+
+            if (e.Key == Key.Up)
+            {
+                if (_history.Count == 0) return true;
+                _historyIndex = Math.Min(_historyIndex + 1, _history.Count - 1);
+                Input.Text = _history[_history.Count - 1 - _historyIndex];
+                Input.CaretIndex = Input.Text.Length;
+                return true;
+            }
+
+            if (e.Key == Key.Down)
+            {
+                if (_historyIndex < 0) return true;
+                _historyIndex--;
+                Input.Text = _historyIndex < 0 ? "" : _history[_history.Count - 1 - _historyIndex];
+                Input.CaretIndex = Input.Text.Length;
+                return true;
+            }
+
+            _historyIndex = -1;
+            return false;
+        }
+
+        void RememberHistory(string command)
+        {
+            if (string.IsNullOrEmpty(command)) return;
+            if (_history.Count == 0 ||
+                !string.Equals(_history[_history.Count - 1], command, StringComparison.Ordinal))
+                _history.Add(command);
+
+            // 只保留最近 50 条，避免长期开着命令行卡无限长。
+            while (_history.Count > 50) _history.RemoveAt(0);
+            _historyIndex = -1;
         }
 
         async void RunCommand()
@@ -225,6 +269,8 @@ namespace MirrorpondHUD.Cards
 
             string command = (Input.Text ?? "").Trim();
             if (command.Length == 0) return;
+
+            RememberHistory(command);
 
             int session = _session;
             string prompt = CommandRunner.BuildPrompt(_command);

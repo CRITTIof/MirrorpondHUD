@@ -428,6 +428,13 @@ namespace MirrorpondHUD.Ui.Controls.Media
                     _gif.Play();
                     return;
                 }
+
+                if (!string.IsNullOrEmpty(GifAnimator.LastSkipReason))
+                {
+                    _statusHost.Visibility = Visibility.Visible;
+                    _statusText.Text = "动图过大，已仅显示首帧";
+                    _statusHost.ToolTip = GifAnimator.LastSkipReason;
+                }
             }
 
             _image.Source = still;

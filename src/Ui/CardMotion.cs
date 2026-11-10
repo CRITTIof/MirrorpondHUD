@@ -1,4 +1,5 @@
 using System;
+using MirrorpondHUD.Core;
 
 namespace MirrorpondHUD.Ui
 {
@@ -20,13 +21,25 @@ namespace MirrorpondHUD.Ui
         /// <summary>窗口位置动画的刷新间隔；60Hz 出头，和 Dispatcher Render 同量级。</summary>
         public const int FrameIntervalMs = 15;
 
-        static bool _enabled = true;
+        static bool _captureDisabled;
+        static bool _userEnabled = true;
 
-        /// <summary>截图 / --selftest 等离屏模式会关掉，正常运行时保持开启。</summary>
+        /// <summary>截图 / --selftest 等离屏模式会关闭；正常运行时由设置里的「减少动效」控制。</summary>
         public static bool Enabled
         {
-            get { return _enabled; }
-            set { _enabled = value; }
+            get { return !_captureDisabled && _userEnabled; }
+        }
+
+        /// <summary>离屏验收：一次关掉，之后设置加载 / 应用也不能重新打开。</summary>
+        public static void SuppressForCapture()
+        {
+            _captureDisabled = true;
+        }
+
+        /// <summary>按当前设置决定是否播放卡片动效。</summary>
+        public static void ApplySettings(Settings settings)
+        {
+            _userEnabled = settings == null || !settings.Behavior.ReduceMotion;
         }
 
         /// <summary>三次 ease-out：起步快、收尾稳，适合卡片补位这种短距离移动。</summary>

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Media;
 using MirrorpondHUD.Cards;
 using MirrorpondHUD.Core;
@@ -69,11 +70,31 @@ namespace MirrorpondHUD.Ui
                 catch (Exception ex)
                 {
                     Log.Warn("卡片设置区块创建失败(" + _config.Name + "): " + ex.Message);
-                    _section = null;
+                    _section = BuildSettingsError(ex);
                 }
 
                 return _section;
             }
+        }
+
+        /// <summary>模块设置区块抛异常时也要可见：用户至少知道“加载失败”，而不是像没设置项。</summary>
+        static FrameworkElement BuildSettingsError(Exception ex)
+        {
+            Brush danger = Brushes.IndianRed;
+            try
+            {
+                var found = Application.Current == null ? null : Application.Current.TryFindResource("Danger");
+                if (found is Brush) danger = (Brush)found;
+            }
+            catch { }
+
+            return new TextBlock
+            {
+                Text = "卡片设置加载失败：" + ex.Message + "\n（可先重开设置窗口；详情见日志）",
+                Foreground = danger,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 4, 0, 4)
+            };
         }
 
         public Visibility SettingsSectionVisibility
