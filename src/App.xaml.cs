@@ -77,16 +77,41 @@ namespace MirrorpondHUD
             _mutex = new Mutex(true, "Local\\MirrorpondHUD.SingleInstance", out createdNew);
             if (!createdNew)
             {
-                // 已经有一个实例在跑：把它唤到前台（打开设置），而不是无声退出
-                Log.Info("已有实例在运行，通知它打开设置窗口");
-                try
+                // 首实例要加载插件 / 配置后才会创建唤醒事件；冷启动窗口期第二次双击
+                // 不能只写一条 WARN 就退出。这里做一次短重试（30 × 100ms），
+                // 仍等不到才认为首实例确实异常。
+                Log.Info("已有实例在运行，等待唤醒句柄");
+                EventWaitHandle activation = null;
+                Exception lastError = null;
+                for (int attempt = 0; attempt < 30; attempt++)
                 {
-                    using (EventWaitHandle activation = EventWaitHandle.OpenExisting("Local\\MirrorpondHUD.Activate"))
-                        activation.Set();
+                    try
+                    {
+                        activation = EventWaitHandle.OpenExisting("Local\\MirrorpondHUD.Activate");
+                        lastError = null;
+                        break;
+                    }
+                    catch (WaitHandleCannotBeOpenedException ex)
+                    {
+                        lastError = ex;
+                        Thread.Sleep(100);
+                    }
+                    catch (Exception ex)
+                    {
+                        lastError = ex;
+                        break;
+                    }
                 }
-                catch (Exception ex)
+
+                if (activation == null)
                 {
-                    Log.Warn("唤醒已有实例失败: " + ex.Message);
+                    Log.Warn("唤醒已有实例失败: " +
+                             (lastError == null ? "等待超时（首实例可能仍在启动）" : lastError.Message));
+                }
+                else
+                {
+                    using (activation)
+                        activation.Set();
                 }
                 Shutdown(0);
                 return;

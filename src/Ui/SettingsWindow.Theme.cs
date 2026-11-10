@@ -47,6 +47,9 @@ namespace MirrorpondHUD.Ui
         /// <summary>手动改外观后主题名失效（显示「自定义」），避免显示成某个主题却已经不一致。</summary>
         void ClearThemeName()
         {
+            // ReadUi 会调 ApplyCliBoxes → UiChanged；保存不是“用户手动改外观”，
+            // 这里清掉 ThemeName 会让刚套用的主题在每次保存时丢失（L-1）。
+            if (_readingUi || _applyingTheme) return;
             if (_working == null || string.IsNullOrEmpty(_working.Style.ThemeName)) return;
 
             _working.Style.ThemeName = "";

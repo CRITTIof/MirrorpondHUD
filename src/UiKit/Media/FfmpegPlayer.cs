@@ -683,6 +683,37 @@ namespace MirrorpondHUD.Ui.Controls.Media
             RestartAt(position);
         }
 
+        /// <summary>运行期切换静音：停掉音频进程 / 播放器，恢复时从当前位置重新拉起一条。</summary>
+        public void SetMuted(bool muted)
+        {
+            if (_disposed || _stop) return;
+
+            if (muted)
+            {
+                if (!_audioEnabled && _audio == null && _audioProcess == null) return;
+                _audioEnabled = false;
+                StopAudio();
+                Log.Info("ffmpeg 已静音（音频进程已停止）");
+                return;
+            }
+
+            if (_audioEnabled && _audio != null) return;
+            _audioEnabled = true;
+
+            int run = Volatile.Read(ref _run);
+            if (run <= 0) return;
+
+            // 从当前播放位置重新起一条音频；视频进程不动，音画仍然按同一时间轴对齐。
+            LaunchAudio(run, Position);
+            Log.Info("ffmpeg 已取消静音（从当前进度重启音频输出）");
+        }
+
+        /// <summary>运行期切换循环。只影响之后读到 EOF 的行为，不重启视频。</summary>
+        public void SetLoop(bool loop)
+        {
+            _loop = loop;
+        }
+
         public void Pause()
         {
             _resume.Reset();

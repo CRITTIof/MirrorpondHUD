@@ -115,7 +115,9 @@ namespace MirrorpondHUD.Core
                 _live++;
             }
 
-            job.Task = RunAsync(job, work);
+            // 首个任务如果直接在调用线程（UI）上跑，RunCopy 的同步建目录 / 枚举 / 1MB 读写
+            // 会把叠层和取消按钮一起冻住。整个 RunAsync（含信号量等待）放到线程池。
+            job.Task = Task.Run(() => RunAsync(job, work));
             return job;
         }
 

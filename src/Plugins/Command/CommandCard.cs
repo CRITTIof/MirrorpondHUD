@@ -122,6 +122,14 @@ namespace MirrorpondHUD.Cards
             var result = new CommandResult { Output = "a\nb\nc", ExitCode = 0 };
             if (CommandRunner.FormatOutput(result, new CommandSettings { MaxLines = 2 }) != "b\nc")
                 return "命令行输出尾部截断不对";
+
+            // B-5：空自定义模板不能被 Normalize 静默补成默认值，否则 Validate 永远不报错。
+            var custom = new CommandSettings { Shell = "custom", CustomShell = "   " };
+            custom.Normalize();
+            if (custom.CustomShell.Length != 0) return "空自定义模板被 Normalize 补成了默认值";
+            var config = new CardSettings { Id = "command", Kind = "command" };
+            config.SetExtras(SettingsKey, custom);
+            if (string.IsNullOrEmpty(Validate(config))) return "空自定义模板应当校验失败";
             return null;
         }
 
@@ -241,8 +249,9 @@ namespace MirrorpondHUD.Cards
             Log.Info("命令行执行（" + CommandRunner.ToolLabel(_command) + "，目录 " + WorkingDirectory() +
                      "，命令 " + command.Length + " 字）：" + CommandRunner.DescribeCommand(command));
 
-            _cancel = new CancellationTokenSource();
-            CancellationToken token = _cancel.Token;
+            var cts = new CancellationTokenSource();
+            _cancel = cts;
+            CancellationToken token = cts.Token;
 
             // 命令跑在后台线程，用发起这一刻的卡片设置做快照（跑的过程中改设置不影响这一条）。
             CommandSettings snapshot = _command.Clone();
@@ -302,8 +311,11 @@ namespace MirrorpondHUD.Cards
                     FocusInput();
                 }
 
-                try { if (_cancel != null) { _cancel.Dispose(); _cancel = null; } }
+                // 只收自己这一代的 CTS：用户取消后立刻开新命令时，旧 continuation
+                // 晚归不能把新命令的 _cancel Dispose / 清空（B-3）。
+                try { cts.Dispose(); }
                 catch { }
+                if (ReferenceEquals(_cancel, cts)) _cancel = null;
             }
         }
 

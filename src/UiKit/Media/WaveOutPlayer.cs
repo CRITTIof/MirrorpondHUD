@@ -192,6 +192,7 @@ namespace MirrorpondHUD.Ui.Controls.Media
                 Volatile.Write(ref _cleanupClaimed, 0);
 
                 int headerSize = Marshal.SizeOf(typeof(WaveHeader));
+                int prepareFailures = 0;
                 for (int i = 0; i < BufferCount; i++)
                 {
                     _buffers[i] = Marshal.AllocHGlobal(BufferBytes);
@@ -202,7 +203,21 @@ namespace MirrorpondHUD.Ui.Controls.Media
 
                     int headerCode = waveOutPrepareHeader(_handle, header, headerSize);
                     if (headerCode != 0)
+                    {
+                        prepareFailures++;
                         Log.Warn("准备音频缓冲失败: 槽 " + i + "  " + MmsysErrorName(headerCode));
+                    }
+                }
+
+                if (prepareFailures == BufferCount)
+                {
+                    // 4 个槽全失败时继续返回 true 会骗上层「音频已启动」，状态行也不会显示
+                    // 音频不可用；这里把资源收掉并返回失败（上层已有 AudioUnavailable 通道）。
+                    _lastErrorName = "音频缓冲准备全部失败";
+                    Log.Warn("音频输出启动失败: " + _lastErrorName);
+                    Volatile.Write(ref _resources, 1);
+                    Stop();
+                    return false;
                 }
 
                 Volatile.Write(ref _resources, 1);

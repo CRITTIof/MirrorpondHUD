@@ -87,6 +87,34 @@ namespace MirrorpondHUD.Ui
         {
             if (args == null) return;
 
+            // --perf：正常起界面，采样 N 秒后输出基线并退出。用于优化 TextCanvas / GlassFeed
+            // 之前拿同一台机器上的分配与调用次数；不写设置、不改运行行为。
+            if (args.Contains("--perf") || GetOption(args, "--perf") != null)
+            {
+                int perfSeconds = 12;
+                string perfValue = GetOption(args, "--perf");
+                if (perfValue != null && !perfValue.StartsWith("--", StringComparison.Ordinal))
+                {
+                    int parsed;
+                    if (int.TryParse(perfValue, out parsed)) perfSeconds = Math.Max(3, Math.Min(120, parsed));
+                    args.Remove(perfValue);
+                }
+                args.Remove("--perf");
+                if (!args.Contains("--minimized") && !args.Contains("--visible")) args.Add("--visible");
+
+                PerformanceProbe.Begin();
+                var perfTimer = new DispatcherTimer();
+                perfTimer.Interval = TimeSpan.FromSeconds(perfSeconds);
+                perfTimer.Tick += (s, a) =>
+                {
+                    perfTimer.Stop();
+                    PerformanceProbe.End();
+                    if (shutdown != null) shutdown(0);
+                };
+                perfTimer.Start();
+                return;
+            }
+
             string smoke = GetOption(args, "--smoke");
             if (smoke == null) return;
 

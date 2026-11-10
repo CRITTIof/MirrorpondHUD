@@ -333,7 +333,8 @@ namespace MirrorpondHUD.Ui
             window.RaisedTopmost += () =>
             {
                 if (slot.Rich == null || slot.Content == null) return;
-                try { slot.Rich.OnZOrderChanged(slot.Content); } catch { }
+                try { slot.Rich.OnZOrderChanged(slot.Content); }
+                catch (Exception ex) { Log.Warn("卡片重新置顶后富内容 z 序恢复失败(" + slot.Config.Name + "): " + ex.Message); }
             };
 
             return slot;
@@ -450,6 +451,22 @@ namespace MirrorpondHUD.Ui
             Application.Current.Dispatcher.BeginInvoke(new Action(RenderNow), DispatcherPriority.Background);
         }
 
+        /// <summary>
+        /// 卡片绕过设置窗改了运行期字段（Chat 模式）并落盘后，刷新它的内容签名。
+        /// 不刷新的话下一次应用设置会把模式变化当成“内容变了”，重建 ChatView 并清空新对话。
+        /// </summary>
+        internal void RefreshContentSignature(CardSettings config)
+        {
+            if (config == null) return;
+
+            foreach (CardSlot slot in _cards)
+            {
+                if (!ReferenceEquals(slot.Config, config)) continue;
+                slot.ContentSignature = _render.ContentSignature(config);
+                return;
+            }
+        }
+
         /// <summary>内容尺寸变了：排一次布局校正。</summary>
         internal void RequestLayoutFromModule()
         {
@@ -523,7 +540,8 @@ namespace MirrorpondHUD.Ui
             // 富内容要等卡片窗口真正显示、布局完成后再开始播放（视频子窗口要贴到正确位置）。
             if (slot.Rich != null && slot.Content != null)
             {
-                try { slot.Rich.OnVisibilityChanged(slot.Content, true); } catch { }
+                try { slot.Rich.OnVisibilityChanged(slot.Content, true); }
+                catch (Exception ex) { Log.Warn("卡片显示后内容启动失败(" + slot.Config.Name + "): " + ex.Message); }
             }
         }
 
@@ -553,17 +571,24 @@ namespace MirrorpondHUD.Ui
             {
                 if (slot.Rich != null) slot.Rich.OnVisibilityChanged(slot.Content, false);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Log.Warn("卡片释放前停止内容失败(" + slot.Config.Name + "): " + ex.Message);
+            }
 
             try
             {
                 var disposable = slot.Content as IDisposable;
                 if (disposable != null) disposable.Dispose();
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Log.Warn("卡片富内容释放失败(" + slot.Config.Name + "): " + ex.Message);
+            }
 
             slot.Content = null;
-            try { slot.Window.ClearRichContent(); } catch { }
+            try { slot.Window.ClearRichContent(); }
+            catch (Exception ex) { Log.Warn("卡片富内容宿主清理失败(" + slot.Config.Name + "): " + ex.Message); }
         }
 
         void HideCard(CardSlot slot)
@@ -581,7 +606,8 @@ namespace MirrorpondHUD.Ui
 
             if (slot.Rich != null && slot.Content != null)
             {
-                try { slot.Rich.OnVisibilityChanged(slot.Content, false); } catch { }
+                try { slot.Rich.OnVisibilityChanged(slot.Content, false); }
+                catch (Exception ex) { Log.Warn("卡片隐藏前停止内容失败(" + slot.Config.Name + "): " + ex.Message); }
             }
 
             slot.Shown = false;

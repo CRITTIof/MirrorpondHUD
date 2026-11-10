@@ -1431,6 +1431,7 @@ namespace MirrorpondHUD
             public void RequestRender() { }
             public void RequestLayout() { }
             public bool SaveSettings() { return true; }
+            public void RefreshContentSignature() { }
             public ICardShellService Shell { get { return null; } }
         }
     }

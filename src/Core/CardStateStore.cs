@@ -123,8 +123,13 @@ namespace MirrorpondHUD.Core
 
             try
             {
-                if (File.Exists(path)) File.Delete(path);
-                if (File.Exists(path + ".bak")) File.Delete(path + ".bak");
+                // 与 Write 共用同一把写锁：删除落在 AtomicFile 的 Replace/.bak 之间时，
+                // Replace 会失败、回退 Copy 又 FileNotFound，最后被误报成“备份失败”。
+                lock (WriteSync)
+                {
+                    if (File.Exists(path)) File.Delete(path);
+                    if (File.Exists(path + ".bak")) File.Delete(path + ".bak");
+                }
                 return true;
             }
             catch (Exception ex)

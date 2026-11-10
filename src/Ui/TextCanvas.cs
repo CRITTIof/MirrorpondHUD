@@ -103,6 +103,24 @@ namespace MirrorpondHUD.Ui
                 _blinkOn = !_blinkOn;
                 InvalidateVisual();
             };
+
+            // 卡片窗口关闭 / 隐藏时停掉闪烁定时器：否则 DispatcherTimer 会一直
+            // 钉住整棵 OverlaySurface 可视树，隐藏的命令行卡仍每 530ms InvalidateVisual。
+            IsVisibleChanged += (s, e) => UpdateBlinkTimer(false);
+            Loaded += (s, e) => UpdateBlinkTimer(false);
+            Unloaded += (s, e) => _blink.Stop();
+        }
+
+        void UpdateBlinkTimer(bool restart)
+        {
+            if (!_cursorVisible || !_cursorBlink || !IsVisible || !IsLoaded)
+            {
+                _blink.Stop();
+                return;
+            }
+
+            if (restart) _blink.Stop();
+            if (!_blink.IsEnabled) _blink.Start();
         }
 
         // ==================== 内容 ====================
@@ -117,11 +135,7 @@ namespace MirrorpondHUD.Ui
                 if (string.Equals(_text, value, StringComparison.Ordinal)) return;
                 _text = value;
                 _blinkOn = true;
-                if (_cursorVisible && _cursorBlink)
-                {
-                    _blink.Stop();
-                    _blink.Start();
-                }
+                UpdateBlinkTimer(true);
                 InvalidateMeasure();
                 InvalidateVisual();
             }
@@ -300,15 +314,7 @@ namespace MirrorpondHUD.Ui
                 if (value == _cursorVisible) return;
                 _cursorVisible = value;
                 _blinkOn = true;
-                if (value && _cursorBlink)
-                {
-                    _blink.Stop();
-                    _blink.Start();
-                }
-                else
-                {
-                    _blink.Stop();
-                }
+                UpdateBlinkTimer(true);
                 InvalidateMeasure();
                 InvalidateVisual();
             }
@@ -350,10 +356,9 @@ namespace MirrorpondHUD.Ui
                     _blink.Stop();
                     _blinkOn = true;
                 }
-                else if (_cursorVisible)
+                else
                 {
-                    _blink.Stop();
-                    _blink.Start();
+                    UpdateBlinkTimer(true);
                 }
                 InvalidateVisual();
             }
@@ -363,6 +368,7 @@ namespace MirrorpondHUD.Ui
 
         protected override Size MeasureOverride(Size availableSize)
         {
+            PerformanceProbe.TextMeasure();
             string layout = _layoutText ?? _text;
             List<string> lines = Split(layout);
             double lineHeight = LineHeightOf();
@@ -463,6 +469,7 @@ namespace MirrorpondHUD.Ui
 
         TextRun CreateRun(string text, RunKind kind)
         {
+            PerformanceProbe.TextRun();
             bool icon = kind == RunKind.Icon;
             FontFamily family = icon
                 ? LucideIcons.FontFamily
@@ -561,6 +568,7 @@ namespace MirrorpondHUD.Ui
         /// <summary>把一行拆成「普通文字 / 键帽 / 图标」三种 run；键帽用 Reicon、图标用 Lucide 绘制。</summary>
         TextLine BuildLine(string line)
         {
+            PerformanceProbe.TextLine();
             var result = new TextLine();
             if (string.IsNullOrEmpty(line))
             {
@@ -599,6 +607,7 @@ namespace MirrorpondHUD.Ui
         protected override void OnRender(DrawingContext dc)
         {
             if (ActualWidth <= 0 || ActualHeight <= 0) return;
+            PerformanceProbe.TextRender();
 
             EnsureMetrics();
 

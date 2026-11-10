@@ -323,9 +323,10 @@ tools/                   开发脚本（make_logo.py 生成多尺寸 logo.ico）
 - [docs/theme-system.md](docs/theme-system.md) — 外观主题方案：`.mptheme` 单文件格式、字段映射、导入 / 导出与回滚流程（草案 + 三份示例主题）
 - [docs/theme-rewrite-prerequisites.md](docs/theme-rewrite-prerequisites.md) — 外观重写的前置：令牌层 / CLI 面板换肤 / 主题文件 / 设置页入口的分步计划与验收清单（附仓库历史文件审计）
 - [docs/theme-motion.md](docs/theme-motion.md) — 主题的动效与控件样式调研：启动动画参数化、出现 / 消失 / 让位动画、按钮面板滑块 token 与受控模板、设置页换肤（含分层窗口动画实测）
+- [docs/performance-baseline.md](docs/performance-baseline.md) — `--perf` 性能采样基线：TextCanvas 排版次数、GlassFeed 分配/LOH、GC 增量，供后续优化对照
 - [docs/legacy-audit.md](docs/legacy-audit.md) — 源码遗留审计：与 v2.9.4 同源的检查、13 条遗留（颜色解析 / 异步 void / 静态缓存 / 死字段等）与清理顺序
 - [docs/file-transfer-station.md](docs/file-transfer-station.md) — 文件中转站调研与设计：拖入 / 列表 / 引用与复制、状态持久化、拖出与锁定语义、M1–M3 路线
-- [docs/version-history.md](docs/version-history.md) — v2.4.1 → 2.26.0 每个版本改了什么、动了哪些文件（含实测数据与提交号）
+- [docs/version-history.md](docs/version-history.md) — v2.4.1 → 2.27.0 每个版本改了什么、动了哪些文件（含实测数据与提交号）
 - [DLL-CARD-PLUGIN-GUIDE.md](DLL-CARD-PLUGIN-GUIDE.md) — DLL 卡片插件开发指南（自包含）：工程引用、manifest、最小文字卡/富卡完整代码、全部契约签名、CardSettings/Extras、UiKit 控件目录、构建安装调试、安全与检查清单
 - [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) — 第三方字体与许可证（Lucide ISC、ReiconFont OFL）
 - [docs/review-p1-fixes.md](docs/review-p1-fixes.md) — 2.12.2 评审报告 P1-1..P1-10 的修复对照、验证与已知剩余

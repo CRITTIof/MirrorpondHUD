@@ -37,6 +37,13 @@ namespace MirrorpondHUD.Cards
         /// </summary>
         bool SaveSettings();
 
+        /// <summary>
+        /// 卡片绕过设置窗直接改了运行期字段（如 Chat 模式）并落盘后调用：
+        /// 让宿主把这张卡的“内容签名”刷成当前配置，下一次应用设置不会因此重建富内容。
+        /// 没有该卡 / 视图已废弃时是空操作。
+        /// </summary>
+        void RefreshContentSignature();
+
         /// <summary>宿主 Shell 能力（剪贴板 / 图标 / 拖出 / 打开文件）。</summary>
         ICardShellService Shell { get; }
     }

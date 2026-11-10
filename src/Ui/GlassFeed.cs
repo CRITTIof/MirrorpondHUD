@@ -331,6 +331,7 @@ namespace MirrorpondHUD.Ui
             int width = right - left;
             int height = bottom - top;
             if (width < 4 || height < 4) return;
+            PerformanceProbe.GlassFrame();
 
             // 共享图按 128 px 取整，免得开场动画每长一行字就重建一次 DIB（实际只用到左上角 width × height）。
             if (!EnsureSharedSurface(RoundUp(width), RoundUp(height))) return;
@@ -529,6 +530,7 @@ namespace MirrorpondHUD.Ui
                 return;     // 这一轮没取到就跳过，别把上一次的残留当成取样结果
 
             var buffer = new byte[w * h * 4];
+            PerformanceProbe.GlassBuffer(buffer.Length);
             Marshal.Copy(target.Bits, buffer, 0, buffer.Length);
 
             GlassCapture.BoxBlur(buffer, w, h, _blurRadius, true);
@@ -543,6 +545,7 @@ namespace MirrorpondHUD.Ui
             if (SameAsLastFrame(target, buffer, w, h)) return;
 
             // Bgr32 = 忽略 alpha：从屏幕 DC 拷出来的数据 alpha 全是 0，用 Bgra32 建图会整块透明
+            PerformanceProbe.GlassBitmap();
             BitmapSource image = BitmapSource.Create(w, h, 96, 96, PixelFormats.Bgr32, null, buffer, w * 4);
             image.Freeze();
 
@@ -716,7 +719,6 @@ namespace MirrorpondHUD.Ui
         {
             if (_sharedDc != IntPtr.Zero && _sharedWidth == width && _sharedHeight == height) return true;
             ReleaseSharedSurface();
-
             var bmi = new BitmapInfo
             {
                 Size = Marshal.SizeOf(typeof(BitmapInfo)),
@@ -755,6 +757,7 @@ namespace MirrorpondHUD.Ui
 
             _sharedWidth = width;
             _sharedHeight = height;
+            if (_frameSource != null) _frameSource.InvalidateDestination();
             return true;
         }
 
@@ -771,6 +774,7 @@ namespace MirrorpondHUD.Ui
             _sharedBits = IntPtr.Zero;
             _sharedWidth = 0;
             _sharedHeight = 0;
+            if (_frameSource != null) _frameSource.InvalidateDestination();
         }
 
         // ==================== 保险 ====================

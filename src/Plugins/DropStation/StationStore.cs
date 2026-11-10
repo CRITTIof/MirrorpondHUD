@@ -27,9 +27,13 @@ namespace MirrorpondHUD.Cards
         /// <summary>本视图加载 / 上次写盘时列表里的条目 Id：合并时区分「本视图删的」和「别人新加的」（P1-6）。</summary>
         readonly HashSet<string> _loadedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        /// <summary>读到高于当前支持的 FormatVersion：拒绝加载，之后所有写盘都是空操作，绝不覆盖原文件。</summary>
+        /// <summary>
+        /// 读到高于当前支持的 FormatVersion，或列表文件读不出来：拒绝加载 / 拒绝写盘，
+        /// 之后所有整表写入都是空操作，绝不覆盖原文件。
+        /// </summary>
         bool _readOnly;
         bool _readOnlyLogged;
+        string _readOnlyReason = "";
 
         public StationStore(ICardHost host, int maxEntries)
         {
@@ -43,6 +47,12 @@ namespace MirrorpondHUD.Cards
             get { return _readOnly; }
         }
 
+        /// <summary>只读原因（版本过高 / 读取失败），给状态行显示。</summary>
+        public string ReadOnlyReason
+        {
+            get { return _readOnlyReason; }
+        }
+
         /// <summary>
         /// 读取列表：过滤空条目、修正目录标记、按 AddedUtc 旧→新排序、裁剪到 MaxEntries，
         /// 记下加载基线；<paramref name="autoRemoveMissing"/> 为真时再剔除丢失项（只清列表，不删文件）。
@@ -53,7 +63,12 @@ namespace MirrorpondHUD.Cards
             autoRemoved = 0;
             var items = new List<StationItem>();
 
-            StationState state = ReadState();
+            StationState state = ReadState(out bool readFailed);
+            if (readFailed)
+            {
+                EnterReadOnly("列表文件读取失败");
+                return items;
+            }
             if (state == null || state.Items == null) return items;
 
             try
@@ -173,11 +188,16 @@ namespace MirrorpondHUD.Cards
                     // 版本过高：连这一条也不能写，原文件必须保持原样。
                     if (_readOnly)
                     {
-                        Log.Warn("中转站列表文件版本过高，丢弃晚到的完成项: " + target);
+                        Log.Warn("中转站列表只读，丢弃晚到的完成项: " + target);
                         return;
                     }
 
-                    StationState disk = ReadState();
+                    StationState disk = ReadState(out bool readFailed);
+                    if (readFailed)
+                    {
+                        EnterReadOnly("列表文件读取失败");
+                        return;
+                    }
                     // 读盘时可能刚发现更高版本：连这条晚到结果也不能写，原文件保持原样。
                     if (_readOnly) return;
 
@@ -220,7 +240,15 @@ namespace MirrorpondHUD.Cards
             var current = new List<StationItem>(currentItems);
             var onlyOnDisk = new List<StationItem>();
 
-            StationState disk = ReadState();
+            StationState disk = ReadState(out bool readFailed);
+            if (readFailed)
+            {
+                // 磁盘状态读不出来时不能按“只剩内存条目”合并：下一次写盘会把原文件覆盖成
+                // 当前（可能是空）列表。和版本过高一样进入只读，等用户处理原文件。
+                EnterReadOnly("列表文件读取失败");
+                return new StationState { Items = current };
+            }
+
             if (disk != null && disk.Items != null)
             {
                 var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -304,15 +332,27 @@ namespace MirrorpondHUD.Cards
         }
 
         /// <summary>读磁盘上的状态；没有 / 读坏了返回 null；版本高于当前支持时置只读并返回 null。</summary>
-        StationState ReadState()
+        StationState ReadState(out bool readFailed)
         {
+            readFailed = false;
+            string path = _host == null ? "" : Path.Combine(_host.StateDirectory, StateFile);
+
             try
             {
                 string json = _host == null ? null : _host.ReadState(StateFile);
-                if (string.IsNullOrEmpty(json)) return null;
+                if (string.IsNullOrEmpty(json))
+                {
+                    // 文件不存在 = 首次使用；文件存在但读不到内容 = I/O / 权限失败，不能当空列表。
+                    readFailed = path.Length > 0 && File.Exists(path);
+                    return null;
+                }
 
                 StationState state = Json.Deserialize<StationState>(json);
-                if (state == null) return null;
+                if (state == null)
+                {
+                    readFailed = true;
+                    return null;
+                }
                 if (state.FormatVersion > StationState.CurrentFormatVersion)
                 {
                     RefuseHigherFormat(state.FormatVersion);
@@ -322,15 +362,28 @@ namespace MirrorpondHUD.Cards
             }
             catch (Exception ex)
             {
+                readFailed = true;
                 Log.Warn("中转站状态解析失败: " + ex.Message);
                 return null;
             }
+        }
+
+        /// <summary>读失败 / 版本过高时进入只读；只记一条 WARN，避免每次读写重复刷屏。</summary>
+        void EnterReadOnly(string reason)
+        {
+            _readOnly = true;
+            _readOnlyReason = reason;
+            if (_readOnlyLogged) return;
+
+            _readOnlyLogged = true;
+            Log.Warn("中转站列表进入只读（" + reason + "），本次不会覆盖 items.json；请检查文件权限 / 内容后重启卡片");
         }
 
         /// <summary>列表文件比当前代码新：只警告一次、拒绝加载，并让所有后续写盘变成空操作。</summary>
         void RefuseHigherFormat(int version)
         {
             _readOnly = true;
+            _readOnlyReason = "列表文件版本过高（" + version + "，支持 " + StationState.CurrentFormatVersion + "）";
             if (_readOnlyLogged) return;
 
             _readOnlyLogged = true;

@@ -42,6 +42,8 @@ namespace MirrorpondHUD.Ui
         /// <summary>点了「恢复默认值」后以界面为准，不再把 live 的运行时字段合并回来。</summary>
         bool _skipRuntimeMerge;
         bool _suppress;
+        /// <summary>正在把控件值读回设置树：读取期间不能因为「改外观」把刚套用的主题名清掉。</summary>
+        bool _readingUi;
         bool _reallyClose;
         bool _loadFailed;
 

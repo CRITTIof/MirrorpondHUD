@@ -103,6 +103,20 @@ namespace MirrorpondHUD.Cards
             station.Normalize();
             if (station.Mode != "Copy" || station.MaxEntries != 1) return "中转站设置归一化失败";
             if (string.IsNullOrEmpty(Validate(config))) return "空接收目录应当校验失败";
+
+            // B-1：盘符根不能被当成普通条目的文件名，否则目标会组合到接收目录外。
+            string root = Path.GetPathRoot(Environment.SystemDirectory);
+            if (!StationFiles.IsRootPath(root)) return "盘符根没有被识别: " + root;
+            try
+            {
+                StationFiles.UniqueTarget(root, root, true);
+                return "盘符根作为条目名没有被拒绝";
+            }
+            catch (IOException)
+            {
+                // 预期：绝对路径 / 非法文件名被拒绝。
+            }
+
             return null;
         }
 
@@ -163,6 +177,11 @@ namespace MirrorpondHUD.Cards
             else Mode = "Reference";
 
             Directory = (Directory ?? "").Trim();
+            if (Directory.Length > 0)
+            {
+                try { Directory = Path.GetFullPath(Directory); }
+                catch (Exception ex) { Log.Warn("中转站接收目录规范化失败，保留原值: " + ex.Message); }
+            }
             MaxEntries = (int)Settings.Clamp(MaxEntries, 1, 500);
         }
 

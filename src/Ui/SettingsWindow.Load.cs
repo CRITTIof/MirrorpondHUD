@@ -197,103 +197,111 @@ namespace MirrorpondHUD.Ui
 
         Settings ReadUi()
         {
-            // 输入框里可能还有没失焦的 API Key（直接点了「确定」）：先加密收下来，别丢。
-            foreach (CardEditor editor in _editors) editor.CommitPendingEdits();
-
-            Settings s = _working;
-            ApplyCliBoxes();   // 输入框可能还没失焦（直接点了「确定」）
-
-            FontItem font = FontCombo.SelectedItem as FontItem ?? _selectedFont;
-            if (font != null && !string.IsNullOrWhiteSpace(font.Family)) s.Style.FontFamily = font.Family;
-            s.Style.FontSize = Math.Round(FontSizeSlider.Value);
-            s.Style.IconScale = Math.Round(IconScaleSlider.Value, 2);
-            s.Style.Bold = BoldCheck.IsChecked == true;
-            s.Style.Foreground = (FgBox.Text ?? "").Trim();
-            s.Style.Background = (BgBox.Text ?? "").Trim();
-            s.Style.BackgroundOpacity = BgOpacitySlider.Value;
-            s.Style.Acrylic = AcrylicCheck.IsChecked == true;
-            s.Style.GlassMode = GlassModeTag();
-            s.Style.GlassSource = GlassSourceTag();
-            // Schema 7：Acrylic / Glass 双套模糊字段合并为 BlurRadius / BlurFps，三种实现共用。
-            s.Style.BlurRadius = (int)Math.Round(GlassBlurSlider.Value);
-            s.Style.BlurFps = (int)Math.Round(GlassFpsSlider.Value);
-            s.Style.TextAlignment = AlignmentTag();
-            s.Style.Padding = Math.Round(PaddingSlider.Value);
-            s.Style.LineHeight = Math.Round(LineHeightSlider.Value);
-            s.Overlay.CornerRadius = Math.Round(CornerSlider.Value);
-            s.Overlay.Shadow = ShadowCheck.IsChecked == true;
-
-            s.Style.TextOutline = OutlineCheck.IsChecked == true;
-            s.Style.OutlineColor = (OutlineColorBox.Text ?? "").Trim();
-            s.Style.OutlineThickness = Math.Round(OutlineSlider.Value, 2);
-            s.Style.BackgroundImage = (ImagePathBox.Text ?? "").Trim();
-            s.Style.ImageOpacity = ImageOpacitySlider.Value;
-            s.Style.ImageStretch = StretchTag();
-            s.Style.FixedWidth = Math.Round(FixedWidthSlider.Value);
-
-            s.Data.ShowCpu = CpuCheck.IsChecked == true;
-            s.Data.ShowGpu = GpuCheck.IsChecked == true;
-            s.Data.ShowMemory = MemCheck.IsChecked == true;
-            s.Data.ShowDisk = DiskCheck.IsChecked == true;
-            s.Data.ShowNetwork = NetCheck.IsChecked == true;
-            s.Data.ShowKeyboard = KeysCheck.IsChecked == true;
-            s.Data.KeyHistoryCount = Math.Max(1, ParseInt(KeyCountBox.Text, s.Data.KeyHistoryCount));
-            s.Data.MaxKeyChars = Math.Max(4, ParseInt(MaxKeyCharsBox.Text, s.Data.MaxKeyChars));
-            s.Data.RepeatThreshold = Math.Max(1, ParseInt(RepeatBox.Text, s.Data.RepeatThreshold));
-            s.Data.ShowNvidia = NvidiaCheck.IsChecked == true;
-            s.Data.GpuIndex = Math.Max(0, GpuCombo.SelectedIndex) - 1;
-
-            if (NvidiaIntervalCombo.SelectedIndex >= 0 &&
-                NvidiaIntervalCombo.SelectedIndex < SettingsDeviceCatalog.NvidiaOptions.Length)
-                s.Data.NvidiaIntervalMs = SettingsDeviceCatalog.NvidiaOptions[NvidiaIntervalCombo.SelectedIndex];
-
-            s.Data.NetworkAdapter = AdapterCombo.SelectedIndex <= 0
-                ? ""
-                : (AdapterCombo.SelectedItem as string ?? "");
-
-            var selectedDrives = new List<string>();
-            var allDrives = new List<string>();
-            foreach (object child in DrivesPanel.Children)
+            _readingUi = true;
+            try
             {
-                var box = child as CheckBox;
-                if (box == null) continue;
-                allDrives.Add((string)box.Tag);
-                if (box.IsChecked == true) selectedDrives.Add((string)box.Tag);
+                // 输入框里可能还有没失焦的 API Key（直接点了「确定」）：先加密收下来，别丢。
+                foreach (CardEditor editor in _editors) editor.CommitPendingEdits();
+
+                Settings s = _working;
+                ApplyCliBoxes();   // 输入框可能还没失焦（直接点了「确定」）
+
+                FontItem font = FontCombo.SelectedItem as FontItem ?? _selectedFont;
+                if (font != null && !string.IsNullOrWhiteSpace(font.Family)) s.Style.FontFamily = font.Family;
+                s.Style.FontSize = Math.Round(FontSizeSlider.Value);
+                s.Style.IconScale = Math.Round(IconScaleSlider.Value, 2);
+                s.Style.Bold = BoldCheck.IsChecked == true;
+                s.Style.Foreground = (FgBox.Text ?? "").Trim();
+                s.Style.Background = (BgBox.Text ?? "").Trim();
+                s.Style.BackgroundOpacity = BgOpacitySlider.Value;
+                s.Style.Acrylic = AcrylicCheck.IsChecked == true;
+                s.Style.GlassMode = GlassModeTag();
+                s.Style.GlassSource = GlassSourceTag();
+                // Schema 7：Acrylic / Glass 双套模糊字段合并为 BlurRadius / BlurFps，三种实现共用。
+                s.Style.BlurRadius = (int)Math.Round(GlassBlurSlider.Value);
+                s.Style.BlurFps = (int)Math.Round(GlassFpsSlider.Value);
+                s.Style.TextAlignment = AlignmentTag();
+                s.Style.Padding = Math.Round(PaddingSlider.Value);
+                s.Style.LineHeight = Math.Round(LineHeightSlider.Value);
+                s.Overlay.CornerRadius = Math.Round(CornerSlider.Value);
+                s.Overlay.Shadow = ShadowCheck.IsChecked == true;
+
+                s.Style.TextOutline = OutlineCheck.IsChecked == true;
+                s.Style.OutlineColor = (OutlineColorBox.Text ?? "").Trim();
+                s.Style.OutlineThickness = Math.Round(OutlineSlider.Value, 2);
+                s.Style.BackgroundImage = (ImagePathBox.Text ?? "").Trim();
+                s.Style.ImageOpacity = ImageOpacitySlider.Value;
+                s.Style.ImageStretch = StretchTag();
+                s.Style.FixedWidth = Math.Round(FixedWidthSlider.Value);
+
+                s.Data.ShowCpu = CpuCheck.IsChecked == true;
+                s.Data.ShowGpu = GpuCheck.IsChecked == true;
+                s.Data.ShowMemory = MemCheck.IsChecked == true;
+                s.Data.ShowDisk = DiskCheck.IsChecked == true;
+                s.Data.ShowNetwork = NetCheck.IsChecked == true;
+                s.Data.ShowKeyboard = KeysCheck.IsChecked == true;
+                s.Data.KeyHistoryCount = Math.Max(1, ParseInt(KeyCountBox.Text, s.Data.KeyHistoryCount));
+                s.Data.MaxKeyChars = Math.Max(4, ParseInt(MaxKeyCharsBox.Text, s.Data.MaxKeyChars));
+                s.Data.RepeatThreshold = Math.Max(1, ParseInt(RepeatBox.Text, s.Data.RepeatThreshold));
+                s.Data.ShowNvidia = NvidiaCheck.IsChecked == true;
+                s.Data.GpuIndex = Math.Max(0, GpuCombo.SelectedIndex) - 1;
+
+                if (NvidiaIntervalCombo.SelectedIndex >= 0 &&
+                    NvidiaIntervalCombo.SelectedIndex < SettingsDeviceCatalog.NvidiaOptions.Length)
+                    s.Data.NvidiaIntervalMs = SettingsDeviceCatalog.NvidiaOptions[NvidiaIntervalCombo.SelectedIndex];
+
+                s.Data.NetworkAdapter = AdapterCombo.SelectedIndex <= 0
+                    ? ""
+                    : (AdapterCombo.SelectedItem as string ?? "");
+
+                var selectedDrives = new List<string>();
+                var allDrives = new List<string>();
+                foreach (object child in DrivesPanel.Children)
+                {
+                    var box = child as CheckBox;
+                    if (box == null) continue;
+                    allDrives.Add((string)box.Tag);
+                    if (box.IsChecked == true) selectedDrives.Add((string)box.Tag);
+                }
+                s.Data.DiskDrives = selectedDrives.Count == allDrives.Count ? new List<string>() : selectedDrives;
+
+                if (RefreshCombo.SelectedIndex >= 0 && RefreshCombo.SelectedIndex < SettingsDeviceCatalog.RefreshOptions.Length)
+                    s.Behavior.RefreshMs = SettingsDeviceCatalog.RefreshOptions[RefreshCombo.SelectedIndex];
+
+                s.Overlay.Topmost = TopmostCheck.IsChecked == true;
+                s.Behavior.AutoStart = AutoStartCheck.IsChecked == true;
+                s.Behavior.StartMinimized = StartMinCheck.IsChecked == true;
+                s.Behavior.TrayEnabled = TrayCheck.IsChecked == true;
+                s.Behavior.IntroEnabled = IntroCheck.IsChecked == true;
+                s.Behavior.WelcomeText = (WelcomeBox.Text ?? "").Trim();
+                if (s.Behavior.WelcomeText.Length == 0) s.Behavior.WelcomeText = "Welcome Back";
+                s.Behavior.TypeSpeedMs = Math.Max(8, ParseInt(TypeSpeedBox.Text, s.Behavior.TypeSpeedMs));
+                s.Behavior.CursorStyle = CursorTag();
+                s.Behavior.CursorBlink = CursorBlinkCheck.IsChecked == true;
+
+                s.Overlay.Monitor = Math.Max(0, MonitorCombo.SelectedIndex);
+                s.Overlay.X = ParseDouble(XBox.Text, s.Overlay.X);
+                s.Overlay.Y = ParseDouble(YBox.Text, s.Overlay.Y);
+
+                s.Style.CardAlign = CardAlignCombo.SelectedIndex == 1 ? "Left"
+                                   : CardAlignCombo.SelectedIndex == 2 ? "Right" : "Auto";
+
+                s.Hotkeys.ToggleOverlay = (HotkeyToggleBox.Text ?? "").Trim();
+                s.Hotkeys.OpenSettings = (HotkeySettingsBox.Text ?? "").Trim();
+                s.Hotkeys.ToggleLock = (HotkeyLockBox.Text ?? "").Trim();
+
+
+                foreach (KeyValuePair<string, TextBox> pair in _cardHotkeyBoxes)
+                    s.Hotkeys.SetCardAction(pair.Key, (pair.Value.Text ?? "").Trim());
+
+                s.Normalize();
+                CardModel.Normalize(s);
+                return s;
             }
-            s.Data.DiskDrives = selectedDrives.Count == allDrives.Count ? new List<string>() : selectedDrives;
-
-            if (RefreshCombo.SelectedIndex >= 0 && RefreshCombo.SelectedIndex < SettingsDeviceCatalog.RefreshOptions.Length)
-                s.Behavior.RefreshMs = SettingsDeviceCatalog.RefreshOptions[RefreshCombo.SelectedIndex];
-
-            s.Overlay.Topmost = TopmostCheck.IsChecked == true;
-            s.Behavior.AutoStart = AutoStartCheck.IsChecked == true;
-            s.Behavior.StartMinimized = StartMinCheck.IsChecked == true;
-            s.Behavior.TrayEnabled = TrayCheck.IsChecked == true;
-            s.Behavior.IntroEnabled = IntroCheck.IsChecked == true;
-            s.Behavior.WelcomeText = (WelcomeBox.Text ?? "").Trim();
-            if (s.Behavior.WelcomeText.Length == 0) s.Behavior.WelcomeText = "Welcome Back";
-            s.Behavior.TypeSpeedMs = Math.Max(8, ParseInt(TypeSpeedBox.Text, s.Behavior.TypeSpeedMs));
-            s.Behavior.CursorStyle = CursorTag();
-            s.Behavior.CursorBlink = CursorBlinkCheck.IsChecked == true;
-
-            s.Overlay.Monitor = Math.Max(0, MonitorCombo.SelectedIndex);
-            s.Overlay.X = ParseDouble(XBox.Text, s.Overlay.X);
-            s.Overlay.Y = ParseDouble(YBox.Text, s.Overlay.Y);
-
-            s.Style.CardAlign = CardAlignCombo.SelectedIndex == 1 ? "Left"
-                               : CardAlignCombo.SelectedIndex == 2 ? "Right" : "Auto";
-
-            s.Hotkeys.ToggleOverlay = (HotkeyToggleBox.Text ?? "").Trim();
-            s.Hotkeys.OpenSettings = (HotkeySettingsBox.Text ?? "").Trim();
-            s.Hotkeys.ToggleLock = (HotkeyLockBox.Text ?? "").Trim();
-
-
-            foreach (KeyValuePair<string, TextBox> pair in _cardHotkeyBoxes)
-                s.Hotkeys.SetCardAction(pair.Key, (pair.Value.Text ?? "").Trim());
-
-            s.Normalize();
-            CardModel.Normalize(s);
-            return s;
+            finally
+            {
+                _readingUi = false;
+            }
         }
     }
 }

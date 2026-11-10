@@ -37,7 +37,9 @@ namespace MirrorpondHUD.Core
         public void Normalize()
         {
             Shell = Settings.NormalizeShell(Shell);
-            CustomShell = string.IsNullOrWhiteSpace(CustomShell) ? "cmd.exe /c {cmd}" : CustomShell.Trim();
+            // 空串代表用户显式清空了自定义模板，必须留给 Validate 报错；
+            // 只有 null（旧配置缺字段）才补默认值。
+            CustomShell = CustomShell == null ? "cmd.exe /c {cmd}" : CustomShell.Trim();
             WorkingDirectory = (WorkingDirectory ?? "").Trim();
             MaxLineChars = (int)Settings.Clamp(MaxLineChars, 20, 4000);
             MaxLines = (int)Settings.Clamp(MaxLines, 1, 500);

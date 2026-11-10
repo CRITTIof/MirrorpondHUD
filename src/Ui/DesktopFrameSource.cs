@@ -103,6 +103,7 @@ namespace MirrorpondHUD.Ui
         int _stagingHeight;
         int _screenWidth;
         int _screenHeight;
+        bool _rangeWarned;
         bool _frameAvailable;
         int _frameLeft = int.MinValue;
         int _frameTop = int.MinValue;
@@ -345,11 +346,21 @@ namespace MirrorpondHUD.Ui
             if (_dead || _disposed) return false;
             if (destinationBits == IntPtr.Zero || width < 1 || height < 1) return false;
 
-            if (left < 0) left = 0;
-            if (top < 0) top = 0;
-            if (left + width > _screenWidth) width = _screenWidth - left;
-            if (top + height > _screenHeight) height = _screenHeight - top;
-            if (width < 1 || height < 1) return false;
+            // 复制对象只覆盖主屏输出。请求矩形必须完全落在输出内：
+            // 以前这里把 left/top 钳到 0，共享图仍按原 origin 取块 —— 副屏在左时会整叠读错像素；
+            // 副屏在右时 width 变负又静默返回 false。这里不做任何改写，越界就明确交给 GDI。
+            if (left < 0 || top < 0 ||
+                left + width > _screenWidth || top + height > _screenHeight)
+            {
+                if (!_rangeWarned)
+                {
+                    _rangeWarned = true;
+                    Log.Warn("桌面复制请求区域超出主屏输出（" + left + "," + top + " " + width + "x" + height +
+                             "，输出 " + _screenWidth + "x" + _screenHeight + "），该区域改走 GDI 读屏");
+                }
+                return false;
+            }
+
             if (!EnsureStaging(width, height)) { EnterDead("staging 纹理创建失败（详见上方日志）"); return false; }
 
             bool regionKnown = _frameAvailable && _frameLeft == left && _frameTop == top
@@ -517,6 +528,16 @@ namespace MirrorpondHUD.Ui
             if (_disposed) return;
             _disposed = true;
             ReleaseAll();
+        }
+
+        /// <summary>
+        /// 目标共享 DIB 被重建（尺寸变化 / Detach 后重新挂接）时调用：
+        /// 让下一次 TryReadInto 不再相信“同一区域已拷贝”，否则桌面静止时
+        /// AcquireNextFrame 超时会直接返回 true，共享图仍是全零 → 黑帧误触发降级（L-3）。
+        /// </summary>
+        public void InvalidateDestination()
+        {
+            _frameAvailable = false;
         }
 
         static IntPtr Method(IntPtr instance, int slot)

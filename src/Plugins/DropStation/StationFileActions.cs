@@ -265,6 +265,28 @@ namespace MirrorpondHUD.Cards
             catch { return path; }
         }
 
+        /// <summary>
+        /// 是否是盘符根 / UNC 共享根（<c>D:\</c>、<c>\\server\share\</c>）。
+        /// 这类路径不能作为中转站条目：目标组合会丢掉接收目录，Move 模式还会递归删源根。
+        /// </summary>
+        public static bool IsRootPath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return false;
+
+            try
+            {
+                string full = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                string root = Path.GetPathRoot(full);
+                if (string.IsNullOrEmpty(root)) return false;
+                root = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                return string.Equals(full, root, StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         /// <summary>路径是否位于接收目录内部（用于禁止把接收目录之外的文件移到回收站）。</summary>
         public static bool IsInside(string directory, string path)
         {
@@ -296,14 +318,23 @@ namespace MirrorpondHUD.Cards
         /// <summary>重名自动改成「名字 (2).扩展名」；最多尝试 999 个后缀，保持原有上限。</summary>
         public static string UniqueTarget(string directory, string fileName, bool isDirectory = false)
         {
+            if (string.IsNullOrWhiteSpace(directory)) throw new IOException("接收目录为空。");
+            if (string.IsNullOrWhiteSpace(fileName)) throw new IOException("条目名为空。");
+            if (Path.IsPathRooted(fileName) || fileName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+                throw new IOException("条目名不能是绝对路径或包含非法字符: " + fileName);
+
             string baseName = isDirectory ? fileName : Path.GetFileNameWithoutExtension(fileName);
             string extension = isDirectory ? "" : Path.GetExtension(fileName);
             string candidate = Path.Combine(directory, fileName);
+            if (!IsInside(directory, candidate))
+                throw new IOException("目标路径越出接收目录: " + candidate);
 
             int index = 2;
             while ((File.Exists(candidate) || Directory.Exists(candidate)) && index < 1000)
             {
                 candidate = Path.Combine(directory, baseName + " (" + index + ")" + extension);
+                if (!IsInside(directory, candidate))
+                    throw new IOException("目标路径越出接收目录: " + candidate);
                 index++;
             }
             return candidate;

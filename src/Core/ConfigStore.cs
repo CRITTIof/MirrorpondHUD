@@ -26,7 +26,7 @@ namespace MirrorpondHUD.Core
         /// <summary>最近一次加载设置的警告（损坏 / 从备份恢复 / 未来版本只读）。正常加载为空。</summary>
         public static string LastLoadWarning { get; private set; } = "";
 
-        /// <summary>配置来自更高 SchemaVersion：只读加载，Save 拒绝覆盖。</summary>
+        /// <summary>配置处于只读加载状态：更高 SchemaVersion，或本次读取 I/O 失败；Save 拒绝覆盖。</summary>
         public static bool LastLoadReadOnly { get; private set; }
 
         /// <summary>
@@ -82,15 +82,30 @@ namespace MirrorpondHUD.Core
             bool future = false;
             bool empty = false;
             bool brokenBackupFailed = false;
+            bool readIoFailed = false;
 
             string file = Path;
             bool exists = File.Exists(file);
             if (exists)
             {
-                if (!TryReadSettings(file, out settings, out migrated, out corrupted, out empty, out future))
-                    corrupted = true;
+                if (!TryReadSettings(file, out settings, out migrated, out corrupted, out empty, out future,
+                                    out readIoFailed))
+                {
+                    // I/O 失败（占用 / 权限 / 网络盘抖动）不是“内容损坏”：不能备份后用默认值覆盖原文件。
+                    if (readIoFailed)
+                    {
+                        LastLoadReadOnly = true;
+                        LastLoadWarning = "设置文件暂时读不到（可能被占用 / 权限不足），本次只读加载默认设置；" +
+                                          "不会覆盖原文件。处理后可重启或重新保存。";
+                        Log.Warn("设置文件读取失败，按只读默认设置启动（不会覆盖原文件）: " + file);
+                    }
+                    else
+                    {
+                        corrupted = true;
+                    }
+                }
 
-                if (corrupted || empty)
+                if (!readIoFailed && (corrupted || empty))
                 {
                     if (corrupted)
                     {
@@ -208,17 +223,32 @@ namespace MirrorpondHUD.Core
         }
 
         static bool TryReadSettings(string file, out Settings settings, out bool migrated,
-                                    out bool corrupted, out bool empty, out bool future)
+                                    out bool corrupted, out bool empty, out bool future,
+                                    out bool ioFailed)
         {
             settings = new Settings();
             migrated = false;
             corrupted = false;
             empty = false;
             future = false;
+            ioFailed = false;
+
+            string text;
+            try
+            {
+                text = File.ReadAllText(file, Encoding.UTF8);
+            }
+            catch (Exception ex)
+            {
+                // 读文件本身失败（共享冲突 / 权限 / 网络盘）和“内容解析失败”必须分开：
+                // 前者不能走损坏恢复，否则可能用默认值覆盖仍然有效的配置。
+                ioFailed = true;
+                Log.Warn("读取设置文件失败（I/O）: " + ex.Message);
+                return false;
+            }
 
             try
             {
-                string text = File.ReadAllText(file, Encoding.UTF8);
                 if (string.IsNullOrWhiteSpace(text))
                 {
                     empty = true;
@@ -236,7 +266,9 @@ namespace MirrorpondHUD.Core
             }
             catch (Exception ex)
             {
-                Log.Warn("读取设置失败: " + ex.Message);
+                // 解析器异常属于内容损坏，按 corrupted 处理（后续可备份现场）。
+                corrupted = true;
+                Log.Warn("设置内容解析失败: " + ex.Message);
                 return false;
             }
         }
@@ -297,8 +329,8 @@ namespace MirrorpondHUD.Core
 
             if (LastLoadReadOnly)
             {
-                LastSaveError = "配置来自更高 SchemaVersion，当前版本只读（降级覆盖会破坏新配置）";
-                Log.Warn("配置来自更高版本，只读模式拒绝保存");
+                LastSaveError = "配置处于只读加载状态（更高版本或本次读取失败），拒绝覆盖原文件";
+                Log.Warn("配置只读，拒绝保存");
                 return false;
             }
 

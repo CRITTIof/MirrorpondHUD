@@ -135,9 +135,9 @@ namespace MirrorpondHUD.Cards
             ApplyStyle(_settings);
             LoadItems();
             Rebuild();
-            // 列表文件来自更高版本：拒绝加载是保护动作，但必须让用户看见，不能只留日志。
+            // 列表文件只读：拒绝加载 / 写盘是保护动作，但必须让用户看见，不能只留日志。
             if (_store.IsReadOnly)
-                SetStatus("列表文件来自更高版本，已只读；不会覆盖原文件（详见日志）", CardStatusKind.Warning);
+                SetStatus("列表文件只读（" + _store.ReadOnlyReason + "）；本次改动不会写入磁盘", CardStatusKind.Warning);
             else if (_autoRemoved > 0) SetStatus("已自动移除 " + _autoRemoved + " 个丢失项", CardStatusKind.Success);
             else SetStatus(_items.Count == 0 ? "把文件拖进来，或从资源管理器拖入。" : "就绪", CardStatusKind.Normal);
         }
@@ -273,6 +273,13 @@ namespace MirrorpondHUD.Cards
                 if (!isDirectory && !File.Exists(source))
                 {
                     SetStatus("文件不存在：" + Path.GetFileName(source), CardStatusKind.Error);
+                    continue;
+                }
+
+                // 盘符根 / UNC 共享根：目标组合会丢掉接收目录，Move 还会递归删源根。
+                if (isDirectory && StationFiles.IsRootPath(source))
+                {
+                    SetStatus("不能收纳盘符根或共享根：" + source, CardStatusKind.Error);
                     continue;
                 }
 
@@ -645,7 +652,7 @@ namespace MirrorpondHUD.Cards
             if (_store.IsReadOnly)
             {
                 Rebuild();
-                SetStatus("列表文件来自更高版本，已只读；本次改动不会写入磁盘", CardStatusKind.Warning);
+                SetStatus("列表文件只读（" + _store.ReadOnlyReason + "）；本次改动不会写入磁盘", CardStatusKind.Warning);
                 return;
             }
 

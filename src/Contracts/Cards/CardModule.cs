@@ -7,8 +7,8 @@ using MirrorpondHUD.Core;
 namespace MirrorpondHUD.Cards
 {
     /// <summary>
-    /// 一种卡片 = 一个模块。新增功能只要加一个实现这个接口的 public 类，
-    /// 构造时由 <see cref="CardRegistry"/> 反射发现，不用改宿主、工程文件或设置页代码。
+    /// 一种卡片 = 一个模块。新增卡片实现这个接口并打成 DLL 插件，由 <c>CardPluginLoader</c>
+    /// 按 manifest 加载（2.14 起内置卡也走同一条路径），不需要改宿主或设置页代码。
     /// </summary>
     public interface ICardModule
     {

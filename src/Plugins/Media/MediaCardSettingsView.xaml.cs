@@ -270,6 +270,22 @@ namespace MirrorpondHUD.Cards
         /// <summary>重新扫一遍 PATH（设置页的「检测」按钮）；P1-8：异步探测，不冻结设置页。</summary>
         public async void RefreshDecoders()
         {
+            // async void 的异常会直接进 Dispatcher：非白名单类型会被宿主判成
+            // “不可信状态”并退出（S4 同类回归）。这里拆出外壳，兜住探测与 UI 刷新。
+            try
+            {
+                await RefreshDecodersCore();
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("重新检测解码器失败: " + ex.Message);
+                try { Raise("DecoderHint"); }
+                catch (Exception raiseEx) { Log.Warn("刷新解码器提示失败: " + raiseEx.Message); }
+            }
+        }
+
+        async Task RefreshDecodersCore()
+        {
             List<DecoderInfo> found = await Decoders.DetectAsync(true);
             Log.Info("手动重新检测解码器：" + Decoders.Describe(found));
             Raise("DecoderHint");

@@ -98,7 +98,19 @@ namespace MirrorpondHUD.Ui
                 return;
             }
 
-            bool saved = _onApply != null && _onApply(s);
+            bool saved;
+            try
+            {
+                saved = _onApply != null && _onApply(s);
+            }
+            catch (Exception ex)
+            {
+                // 控制器可能已经改了一部分运行期状态。至少要把失败显示出来，
+                // 不能像原来那样异常直接逸出、状态行还停留在上一次的结果。
+                Log.Error("应用设置失败", ex);
+                StatusText.Text = "应用设置失败：" + ex.Message + "（未写入磁盘；详情见日志）";
+                return;
+            }
 
             // 控制器在 ApplySettings 里直接把传入对象当成 live settings（_settings = settings），
             // 之后热键切模式就落在它上面；记下来供下次保存前的运行时字段合并。
@@ -175,6 +187,14 @@ namespace MirrorpondHUD.Ui
             Settings live = _liveSettings;
             Settings baseline = _runtimeBaseline;
 
+            if (live.Behavior != null && baseline.Behavior != null && target.Behavior != null)
+            {
+                // 托盘菜单直接改 live 树并立即落盘；设置窗保存时如果用户没动过这个复选框，
+                // 必须采用 live 的值，否则会把托盘刚打开的开机自启静默翻回去（L-8）。
+                target.Behavior.AutoStart = MergeRuntimeBool(
+                    target.Behavior.AutoStart, baseline.Behavior.AutoStart, live.Behavior.AutoStart);
+            }
+
             if (live.Hotkeys != null && baseline.Hotkeys != null && target.Hotkeys != null)
             {
                 target.Hotkeys.ToggleOverlay = MergeRuntimeValue(
@@ -249,6 +269,12 @@ namespace MirrorpondHUD.Ui
         static bool SameRuntimeValue(string left, string right)
         {
             return string.Equals(left ?? "", right ?? "", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>布尔运行时字段：用户没动过（仍等于基线）才采用 live 的值。</summary>
+        static bool MergeRuntimeBool(bool target, bool baseline, bool live)
+        {
+            return target == baseline ? live : target;
         }
 
         /// <summary>按卡片 Id 建索引；Id 是删除 / 重排都不变的稳定标识。</summary>

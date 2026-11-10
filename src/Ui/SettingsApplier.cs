@@ -115,10 +115,30 @@ namespace MirrorpondHUD.Ui
             foreach (CardSlot slot in _host.Cards) summoned[slot.Config.Id] = slot.Summoned;
 
             _host.Settings = settings;
-            settings.Normalize();
-            CardModel.Normalize(settings);
+            try
+            {
+                settings.Normalize();
+                CardModel.Normalize(settings);
 
-            SyncCards(summoned);
+                SyncCards(summoned);
+            }
+            catch (Exception ex)
+            {
+                // SyncCards 可能已经改了一部分槽位（RebindSlot 先于 cards.Clear）。
+                // 这里恢复旧 Settings，再用旧树重建一次卡片视图，避免“运行用旧树、内存是新树”。
+                Log.Error("应用设置失败，回滚到旧设置", ex);
+                _host.Settings = current;
+                try
+                {
+                    SyncCards(summoned);
+                    _host.RefreshVisibility();
+                }
+                catch (Exception rollback)
+                {
+                    Log.Error("应用设置回滚失败（界面可能处于新旧混合状态）", rollback);
+                }
+                throw;
+            }
 
             _keys.Configure(settings.Data.KeyHistoryCount, settings.Data.RepeatThreshold,
                             settings.Data.MaxKeyChars);

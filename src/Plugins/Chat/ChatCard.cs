@@ -425,6 +425,10 @@ namespace MirrorpondHUD.Cards
             if (_host == null) return;
             if (!_host.SaveSettings())
                 Log.Warn("保存对话模式失败：宿主拒绝了配置写入");
+
+            // 把宿主里的内容签名刷成“已包含新模式”的版本：下一次应用设置
+            // 不会因为签名差把 ChatView 重建、把切换模式后的新对话清空（B-6）。
+            _host.RefreshContentSignature();
         }
 
         /// <summary>在当前 Settings 里找这张对话卡的配置；找不到返回 null（旧视图，不能写盘）。</summary>

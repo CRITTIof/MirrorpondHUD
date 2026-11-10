@@ -180,7 +180,7 @@ namespace MirrorpondHUD.Cards
             catch
             {
                 // 失败 / 取消：把写了一半的目标文件 / 文件夹删掉，别留半成品。
-                CleanupPartial(context.Target);
+                CleanupPartial(context.Directory, context.Target);
                 throw;
             }
         }
@@ -235,6 +235,9 @@ namespace MirrorpondHUD.Cards
             var watch = Stopwatch.StartNew();
             DateTime lastReport = DateTime.MinValue;
 
+            // 1 MB 缓冲提到循环外：一个文件夹几百个文件时不再反复分配 LOH 级数组。
+            var buffer = new byte[1024 * 1024];
+
             foreach (KeyValuePair<string, string> pair in plan)
             {
                 token.ThrowIfCancellationRequested();
@@ -245,7 +248,6 @@ namespace MirrorpondHUD.Cards
                 using (var input = File.OpenRead(pair.Key))
                 using (var output = File.Create(pair.Value))
                 {
-                    var buffer = new byte[1024 * 1024];
                     int read;
                     while ((read = input.Read(buffer, 0, buffer.Length)) > 0)
                     {
@@ -290,12 +292,20 @@ namespace MirrorpondHUD.Cards
         }
 
         /// <summary>失败 / 取消：把写了一半的目标文件 / 文件夹删掉，别留半成品。</summary>
-        void CleanupPartial(string target)
+        void CleanupPartial(string directory, string target)
         {
             try
             {
                 if (!string.IsNullOrEmpty(target))
                 {
+                    // 只删接收目录内部的半成品。目标被路径缺陷带到盘符根 / 接收目录外时，
+                    // 宁可留下半成品并记 Warn，也不执行递归删除。
+                    if (!StationFiles.IsInside(directory, target))
+                    {
+                        Log.Warn("中转站清理跳过越界目标: " + target);
+                        return;
+                    }
+
                     if (Directory.Exists(target)) Directory.Delete(target, true);
                     else if (File.Exists(target)) File.Delete(target);
                 }
@@ -329,9 +339,18 @@ namespace MirrorpondHUD.Cards
                 {
                     try
                     {
-                        if (item.IsDirectory) Directory.Delete(item.Path, true);
+                        // 盘符根 / 共享根绝不能进 Move 的删源分支；正常入口已拒收，
+                        // 这里再守一次，防止手改 items.json 后点“移动”。
+                        if (StationFiles.IsRootPath(item.Path))
+                        {
+                            Log.Warn("中转站移动模式拒绝删除根路径源: " + item.Path);
+                            _sink.CopyStatus("已收纳，但源是根路径，未删除", CardStatusKind.Warning);
+                        }
+                        else if (item.IsDirectory) Directory.Delete(item.Path, true);
                         else File.Delete(item.Path);
-                        _sink.CopyStatus("已移动 " + item.Name, CardStatusKind.Success);
+
+                        if (!StationFiles.IsRootPath(item.Path))
+                            _sink.CopyStatus("已移动 " + item.Name, CardStatusKind.Success);
                     }
                     catch (Exception ex)
                     {

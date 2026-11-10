@@ -729,7 +729,40 @@ namespace MirrorpondHUD.Ui.Controls.Media
 
         void ApplyVideoSettings(MediaSettings previous)
         {
-            if (_videoWindow == null) return;
+            // ffmpeg 路径没有 _videoWindow；设置页改静音 / 速度 / 循环 / 自动播放时，
+            // 以前这里直接 return，用户看到“保存成功”但播放行为完全没变（L-4）。
+            if (_videoWindow == null)
+            {
+                if (_player == null) return;
+
+                try
+                {
+                    double speed = _settings.Speed > 0 ? _settings.Speed : 1.0;
+                    if (previous == null || Math.Abs(previous.Speed - speed) > 0.001)
+                    {
+                        _speed = speed;
+                        _player.SetSpeed(speed);
+                    }
+
+                    if (previous == null || previous.Muted != _settings.Muted)
+                        _player.SetMuted(_settings.Muted);
+
+                    if (previous == null || previous.Loop != _settings.Loop)
+                        _player.SetLoop(_settings.Loop);
+
+                    if (previous != null && previous.Autoplay != _settings.Autoplay)
+                    {
+                        if (_settings.Autoplay) Play();
+                        else Pause();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Warn("更新 ffmpeg 视频设置失败: " + ex.Message);
+                }
+                return;
+            }
+
             try
             {
                 _videoWindow.Video.IsMuted = _settings.Muted;
@@ -938,15 +971,23 @@ namespace MirrorpondHUD.Ui.Controls.Media
 
         public void Pause()
         {
+            if (_disposed) return;
             try
             {
                 if (_gif != null) _gif.Stop();
                 if (_player != null) _player.Pause();
                 if (_videoWindow != null) _videoWindow.Pause();
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("媒体暂停失败: " + ex.Message);
+            }
+            finally
+            {
+                // 暂停失败也要让状态行和 _playing 保持一致，不能停在旧值。
                 _playing = false;
                 UpdateStatus();
             }
-            catch { }
         }
 
         // ==================== 热键控制 ====================

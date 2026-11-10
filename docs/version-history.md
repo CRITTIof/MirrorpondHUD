@@ -1,4 +1,4 @@
-# 版本修改记录（2.4.1 → 2.26.0）
+# 版本修改记录（2.4.1 → 2.27.0）
 
 > 范围：本文只记录**这一轮接手后我做的版本**（v2.4.1 起）。v2.4.0 及更早是既有历史，不在本文档里。
 > 数据全部取自仓库真实提交（`git diff --shortstat <上一版>..<本版>`），文件行的 `+ / -` 就是实际增删行数。
@@ -10,10 +10,10 @@
 > `f67a255` / `5f8933c` / `ef70cea`，**未发布、未合并**）；`v2.14.5`（`a0fe549`）/ `v2.14.6`（`3e6abc6`）
 > 已推送到 `origin/feature/runtime-card-loading`；
 > `v2.14.7`（`abcbcec`）/ `v2.14.8`（`633e9d6`）已随文档同步提交 `d73d2ec` 推送到同一分支（未发布、未合并）；
-> `v2.14.9`（`aba873a`）已推送；`v2.15.0`（`78d3381`）已推送（文档同步提交 `2eba9b4`）；`v2.16.0`（代码 `6406d96`，文档同步 `d1fd414`）**已推送并快进合并到 `main`**；`v2.17.0`（`27b8bbd`）/ `v2.18.0`（`1e1c6ac`）/ `v2.19.0`（`d21773c`）**已推送并快进合并到 `main`**；`v2.20.0`（代码 `d8f36ab`，文档 `de64021`）**已推送并快进合并到 `main`**；`v2.21.0`（代码 `0d687e9`，文档 `4911e1b`）**已推送并快进合并到 `main`**，未打 tag、未发布 Release；`v2.22.0`（代码为 `73837aa`–`2907be0` 的 12 个提交，文档同步本次提交）**已合并 `main`**，未打 tag、未发布 Release。 `v2.23.0`（本轮 6 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.24.0`（本轮 4 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.25.0`（本轮 2 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.26.0`（本轮 2 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。
+> `v2.14.9`（`aba873a`）已推送；`v2.15.0`（`78d3381`）已推送（文档同步提交 `2eba9b4`）；`v2.16.0`（代码 `6406d96`，文档同步 `d1fd414`）**已推送并快进合并到 `main`**；`v2.17.0`（`27b8bbd`）/ `v2.18.0`（`1e1c6ac`）/ `v2.19.0`（`d21773c`）**已推送并快进合并到 `main`**；`v2.20.0`（代码 `d8f36ab`，文档 `de64021`）**已推送并快进合并到 `main`**；`v2.21.0`（代码 `0d687e9`，文档 `4911e1b`）**已推送并快进合并到 `main`**，未打 tag、未发布 Release；`v2.22.0`（代码为 `73837aa`–`2907be0` 的 12 个提交，文档同步本次提交）**已合并 `main`**，未打 tag、未发布 Release。 `v2.23.0`（本轮 6 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.24.0`（本轮 4 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.25.0`（本轮 2 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.26.0`（本轮 2 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.27.0`（本轮按审阅复核顺序修复 + 性能采样，未合并 main）**已完成**，未打 tag、未发布 Release。
 > `v2.14.1` / `v2.14.2` / `v2.14.4` 的规模用对应提交的 `git show --shortstat`；`v2.14.3` / `v2.14.5` / `v2.14.6`
 > 按当时提交前工作区的 `git diff --shortstat` 计算；`v2.14.7` / `v2.14.8` 用对应提交的 `git show --shortstat`；
-> `v2.14.9` 用提交前工作区的 `git diff --shortstat -- MirrorpondHUD.csproj src`；`v2.15.0` 用 `git show --shortstat 78d3381`；`v2.16.0` 用 `git show --shortstat 6406d96`；`v2.17.0` 用 `git show --shortstat 27b8bbd`；`v2.18.0` 用 `git show --shortstat 1e1c6ac`；`v2.19.0` 用 `git show --shortstat d21773c`；`v2.20.0` 用 `git show --shortstat d8f36ab`；`v2.21.0` 用 `git show --shortstat 0d687e9`（文档同步另计；评审指出的 `d6e1af3` 是未合并的游离提交，实际合并进 main 的是 `0d687e9`）；`v2.22.0` 用 `git diff --shortstat b366e32..4899f3f`（30 文件，+1116 / −246；版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.23.0` 用 `git diff --shortstat 6da03f0..HEAD`（58 文件，+6304 / −4618；版本号 15 文件 +15 / −15 与版本记录另计）。 `v2.24.0` 用 `git diff --shortstat 96acd1b..HEAD`（55 文件，+1876 / −301；版本号 15 文件 +15 / −15 与版本记录另计）。 `v2.25.0` 用 `git diff --shortstat 29efb91..HEAD`（24 文件，+520 / −153；版本号 15 文件 +15 / −15 与版本记录另计）。 `v2.26.0` 源码改动 14 文件，+165 / −87（版本号 15 文件 +15 / −15 与文档同步另计）。
+> `v2.14.9` 用提交前工作区的 `git diff --shortstat -- MirrorpondHUD.csproj src`；`v2.15.0` 用 `git show --shortstat 78d3381`；`v2.16.0` 用 `git show --shortstat 6406d96`；`v2.17.0` 用 `git show --shortstat 27b8bbd`；`v2.18.0` 用 `git show --shortstat 1e1c6ac`；`v2.19.0` 用 `git show --shortstat d21773c`；`v2.20.0` 用 `git show --shortstat d8f36ab`；`v2.21.0` 用 `git show --shortstat 0d687e9`（文档同步另计；评审指出的 `d6e1af3` 是未合并的游离提交，实际合并进 main 的是 `0d687e9`）；`v2.22.0` 用 `git diff --shortstat b366e32..4899f3f`（30 文件，+1116 / −246；版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.23.0` 用 `git diff --shortstat 6da03f0..HEAD`（58 文件，+6304 / −4618；版本号 15 文件 +15 / −15 与版本记录另计）。 `v2.24.0` 用 `git diff --shortstat 96acd1b..HEAD`（55 文件，+1876 / −301；版本号 15 文件 +15 / −15 与版本记录另计）。 `v2.25.0` 用 `git diff --shortstat 29efb91..HEAD`（24 文件，+520 / −153；版本号 15 文件 +15 / −15 与版本记录另计）。 `v2.26.0` 源码改动 14 文件，+165 / −87（版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.27.0` 源码改动 31 文件，+765 / −164（含新增 PerformanceProbe 127 行；版本号与文档同步另计）。
 
 ## 0. 总览
 
@@ -79,6 +79,7 @@
 | v2.24.0 | 2026-11-10 | 本轮 4 个提交 | Schema 7（玻璃模糊字段合并 / DesktopFeed 更名 / Chat 别名迁移）、GlassRuntimeState 单源、回收站删除、UiKit 控件画廊、外部引用清理 | 55 文件，+1876 / −301（版本号与版本记录另计） |
 | v2.25.0 | 2026-11-10 | 本轮 2 个提交 | 卡片拖动跟随、呼出/消失 160ms 淡入淡出 + 8px、补位/自动对齐 180ms ease-out | 24 文件，+520 / −153（版本号与版本记录另计） |
 | v2.26.0 | 2026-11-10 | 本轮 2 个提交 | 非常驻卡（命令卡）呼出/收起动画 + 布局调度不再打断动画；Reicon 图标换 Lucide（键帽保留） | 14 文件，+165 / −87（版本号与版本记录另计） |
+| v2.27.0 | 2026-11-10 | 本轮修复+采样 | 审阅复核修复：中转站根路径/列表只读、主题名、ConfigStore I/O 三态、保存回滚、复制任务出 UI 线程、ffmpeg 热更新、玻璃边界、唤醒重试、CTS/模板/Chat 签名；新增 `--perf` 基线 | 31 文件，+765 / −164（版本号与版本记录另计） |
 
 ---
 
@@ -2744,16 +2745,77 @@ JSON 绑定错误静默置空等。2.22.0 按「失败必须可见」铁律完�
 
 ---
 
-## 61. 不在版本里的东西
+## 61. v2.27.0（本轮按审阅复核顺序修复 + 性能采样，分支 `feature/lucide-icons`，未合并 main）
+
+### 背景
+
+2.26.0 的审阅复核确认了数据安全、玻璃边界、ffmpeg 热更新、保存链路与若干交互竞态；
+本轮按“数据安全 → 可见失败 → 交互正确性 → 低风险卫生 → 性能采样”的顺序落地，
+并为 TextCanvas / GlassFeed 优化先建立可复跑的性能基线。
+
+### 改动
+
+1. **B-1 中转站路径越界**：`StationFiles.IsRootPath` 拒绝盘符根 / UNC 共享根；
+   `UniqueTarget` 拒绝绝对路径、非法文件名与越出接收目录的目标；
+   `BuildFilePlan` / `BuildDirectoryPlan` / `CleanupPartial` / Move 删源都加了目录内断言；
+   `StationSettings.Normalize` 把接收目录规范成绝对路径。
+2. **B-7 中转站列表只读**：`ReadState` 区分“文件不存在”与“读失败”，读失败进入只读并显示原因；
+   之后的写盘（含晚到完成项）一律不覆盖 `items.json`。
+3. **L-1 主题名丢失**：`_readingUi` 守卫，`ReadUi` 期间 `ClearThemeName` 直接返回；
+   保存不再把刚套用的 `Style.ThemeName` 清空。
+4. **L-9 ConfigStore I/O 三态**：`TryReadSettings` 把 I/O 失败与内容解析失败分开；
+   I/O 失败按只读默认设置启动，不备份、不写盘，避免瞬时占用被当成损坏后覆盖有效配置。
+5. **L-7 / L-8 保存一致性**：`SaveClick` 捕获 `_onApply` 异常并显示失败；
+   `SettingsApplier.Apply` 在 `SyncCards` 失败时恢复旧设置并重建卡片视图；
+   运行时字段合并补上 `Behavior.AutoStart`，设置窗保存不再回滚托盘开关。
+6. **B-2 复制任务出 UI 线程**：`CardJobQueue.Enqueue` 用 `Task.Run` 包住 `RunAsync`；
+   1MB 复制缓冲提到文件循环外。
+7. **L-4 ffmpeg 热更新**：`FfmpegPlayer.SetMuted` / `SetLoop`，`ApplyVideoSettings` 补 `_player` 分支；
+   静音、速度、循环、自动播放不再“设置成功但不生效”。
+8. **L-2 / L-3 玻璃边界**：DXGI 请求矩形越出主屏输出时不再改写坐标，明确退回 GDI 并记一次 WARN；
+   `DesktopFrameSource.InvalidateDestination` 在共享 DIB 重建 / 释放时作废帧缓存，避免静态桌面黑帧误降级。
+9. **L-5 第二实例唤醒**：冷启动窗口期对 `OpenExisting` 做 30 × 100ms 重试，不再一次 WARN 后静默退出。
+10. **B-3 / B-5 / B-6 / B-13**：命令 CTS 用局部变量收尾；空自定义模板保留到 `Validate`；
+    Chat 切换模式后刷新内容签名，下一次应用设置不重建视图；解码器重新检测的 `async void` 加兜底。
+11. **卫生项**：媒体 `Pause` / 显示 / 释放失败的 `catch` 改为日志；`TextCanvas` 光标定时器在
+    隐藏 / 卸载时停止；`WaveOutPlayer` 缓冲准备全失败返回 false；`CardStateStore.Delete` 与写入共用锁；
+    `CardModule` 的加载方式注释改为 manifest 插件。
+12. **性能采样**：新增 `src/Ui/PerformanceProbe.cs` 与 `--perf N` 模式，统计 TextCanvas 的
+    Measure / OnRender / BuildLine / FormattedText 次数，GlassFeed 的缓冲分配 / LOH / BitmapSource 次数，
+    以及 GC 分配与 Gen0/1/2 增量；基线写入 `docs/performance-baseline.md`。
+13. **版本**：宿主 / Contracts / UiKit / 6 个插件工程与 manifest 统一 2.27.0；插件 API 仍为 2，
+    Schema 仍为 7；新增 `ICardHost.RefreshContentSignature` 为向后兼容的宿主侧接口扩展。
+
+### 验证
+
+- `dotnet build -c Release`：**0 警告 0 错误**；
+- `--selftest`：**退出码 0、失败项 0**；命令行自检新增“空自定义模板必须校验失败”，
+  中转站自检新增“盘符根不得作为条目名”；
+- `--perf 15 --visible`：退出码 0，基线见 `docs/performance-baseline.md`；
+- `--screenshot-settings` / `--screenshot-cards` / `--screenshot` 与 `--smoke 3 --smoke-visible`
+  全部退出码 0，设置窗显示 v2.27.0。
+
+### 风险 / 未验证
+
+- B-1 的根路径条目在 Explorer 正常拖放中通常被系统拦截，主要覆盖手改 `items.json` / 特殊拖放源；
+- L-2 只修了“不读错像素 / 不静默”，真正按输出建 duplication 的多屏支持仍未做；
+- L-9 的 I/O 失败只读启动会让用户暂时看到默认外观，但原文件不会被覆盖；
+- 性能基线是在当前 5 张小卡、DesktopFeed 10fps 下测的；大卡片 / 高 DPI / 多显示器应重新跑
+  `--perf` 后再决定 P-2 的 LOH 优化；
+- 未做多显示器 / 混合 DPI / RDP / 长时复制压测。
+
+---
+
+## 62. 不在版本里的东西
 
 - 验收脚本、样张与测量脚本都在仓库外维护，**没有提交**。
 - 发布：`main` 与标签已推送到 [github.com/CRITTIof/MirrorpondHUD](https://github.com/CRITTIof/MirrorpondHUD)；
   [v2.9.2 Release](https://github.com/CRITTIof/MirrorpondHUD/releases/tag/v2.9.2) 只有两个附件
   （`MirrorpondHUD-x64-requires-dotnet.exe`、`MirrorpondHUD-arm64-requires-dotnet.exe`，均需 .NET 8 桌面运行时，已自签名）；
   更早的 Release 正文与附件保留原样，v2.4.0 的 Release 已删除（tag `v2.4.0` 保留，历史仍可检出）。
-- 仓库追踪的文件共 205 个（v2.21.0 时 174 个；2.23.0 结构性拆分 +20，2.24.0 +7，2.25.0 新增 CardMotion +1），`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
+- 仓库追踪的文件共 207 个（v2.21.0 时 174 个；2.23.0 结构性拆分 +20，2.24.0 +7，2.25.0 新增 CardMotion +1，2.27.0 新增 PerformanceProbe / 性能基线 +2），`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
 
-## 62. 已知代价（跨版本）
+## 63. 已知代价（跨版本）
 
 - 桌面亚克力为了不拍到自己，会把卡片排除在截屏之外 —— 这个模式下截图 / 录屏里**看不到卡片**，观感只能靠肉眼与离屏渲染验证。
 - 兼容实现每帧对身后窗口做 `PrintWindow`，拖动时最多 ~21 帧/秒；要更高只能走桌面亚克力（DXGI）。

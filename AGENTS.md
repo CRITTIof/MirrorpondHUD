@@ -21,7 +21,7 @@ build.bat / publish.bat          :: 构建 / 发布（publish 默认单文件）
 ```
 
 - 配置与日志生成在 `bin\Release\`：`settings.json`、`mirrorpond.log`。排查问题/验证行为时先看这两处。
-- 其它可用的命令行模式：`--smoke[:秒]`（自动起跑 N 秒后退出）、`--screenshot[-cards|-settings|-widgets] <标题>`（无头截图，用于 UI 自查）。
+- 其它可用的命令行模式：`--smoke N`（自动起跑 N 秒后退出）、`--perf N`（性能采样，结果写日志，见 `docs/performance-baseline.md`）、`--screenshot[-cards|-settings|-widgets] <标题>`（无头截图，用于 UI 自查）。
 - **改完代码必须跑一次构建 + `--selftest`**；动了设置存储、主题解析、卡片契约的改动尤其要看自检对应段落的结论。
 
 ## 3. 多程序集结构（最容易踩的坑）

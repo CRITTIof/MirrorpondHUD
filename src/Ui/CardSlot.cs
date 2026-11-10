@@ -85,6 +85,11 @@ namespace MirrorpondHUD.Ui
             return ConfigStore.Save(_owner.CurrentSettings);
         }
 
+        public void RefreshContentSignature()
+        {
+            _owner.RefreshContentSignature(Config);
+        }
+
         public ICardShellService Shell
         {
             get { return _shell; }
