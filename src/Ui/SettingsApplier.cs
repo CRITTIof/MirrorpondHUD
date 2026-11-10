@@ -15,8 +15,10 @@ namespace MirrorpondHUD.Ui
         CardSlot CreateSlot(CardSettings config);
         void RebindSlot(CardSlot slot, CardSettings config, bool summoned);
         void CloseSlot(CardSlot slot);
-        void ShowCard(CardSlot slot, string text);
-        void HideCard(CardSlot slot);
+        void ShowCard(CardSlot slot, string text, bool animate);
+        void HideCard(CardSlot slot, bool animate);
+        void BeginCardDrag(CardSlot slot);
+        void OnCardDragging(CardSlot slot, double dx, double dy);
         void ToggleCommandCard(CardSlot slot);
         void ExitCommandLine();
         void FinishIntro();
@@ -42,6 +44,11 @@ namespace MirrorpondHUD.Ui
         readonly RenderScheduler _render;
         readonly CardLayoutCoordinator _layout;
         readonly KeyHistory _keys;
+
+        // 拖动期间只做「其他卡片按增量跟随」：锚点等到松手才更新，避免每帧落盘与重排。
+        CardSlot _dragSlot;
+        double _dragLastDx;
+        double _dragLastDy;
 
         public SettingsApplier(ISettingsHost host, RenderScheduler render,
                                CardLayoutCoordinator layout, KeyHistory keys)
@@ -190,17 +197,63 @@ namespace MirrorpondHUD.Ui
             _host.SyncSettingsWindowAnchor(x, y, monitor);
         }
 
-        /// <summary>拖拽整叠卡片后的新锚点：立即重排、落盘，并同步设置窗里的位置显示。</summary>
+        /// <summary>
+        /// 开始拖动：取消所有卡片正在跑的补位动画。拖动中的位置由
+        /// <see cref="OnCardDragging"/> 直接按增量平移，不能和旧动画抢窗口。
+        /// </summary>
+        public void BeginCardDrag(CardSlot slot)
+        {
+            _dragSlot = slot;
+            _dragLastDx = 0;
+            _dragLastDy = 0;
+
+            foreach (CardSlot card in _host.Cards)
+            {
+                if (card.Window != null) card.Window.StopPositionMotion();
+            }
+        }
+
+        /// <summary>
+        /// 拖动中：被拖窗口已经由 OverlayWindow 自己移动，这里把其余已显示窗口按总位移的
+        /// 增量平移，形成「整叠跟着走」；锚点保持不动，松手后才落盘并做补位/对齐动画。
+        /// </summary>
+        public void OnCardDragging(CardSlot slot, double dx, double dy)
+        {
+            if (slot == null || !ReferenceEquals(slot, _dragSlot)) return;
+
+            double stepX = dx - _dragLastDx;
+            double stepY = dy - _dragLastDy;
+            _dragLastDx = dx;
+            _dragLastDy = dy;
+
+            if (Math.Abs(stepX) < 0.01 && Math.Abs(stepY) < 0.01) return;
+
+            foreach (CardSlot card in _host.Cards)
+            {
+                if (ReferenceEquals(card, slot) || !card.Shown || card.Window == null) continue;
+                card.Window.Left += stepX;
+                card.Window.Top += stepY;
+            }
+        }
+
+        /// <summary>拖拽整叠卡片后的新锚点：动画重排、落盘，并同步设置窗里的位置显示。</summary>
         public void OnCardMoved(CardSlot slot, double dx, double dy, int monitor)
         {
             if (slot == null) return;
+
+            _dragSlot = null;
+            _dragLastDx = 0;
+            _dragLastDy = 0;
 
             Settings settings = _host.Settings;
             settings.Overlay.X += dx;
             settings.Overlay.Y += dy;
             settings.Overlay.Monitor = monitor;
 
-            _layout.Layout();
+            // 松手后才重排：自动对齐可能从屏幕一侧翻到另一侧，这里用 180ms ease-out 让
+            // 其余卡片跟过去；被拖卡也从落点滑到最终对齐位。CardMotion.Enabled=false 时
+            // ApplyPosition 会直接落位。
+            _layout.LayoutAnimated();
             SaveSettings();
 
             _host.SyncSettingsWindowAnchor(settings.Overlay.X, settings.Overlay.Y, settings.Overlay.Monitor);
@@ -257,12 +310,12 @@ namespace MirrorpondHUD.Ui
 
             if (slot.Summoned)
             {
-                _host.ShowCard(slot, _render.RenderCardText(slot));
+                _host.ShowCard(slot, _render.RenderCardText(slot), true);
                 slot.Window.EnsureTopmost();
             }
             else
             {
-                _host.HideCard(slot);
+                _host.HideCard(slot, true);
             }
 
             Log.Info("卡片「" + slot.Config.Name + "」" + (slot.Summoned ? "已呼出" : "已收起"));

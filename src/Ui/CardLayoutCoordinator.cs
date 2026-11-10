@@ -47,6 +47,21 @@ namespace MirrorpondHUD.Ui
         /// <summary>从锚点开始按顺序把可见卡片往下排，间距取每张卡片自己的 Spacing。</summary>
         public void Layout()
         {
+            LayoutCore(false, null);
+        }
+
+        /// <summary>
+        /// 带动画的补位：已显示的卡片从当前位置 ease-out 到新位置；
+        /// appearing 不为空时，这张新卡直接落到目标位（内容由呼出动画负责），
+        /// 避免它从窗口默认位置「飞」到锚点。
+        /// </summary>
+        public void LayoutAnimated(CardSlot appearing = null)
+        {
+            LayoutCore(true, appearing);
+        }
+
+        void LayoutCore(bool animate, CardSlot appearing)
+        {
             Settings settings = _settings();
 
             // 先量出整叠卡片里最宽的一张：右对齐时每张卡片的 X = 锚点 + (最宽 - 自己宽度)，
@@ -76,7 +91,7 @@ namespace MirrorpondHUD.Ui
                 slot.Dialog.Overlay.Y = settings.Overlay.Y + top;
                 slot.Dialog.Overlay.Monitor = settings.Overlay.Monitor;
                 slot.Dialog.Overlay.Locked = settings.Overlay.Locked;
-                slot.Window.ApplyPosition();
+                slot.Window.ApplyPosition(animate && !ReferenceEquals(slot, appearing));
 
                 top += slot.BodyHeight > 0 ? slot.BodyHeight : slot.Window.CardHeight;
                 first = false;

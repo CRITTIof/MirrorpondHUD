@@ -187,8 +187,13 @@ namespace MirrorpondHUD.Ui
             }
 
             public void CloseSlot(CardSlot slot) { _owner.CloseSlot(slot); }
-            public void ShowCard(CardSlot slot, string text) { _owner.ShowCard(slot, text); }
-            public void HideCard(CardSlot slot) { _owner.HideCard(slot); }
+            public void ShowCard(CardSlot slot, string text, bool animate) { _owner.ShowCard(slot, text, animate); }
+            public void HideCard(CardSlot slot, bool animate) { _owner.HideCard(slot, animate); }
+            public void BeginCardDrag(CardSlot slot) { _owner._settingsApplier.BeginCardDrag(slot); }
+            public void OnCardDragging(CardSlot slot, double dx, double dy)
+            {
+                _owner._settingsApplier.OnCardDragging(slot, dx, dy);
+            }
             public void ToggleCommandCard(CardSlot slot) { _owner._command.Toggle(slot); }
             public void ExitCommandLine() { if (_owner._command.IsActive) _owner._command.Exit(); }
             public void FinishIntro() { _owner._intro.Finish(); }
@@ -320,6 +325,8 @@ namespace MirrorpondHUD.Ui
             window.HideRequested += ToggleVisibility;
             window.LockToggleRequested += ToggleLock;
             window.ExitRequested += Exit;
+            window.DragStarted += () => _settingsApplier.BeginCardDrag(slot);
+            window.Dragging += (dx, dy) => _settingsApplier.OnCardDragging(slot, dx, dy);
             window.Moved += (dx, dy, monitor) => _settingsApplier.OnCardMoved(slot, dx, dy, monitor);
             window.CommandLineRequested += () => ToggleCommandLine();
             window.SizeChanged += (s, e) => _layout.Schedule();
@@ -472,6 +479,15 @@ namespace MirrorpondHUD.Ui
 
         void ShowCard(CardSlot slot, string text)
         {
+            ShowCard(slot, text, false);
+        }
+
+        /// <summary>
+        /// 显示卡片。animate=true 时内容淡入 + 上移 8px，其余已显示卡片同时补位；
+        /// 启动 / 设置重建 / 截图走 animate=false，保持原来的瞬切语义。
+        /// </summary>
+        void ShowCard(CardSlot slot, string text, bool animate)
+        {
             if (slot == null) return;
 
             // 刚显示要立刻画一帧，不要等模块的刷新间隔。
@@ -487,15 +503,20 @@ namespace MirrorpondHUD.Ui
                 slot.Window.Apply(slot.Dialog, text ?? "");
             }
 
-            slot.Window.Opacity = 0;
+            bool motion = animate && CardMotion.Enabled;
+            if (motion) slot.Window.PrepareShowMotion();
+            else slot.Window.ResetContentMotion();
+
             slot.Window.Show();
             slot.Window.UpdateLayout();
 
             slot.Shown = true;
             slot.BodyHeight = slot.Window.CardHeight;
-            _layout.Layout();
+            if (motion) _layout.LayoutAnimated(slot);
+            else _layout.Layout();
 
-            slot.Window.Opacity = 1;
+            if (motion) slot.Window.AnimateShowMotion();
+
             slot.Window.UpdateClickThrough();
             slot.Window.EnsureTopmost();
 
@@ -547,6 +568,15 @@ namespace MirrorpondHUD.Ui
 
         void HideCard(CardSlot slot)
         {
+            HideCard(slot, false);
+        }
+
+        /// <summary>
+        /// 隐藏卡片。animate=true 时先把 slot 标记为不占位并让其余卡片补位，
+        /// 内容淡出 160ms 后才真正 Hide；若期间又被呼出，完成回调不会误隐藏。
+        /// </summary>
+        void HideCard(CardSlot slot, bool animate)
+        {
             if (slot == null || !slot.Shown) return;
 
             if (slot.Rich != null && slot.Content != null)
@@ -556,8 +586,24 @@ namespace MirrorpondHUD.Ui
 
             slot.Shown = false;
             slot.BodyHeight = 0;
-            slot.Window.Hide();
-            _layout.Layout();
+
+            bool motion = animate && CardMotion.Enabled;
+            if (!motion)
+            {
+                slot.Window.ResetContentMotion();
+                slot.Window.Hide();
+                _layout.Layout();
+                return;
+            }
+
+            // 先让其余卡片补位，再淡出旧窗口；两者并行，视觉上像卡片被抽走后空位合拢。
+            _layout.LayoutAnimated();
+            slot.Window.AnimateHideMotion(() =>
+            {
+                if (_disposed || slot.Shown) return;
+                try { slot.Window.Hide(); }
+                catch (Exception ex) { Log.Warn("卡片隐藏收尾失败: " + ex.Message); }
+            });
         }
 
         void UpdateCommandInfo()

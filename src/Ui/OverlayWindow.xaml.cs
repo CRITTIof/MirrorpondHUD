@@ -5,6 +5,7 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Threading;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using MirrorpondHUD.Core;
 using MirrorpondHUD.Ui.Controls;
@@ -67,6 +68,20 @@ namespace MirrorpondHUD.Ui
         /// <summary>拖动中已经排队了一帧背景重取样（每个合成帧最多一次）。</summary>
         bool _dragFrameQueued;
 
+        // 位置动画：补位 / 自动对齐翻边 / 松手回位。每个窗口独立计时，新的目标会从
+        // 当前位置重新开始，避免上一段动画把窗口拽回旧目标。
+        DispatcherTimer _moveTimer;
+        DateTime _moveStartUtc;
+        double _moveFromLeft;
+        double _moveFromTop;
+        double _moveToLeft;
+        double _moveToTop;
+        int _moveDurationMs;
+
+        // 内容级淡入淡出：只动 OverlaySurface；8px 位移由窗口位置动画完成，
+        // 否则窗口大小等于卡片大小，平移内容会被窗口边界裁掉。
+        int _contentMotionVersion;
+
         MenuItem _menuSettings;
         MenuItem _menuToggle;
         MenuItem _menuCommand;
@@ -78,6 +93,10 @@ namespace MirrorpondHUD.Ui
         public event Action HideRequested;
         public event Action ExitRequested;
         public event Action LockToggleRequested;
+        /// <summary>按住卡片开始拖动前触发：调用方据此取消正在跑的补位动画。</summary>
+        public event Action DragStarted;
+        /// <summary>拖动中：参数是相对拖动起点的总位移（DIP）。其他卡片按增量跟随。</summary>
+        public event Action<double, double> Dragging;
         /// <summary>拖动结束：参数是窗口相对拖动起点的位移（DIP）与所在的显示器序号。</summary>
         public event Action<double, double, int> Moved;
         public event Action CommandLineRequested;
@@ -102,6 +121,8 @@ namespace MirrorpondHUD.Ui
             {
                 _closed = true;
                 StopTimers();
+                StopPositionMotion();
+                CancelContentMotion();
                 _glassRuntime.Dispose();
             };
 
@@ -267,6 +288,15 @@ namespace MirrorpondHUD.Ui
 
         public void ApplyPosition()
         {
+            ApplyPosition(false);
+        }
+
+        /// <summary>
+        /// 按当前 Dialog / Settings 摆窗口。animate=true 时走 180ms ease-out 的补位动画，
+        /// 用于松手后的自动对齐翻边、显隐后的补位；启动 / 截图 / 拖动中一律 animate=false。
+        /// </summary>
+        public void ApplyPosition(bool animate)
+        {
             if (!_handleReady) return;
 
             double left = _settings.Overlay.X;
@@ -296,11 +326,198 @@ namespace MirrorpondHUD.Ui
                 Log.Warn("定位失败: " + ex.Message);
             }
 
-            Left = left;
-            Top = top;
+            if (animate && CardMotion.Enabled && IsVisible && !_closed)
+            {
+                AnimateTo(left, top, CardMotion.LayoutDurationMs);
+            }
+            else
+            {
+                StopPositionMotion();
+                Left = left;
+                Top = top;
+            }
+
             _glassRuntime.UpdateBackdrop();
 
             if (_settings.Style.Acrylic) _glassRuntime.CaptureGlass();
+        }
+
+        /// <summary>
+        /// 窗口位置动画：从当前位置在 durationMs 内 ease-out 到目标。新的目标会取消旧动画，
+        /// 从当前实际位置重新开始；拖动开始前由控制器统一 StopPositionMotion。
+        /// </summary>
+        public void AnimateTo(double left, double top, int durationMs)
+        {
+            StopPositionMotion();
+
+            if (!CardMotion.Enabled || !IsVisible || _closed || durationMs <= 0)
+            {
+                Left = left;
+                Top = top;
+                return;
+            }
+
+            if (Math.Abs(Left - left) < 0.5 && Math.Abs(Top - top) < 0.5)
+            {
+                Left = left;
+                Top = top;
+                return;
+            }
+
+            _moveFromLeft = Left;
+            _moveFromTop = Top;
+            _moveToLeft = left;
+            _moveToTop = top;
+            _moveDurationMs = durationMs;
+            _moveStartUtc = DateTime.UtcNow;
+
+            _moveTimer = new DispatcherTimer(DispatcherPriority.Render, Dispatcher)
+            {
+                Interval = TimeSpan.FromMilliseconds(CardMotion.FrameIntervalMs)
+            };
+            _moveTimer.Tick += (s, e) => TickPositionMotion();
+            _moveTimer.Start();
+        }
+
+        void TickPositionMotion()
+        {
+            if (_closed)
+            {
+                StopPositionMotion();
+                return;
+            }
+
+            double elapsed = (DateTime.UtcNow - _moveStartUtc).TotalMilliseconds;
+            double t = _moveDurationMs <= 0 ? 1 : elapsed / _moveDurationMs;
+            double eased = CardMotion.EaseOut(t);
+
+            Left = _moveFromLeft + (_moveToLeft - _moveFromLeft) * eased;
+            Top = _moveFromTop + (_moveToTop - _moveFromTop) * eased;
+
+            if (t >= 1)
+            {
+                Left = _moveToLeft;
+                Top = _moveToTop;
+                StopPositionMotion();
+            }
+        }
+
+        public void StopPositionMotion()
+        {
+            if (_moveTimer == null) return;
+
+            try { _moveTimer.Stop(); } catch { }
+            _moveTimer = null;
+        }
+
+        /// <summary>呼出前把内容压透明，窗口本身保持可见以完成布局测量。</summary>
+        public void PrepareShowMotion()
+        {
+            StopPositionMotion();
+            CancelContentMotion();
+            Surface.Opacity = 0;
+            Surface.IsHitTestVisible = true;
+        }
+
+        /// <summary>无动画路径（启动 / 截图 / 设置重建）：直接恢复完整内容。</summary>
+        public void ResetContentMotion()
+        {
+            StopPositionMotion();
+            CancelContentMotion();
+            Surface.Opacity = 1;
+            Surface.IsHitTestVisible = true;
+        }
+
+        /// <summary>
+        /// 呼出：窗口从目标位下方 8px 滑回目标位，同时内容淡入。
+        /// 8px 由窗口位置动画完成——如果只平移 Surface，会被「窗口尺寸 = 卡片尺寸」裁掉。
+        /// </summary>
+        public void AnimateShowMotion()
+        {
+            if (!CardMotion.Enabled || _closed)
+            {
+                ResetContentMotion();
+                return;
+            }
+
+            StopPositionMotion();
+            CancelContentMotion();
+
+            int version = ++_contentMotionVersion;
+            var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+            TimeSpan duration = TimeSpan.FromMilliseconds(CardMotion.ShowDurationMs);
+
+            double targetTop = Top;
+            Top = targetTop + CardMotion.ShowOffset;
+            AnimateTo(Left, targetTop, CardMotion.ShowDurationMs);
+
+            var opacity = new DoubleAnimation(0, 1, duration)
+            {
+                EasingFunction = ease,
+                FillBehavior = FillBehavior.HoldEnd
+            };
+            opacity.Completed += (s, e) =>
+            {
+                if (version != _contentMotionVersion) return;
+                Surface.BeginAnimation(UIElement.OpacityProperty, null);
+                Surface.Opacity = 1;
+            };
+
+            Surface.BeginAnimation(UIElement.OpacityProperty, opacity);
+        }
+
+        /// <summary>
+        /// 消失：窗口向下方滑 8px + 内容淡出；完成后由调用方决定是否真正 Hide
+        /// （可能已经被重新呼出，版本号会作废这次完成回调）。
+        /// </summary>
+        public void AnimateHideMotion(Action completed)
+        {
+            if (!CardMotion.Enabled || _closed)
+            {
+                ResetContentMotion();
+                if (completed != null) completed();
+                return;
+            }
+
+            StopPositionMotion();
+            CancelContentMotion();
+            Surface.IsHitTestVisible = false;
+
+            int version = ++_contentMotionVersion;
+            var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+            TimeSpan duration = TimeSpan.FromMilliseconds(CardMotion.HideDurationMs);
+
+            AnimateTo(Left, Top - CardMotion.HideOffset, CardMotion.HideDurationMs);
+
+            var opacity = new DoubleAnimation(1, 0, duration)
+            {
+                EasingFunction = ease,
+                FillBehavior = FillBehavior.HoldEnd
+            };
+            opacity.Completed += (s, e) =>
+            {
+                if (version != _contentMotionVersion) return;
+
+                StopPositionMotion();
+                Surface.BeginAnimation(UIElement.OpacityProperty, null);
+                Surface.Opacity = 0;
+
+                if (completed != null) completed();
+            };
+
+            Surface.BeginAnimation(UIElement.OpacityProperty, opacity);
+        }
+
+        /// <summary>取消内容动画并恢复基值；只动 Surface，不碰窗口 / 玻璃状态。</summary>
+        void CancelContentMotion()
+        {
+            _contentMotionVersion++;
+
+            if (Surface == null) return;
+
+            Surface.BeginAnimation(UIElement.OpacityProperty, null);
+            Surface.Opacity = 1;
+            Surface.IsHitTestVisible = true;
         }
 
         public void UpdateClickThrough()
@@ -452,6 +669,11 @@ namespace MirrorpondHUD.Ui
             _dragging = true;
             _dragStartScreen = PointToScreen(e.GetPosition(this));
             _dragStartWindow = new Point(Left, Top);
+
+            // 先让控制器收掉所有正在跑的补位动画；否则拖动时窗口会和旧动画抢位置。
+            Action started = DragStarted;
+            if (started != null) started();
+
             CaptureMouse();
             e.Handled = true;
         }
@@ -474,6 +696,9 @@ namespace MirrorpondHUD.Ui
 
             Left = _dragStartWindow.X + (now.X - _dragStartScreen.X) / sx;
             Top = _dragStartWindow.Y + (now.Y - _dragStartScreen.Y) / sy;
+
+            Action<double, double> handler = Dragging;
+            if (handler != null) handler(Left - _dragStartWindow.X, Top - _dragStartWindow.Y);
 
             QueueDragFrame();
         }

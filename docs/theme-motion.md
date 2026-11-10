@@ -351,121 +351,51 @@ theme.controls.templates.button = "assets/button.xaml"
 - 滑块 / 描边在浅色底上偏淡：深色主题的 `scrollbar 0.18` 在浅色底上建议 ≥ 0.28（`paper.mptheme` 用的 0.30）；
 - `accent` 在浅色底上要换更深的色阶（`#2F6FEB` 在 `#F6F7F9` 上 4.6:1 刚好过线，`#4C8DFF` 只有 3.1:1，不够）。
 
-## 9. 行为动画：出现 / 消失 / 让位
+## 9. 行为动画：出现 / 消失 / 让位（2.25.0 已落地）
 
-### 9.1 现状
+### 9.1 实际行为
 
-```csharp
-// ShowCard：窗口先 Show、量高度，再 Opacity = 1
-slot.Window.Opacity = 0;  slot.Window.Show();  ...  slot.Window.Opacity = 1;
+- **拖动跟随**：按住任意非交互卡片拖动时，`OverlayWindow` 自己跟随鼠标，`SettingsApplier.OnCardDragging`
+  把其余已显示窗口按总位移的增量平移；拖动期间不重排、不落盘、不触发自动对齐翻边。
+- **呼出 / 消失**：160ms。窗口从目标位下方 8px 滑回目标位（呼出）或向下方滑出 8px（消失），
+  同时 `OverlaySurface.Opacity` 0 ↔ 1；消失等淡出完成才真正 `Hide`，期间被再次呼出会取消旧隐藏回调。
+- **补位**：松手、呼出、消失后走 `CardLayoutCoordinator.LayoutAnimated()`，每个已显示窗口用
+  180ms 三次 ease-out 从当前位置移到新位置；新卡直接落在目标位，由内容淡入负责入场。
+- **自动对齐翻边**：对齐方式为 Auto 时，`ResolveAlign` 仍按「锚点 + 整叠中心」判断屏幕左右半边；
+  拖动期间不翻，松手更新锚点后才重算，翻边和补位共用同一段 180ms 动画，不再瞬跳。
+- **不做动画**：数据驱动的高度变化（CLI 长高、媒体换文件）保持瞬切，避免每 500ms 晃一次；
+  启动 / 设置重建 / 截图 / `--selftest` 也不动画。
 
-// HideCard：直接隐藏 + 重排
-slot.Shown = false; slot.Window.Hide(); LayoutCards();
+### 9.2 为什么 8px 动窗口而不是动内容
 
-// LayoutCards：直接把目标 X/Y 写进 Overlay 再 ApplyPosition()
+卡片窗口尺寸等于卡片尺寸（§2.2），只平移 `OverlaySurface` 会被窗口边界裁掉 8px。
+2.25.0 的实现改为「窗口 Top 8px + 内容透明度」，不增加窗口边距、不改变卡片测量尺寸，
+也避免动画期间 `SizeToContent` 反复撑大/收回窗口。
+
+### 9.3 参数与中断
+
+```text
+CardMotion.LayoutDurationMs = 180   // 补位 / 自动对齐
+CardMotion.ShowDurationMs   = 160   // 呼出
+CardMotion.HideDurationMs   = 160   // 消失
+CardMotion.ShowOffset / HideOffset = 8
+CardMotion.FrameIntervalMs  = 15
 ```
 
-没有任何中间状态，所以「非常驻卡片呼出」是瞬现，「下方卡片让位」也是瞬间跳。
+- 每个窗口同一时刻只有一条位置动画；新目标会 `StopPositionMotion` 后从当前 `Left/Top` 接上，
+  不会从旧起点重来；
+- 内容淡入淡出用 `_contentMotionVersion` 作废旧完成回调；消失播到一半再呼出时，
+  旧隐藏回调不会执行；
+- 拖动开始会取消所有卡片的补位动画，避免手和被拖窗口抢位置；
+- 动画期间销毁卡片 / 关闭窗口：`Closed` 停掉位置计时器并取消内容动画。
 
-### 9.2 出现 / 消失（动内容，不动窗口）
+### 9.4 代价与边界
 
-方案：**窗口按最终位置与「最终尺寸 + 上下各 16 DIP 余量」放置**，把整块卡（底板 + 内容，即 `OverlaySurface`
-的内层 Grid）套一个 `TranslateTransform` + `Opacity`，从 `(0, -12)` / 0 插到 `(0, 0)` / 1；消失反向。
-
-为什么这么绕：卡片窗口的大小等于卡片大小（§2.2），直接平移内容会被窗口边界裁掉；留 16 DIP 余量后窗口是透明的
-（`AllowsTransparency`），视觉上就是「卡片从上方 12 px 滑进来 FADE」。
-
-- 余量只在「这张卡启用了入场动画」时加：给根 `Grid` 加 16 DIP 的 `Margin`，`SizeToContent` 会把窗口一起撑大；
-  动画结束后把 `Margin` 归零，窗口自己收回去，避免常驻卡白占 32 DIP（注意 `ResetStableSize()` 是文本测量的
-  稳定尺寸开关，和窗口尺寸无关，别拿它当收窗口用）；
-- 底板（`_tintLayer`）和玻璃层都在内层 Grid 里，会一起平移 —— 玻璃纹理跟着卡片走，220 ms 内看不出来，
-  而且**不触发重采样**（窗口没动）；
-- 投影（`Overlay.Shadow`，预留 10 DIP）与 16 DIP 余量叠加，注意改成 `max(shadowMargin, 16)` 而不是相加；
-- 交互卡片（AI 对话 / 命令行）也走这条路：窗口不动就没有命中测试漂移问题，动画期间把 `IsHitTestVisible`
-  设为 false，结束后恢复，避免点到一个正在淡入的面板。
-
-参数：
-
-```json
-"motion": {
-  "appear":    { "preset": "slide-fade", "duration": 220, "delay": 0, "easing": "fluent-enter",
-                 "offset": { "x": 0, "y": -12 }, "opacity": { "from": 0, "to": 1 },
-                 "scale": { "from": 1, "to": 1 }, "mode": "content" },
-  "disappear": { "preset": "fade", "duration": 140, "easing": "fluent-exit",
-                 "offset": { "x": 0, "y": 0 }, "opacity": { "from": 1, "to": 0 },
-                 "mode": "content" }
-}
-```
-
-`mode` 三档：`content`（推荐，窗口不动）、`window-alpha`（整窗淡入，实测不便宜，仅当 `scale`/`offset` 都是 0 时的
-等价替代）、`none`。`scale` 保留字段但默认 1 —— 分层窗口上缩放文字会发虚，只建议 0.98→1 这种轻微值。
-
-### 9.3 让位
-
-出现 / 消失时，**它下面的卡片要下移 / 上移**（`height + spacing`），这只能逐帧移动窗口。
-
-算法（改 `LayoutCards` 的职责划分）：
-
-```
-LayoutCards()             // 只算目标值，不直接写窗口
-  ├─ 计算每个 slot 的 TargetX / TargetY（现有逻辑，原样保留）
-  └─ 有动画在跑 → 交给 MotionEngine 插值；否则直接写到 Overlay + ApplyPosition()
-
-MotionEngine.Tick()
-  ├─ 对每个 reflow 中的 slot：Y = Lerp(fromY, TargetY, eased(t))
-  ├─ 写 Overlay.Y → ApplyPosition()（内部会 CaptureGlass，见下）
-  └─ 到点后吸附到 TargetY，标记完成
-```
-
-成本与降级（关键）：
-
-| 场景 | 移动的卡数 | 每帧代价 | 处置 |
-| --- | --- | --- | --- |
-| 无毛玻璃 | N（下面所有卡） | 0.5–2 ms/卡（§4 移动列） | 30–60 帧/秒，按 N 自动降帧（N≥4 → 30 帧/秒） |
-| 系统亚克力（DWM 底板） | N | 移动不带重采样（底板独立窗口跟着走） | 保持 30 帧/秒 |
-| 桌面亚克力（DXGI 自截屏） | N | 每帧 `RequestFrame`，2.4.5 实测拖动 34.8 帧/秒 | 限到 30 帧/秒，`maxFps` 由主题给 |
-| 兼容（`PrintWindow`） | N | 拖动实测 21 帧/秒、单卡 5.6–6.3 ms | **动画期间隐藏玻璃层**（换成纯色底，动画结束再打开）；或干脆退化成 `opacity` 单次淡出 |
-
-这就是 §0 结论 2 的落地方式：`motion.reflow.duringGlass = "dim" | "freeze" | "skip"` 三档，
-`dim` = 动画期间 `Surface.ClearGlass()`、结束后 `UpdateGlass()`（推荐），`freeze` = 保持最后一帧玻璃不动（会露馅），
-`skip` = 弧过动画直接跳（最省）。
-
-护栏：
-
-- **只对用户触发的显示 / 隐藏做让位动画**。数据驱动的卡片高度变化（CLI 面板长高、媒体换文件）每 500 ms 就可能来一次，
-  动画会让整叠一直晃 —— 这类变化保持瞬切；
-- 拖动卡片期间禁止让位动画（`_dragging`）；
-- 启动动画期间禁止（`_phase != Live`）；
-- 锁定（`Overlay.Locked`）时仍然可以动 —— 锁定只影响命中测试，不影响程序移动；
-- 让位动画期间不允许「再触发一次」：新目标来了就从**当前值**接上（§9.4）。
-
-### 9.4 中断与队列
-
-- 每个 slot 每个属性（X / Y / 内容 offset / opacity）最多一条动画轨道，新动画来了**从当前值接上**（不是从 `from` 重来），
-  时长按剩余距离等比缩短（避免「点了两下变成 440 ms」）；
-- 消失动画播到一半又被呼出 → 反向插值，不重启；
-- 动画期间改设置（`ApplySettings`）→ 直接吸附到目标值并清空轨道；
-- 动画期间销毁卡片 → 轨道丢弃，不做清理动画。
-
-### 9.5 不做动画的场景
-
-| 场景 | 原因 |
-| --- | --- |
-| 数据驱动的高度变化 | 500 ms 一次，动画等于一直晃 |
-| 启动动画期间 | 已有闸门，且入场动画会与打字抢内容 |
-| 拖动中 / 拖动结束的落位 | 用户手已经在拖，动画会「抢」 |
-| 视频子窗口移动 | 视频是独立 HWND（`VideoWindow`），要逐帧 `SetWindowPos` 才能跟上，成本另算 |
-| 设置页预览 | 设置页是普通窗口，用 WPF 自带动画即可，不必共用引擎 |
-
-### 9.6 帧预算与降级矩阵
-
-| 条件 | 行为 |
-| --- | --- |
-| `SystemParameters.ClientAreaAnimation == false` | 全部动画设为 `none`（§12） |
-| 单帧总耗时 > 12 ms | 本帧跳过非必要轨道（opacity 先跳、offset 后跳） |
-| 可见卡片 > 6 | stagger 关闭、让位降到 20 帧/秒、出现动画时长 ×0.7 |
-| 兼容玻璃开启 | 让位动画走 `duringGlass: dim` |
-| 电池供电 / 远程桌面 | 直接 `none`（可选，P2） |
+- 逐帧移动窗口会触发 `LocationChanged → GlassRuntime.UpdateBackdrop`；180ms 的短动画下可接受，
+  但兼容取样（PrintWindow）仍是最重的一条路径，长动画/多卡场景没有做逐帧预算降级；
+- 未实现主题文件里的 `motion.*` 可配置项、stagger、`duringGlass=dim` 等实验性方案；
+  当前参数集中在 `src/Ui/CardMotion.cs`，后续需要再做主题化时从这里接；
+- 截图 / 自检通过 `CardMotion.Enabled = false` 稳定出图，避免抓到淡入中间帧。
 
 ## 10. 运行时架构
 

@@ -28,6 +28,17 @@ namespace MirrorpondHUD.Ui
             exitCode = 0;
             if (args == null) return false;
 
+            // 离屏验收不能抓到淡入 / 补位的中间帧：截图与自检关闭卡片动效。
+            foreach (string arg in args)
+            {
+                if (string.Equals(arg, "--selftest", StringComparison.OrdinalIgnoreCase) ||
+                    arg.StartsWith("--screenshot", StringComparison.OrdinalIgnoreCase))
+                {
+                    CardMotion.Enabled = false;
+                    break;
+                }
+            }
+
             // 顺序与旧实现一致：--screenshot-cards 必须先于 --screenshot 判断。
             string shotCards = GetOption(args, "--screenshot-cards");
             if (shotCards != null)
