@@ -2,12 +2,8 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
-    <Nullable>disable</Nullable>
-    <LangVersion>latest</LangVersion>
-    <ImplicitUsings>disable</ImplicitUsings>
     <AssemblyName>MirrorpondHUD</AssemblyName>
     <RootNamespace>MirrorpondHUD</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
@@ -17,19 +13,10 @@
     <PlatformTarget Condition="'$(RuntimeIdentifier)' == ''">x64</PlatformTarget>
     <PlatformTarget Condition="'$(RuntimeIdentifier)' == 'win-arm64'">arm64</PlatformTarget>
     <NoWarn>$(NoWarn);WFAC010</NoWarn>
-    <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
-    <Version>2.33.0</Version>
+    <Version>2.34.0</Version>
     <Product>镜潭一览 (MirrorpondHUD)</Product>
     <AssemblyTitle>MirrorpondHUD</AssemblyTitle>
-    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
     <SatelliteResourceLanguages>en;zh-Hans</SatelliteResourceLanguages>
-    <GenerateDocumentationFile>false</GenerateDocumentationFile>
-    <DebugType>portable</DebugType>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
-    <Optimize>true</Optimize>
   </PropertyGroup>
 
   <ItemGroup>

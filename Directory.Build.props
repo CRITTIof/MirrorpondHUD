@@ -1,0 +1,26 @@
+<Project>
+
+  <!--
+    全仓构建基线（2026-11 现代化治理 A）：
+    - 固定 LangVersion，避免 SDK 升级把 C# 14 语法悄悄放进源码；
+    - Nullable / ImplicitUsings 暂时仍关闭：评估报告实测全开会产生 902 处
+      Nullable 诊断与 227 个 CS0104 二义错误，不能混在风格改造里做；
+    - 输出路径 / 符号 / 文档文件统一，各 csproj 不再重复这些属性。
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <LangVersion>12.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <DebugType>portable</DebugType>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <Optimize>true</Optimize>
+  </PropertyGroup>
+
+</Project>

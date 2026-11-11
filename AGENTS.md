@@ -41,12 +41,24 @@ build.bat / publish.bat          :: 构建 / 发布（publish 默认单文件）
 - 插件列为 `ProjectReference … ReferenceOutputAssembly="false"`：只构建不引用，宿主通过 ALC 加载。不要把 `src/Plugins/**` 里的类型 `using` 进宿主代码。
 - 新增文件只看它落在哪条通配边界内；跨边界的共用代码（契约、控件）必须搬到 Contracts / UiKit。
 
-## 4. 代码风格（硬约束）
+## 4. 代码风格（现代 C# 默认，契约/互操作有红线）
 
-- **老式 C#**：属性用 `get { return ...; }` 显式块，不用表达式体成员；事件字段 + 手写 null 判防护；`_camelCase` 私有字段、公开字段用 PascalCase（DTO 风格）。
-- `Nullable=disable`、`ImplicitUsings=disable`：usings 手写齐全，可空性自己处理。
+- **新代码与本次触碰的文件按现代 C# 风格写**：file-scoped namespace、表达式体属性/单表达式方法、字符串插值、`is null` / `is not null`、目标类型 `new()`、`out var`。不再要求为了统一把现代写法改回 `get { return ...; }`。
+- 未触碰的旧文件不强制批量重排；如果整仓批量重排，必须单独提交、单独验证，避免和功能改动混在一起。
+- `Nullable=disable`、`ImplicitUsings=disable` 继续：usings 手写齐全，可空性自己处理；不要用 `#nullable enable` 局部试点绕过评审。
+- `_camelCase` 私有字段、公开字段用 PascalCase（DTO 风格）；事件字段 + 手写 null 判防护继续保留。
 - 注释一律中文，写**为什么**（设计动机、失败路径、历史评审编号），不写显而易见的重复描述。大量注释里引用了历史审阅编号（P0-x / P1-x / P2-x），别删——它们是变更依据的存档。
 - 控件 / 卡片 UI 一律沿 `MirrorpondHUD.UiKit` 的主题令牌（`StyleSettings` + `ThemeResolver`）取颜色与字号，不要硬编码颜色常量。
+
+### 4.1 禁止“现代化”的红线
+
+以下区域即使看起来像风格问题，也不得做成员形状/布局改造：
+
+1. **序列化 DTO（Contracts 公共字段 + `PluginManifest` + 各种 `Extras` DTO）**：保持 `public` 实例字段、无参构造。禁止改成属性、`record`、`init`、`required` 或主构造——`Json.cs` 只反射 public 字段，且 `Json.Deserialize<T>` 要求 `new()`；改动会静默丢配置、丢 manifest，或破坏插件 ABI。
+2. **P/Invoke / 互操作结构体**：`[StructLayout]`、`[FieldOffset]`、`[DllImport]` 所在结构体的字段顺序、类型、可见性和布局不得改；不要用 `record struct`、属性化或“顺手重排”。
+3. **XAML 绑定面**：`x:Class`、`x:Name`、事件处理方法名、资源键不得因为格式化改名或移动。
+4. **catch / 代次 / 句柄收尾**：不要为了风格把 `using (...)` 批量改成 `using var`，不要把空 catch 合并或删除；失败可见与释放时机的约束高于行数。
+5. **插件 ABI**：Contracts/UiKit 的公共成员形状变化必须先评估 `apiVersion`；Nullable 注解本身不破坏二进制，但成员形状变化会。
 
 ## 5. 失败必须可见（本项目最高纪律）
 
@@ -111,7 +123,12 @@ build.bat / publish.bat          :: 构建 / 发布（publish 默认单文件）
 - 提交前自检清单：`dotnet build -c Release` 0 警告 0 错误 → `--selftest` 退出 0 → 若涉及 UI 行为，顺手跑一次对应 `--screenshot-*` 模式确认渲染没坏。
 - 不要顺手重排无关代码 / 大幅移动文件；本项目大量 P-Invoke 结构体偏移、反射字段名（`PluginManifest` 的 camelCase 即 JSON 键名）对口依赖原始布局。
 
-## 10. 仍有效的约定（别"顺手清理"）
+## 10. 显式风格
+
+- 设置项要求上下文关联显示，即子设置项只在选择对应的设置项时显示，其余时段隐藏保存界面整洁。
+- 设置项尽量不使用括号，关于设置项的小字说明要简洁明了。
+
+## 11. 仍有效的约定（别"顺手清理"）
 
 - 2.24.0 已清理 `GlassRuntimeState` 单源、Acrylic/Glass 双套模糊参数、`Dwm` 命名与 Chat 历史别名；
   新代码不得再引入旧字段 / 旧 mode 值（v6→v7 一次性迁移在 `SettingsLoader` 里）。
