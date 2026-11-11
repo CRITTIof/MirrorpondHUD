@@ -76,6 +76,7 @@ public sealed class Settings
         Behavior.RefreshMs = (int)Clamp(Behavior.RefreshMs, 100, 5000);
         Behavior.TypeSpeedMs = (int)Clamp(Behavior.TypeSpeedMs, 8, 300);
         Behavior.CursorStyle = NormalizeCursor(Behavior.CursorStyle);
+        Behavior.CardSlide = NormalizeCardSlide(Behavior.CardSlide);
         if (Behavior.WelcomeText is null) Behavior.WelcomeText = "Welcome Back";
         if (Behavior.WelcomeText.Length > 120) Behavior.WelcomeText = Behavior.WelcomeText.Substring(0, 120);
 
@@ -349,6 +350,33 @@ public sealed class Settings
             case "outline": return "Outline";
             default: return "Block";
         }
+    }
+
+    /// <summary>卡片滑入滑出方向：None / Left / Right；未知值回落 None。</summary>
+    public static string NormalizeCardSlide(string value)
+    {
+        switch ((value ?? "").Trim().ToLowerInvariant())
+        {
+            case "left":
+            case "fromleft":
+            case "左":
+            case "左侧":
+                return "Left";
+            case "right":
+            case "fromright":
+            case "右":
+            case "右侧":
+                return "Right";
+            default:
+                return "None";
+        }
+    }
+
+    public static bool IsCardSlide(string value)
+    {
+        string text = (value ?? "").Trim();
+        return text.Length == 0
+            || string.Equals(text, NormalizeCardSlide(text), StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>命令行工具预设：cmd / powershell / pwsh / custom。</summary>
@@ -677,6 +705,15 @@ public sealed class BehaviorSettings
     public bool IntroEnabled = true;
     /// <summary>减少动效：关闭卡片呼出 / 消失 / 补位动画（无障碍 / 远程桌面偏好）。</summary>
     public bool ReduceMotion = false;
+
+    /// <summary>
+    /// 显示 / 隐藏全部时是否播放整体动效。关闭后全局切换瞬时完成；
+    /// 单张非常驻卡的呼出 / 收起仍按自己的动效设置播放。
+    /// </summary>
+    public bool OverallMotion = true;
+
+    /// <summary>卡片滑入 / 滑出方向：None / Left / Right；None = 沿用原来的上下位移。</summary>
+    public string CardSlide = "None";
     /// <summary>欢迎语，默认 Welcome Back。</summary>
     public string WelcomeText = "Welcome Back";
     /// <summary>每字符的动画间隔（毫秒），越小越快。</summary>

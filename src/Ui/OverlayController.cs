@@ -437,7 +437,13 @@ public sealed class OverlayController : IDisposable
 
     // ==================== 显示 / 隐藏 / 堆叠 ====================
 
-    void RefreshVisibility()
+    void RefreshVisibility() => RefreshVisibility(false);
+
+    /// <summary>
+    /// 按当前可见性刷新所有卡片。animate 只给“显示 / 隐藏全部”用；
+    /// 启动、设置重建、截图仍走瞬切，避免离屏验收抓到中间帧。
+    /// </summary>
+    void RefreshVisibility(bool animate)
     {
         foreach (CardSlot slot in _cards)
         {
@@ -447,12 +453,12 @@ public sealed class OverlayController : IDisposable
             else show = slot.Config.Resident || slot.Summoned;
 
             if (show && !slot.Shown)
-                ShowCard(slot, _render.HasSnapshot ? _render.RenderCardText(slot) : _render.RenderPlaceholderText(slot));
+                ShowCard(slot, _render.HasSnapshot ? _render.RenderCardText(slot) : _render.RenderPlaceholderText(slot), animate);
             else if (!show && slot.Shown)
-                HideCard(slot);
+                HideCard(slot, animate);
         }
 
-        _layout.Layout();
+        if (!animate) _layout.Layout();
     }
 
     void ShowCard(CardSlot slot, string text) => ShowCard(slot, text, false);
@@ -698,21 +704,22 @@ public sealed class OverlayController : IDisposable
     {
         if (_cards.Count == 0) return;
 
+        bool animate = CardMotion.OverallMotion;
         if (_overlayVisible)
         {
             if (_command.IsActive) _command.Exit();
             if (_intro.IsRunning) _intro.Finish();
             _overlayVisible = false;
-            foreach (CardSlot slot in _cards) HideCard(slot);
+            foreach (CardSlot slot in _cards) HideCard(slot, animate);
         }
         else
         {
             _overlayVisible = true;
-            RefreshVisibility();
+            RefreshVisibility(animate);
             RenderNow();
         }
 
-        Log.Info($"叠层可见={_overlayVisible}");
+        Log.Info($"叠层可见={_overlayVisible} 整体动效={animate}");
         _tray?.Update();
     }
 

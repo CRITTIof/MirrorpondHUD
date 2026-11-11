@@ -28,6 +28,22 @@ public partial class SettingsWindow
         }
     }
 
+    static int CardSlideIndex(string value)
+    {
+        switch (Settings.NormalizeCardSlide(value))
+        {
+            case "Left": return 1;
+            case "Right": return 2;
+            default: return 0;
+        }
+    }
+
+    string CardSlideTag()
+    {
+        var item = CardSlideCombo.SelectedItem as ComboBoxItem;
+        return Settings.NormalizeCardSlide(item is null ? null : item.Tag as string);
+    }
+
     string CursorTag()
     {
         var item = CursorStyleCombo.SelectedItem as ComboBoxItem;

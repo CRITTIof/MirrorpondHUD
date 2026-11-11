@@ -126,6 +126,8 @@ public partial class SettingsWindow
             TrayCheck.IsChecked = s.Behavior.TrayEnabled;
             IntroCheck.IsChecked = s.Behavior.IntroEnabled;
             ReduceMotionCheck.IsChecked = s.Behavior.ReduceMotion;
+            OverallMotionCheck.IsChecked = s.Behavior.OverallMotion;
+            CardSlideCombo.SelectedIndex = CardSlideIndex(s.Behavior.CardSlide);
             WelcomeBox.Text = string.IsNullOrEmpty(s.Behavior.WelcomeText) ? "Welcome Back" : s.Behavior.WelcomeText;
             TypeSpeedBox.Text = s.Behavior.TypeSpeedMs.ToString(CultureInfo.InvariantCulture);
             CursorStyleCombo.SelectedIndex = CursorIndex(s.Behavior.CursorStyle);
@@ -317,6 +319,10 @@ public partial class SettingsWindow
         if (LoopDurationRow is not null) LoopDurationRow.IsEnabled = loopUsable;
         if (LoopAmplitudeRow is not null) LoopAmplitudeRow.IsEnabled = loopUsable;
         if (ContourSpeedRow is not null) ContourSpeedRow.IsEnabled = loopUsable;
+
+        bool motionUsable = !reduceMotion && !motionOff;
+        if (OverallMotionCheck is not null) OverallMotionCheck.IsEnabled = motionUsable;
+        if (CardSlideCombo is not null) CardSlideCombo.IsEnabled = motionUsable;
         UpdateEndfieldUiState();
     }
 
@@ -471,6 +477,8 @@ public partial class SettingsWindow
             s.Behavior.TrayEnabled = TrayCheck.IsChecked == true;
             s.Behavior.IntroEnabled = IntroCheck.IsChecked == true;
             s.Behavior.ReduceMotion = ReduceMotionCheck.IsChecked == true;
+            s.Behavior.OverallMotion = OverallMotionCheck.IsChecked == true;
+            s.Behavior.CardSlide = CardSlideTag();
             s.Behavior.WelcomeText = (WelcomeBox.Text ?? "").Trim();
             if (s.Behavior.WelcomeText.Length == 0) s.Behavior.WelcomeText = "Welcome Back";
             s.Behavior.TypeSpeedMs = Math.Max(8, ParseInt(TypeSpeedBox.Text, s.Behavior.TypeSpeedMs));

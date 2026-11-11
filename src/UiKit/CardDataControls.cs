@@ -1134,7 +1134,7 @@ internal static class CardDataStyle
                                       bool selectionBar = true)
     {
         bool bar = selectionBar;
-        string contentMargin = bar ? "4,0,0,0" : "0";
+        string contentMargin = bar ? "6,0,0,0" : "0";
         string barSetter = bar
             ? "<Setter TargetName=\"Bar\" Property=\"Visibility\" Value=\"Visible\"/>"
             : "";
@@ -1144,9 +1144,9 @@ internal static class CardDataStyle
             "<ControlTemplate TargetType=\"ListBoxItem\" xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\">" +
             "<Border x:Name=\"ItemHost\" Background=\"{TemplateBinding Background}\" Padding=\"{TemplateBinding Padding}\" CornerRadius=\"0\">" +
             "<Grid>" +
-            "<Border x:Name=\"Bar\" Width=\"3\" Height=\"16\" HorizontalAlignment=\"Left\" " +
-            "VerticalAlignment=\"Center\" Background=\"%BAR%\" Visibility=\"Collapsed\"/>" +
             "<ContentPresenter Margin=\"%CONTENTMARGIN%\" HorizontalAlignment=\"{TemplateBinding HorizontalContentAlignment}\" VerticalAlignment=\"Center\"/>" +
+            "<Border x:Name=\"Bar\" Width=\"4\" HorizontalAlignment=\"Left\" " +
+            "VerticalAlignment=\"Stretch\" Background=\"%BAR%\" Visibility=\"Collapsed\"/>" +
             "</Grid></Border>" +
             "<ControlTemplate.Triggers><Trigger Property=\"IsSelected\" Value=\"True\">" +
             "%BARSETTER%" +

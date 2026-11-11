@@ -684,6 +684,8 @@ internal sealed class StationView : Grid, IDisposable, IStationCopySink
         _selection.Anchor = null;
         Rebuild();
         SetStatus("就绪", CardStatusKind.Normal);
+        // 截图里留一条选中行，用来验收 M3 左缘条；真实卡片不会走这个入口。
+        if (_list.Items.Count > 0) _list.SelectedIndex = 0;
     }
 
     static StationItem Sample(string name, double size, bool directory, string path = null) => new()

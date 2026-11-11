@@ -111,6 +111,9 @@ public partial class SettingsWindow : Window
         ShadowCheck.Unchecked += (s, e) => UiChanged();
         IntroCheck.Checked += (s, e) => { UiChanged(); UpdateContextUiState(); };
         IntroCheck.Unchecked += (s, e) => { UiChanged(); UpdateContextUiState(); };
+        OverallMotionCheck.Checked += (s, e) => UiChanged();
+        OverallMotionCheck.Unchecked += (s, e) => UiChanged();
+        CardSlideCombo.SelectionChanged += (s, e) => UiChanged();
         TrayCheck.Checked += (s, e) => { UiChanged(); UpdateContextUiState(); };
         TrayCheck.Unchecked += (s, e) => { UiChanged(); UpdateContextUiState(); };
         GpuCheck.Checked += (s, e) => { UiChanged(); UpdateContextUiState(); };

@@ -436,6 +436,16 @@ internal static class SelfTest
                          && CardMotion.ShowDurationMs == 80
                          && CardMotion.ShowOffset == 0
                          && CardMotion.HideOffset == 0;
+
+            // 2.37.0：整体显隐开关与左右滑入方向；截图模式会压制物理动效，但方向归一化仍要可读。
+            var slideSettings = new Settings();
+            slideSettings.Behavior.OverallMotion = false;
+            slideSettings.Behavior.CardSlide = "RIGHT";
+            CardMotion.ApplySettings(slideSettings);
+            motionOk = motionOk
+                    && Settings.NormalizeCardSlide("左") == "Left"
+                    && Settings.NormalizeCardSlide("whatever") == "None"
+                    && CardMotion.SlideDirection == "Right";
             CardMotion.ApplySettings(new Settings());
 
             bool alignOk = Settings.NormalizeTextAlign("follow") == "Card"

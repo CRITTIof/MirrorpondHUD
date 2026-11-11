@@ -271,9 +271,9 @@ internal sealed class StationEditor : StackPanel
         var modeRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
         modeRow.Children.Add(new TextBlock { Text = "收纳方式", Width = 90, VerticalAlignment = VerticalAlignment.Center });
         _mode = new ComboBox { Width = 320 };
-        _mode.Items.Add(new ComboBoxItem { Content = "引用（只记录路径，不动文件）" });
+        _mode.Items.Add(new ComboBoxItem { Content = "引用" });
         _mode.Items.Add(new ComboBoxItem { Content = "复制到接收目录" });
-        _mode.Items.Add(new ComboBoxItem { Content = "移动到接收目录（先复制，成功后删源）" });
+        _mode.Items.Add(new ComboBoxItem { Content = "移动到接收目录" });
         _mode.SelectedIndex = station.Mode == "Copy" ? 1 : station.Mode == "Move" ? 2 : 0;
         _mode.SelectionChanged += (s, e) => Commit();
         modeRow.Children.Add(_mode);
@@ -306,7 +306,15 @@ internal sealed class StationEditor : StackPanel
         };
         _maxEntries.TextChanged += (s, e) => Commit();
         maxRow.Children.Add(_maxEntries);
-        maxRow.Children.Add(new TextBlock { Text = " 条（超出丢最旧的列表项，不删文件）", VerticalAlignment = VerticalAlignment.Center });
+        maxRow.Children.Add(new TextBlock { Text = " 条", VerticalAlignment = VerticalAlignment.Center });
+        maxRow.Children.Add(new TextBlock
+        {
+            Text = "超出后丢弃最旧的列表项，不删除文件",
+            FontSize = 12,
+            Opacity = 0.72,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(10, 0, 0, 0)
+        });
         Children.Add(maxRow);
 
         var viewRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
@@ -345,8 +353,9 @@ internal sealed class StationEditor : StackPanel
 
         _autoRemove = new CheckBox
         {
-            Content = "加载列表时移除丢失项（只清列表）",
+            Content = "加载列表时移除丢失项",
             IsChecked = station.AutoRemoveMissing,
+            ToolTip = "只清列表，不删除文件",
             VerticalAlignment = VerticalAlignment.Center
         };
         _autoRemove.Checked += (s, e) => Commit();

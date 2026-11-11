@@ -161,17 +161,17 @@ public partial class ChatCardSettingsView : UserControl, INotifyPropertyChanged,
     {
         get
         {
-            if (_chat.BaseUrl.Length == 0) return "接口地址为空：例如 https://api.openai.com/v1（本地服务填到 /v1）";
-            if (_chat.Model.Length == 0) return "模型名为空：卡片第一行就显示它，例如 gpt-4o-mini / deepseek-chat";
+            if (_chat.BaseUrl.Length == 0) return "接口地址为空。例如 https://api.openai.com/v1，本地服务填到 /v1";
+            if (_chat.Model.Length == 0) return "模型名为空。卡片第一行会显示它，例如 gpt-4o-mini / deepseek-chat";
             if (!_chat.BaseUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase))
                 return "接口地址要以 http:// 或 https:// 开头";
 
             if (_chat.ApiKeyUnreadable)
-                return "已存的 API Key 在这台机器上解不开（换过 Windows 用户或机器），请重新填写";
+                return "已存的 API Key 在这台机器上解不开，请重新填写";
 
             return _chat.ApiKey.Length == 0
-                ? "没填 Key：本地服务（LM Studio / Ollama 兼容层）可以留空；云端接口需要填"
-                : $"Key 已用 Windows DPAPI 加密存在 settings.json 里（只有当前用户能解），请求发到 {_chat.BaseUrl}/chat/completions";
+                ? "没填 Key。本地服务如 LM Studio / Ollama 兼容层可以留空，云端接口需要填"
+                : $"Key 已用 Windows DPAPI 加密存在 settings.json 里，只有当前用户能解；请求发到 {_chat.BaseUrl}/chat/completions";
         }
     }
 

@@ -18,6 +18,8 @@ internal static class CardMotion
     static bool _userEnabled = true;
     static string _profile = "Current";
     static bool _loopMotion;
+    static bool _overallMotion = true;
+    static string _slide = "None";
 
     /// <summary>
     /// 截图 / --selftest 等离屏模式会关闭；正常运行时由设置里的「减少动效」控制。
@@ -27,6 +29,12 @@ internal static class CardMotion
 
     /// <summary>循环动效只在动效可用且用户显式打开时运行。</summary>
     public static bool LoopEnabled => Enabled && _loopMotion;
+
+    /// <summary>“显示 / 隐藏全部”是否播放整体动效；仍受减少动效与 Off 档一票否决。</summary>
+    public static bool OverallMotion => Enabled && _overallMotion;
+
+    /// <summary>卡片滑入滑出方向：None / Left / Right；None 沿用原来的上下位移。</summary>
+    public static string SlideDirection => _slide;
 
     public static string Profile => _profile;
 
@@ -110,6 +118,8 @@ internal static class CardMotion
         _userEnabled = settings is null || !settings.Behavior.ReduceMotion;
         _profile = settings is null ? "Current" : Settings.NormalizeMotionProfile(settings.Style.MotionProfile);
         _loopMotion = settings is not null && settings.Style.LoopEffect != "None";
+        _overallMotion = settings is null || settings.Behavior.OverallMotion;
+        _slide = settings is null ? "None" : Settings.NormalizeCardSlide(settings.Behavior.CardSlide);
     }
 
     /// <summary>三档 ease-out；Cut 用线性，接近工业界面的“直接切入”。</summary>

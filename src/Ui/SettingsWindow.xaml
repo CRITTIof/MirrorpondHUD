@@ -272,9 +272,9 @@
                             <TextBlock Text="对齐方式" VerticalAlignment="Center" />
                             <ComboBox x:Name="CardAlignCombo" Grid.Column="1" Width="220" HorizontalAlignment="Left"
                                       ToolTip="左对齐：所有卡片的左边缘对齐；右对齐：右边缘对齐；自动：整叠卡片在屏幕左半边时左对齐、右半边时右对齐">
-                                <ComboBoxItem Content="自动（按卡片位置）" />
-                                <ComboBoxItem Content="左对齐（左边缘一条线）" />
-                                <ComboBoxItem Content="右对齐（右边缘一条线）" />
+                                <ComboBoxItem Content="自动" />
+                                <ComboBoxItem Content="左对齐" />
+                                <ComboBoxItem Content="右对齐" />
                             </ComboBox>
                         </Grid>
 
@@ -323,7 +323,7 @@
                             <StackPanel Grid.Column="1" Orientation="Horizontal">
                                 <Slider x:Name="IconScaleSlider" Width="260" Minimum="0.6" Maximum="2.2" />
                                 <TextBox x:Name="IconScaleValue" Width="58" Margin="10,0,0,0" TextAlignment="Right" />
-                                <TextBlock Text="× 正文字号（1.0 = 与文字等高；默认 1.15 略大一圈，按字形墨迹自动垂直居中）"
+                                <TextBlock Text="× 正文字号。1.0 与文字等高，默认 1.15 略大一圈；按字形墨迹垂直居中"
                                            Style="{StaticResource Hint}" VerticalAlignment="Center"
                                            Margin="12,0,0,0" TextWrapping="Wrap" MaxWidth="330" />
                             </StackPanel>
@@ -367,7 +367,7 @@
                             </StackPanel>
                         </Grid>
 
-                        <CheckBox x:Name="OutlineCheck" Content="文字描边（亮色 / 花哨背景上也能看清）" Margin="110,4,0,8" />
+                        <CheckBox x:Name="OutlineCheck" Content="文字描边" ToolTip="亮色或花哨背景上也能看清" Margin="110,4,0,8" />
 
                         <Grid x:Name="OutlineOptionsRow" Margin="0,0,0,10" Visibility="Collapsed">
                             <Grid.ColumnDefinitions>
@@ -386,7 +386,9 @@
                             </StackPanel>
                         </Grid>
 
-                        <TextBlock Text="CLI 交互面板（AI 对话 / 命令行）" Style="{StaticResource SectionTitle}" Margin="0,18,0,6" />
+                        <TextBlock Text="CLI 交互面板" Style="{StaticResource SectionTitle}" Margin="0,18,0,6" />
+                        <TextBlock Style="{StaticResource Hint}" Margin="0,0,0,8"
+                                   Text="AI 对话与命令行共用这套尺寸。" />
 
                         <Grid Margin="0,0,0,8">
                             <Grid.ColumnDefinitions>
@@ -508,11 +510,13 @@
 
                         <CheckBox x:Name="ShadowCheck" Content="显示投影" Margin="110,4,0,0" />
 
-                        <TextBlock Text="工业风格（可选，全部默认关闭）" Style="{StaticResource SectionTitle}" Margin="0,18,0,6" />
+                        <TextBlock Text="工业风格" Style="{StaticResource SectionTitle}" Margin="0,18,0,6" />
+                        <TextBlock Style="{StaticResource Hint}" Margin="0,0,0,8"
+                                   Text="可选，默认关闭。" />
 
                         <CheckBox x:Name="MonoReadoutsCheck" Margin="0,0,0,4"
-                                  Content="读数使用等宽数字（指标数字刷新时不横跳）"
-                                  ToolTip="只把 0–9 的数字串换成 MonoFont；中文、单位、图标不变。" />
+                                  Content="读数使用等宽数字"
+                                  ToolTip="指标数字刷新时不横跳；只改 0–9 的数字串。" />
 
                         <Grid Margin="0,0,0,10">
                             <Grid.ColumnDefinitions>
@@ -550,11 +554,11 @@
                             <TextBlock Text="装饰纹样" VerticalAlignment="Center" />
                             <ComboBox x:Name="DecorationCombo" Grid.Column="1" Width="300" HorizontalAlignment="Left">
                                 <ComboBoxItem Content="无" Tag="None" />
-                                <ComboBoxItem Content="网格（坐标系）" Tag="Grid" />
-                                <ComboBoxItem Content="扫描线（终端底纹）" Tag="Scanline" />
-                                <ComboBoxItem Content="45° 斜纹（危险 / 施工）" Tag="Hatch" />
-                                <ComboBoxItem Content="半调网点（标题条渐隐）" Tag="Halftone" />
-                                <ComboBoxItem Content="等高线（地形图）" Tag="Contour" />
+                                <ComboBoxItem Content="网格" Tag="Grid" ToolTip="坐标系底纹" />
+                                <ComboBoxItem Content="扫描线" Tag="Scanline" ToolTip="终端底纹" />
+                                <ComboBoxItem Content="45° 斜纹" Tag="Hatch" ToolTip="危险或施工标记" />
+                                <ComboBoxItem Content="半调网点" Tag="Halftone" ToolTip="标题条渐隐" />
+                                <ComboBoxItem Content="等高线" Tag="Contour" ToolTip="地形图" />
                             </ComboBox>
                         </Grid>
 
@@ -643,10 +647,10 @@
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="动效档位" VerticalAlignment="Center" />
                             <ComboBox x:Name="MotionProfileCombo" Grid.Column="1" Width="300" HorizontalAlignment="Left">
-                                <ComboBoxItem Content="当前（160 / 180ms，8 DIP）" Tag="Current" />
-                                <ComboBoxItem Content="切入（80 / 90ms，无位移）" Tag="Cut" />
-                                <ComboBoxItem Content="工业（110 / 120ms，2 DIP）" Tag="Industrial" />
-                                <ComboBoxItem Content="关闭（瞬时）" Tag="Off" />
+                                <ComboBoxItem Content="当前" Tag="Current" ToolTip="160 / 180ms，8 DIP" />
+                                <ComboBoxItem Content="切入" Tag="Cut" ToolTip="80 / 90ms，无位移" />
+                                <ComboBoxItem Content="工业" Tag="Industrial" ToolTip="110 / 120ms，2 DIP" />
+                                <ComboBoxItem Content="关闭" Tag="Off" ToolTip="瞬时" />
                             </ComboBox>
                         </Grid>
 
@@ -658,10 +662,10 @@
                             <TextBlock Text="循环效果" VerticalAlignment="Center" />
                             <ComboBox x:Name="LoopEffectCombo" Grid.Column="1" Width="300" HorizontalAlignment="Left">
                                 <ComboBoxItem Content="无" Tag="None" />
-                                <ComboBoxItem Content="呼吸（整卡明暗）" Tag="Breath" />
-                                <ComboBoxItem Content="扫描线（横线扫过）" Tag="Scanline" />
-                                <ComboBoxItem Content="脉冲（描边明暗）" Tag="Pulse" />
-                                <ComboBoxItem Content="等高线变化（原地形变）" Tag="Contour" />
+                                <ComboBoxItem Content="呼吸" Tag="Breath" ToolTip="整卡明暗" />
+                                <ComboBoxItem Content="扫描线" Tag="Scanline" ToolTip="横线扫过" />
+                                <ComboBoxItem Content="脉冲" Tag="Pulse" ToolTip="描边明暗" />
+                                <ComboBoxItem Content="等高线变化" Tag="Contour" ToolTip="原地形变" />
                             </ComboBox>
                         </Grid>
 
@@ -699,17 +703,18 @@
                             <StackPanel Grid.Column="1" Orientation="Horizontal">
                                 <Slider x:Name="ContourSpeedSlider" Width="260" Minimum="0.1" Maximum="4.0" />
                                 <TextBox x:Name="ContourSpeedValue" Width="58" Margin="10,0,0,0" TextAlignment="Right" />
-                                <TextBlock Text="×（1.0 ≈ 4 秒一个形变周期）" VerticalAlignment="Center" Margin="8,0,0,0"
+                                <TextBlock Text="×" VerticalAlignment="Center" Margin="8,0,0,0" />
+                                <TextBlock Text="1.0 约 4 秒一个形变周期" VerticalAlignment="Center" Margin="8,0,0,0"
                                            Style="{StaticResource Hint}" />
                             </StackPanel>
                         </Grid>
 
                         <TextBlock Style="{StaticResource Hint}" Margin="110,0,0,10"
-                                   Text="循环效果会持续占用 GPU；等高线变化约 30fps 重算几何（基础地形已缓存、几何在后台生成），CPU 仍比其它效果贵。呼吸幅度 0.10 是克制档。减少动效开启时自动停。" />
+                                   Text="循环效果会持续占用 GPU。等高线变化约 30fps 重算几何；基础地形已缓存、几何在后台生成，CPU 仍比其它效果贵。呼吸幅度 0.10 是克制档。减少动效开启时自动停。" />
 
-                        <TextBlock Text="终末地视觉（M2–M8，可分别关闭）" Style="{StaticResource SectionTitle}" Margin="0,18,0,6" />
+                        <TextBlock Text="终末地视觉" Style="{StaticResource SectionTitle}" Margin="0,18,0,6" />
                         <TextBlock Style="{StaticResource Hint}" Margin="0,0,0,8"
-                                   Text="关闭某一项会回到该效果引入前的旧样式；默认全开 = 2.35.0 的观感。" />
+                                   Text="M2–M8 可分别关闭；关闭后回到旧样式，默认全开。" />
 
                         <WrapPanel Margin="110,0,0,8">
                             <CheckBox x:Name="EndfieldShadowCheck" Content="环境阴影" Margin="0,0,18,8"
@@ -742,7 +747,7 @@
                             </StackPanel>
                         </Grid>
 
-                        <TextBlock Text="高级（实验性）" Style="{StaticResource SectionTitle}" Margin="0,18,0,6" />
+                        <TextBlock Text="高级" Style="{StaticResource SectionTitle}" Margin="0,18,0,6" />
 
                         <CheckBox x:Name="AcrylicCheck" Content="毛玻璃背景" Margin="0,0,0,4" />
 
@@ -754,14 +759,14 @@
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="玻璃实现" VerticalAlignment="Center" />
                             <ComboBox x:Name="GlassModeCombo" Grid.Column="1" Width="300" HorizontalAlignment="Left">
-                                <ComboBoxItem Content="系统亚克力（accent 底板，不抓屏）" Tag="System" />
-                                <ComboBoxItem Content="桌面取样（截屏 + 模糊，卡片不进截图）" Tag="DesktopFeed" />
-                                <ComboBoxItem Content="兼容（截屏取样，CPU 模糊）" Tag="Compat" />
+                                <ComboBoxItem Content="系统亚克力" Tag="System" ToolTip="accent 底板，不抓屏" />
+                                <ComboBoxItem Content="桌面取样" Tag="DesktopFeed" ToolTip="截屏 + 模糊，卡片不进截图" />
+                                <ComboBoxItem Content="兼容" Tag="Compat" ToolTip="截屏取样，CPU 模糊" />
                             </ComboBox>
                         </Grid>
 
                         <TextBlock x:Name="AcrylicHint" FontSize="12" Foreground="#6B7280" Margin="0,0,0,10"
-                                   Text="由 DWM 在卡片下面的独立底板上画实时亚克力：模糊在 GPU 上完成、进程侧不抓屏，「模糊强度 / 刷新帧率」由系统决定（这里不可调）。关闭系统透明效果或远程桌面时会自动退回兼容实现。"
+                                   Text="由 DWM 在卡片下面画实时亚克力。模糊在 GPU 上完成，进程侧不抓屏；模糊强度与刷新帧率由系统决定。关闭系统透明效果或远程桌面时自动退回兼容实现。"
                                    TextWrapping="Wrap" />
 
                         <Grid x:Name="GlassBlurRow" Margin="0,0,0,10">
@@ -799,9 +804,9 @@
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="取图方式" VerticalAlignment="Center" />
                             <ComboBox x:Name="GlassSourceCombo" Grid.Column="1" Width="300" HorizontalAlignment="Left">
-                                <ComboBoxItem Content="自动（能拿到桌面复制就用）" Tag="Auto" />
-                                <ComboBoxItem Content="GPU 加速（DXGI 桌面复制）" Tag="Gpu" />
-                                <ComboBoxItem Content="CPU 读屏（GDI，兼容性最好）" Tag="Cpu" />
+                                <ComboBoxItem Content="自动" Tag="Auto" ToolTip="能拿到桌面复制就用" />
+                                <ComboBoxItem Content="GPU 加速" Tag="Gpu" ToolTip="DXGI 桌面复制" />
+                                <ComboBoxItem Content="CPU 读屏" Tag="Cpu" ToolTip="GDI，兼容性最好" />
                             </ComboBox>
                         </Grid>
                         <TextBlock x:Name="GlassSourceHint" Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="110,0,0,10"
@@ -832,7 +837,8 @@
                         </StackPanel>
 
                         <StackPanel x:Name="DrivesOptionsPanel">
-                            <TextBlock Text="磁盘分区（用于剩余空间）" Style="{StaticResource SectionTitle}" Margin="0,14,0,6" />
+                            <TextBlock Text="磁盘分区" Style="{StaticResource SectionTitle}" Margin="0,14,0,6" />
+                        <TextBlock Style="{StaticResource Hint}" Margin="0,0,0,6" Text="用于统计剩余空间。" />
                             <WrapPanel x:Name="DrivesPanel" />
                         </StackPanel>
 
@@ -858,11 +864,14 @@
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                                 <TextBlock Text="最多显示" VerticalAlignment="Center" />
                                 <TextBox x:Name="MaxKeyCharsBox" Width="60" Margin="8,0,8,0" />
-                                <TextBlock Text="个字符（空格和分隔符也计入，默认 18）" VerticalAlignment="Center" />
+                                <TextBlock Text="个字符" VerticalAlignment="Center" />
+                                <TextBlock Text="空格和分隔符也计入，默认 18" Style="{StaticResource Hint}"
+                                           VerticalAlignment="Center" Margin="8,0,0,0" />
                             </StackPanel>
                         </StackPanel>
 
-                        <TextBlock Text="NVIDIA 显卡（温度 / 显存 / 功耗）" Style="{StaticResource SectionTitle}" Margin="0,14,0,6" />
+                        <TextBlock Text="NVIDIA 显卡" Style="{StaticResource SectionTitle}" Margin="0,14,0,6" />
+                        <TextBlock Style="{StaticResource Hint}" Margin="0,0,0,6" Text="温度、显存与功耗。" />
                         <CheckBox x:Name="NvidiaCheck" Content="启用 nvidia-smi 数据" Margin="0,0,0,10" />
                         <StackPanel x:Name="NvidiaOptionsPanel" Orientation="Horizontal" Visibility="Collapsed">
                             <TextBlock Text="采样间隔" VerticalAlignment="Center" />
@@ -889,7 +898,7 @@
                         <TextBlock Text="窗口" Style="{StaticResource SectionTitle}" Margin="0,16,0,6" />
                         <CheckBox x:Name="TopmostCheck" Content="始终置顶" Margin="0,0,0,8" />
                         <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,0,0,8"
-                                   Text="叠层能否拖动只由 F8（或托盘菜单的「锁定 / 解锁」）切换，打开或关闭本窗口都不会自动解锁、锁定。" />
+                                   Text="叠层拖动只由 F8 或托盘菜单的锁定切换，开关本窗口不会自动锁定。" />
 
                         <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
                             <TextBlock Text="锚点" VerticalAlignment="Center" />
@@ -901,7 +910,7 @@
                             <Button Content="应用位置" Click="ApplyPositionClick" />
                         </StackPanel>
                         <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,6,0,0"
-                                   Text="第一张卡片对齐到锚点，其余卡片按每张的「与上方卡片间距」向下排列；解锁后拖动任意卡片会移动整叠，松手即保存。" />
+                                   Text="第一张卡片对齐锚点，其余按间距向下排列。解锁后拖动任意卡片可移动整叠，松手保存。" />
 
                         <Grid Margin="0,12,0,0">
                             <Grid.ColumnDefinitions>
@@ -915,22 +924,38 @@
                             </StackPanel>
                         </Grid>
                         <TextBlock Style="{StaticResource Hint}" Margin="110,2,0,0" TextWrapping="Wrap"
-                                   Text="0 = 自适应：宽度只增不减，数据变长只长大一次，之后不再缩回，信息位置不会来回跳动。填入具体数值可完全固定（所有卡片统一）。" />
+                                   Text="0 = 自适应，宽度只增不减，信息位置不会来回跳动。填数值可完全固定。" />
 
                         <TextBlock Text="启动" Style="{StaticResource SectionTitle}" Margin="0,16,0,6" />
                         <CheckBox x:Name="AutoStartCheck" Content="开机自动启动" Margin="0,0,0,8" />
                         <CheckBox x:Name="StartMinCheck" Content="启动后最小化到托盘" Margin="0,0,0,8" />
                         <CheckBox x:Name="TrayCheck" Content="显示托盘图标" Margin="0,0,0,8" />
 
-                        <TextBlock Text="启动动画" Style="{StaticResource SectionTitle}" Margin="0,16,0,6" />
-                        <CheckBox x:Name="IntroCheck" Content="启动时播放打字 / 退格动画" Margin="0,0,0,8" />
-                        <CheckBox x:Name="ReduceMotionCheck" Content="减少动效（关闭卡片显隐 / 补位动画）" Margin="0,0,0,8" />
+                        <TextBlock Text="动效" Style="{StaticResource SectionTitle}" Margin="0,16,0,6" />
+                        <CheckBox x:Name="IntroCheck" Content="启动时播放打字动画" Margin="0,0,0,8" />
+                        <CheckBox x:Name="ReduceMotionCheck" Content="减少动效" Margin="0,0,0,8" />
+                        <CheckBox x:Name="OverallMotionCheck" Content="显示和隐藏全部时播放整体动效" Margin="0,0,0,8" />
+                        <Grid Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="110" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="卡片滑入方向" VerticalAlignment="Center" />
+                            <ComboBox x:Name="CardSlideCombo" Grid.Column="1" Width="160" HorizontalAlignment="Left">
+                                <ComboBoxItem Content="无" Tag="None" />
+                                <ComboBoxItem Content="从左侧" Tag="Left" />
+                                <ComboBoxItem Content="从右侧" Tag="Right" />
+                            </ComboBox>
+                        </Grid>
+                        <TextBlock Style="{StaticResource Hint}" Margin="110,0,0,8" TextWrapping="Wrap"
+                                   Text="整体动效与滑入方向都受减少动效控制。" />
                         <StackPanel x:Name="IntroOptionsPanel" Visibility="Collapsed">
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                                 <TextBlock Text="欢迎语" VerticalAlignment="Center" />
                                 <TextBox x:Name="WelcomeBox" Width="220" Margin="8,0,16,0" />
-                                <TextBlock Text="速度(ms/字)" VerticalAlignment="Center" />
+                                <TextBlock Text="速度" VerticalAlignment="Center" />
                                 <TextBox x:Name="TypeSpeedBox" Width="64" Margin="8,0,0,0" />
+                                <TextBlock Text="毫秒 / 字" VerticalAlignment="Center" Margin="8,0,0,0" />
                             </StackPanel>
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                                 <TextBlock Text="光标样式" VerticalAlignment="Center" />
@@ -944,7 +969,7 @@
                                 <CheckBox x:Name="CursorBlinkCheck" Content="光标闪烁" />
                             </StackPanel>
                             <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,2,0,0"
-                                       Text="打字 / 退格时会显示模拟光标，全部信息显示完成后光标自动消失。启动动画只播放第一张可见卡片。" />
+                                       Text="打字时显示模拟光标，启动动画只播放第一张可见卡片。" />
                         </StackPanel>
 
                         <TextBlock Text="文件" Style="{StaticResource SectionTitle}" Margin="0,16,0,6" />
@@ -989,7 +1014,7 @@
                         <Button Grid.Column="2" Content="清空" Margin="8,0,0,10" Padding="10,2"
                                 VerticalAlignment="Center" Click="ClearHotkeyBoxClick"
                                 Tag="{Binding ElementName=HotkeyToggleBox}"
-                                ToolTip="清除这个热键（留空 = 不启用）" />
+                                ToolTip="清除这个热键，留空表示不启用" />
 
                         <TextBlock Text="打开设置" Grid.Row="1" VerticalAlignment="Center" Margin="0,0,0,10" />
                         <TextBox x:Name="HotkeySettingsBox" Grid.Row="1" Grid.Column="1" IsReadOnly="True"
@@ -997,7 +1022,7 @@
                         <Button Grid.Row="1" Grid.Column="2" Content="清空" Margin="8,0,0,10" Padding="10,2"
                                 VerticalAlignment="Center" Click="ClearHotkeyBoxClick"
                                 Tag="{Binding ElementName=HotkeySettingsBox}"
-                                ToolTip="清除这个热键（留空 = 不启用）" />
+                                ToolTip="清除这个热键，留空表示不启用" />
 
                         <TextBlock Text="锁定 / 解锁" Grid.Row="2" VerticalAlignment="Center" />
                         <TextBox x:Name="HotkeyLockBox" Grid.Row="2" Grid.Column="1" IsReadOnly="True"
@@ -1005,7 +1030,7 @@
                         <Button Grid.Row="2" Grid.Column="2" Content="清空" Margin="8,0,0,0" Padding="10,2"
                                 VerticalAlignment="Center" Click="ClearHotkeyBoxClick"
                                 Tag="{Binding ElementName=HotkeyLockBox}"
-                                ToolTip="清除这个热键（留空 = 不启用）" />
+                                ToolTip="清除这个热键，留空表示不启用" />
                     </Grid>
 
                     <!-- 卡片模块提供的通用热键：按卡片种类分组，组间有分割线 -->

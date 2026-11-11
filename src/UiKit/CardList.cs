@@ -207,8 +207,8 @@ public sealed class CardList : Grid
 
     static Style BuildItemStyle(ThemeTokens tokens, Color foreground, bool selectionBar, bool tiles)
     {
-        bool bar = selectionBar && !tiles;
-        string contentMargin = bar ? "4,0,0,0" : "0";
+        bool bar = selectionBar;
+        string contentMargin = bar ? "6,0,0,0" : "0";
         string barSetter = bar
             ? "<Setter TargetName=\"Bar\" Property=\"Visibility\" Value=\"Visible\"/>"
             : "";
@@ -219,10 +219,10 @@ public sealed class CardList : Grid
             "<Border x:Name=\"ItemHost\" Background=\"{TemplateBinding Background}\" Padding=\"{TemplateBinding Padding}\" " +
             "BorderBrush=\"{TemplateBinding BorderBrush}\" BorderThickness=\"{TemplateBinding BorderThickness}\" CornerRadius=\"%RADIUS%\">" +
             "<Grid>" +
-            "<Border x:Name=\"Bar\" Width=\"3\" Height=\"18\" HorizontalAlignment=\"Left\" " +
-            "VerticalAlignment=\"Center\" Background=\"%BAR%\" Visibility=\"Collapsed\"/>" +
             "<ContentPresenter Margin=\"%CONTENTMARGIN%\" HorizontalAlignment=\"{TemplateBinding HorizontalContentAlignment}\" " +
             "VerticalAlignment=\"{TemplateBinding VerticalContentAlignment}\"/>" +
+            "<Border x:Name=\"Bar\" Width=\"4\" HorizontalAlignment=\"Left\" " +
+            "VerticalAlignment=\"Stretch\" Background=\"%BAR%\" Visibility=\"Collapsed\"/>" +
             "</Grid></Border>" +
             "<ControlTemplate.Triggers>" +
             "<Trigger Property=\"IsSelected\" Value=\"True\">" +

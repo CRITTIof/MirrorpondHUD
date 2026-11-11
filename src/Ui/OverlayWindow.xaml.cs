@@ -512,11 +512,18 @@ public partial class OverlayWindow : Window
         }
 
         ScreenInfo screen = ScreenGeometry.ForPoint(targetLeft, targetTop);
-        double scale = screen is not null ? screen.ScaleY : 1.0;
-        int offset = (int)Math.Round(CardMotion.ShowOffset * scale);
+        double scaleX = screen is not null ? screen.ScaleX : 1.0;
+        double scaleY = screen is not null ? screen.ScaleY : 1.0;
+        int offset = (int)Math.Round(CardMotion.ShowOffset * scaleY);
+        string slide = CardMotion.SlideDirection;
+        int dx = string.Equals(slide, "Left", StringComparison.OrdinalIgnoreCase) ? -offset
+            : string.Equals(slide, "Right", StringComparison.OrdinalIgnoreCase) ? offset
+            : 0;
+        int dy = slide == "None" ? offset : 0;
 
-        // 先下移 8 DIP（按当前屏缩放换成物理像素），再动画回目标位。
-        SetPhysicalPosition(targetLeft, targetTop + offset);
+        // 从目标位左侧 / 右侧 / 下方滑回目标位；左右滑动的距离按 X 轴缩放换算。
+        if (dx != 0) dx = (int)Math.Round(CardMotion.ShowOffset * scaleX) * Math.Sign(dx);
+        SetPhysicalPosition(targetLeft + dx, targetTop + dy);
         AnimateTo(targetLeft, targetTop, CardMotion.ShowDurationMs);
 
         var opacity = new DoubleAnimation(0, 1, duration)
@@ -567,10 +574,17 @@ public partial class OverlayWindow : Window
         }
 
         ScreenInfo screen = ScreenGeometry.ForPoint(px, py);
-        double scale = screen is not null ? screen.ScaleY : 1.0;
-        int offset = (int)Math.Round(CardMotion.HideOffset * scale);
+        double scaleX = screen is not null ? screen.ScaleX : 1.0;
+        double scaleY = screen is not null ? screen.ScaleY : 1.0;
+        int offset = (int)Math.Round(CardMotion.HideOffset * scaleY);
+        string slide = CardMotion.SlideDirection;
+        int dx = string.Equals(slide, "Left", StringComparison.OrdinalIgnoreCase) ? -offset
+            : string.Equals(slide, "Right", StringComparison.OrdinalIgnoreCase) ? offset
+            : 0;
+        int dy = slide == "None" ? -offset : 0;
 
-        AnimateTo(px, py - offset, CardMotion.HideDurationMs);
+        if (dx != 0) dx = (int)Math.Round(CardMotion.HideOffset * scaleX) * Math.Sign(dx);
+        AnimateTo(px + dx, py + dy, CardMotion.HideDurationMs);
 
         var opacity = new DoubleAnimation(fromOpacity, 0, duration)
         {

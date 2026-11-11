@@ -326,7 +326,7 @@ tools/                   开发脚本（make_logo.py 生成多尺寸 logo.ico）
 - [docs/performance-baseline.md](docs/performance-baseline.md) — `--perf` 性能采样基线：TextCanvas 排版次数、GlassFeed 分配/LOH、GC 增量，供后续优化对照
 - [docs/legacy-audit.md](docs/legacy-audit.md) — 源码遗留审计：与 v2.9.4 同源的检查、13 条遗留（颜色解析 / 异步 void / 静态缓存 / 死字段等）与清理顺序
 - [docs/file-transfer-station.md](docs/file-transfer-station.md) — 文件中转站调研与设计：拖入 / 列表 / 引用与复制、状态持久化、拖出与锁定语义、M1–M3 路线
-- [docs/version-history.md](docs/version-history.md) — v2.4.1 → 2.36.0 每个版本改了什么、动了哪些文件（含实测数据与提交号）
+- [docs/version-history.md](docs/version-history.md) — v2.4.1 → 2.37.0 每个版本改了什么、动了哪些文件（含实测数据与提交号）
 - `.git-blame-ignore-revs` — 2.34.0 的纯格式化重排提交；执行 `git config blame.ignoreRevsFile .git-blame-ignore-revs` 后 `git blame` 会跳过它
 - [DLL-CARD-PLUGIN-GUIDE.md](DLL-CARD-PLUGIN-GUIDE.md) — DLL 卡片插件开发指南（自包含）：工程引用、manifest、最小文字卡/富卡完整代码、全部契约签名、CardSettings/Extras、UiKit 控件目录、构建安装调试、安全与检查清单
 - [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) — 第三方字体与许可证（Lucide ISC、ReiconFont OFL）
