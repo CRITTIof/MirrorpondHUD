@@ -45,7 +45,6 @@
     },
     "industrial": {
       "monoReadouts": true,
-      "cardCodes": true,
       "decoration": "Grid"
     },
     "motion": {

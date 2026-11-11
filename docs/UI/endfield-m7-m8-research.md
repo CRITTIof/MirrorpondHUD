@@ -142,7 +142,7 @@ public string MotionProfile = "Current"; // Current / Cut / Industrial / Off
 ```json
 "appearance": {
   "motion": { "profile": "Industrial" },
-  "industrial": { "monoReadouts": true, "cardCodes": true, "decoration": "Grid" }
+  "industrial": { "monoReadouts": true, "decoration": "Grid" }
 }
 ```
 
@@ -150,7 +150,7 @@ public string MotionProfile = "Current"; // Current / Cut / Industrial / Off
 
 - `MotionProfile`：四个档位（见 M7）；
 - `Decoration`：六个纹样（M6 已实现）；
-- `CardCode` / `MonoReadouts`：布尔开关；
+- `MonoReadouts`：布尔开关（`CardCode` 铭牌在 2.33.0 删除）；
 - 未来新增纹样 = 在 `BuildDecorationBrush` 里加一个 case + `NormalizeDecoration` 加一个值，**主题不能注入代码**。
 
 优点：无 ALC / 安全 / 版本兼容问题；`DrawingBrush` 可冻结缓存；主题可 diff、可回滚。

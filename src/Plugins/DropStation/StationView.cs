@@ -29,6 +29,13 @@ namespace MirrorpondHUD.Cards
         readonly StationStore _store;
         readonly StationCopyController _copy;
         readonly StationFileActions _files;
+        /// <summary>
+        /// 内衬容器：富内容层（<c>OverlaySurface._contentLayer</c>）Margin=0，内容会直接贴住
+        /// 卡片圆角。所有内容都放进这层，由 <see cref="ApplySpacing"/> 统一给留白。
+        /// 只在构造期建一次，换肤时只改它的 Margin —— 不能把边距挂在每次 Rebuild 的列表行上，
+        /// 否则换肤 / 搜索会一层层累积。
+        /// </summary>
+        readonly Grid _content;
         readonly CardHeader _header;
         readonly CardButton _openDirectory;
         readonly CardButton _clear;
@@ -61,21 +68,22 @@ namespace MirrorpondHUD.Cards
             _copy = new StationCopyController(_store, _station, Dispatcher, this);
             _files = new StationFileActions(_host, _station, SetStatus, PersistAndRebuild);
 
-            RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            _content = new Grid();
+            _content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            _content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            _content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            _content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            Children.Add(_content);
 
-            _header = new CardHeader("文件中转站") { Margin = new Thickness(0, 0, 0, 8) };
+            _header = new CardHeader("文件中转站");
             _openDirectory = _header.Actions.Add("打开目录", _files.OpenDirectory, CardButtonTone.Normal, "在资源管理器中打开接收目录");
             _header.Actions.Add("粘贴", PasteFromClipboard, CardButtonTone.Normal, "从剪贴板添加文件");
             _clear = _header.Actions.Add("清空", ClearAll, CardButtonTone.Normal, "清空列表（不删除文件）");
-            Children.Add(_header);
+            _content.Children.Add(_header);
 
             _search = new CardInput
             {
                 Placeholder = "搜索文件名…",
-                Margin = new Thickness(0, 0, 0, 6),
                 Visibility = Visibility.Collapsed
             };
             _search.TextChanged += OnSearchChanged;
@@ -86,12 +94,11 @@ namespace MirrorpondHUD.Cards
                 ClearSearch();
             };
             SetRow(_search, 1);
-            Children.Add(_search);
+            _content.Children.Add(_search);
 
             _list = new CardList
             {
                 MinHeight = 72,
-                MaxHeight = Math.Max(120, (_settings.Cli ?? new CliSettings()).MaxHeight - 104),
                 SelectionMode = SelectionMode.Extended
             };
             _list.SetEmptyText("把文件拖进来");
@@ -109,9 +116,9 @@ namespace MirrorpondHUD.Cards
             body.Children.Add(_list);
             body.Children.Add(_dropOverlay);
             SetRow(body, 2);
-            Children.Add(body);
+            _content.Children.Add(body);
 
-            _status = new CardStatus { Margin = new Thickness(0, 4, 0, 0) };
+            _status = new CardStatus();
 
             var statusRow = new Grid();
             statusRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -120,7 +127,6 @@ namespace MirrorpondHUD.Cards
 
             _cancelCopy = new CardButton("取消", CardButtonTone.Normal)
             {
-                Margin = new Thickness(8, 6, 0, 0),
                 VerticalAlignment = VerticalAlignment.Top,
                 Visibility = Visibility.Collapsed
             };
@@ -130,7 +136,7 @@ namespace MirrorpondHUD.Cards
             statusRow.Children.Add(_cancelCopy);
 
             SetRow(statusRow, 3);
-            Children.Add(statusRow);
+            _content.Children.Add(statusRow);
 
             ApplyStyle(_settings);
             LoadItems();
@@ -182,32 +188,6 @@ namespace MirrorpondHUD.Cards
             CliSettings cli = _settings.Cli ?? new CliSettings();
             Width = Math.Max(240, cli.MaxWidth);
 
-            // M5：铭牌编号只在选项打开时显示，编号取卡片在整叠里的位置（01 起）。
-            if (_settings.Style.IndustrialHeader)
-            {
-                int index = -1;
-                if (_settings.Cards != null)
-                {
-                    for (int i = 0; i < _settings.Cards.Count; i++)
-                    {
-                        CardSettings item = _settings.Cards[i];
-                        if (item == null) continue;
-                        if (ReferenceEquals(item, _config)
-                            || (!string.IsNullOrEmpty(item.Id)
-                                && string.Equals(item.Id, _config.Id, StringComparison.OrdinalIgnoreCase)))
-                        {
-                            index = i;
-                            break;
-                        }
-                    }
-                }
-                _header.Code = index >= 0 ? (index + 1).ToString("00") : "";
-            }
-            else
-            {
-                _header.Code = "";
-            }
-
             _header.ApplyStyle(_settings.Style, _settings.Overlay.CornerRadius);
             _search.ApplyStyle(_settings.Style, _settings.Overlay.CornerRadius);
             _list.ApplyStyle(_settings.Style, cli);
@@ -215,8 +195,47 @@ namespace MirrorpondHUD.Cards
             _cancelCopy.ApplyStyle(_settings.Style, _settings.Overlay.CornerRadius);
             _dropOverlay.ApplyStyle(_settings.Style, _settings.Overlay.CornerRadius);
             _list.SetEmptyText(EmptyText());
-            _list.MaxHeight = Math.Max(120, cli.MaxHeight - 104);
+            ApplySpacing(cli);
             Rebuild();
+        }
+
+        /// <summary>
+        /// 按主题 Padding 重算整块内容的留白与纵向节奏。富内容层没有外边距，这里就是卡片里
+        /// 唯一的「内衬」：默认 Padding=14 时左右 14、上 / 下 13，标题下 11、搜索下 8、
+        /// 状态行上 9、状态文字与「取消」按钮之间 12。
+        /// 全部夹在上下限内：Padding=0 时仍有 14/12/12 的呼吸，Padding=80 时也不会把列表挤没。
+        /// 只改 Margin，不增删控件 —— ApplyStyle 会重建列表行，边距绝不能放进 Rebuild。
+        /// </summary>
+        void ApplySpacing(CliSettings cli)
+        {
+            StyleSettings style = _settings.Style ?? new StyleSettings();
+            double pad = Math.Max(0, style.Padding);
+
+            double padX = RoundSpacing(pad, 1.0, 14, 16);
+            double padTop = RoundSpacing(pad, 0.9, 12, 14);
+            double padBottom = RoundSpacing(pad, 0.9, 12, 14);
+            double headerGap = RoundSpacing(pad, 0.8, 10, 12);
+            double searchGap = RoundSpacing(pad, 0.57, 7, 9);
+            double statusGap = RoundSpacing(pad, 0.65, 8, 10);
+            double cancelGap = RoundSpacing(pad, 0.85, 12, 14);
+
+            _content.Margin = new Thickness(padX, padTop, padX, padBottom);
+
+            _header.Margin = new Thickness(0, 0, 0, headerGap);
+            _search.Margin = new Thickness(0, 0, 0, searchGap);
+            _status.Margin = new Thickness(0, statusGap, 0, 0);
+            // 状态文字和「取消」按钮不能贴在一起；顶边与状态文字对齐。
+            _cancelCopy.Margin = new Thickness(cancelGap, statusGap, 0, 0);
+
+            // 上下内衬也算卡片 chrome：从列表高度上限里扣掉，整卡才仍然守 Cli.MaxHeight 的约定。
+            double chrome = padTop + padBottom;
+            _list.MaxHeight = Math.Max(120, cli.MaxHeight - 104 - chrome);
+        }
+
+        /// <summary>按主题 Padding 缩放一档间距，夹到 [min, max] 后取整，避免 0.4 DIP 这类碎值。</summary>
+        static double RoundSpacing(double pad, double scale, double min, double max)
+        {
+            return Math.Round(Settings.Clamp(pad * scale, min, max));
         }
 
         public void ShowDropHint(bool over, int count)

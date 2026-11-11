@@ -323,6 +323,32 @@ namespace MirrorpondHUD.Ui
             FgSwatch.Background = new SolidColorBrush(OverlaySurface.ParseColor(FgBox.Text));
             BgSwatch.Background = new SolidColorBrush(OverlaySurface.ParseColor(BgBox.Text));
             OutlineSwatch.Background = new SolidColorBrush(OverlaySurface.ParseColor(OutlineColorBox.Text));
+
+            // 状态色允许留空表示“沿用派生值”，所以预览必须走 ThemeResolver，
+            // 不能直接 ParseColor(空串)（那会显示成白色，和卡片上的实际颜色不符）。
+            // 用控件里的即时值做一份轻量副本：用户还没保存时预览也要跟手。
+            var preview = new StyleSettings
+            {
+                Foreground = (FgBox.Text ?? "").Trim(),
+                Accent = _working == null ? new StyleSettings().Accent : _working.Style.Accent,
+                Success = (SuccessColorBox.Text ?? "").Trim(),
+                Warning = (WarningColorBox.Text ?? "").Trim()
+            };
+            ThemeTokens tokens = ThemeResolver.Resolve(preview);
+            if (SuccessSwatch != null)
+            {
+                SuccessSwatch.Background = new SolidColorBrush(tokens.Success);
+                SuccessSwatch.ToolTip = string.IsNullOrWhiteSpace(preview.Success)
+                    ? "空 = 沿用强调色（" + tokens.Success + "）"
+                    : "成功色预览（" + tokens.Success + "）";
+            }
+            if (WarningSwatch != null)
+            {
+                WarningSwatch.Background = new SolidColorBrush(tokens.Warning);
+                WarningSwatch.ToolTip = string.IsNullOrWhiteSpace(preview.Warning)
+                    ? "空 = 前景色 90%（" + tokens.Warning + "）"
+                    : "警告色预览（" + tokens.Warning + "）";
+            }
         }
     }
 }

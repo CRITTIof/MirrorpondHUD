@@ -461,7 +461,7 @@ CPU  42%   GPU  11%   内存 61%
 | M2 | 缺口 3：圆角下限改为跟随配置（`CardPalette.Corner`） | ≈ 12 处调用点 | ✅ 2.30.0：`cornerRadius=0` 时无圆角残留 |
 | M3 | 缺口 1：`Success` / `Warning` 令牌 + `CardStatus` 改读 | ≈ 60 行 + 自检 | ✅ 2.30.0：空令牌派生值等于旧常量，自检通过 |
 | M4 | 缺口 2：读数等宽（`MonoFont` 或 `NumeralAlignment`） | ≈ 20 行 | ✅ 2.30.0：数字 run 走 `MonoFont`，默认关闭 |
-| M5 | `CardHeader` 编号 + `Badge` 等宽大写 | ≈ 20 行（插件侧） | ✅ 2.30.0：`IndustrialHeader` 选项，文件中转站显示 `03` |
+| M5 | `CardHeader` 编号 + `Badge` 等宽大写 | ≈ 20 行（插件侧） | ✅ 2.30.0 实现；2.33.0 按需求删除（编号与铭牌设置均不再存在） |
 | M6 | 45° 斜纹、半调网点、扫描线、等高线点缀装饰 | 未预测 | ✅ 2.30.0：六种纹样下拉，默认 `None`，整层 15% 透明度 |
 | M7 | 循环动效、呼出、消失动效风格化 | 未预测 | ✅ 2.31.0：四档 `MotionProfile` + Breath/Scanline/Pulse 循环效果；实现见 [endfield-m7-m8-implementation.md](endfield-m7-m8-implementation.md) |
 | M8 | 考虑实现动效与装饰的模块化，为后续更多主题做铺垫 | 未预测 | ✅ 2.31.0：`appearance.motion` + `appearance.industrial` 主题数据；不做代码插件 |

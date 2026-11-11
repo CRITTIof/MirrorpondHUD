@@ -313,6 +313,15 @@ namespace MirrorpondHUD.Ui
 
         public bool IsCommandInputActive { get { return _commandMode; } }
 
+        /// <summary>
+        /// 布局协调器把整叠的左 / 右对齐告诉窗口，文字选“跟随卡片对齐”时按它排版。
+        /// 不传（null）时由表面按卡片位置兜底，截图 / 设置预览走那条路径。
+        /// </summary>
+        public void SetResolvedCardAlignment(string value)
+        {
+            Surface.SetResolvedCardAlignment(value);
+        }
+
         public void ApplyPosition()
         {
             ApplyPosition(false);
@@ -774,10 +783,6 @@ namespace MirrorpondHUD.Ui
             if (!_dragEnabled) return;
             if (e.ClickCount > 1) return;
 
-            int physX;
-            int physY;
-            if (!TryGetPhysicalPosition(out physX, out physY)) return;
-
             _dragging = true;
             Native.CursorPoint startCursor;
             if (!Native.GetCursorPos(out startCursor))
@@ -786,14 +791,24 @@ namespace MirrorpondHUD.Ui
                 return;
             }
             _dragStartScreen = new Point(startCursor.X, startCursor.Y);
+
+            // 先让控制器收掉所有正在跑的补位动画，并把整叠落到上一轮目标位、挂起布局；
+            // 然后才读物理位置作为拖动起点。顺序不能反：否则起点可能是动画中途的坐标，
+            // 松手时锚点会差几像素，表现为“偶尔错位”。
+            Action started = DragStarted;
+            if (started != null) started();
+
+            int physX;
+            int physY;
+            if (!TryGetPhysicalPosition(out physX, out physY))
+            {
+                _dragging = false;
+                return;
+            }
             _dragStartPhysX = physX;
             _dragStartPhysY = physY;
             _dragTargetPhysX = physX;
             _dragTargetPhysY = physY;
-
-            // 先让控制器收掉所有正在跑的补位动画；否则拖动时窗口会和旧动画抢位置。
-            Action started = DragStarted;
-            if (started != null) started();
 
             // 跨 DPI 时 WPF 可能停止派发 MouseMove 或丢捕获；用一个 15ms 轮询直接读物理光标，
             // 保证拖动在屏幕交界处仍然连续。

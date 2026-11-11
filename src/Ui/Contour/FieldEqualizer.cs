@@ -20,6 +20,16 @@ namespace MirrorpondHUD.Ui.Contour
 
         public static void Apply(ScalarGrid grid, double strength)
         {
+            Apply(grid, strength, null, null);
+        }
+
+        /// <summary>
+        /// 复用直方图 / CDF 缓冲的版本。相位动画每帧都要均衡一次，
+        /// 旧写法每次都 new int[1024] + new double[1025]，30fps 下会给 Gen0 添无谓压力。
+        /// 缓冲由调用方按实例持有（同一时刻只被一个线程使用）；长度不符时内部自行分配。
+        /// </summary>
+        internal static void Apply(ScalarGrid grid, double strength, int[] histogram, double[] cdf)
+        {
             if (grid == null)
             {
                 throw new ArgumentNullException("grid");
@@ -43,7 +53,20 @@ namespace MirrorpondHUD.Ui.Contour
             }
 
             double[] values = grid.Values;
-            int[] histogram = new int[Bins];
+            if (histogram == null || histogram.Length != Bins)
+            {
+                histogram = new int[Bins];
+            }
+            else
+            {
+                Array.Clear(histogram, 0, Bins);
+            }
+            if (cdf == null || cdf.Length != Bins + 1)
+            {
+                cdf = new double[Bins + 1];
+            }
+            // cdf[0] 表示"低于最低档"的占比，恒为 0；复用缓冲时必须显式清零。
+            cdf[0] = 0.0;
             double binScale = Bins / span;
 
             for (int i = 0; i < values.Length; i++)
@@ -61,7 +84,6 @@ namespace MirrorpondHUD.Ui.Contour
             }
 
             // cdf[b] = 取值低于第 b 档左边界的顶点占比。
-            double[] cdf = new double[Bins + 1];
             int accumulated = 0;
             for (int b = 0; b < Bins; b++)
             {

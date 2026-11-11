@@ -14,10 +14,10 @@
 | M2 直角 | 外观 → 圆角 | 10 | `cornerRadius = 0` 现在真的得到 0，不再被控件最小值抬回 4–6px |
 | M3 状态色 | 外观 → 状态色 → 成功 / 警告 | 空 | 空 = 旧行为（成功=强调色，警告=前景 0.9） |
 | M4 等宽读数 | 外观 → 工业风格 → 读数使用等宽数字 | 关 | 只把 0–9 的数字串换成 `MonoFont`，中文 / 单位 / 图标不变 |
-| M5 铭牌 | 外观 → 工业风格 → 卡片铭牌 | 关 | `CardHeader` 显示两位编号，徽标改等宽大写；目前用于文件中转站 |
+| ~~M5 铭牌~~ | — | — | 2.33.0 删除：不再显示两位编号，也不再强制徽标等宽大写 |
 | M6 装饰 | 外观 → 工业风格 → 装饰纹样 | 无 | 网格 / 扫描线 / 45° 斜纹 / 半调网点 / 等高线，低透明度、不参与命中测试 |
 
-两套主题已经带上 `industrial` 段（M4/M5/M6 开启，墨版网格、纸版扫描线），
+两套主题已经带上 `industrial` 段（M4/M6 开启，墨版网格、纸版扫描线），
 所以“选中主题”得到的是完整风格；不想用其中某项时，在设置页单独取消即可。
 主题文件只写数据，不携带任何可执行代码。
 
@@ -38,7 +38,6 @@
 "colors": { "success": "#4FBF5C", "warning": "#FFB020" },
 "industrial": {
   "monoReadouts": true,
-  "cardCodes": true,
   "decoration": "Grid"
 }
 ```
@@ -89,15 +88,11 @@ public static double Corner(double radius, double minimum)
 限制：只覆盖 `0–9`；小数点、`%`、`/`、单位仍走正文字体。当前指标卡的小数点宽度差异很小，
 主要收益是数字本身等宽；若以后要覆盖标点，需要把 `.%/` 等也纳入 Number run（会改变排版，需单独评估）。
 
-## 5. M5：`CardHeader` 铭牌
+## 5. M5：`CardHeader` 铭牌（2.33.0 已删除）
 
-- `CardHeader` 新增 `Code`（两位编号，如 `03`），显示在标题左侧；空 = 不显示；
-- 徽标统一转大写，启用铭牌时用 `MonoFont`，并设置 `Typography.NumeralAlignment = Tabular`；
-- `StationView.ApplyStyle` 在 `Style.IndustrialHeader` 打开时，按卡片在 `Settings.Cards` 里的位置填 `01` 起编号；
-- `Screenshots.CaptureWidgets` 在演示里填 `03`，用于回归截图。
-
-只有使用 `CardHeader` 的卡片（当前是文件中转站）有可见编号；信息卡 / 命令行 / 媒体卡没有
-`CardHeader`，不会被强行加一行编号。
+2.30.0 曾在标题左侧显示两位编号、徽标强制等宽大写。2.33.0 按需求删除：
+`CardHeader.Code` / `Style.IndustrialHeader` / 主题 `industrial.cardCodes` 全部移除；
+标题只保留名称与右侧徽标，徽标恢复主题正文字体、不再转大写。
 
 ## 6. M6：装饰纹样
 
@@ -106,14 +101,15 @@ public static double Corner(double radius, double minimum)
 - 等高线（2.32.0）：从 `samples/ContourLine` 移植地形场 + marching squares + Chaikin，
   删除首/计曲线区分、高程数字与示坡线，只保留同色线；参数范围：级数 3–48、疏密均衡 0–1、
   地形起伏 0.2–4.0、平滑轮数 0–6、最小闭合环面积 0–5000；`LoopEffect=Contour` 时
-  每 130ms 在两个固定地形场之间混合（原地形变，不漂移），用 `ContourSpeed` 控制速度；
+  约 30fps 在两个固定地形场之间混合（原地形变，不漂移），用 `ContourSpeed` 控制速度；
+  2.33.0 缓存两套基础高度网格并把几何生成放到后台线程，UI 线程只提交冻结几何；
 - `OverlaySurface` 增加一个不参与命中测试的 `Border` 装饰层，位于底色 / 背景图之上、文字 / 富内容之下；
 - 用冻结的 `DrawingBrush` 平铺：
   - `Grid` 24px 1px 线；
   - `Scanline` 4px 横线；
   - `Hatch` 12px 45° 斜线；
   - `Halftone` 8px 圆点；
-  - `Contour` 96px 波形等高线 + 两个偏心闭合环（不是同心圆，平铺接缝连续）；
+  - `Contour` 不用平铺画刷：按卡片尺寸生成真实地形等高线几何（见上）；
 - 整层 `Opacity = 0.32`，颜色取 `ThemeTokens.Border`（默认前景 0.10 alpha）；
 - 圆角跟随卡片 `CornerRadius`；`None` 时整层折叠，不产生绘制。
 
@@ -127,19 +123,19 @@ public static double Corner(double radius, double minimum)
   - 状态色空令牌精确等于旧派生值；
   - `CardPalette.Corner(0, 6) == 0`，负值也归 0；
   - 非法 `Success` / `Warning` / `Decoration` 归一化；
-  - 主题往返包含 `success` / `warning` / `monoReadouts` / `cardCodes` / `decoration`；
+  - 主题往返包含 `success` / `warning` / `monoReadouts` / `decoration`；
   - 非法 `decoration` 主题被拒绝；
   - 内置主题至少 5 份；
 - `--screenshot-cards` / `--screenshot-settings` / `--screenshot-widgets`：退出码 0；
-  墨版截图确认：圆角 0、网格装饰、等宽数字、`03 文件中转站` 铭牌、黄色进度条；
-- 设置页显示 v2.30.0，工业风格组的三项开关与状态色输入可见。
+  墨版截图确认：圆角 0、网格装饰、等宽数字、黄色进度条；
+- 设置页显示版本号，工业风格组的等宽读数、装饰纹样与状态色输入可见；铭牌选项已移除。
 
 ## 8. 已知边界
 
 - M2 只修“控件自己的最小圆角”；视频窗口的 GDI region、媒体控件内部的 1.5px 小圆角仍按各自设计走，
   不属于卡片外框；
 - M4 只覆盖 TextCanvas 的数字 run，富内容控件（CLI 面板、列表）里的数字仍按控件自己的字体；
-- M5 的编号只在 `CardHeader` 消费者里生效；信息卡没有标题栏，不会被加编号；
-- M6 的 `DrawingBrush` 是静态平铺，不随卡片尺寸缩放；4K 下 1px 线会按 DPI 缩放，视觉上仍细；
+- M6 的非等高线 `DrawingBrush` 是静态平铺，不随卡片尺寸缩放；4K 下 1px 线会按 DPI 缩放，视觉上仍细；
+  等高线是逐卡几何，尺寸 / 相位变化会重算；
 - 两套主题的 `success` / `warning` 是本文按对比度选的，未做完整 WCAG 全组合复算；
 - 主题仍只描述外观，不改变材质 / 取图后端 / 交互复杂度。

@@ -32,24 +32,49 @@ namespace MirrorpondHUD.Ui.Contour
         /// </summary>
         public double Sample(double x, double y, double phase)
         {
-            double px = x * _scale;
-            double py = y * _scale;
             double blend = 0.5 - 0.5 * Math.Cos(phase);
 
             double h;
             if (blend <= 1e-4)
             {
-                h = SampleOne(_noise, px, py);
+                h = SampleRawA(x, y);
             }
             else
             {
-                double a = SampleOne(_noise, px, py);
-                double b = SampleOne(_noiseB, px, py);
+                double a = SampleRawA(x, y);
+                double b = SampleRawB(x, y);
                 h = a + (b - a) * blend;
             }
 
+            return Finish(h);
+        }
+
+        /// <summary>
+        /// A 场（phase = 0）的原始高度，尚未做拉伸 / tanh。
+        ///
+        /// 相位动画只改变 A/B 两场的混合比例，两个端点场本身不随相位变化，所以可以
+        /// 预先把它们各采样成一份网格缓存起来。原先每帧、每个顶点都要重新采样两套
+        /// 噪声（约 24 次噪声求值），缓存后每帧只剩一次线性混合——这是这次优化的核心。
+        /// </summary>
+        public double SampleRawA(double x, double y)
+        {
+            return SampleOne(_noise, x * _scale, y * _scale);
+        }
+
+        /// <summary>B 场（phase = π）的原始高度，尚未做拉伸 / tanh。</summary>
+        public double SampleRawB(double x, double y)
+        {
+            return SampleOne(_noiseB, x * _scale, y * _scale);
+        }
+
+        /// <summary>
+        /// 原始高度 → 显示高度的后处理：拉伸 + 软限幅。
+        /// 与相位无关，缓存端点场之后每帧仍走同一段代码，保证视觉逐像素不变。
+        /// </summary>
+        public static double Finish(double raw)
+        {
             // 把 0.5 附近的主体拉开，让等高线在面板上分布得更均匀。
-            double stretched = (h - 0.5) * 2.0 + 0.56;
+            double stretched = (raw - 0.5) * 2.0 + 0.56;
 
             // 软限幅（tanh）而不是硬截断：硬截断把越界值压成一大片完全相同的高度，
             // 那里梯度为零，等高线彻底消失——画面上就是"疏到没有线"的空洞。

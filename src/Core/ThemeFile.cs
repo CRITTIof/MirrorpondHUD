@@ -94,8 +94,6 @@ namespace MirrorpondHUD.Core
     {
         /// <summary>M4：读数使用等宽数字。</summary>
         public bool? MonoReadouts;
-        /// <summary>M5：CardHeader 显示编号 + 等宽大写徽标。</summary>
-        public bool? CardCodes;
         /// <summary>M6：None / Grid / Scanline / Hatch / Halftone / Contour。</summary>
         public string Decoration;
         public double? DecorationDensity;
@@ -161,7 +159,6 @@ namespace MirrorpondHUD.Core
             if (Typography.TextAlign != null) style.TextAlignment = Typography.TextAlign;
 
             if (Industrial.MonoReadouts.HasValue) style.MonoReadouts = Industrial.MonoReadouts.Value;
-            if (Industrial.CardCodes.HasValue) style.IndustrialHeader = Industrial.CardCodes.Value;
             if (Industrial.Decoration != null) style.Decoration = Settings.NormalizeDecoration(Industrial.Decoration);
             if (Industrial.DecorationDensity.HasValue) style.DecorationDensity = Industrial.DecorationDensity.Value;
             if (Industrial.ContourLevels.HasValue) style.ContourLevels = (int)Industrial.ContourLevels.Value;
@@ -477,7 +474,6 @@ namespace MirrorpondHUD.Core
 
             var industrial = new Dictionary<string, object>();
             industrial["monoReadouts"] = style.MonoReadouts;
-            industrial["cardCodes"] = style.IndustrialHeader;
             industrial["decoration"] = Settings.NormalizeDecoration(style.Decoration);
             industrial["decorationDensity"] = style.DecorationDensity;
             industrial["contourLevels"] = style.ContourLevels;
@@ -635,7 +631,7 @@ namespace MirrorpondHUD.Core
                 {
                     doc.Typography.TextAlign = CanonicalAlign(align);
                     if (doc.Typography.TextAlign == null)
-                        typography.Fail("textAlign", "必须是 Left / Center / Right / Justify");
+                        typography.Fail("textAlign", "必须是 Left / Center / Right / Justify / Card");
                 }
             }
 
@@ -676,7 +672,6 @@ namespace MirrorpondHUD.Core
             if (industrial != null)
             {
                 doc.Industrial.MonoReadouts = industrial.Bool("monoReadouts");
-                doc.Industrial.CardCodes = industrial.Bool("cardCodes");
 
                 string decoration = industrial.String("decoration");
                 if (decoration != null)
@@ -772,6 +767,9 @@ namespace MirrorpondHUD.Core
                 case "center": return "Center";
                 case "right": return "Right";
                 case "justify": return "Justify";
+                case "card":
+                case "follow":
+                case "followcard": return "Card";
                 default: return null;
             }
         }

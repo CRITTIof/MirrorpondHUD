@@ -339,6 +339,7 @@
                                 <ComboBoxItem Content="左对齐" Tag="Left" />
                                 <ComboBoxItem Content="居中" Tag="Center" />
                                 <ComboBoxItem Content="右对齐" Tag="Right" />
+                                <ComboBoxItem Content="跟随卡片对齐方式" Tag="Card" />
                             </ComboBox>
                         </Grid>
 
@@ -368,7 +369,7 @@
 
                         <CheckBox x:Name="OutlineCheck" Content="文字描边（亮色 / 花哨背景上也能看清）" Margin="110,4,0,8" />
 
-                        <Grid Margin="0,0,0,10">
+                        <Grid x:Name="OutlineOptionsRow" Margin="0,0,0,10" Visibility="Collapsed">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="110" />
                                 <ColumnDefinition Width="*" />
@@ -474,7 +475,8 @@
                                     <Button Content="选择…" Margin="8,0,0,0" Click="PickBackgroundImageClick" />
                                     <Button Content="清除" Margin="8,0,0,0" Click="ClearBackgroundImageClick" />
                                 </StackPanel>
-                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                <StackPanel x:Name="ImageOptionsRow" Orientation="Horizontal" Margin="0,8,0,0"
+                                            Visibility="Collapsed">
                                     <TextBlock Text="拉伸" VerticalAlignment="Center" />
                                     <ComboBox x:Name="StretchCombo" Width="150" Margin="8,0,18,0">
                                         <ComboBoxItem Content="裁剪填满" Tag="UniformToFill" />
@@ -489,7 +491,7 @@
                             </StackPanel>
                         </Grid>
 
-                        <Grid Margin="0,0,0,10">
+                        <Grid x:Name="CornerRow" Margin="0,0,0,10">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="110" />
                                 <ColumnDefinition Width="*" />
@@ -498,6 +500,9 @@
                             <StackPanel Grid.Column="1" Orientation="Horizontal">
                                 <Slider x:Name="CornerSlider" Width="260" Minimum="0" Maximum="30" />
                                 <TextBox x:Name="CornerValue" Width="58" Margin="10,0,0,0" TextAlignment="Right" />
+                                <TextBlock x:Name="CornerHint" Text="系统亚克力由 DWM 底板决定圆角，这里不可调"
+                                           Style="{StaticResource Hint}" VerticalAlignment="Center"
+                                           Margin="10,0,0,0" Visibility="Collapsed" />
                             </StackPanel>
                         </Grid>
 
@@ -508,10 +513,6 @@
                         <CheckBox x:Name="MonoReadoutsCheck" Margin="0,0,0,4"
                                   Content="读数使用等宽数字（指标数字刷新时不横跳）"
                                   ToolTip="只把 0–9 的数字串换成 MonoFont；中文、单位、图标不变。" />
-
-                        <CheckBox x:Name="IndustrialHeaderCheck" Margin="0,0,0,10"
-                                  Content="卡片铭牌（两位编号 + 等宽大写徽标）"
-                                  ToolTip="目前用于使用 CardHeader 的卡片（文件中转站）。" />
 
                         <Grid Margin="0,0,0,10">
                             <Grid.ColumnDefinitions>
@@ -524,11 +525,17 @@
                                     <TextBlock Text="成功" VerticalAlignment="Center" Width="36" />
                                     <TextBox x:Name="SuccessColorBox" Width="110"
                                              ToolTip="空 = 沿用强调色；支持 #RRGGBB / #AARRGGBB" />
-                                    <Button Content="选择…" Margin="8,0,0,0" Click="PickSuccessColorClick" />
+                                    <Border x:Name="SuccessSwatch" Width="26" Height="26" CornerRadius="4"
+                                            BorderBrush="{StaticResource BorderSoft}" BorderThickness="1"
+                                            Margin="8,0,8,0" ToolTip="成功色预览" />
+                                    <Button Content="选择…" Click="PickSuccessColorClick" />
                                     <TextBlock Text="警告" VerticalAlignment="Center" Margin="18,0,6,0" />
                                     <TextBox x:Name="WarningColorBox" Width="110"
                                              ToolTip="空 = 前景色 0.9；支持 #RRGGBB / #AARRGGBB" />
-                                    <Button Content="选择…" Margin="8,0,0,0" Click="PickWarningColorClick" />
+                                    <Border x:Name="WarningSwatch" Width="26" Height="26" CornerRadius="4"
+                                            BorderBrush="{StaticResource BorderSoft}" BorderThickness="1"
+                                            Margin="8,0,8,0" ToolTip="警告色预览" />
+                                    <Button Content="选择…" Click="PickWarningColorClick" />
                                 </StackPanel>
                                 <TextBlock Style="{StaticResource Hint}" Margin="0,3,0,0"
                                            Text="成功 / 警告只建议用在状态点与进度条上，不做大面积色块。" />
@@ -698,12 +705,13 @@
                         </Grid>
 
                         <TextBlock Style="{StaticResource Hint}" Margin="110,0,0,10"
-                                   Text="循环效果会持续占用 GPU；等高线变化还会每 130ms 重算几何，CPU 更贵。呼吸幅度 0.10 是克制档。减少动效开启时自动停。" />
+                                   Text="循环效果会持续占用 GPU；等高线变化约 30fps 重算几何（基础地形已缓存、几何在后台生成），CPU 仍比其它效果贵。呼吸幅度 0.10 是克制档。减少动效开启时自动停。" />
 
                         <TextBlock Text="高级（实验性）" Style="{StaticResource SectionTitle}" Margin="0,18,0,6" />
 
                         <CheckBox x:Name="AcrylicCheck" Content="毛玻璃背景" Margin="0,0,0,4" />
 
+                        <StackPanel x:Name="GlassOptionsPanel" Visibility="Collapsed">
                         <Grid Margin="0,6,0,10">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="110" />
@@ -763,6 +771,7 @@
                         </Grid>
                         <TextBlock x:Name="GlassSourceHint" Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="110,0,0,10"
                                    Text="只有「桌面取样」自己抓屏，所以这一项只对它生效。" />
+                        </StackPanel>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -782,37 +791,45 @@
                             <CheckBox x:Name="NetCheck" Content="网络" Margin="0,0,24,10" />
                         </WrapPanel>
 
-                        <TextBlock Text="GPU 选择" Style="{StaticResource SectionTitle}" Margin="0,10,0,6" />
-                        <ComboBox x:Name="GpuCombo" Width="260" HorizontalAlignment="Left" />
+                        <StackPanel x:Name="GpuOptionsPanel">
+                            <TextBlock Text="GPU 选择" Style="{StaticResource SectionTitle}" Margin="0,10,0,6" />
+                            <ComboBox x:Name="GpuCombo" Width="260" HorizontalAlignment="Left" />
+                        </StackPanel>
 
-                        <TextBlock Text="磁盘分区（用于剩余空间）" Style="{StaticResource SectionTitle}" Margin="0,14,0,6" />
-                        <WrapPanel x:Name="DrivesPanel" />
+                        <StackPanel x:Name="DrivesOptionsPanel">
+                            <TextBlock Text="磁盘分区（用于剩余空间）" Style="{StaticResource SectionTitle}" Margin="0,14,0,6" />
+                            <WrapPanel x:Name="DrivesPanel" />
+                        </StackPanel>
 
-                        <TextBlock Text="网卡" Style="{StaticResource SectionTitle}" Margin="0,14,0,6" />
-                        <StackPanel Orientation="Horizontal">
-                            <ComboBox x:Name="AdapterCombo" Width="380" />
-                            <Button Content="刷新" Margin="8,0,0,0" Click="RefreshAdaptersClick" />
+                        <StackPanel x:Name="NetworkOptionsPanel">
+                            <TextBlock Text="网卡" Style="{StaticResource SectionTitle}" Margin="0,14,0,6" />
+                            <StackPanel Orientation="Horizontal">
+                                <ComboBox x:Name="AdapterCombo" Width="380" />
+                                <Button Content="刷新" Margin="8,0,0,0" Click="RefreshAdaptersClick" />
+                            </StackPanel>
                         </StackPanel>
 
                         <TextBlock Text="键盘输入" Style="{StaticResource SectionTitle}" Margin="0,14,0,6" />
                         <CheckBox x:Name="KeysCheck" Content="记录按键" Margin="0,0,0,10" />
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                            <TextBlock Text="显示最近" VerticalAlignment="Center" />
-                            <TextBox x:Name="KeyCountBox" Width="60" Margin="8,0,8,0" />
-                            <TextBlock Text="个按键      连续重复超过" VerticalAlignment="Center" />
-                            <TextBox x:Name="RepeatBox" Width="60" Margin="8,0,8,0" />
-                            <TextBlock Text="次折叠为 字符×次数" VerticalAlignment="Center" />
-                            <Button Content="清空记录" Margin="16,0,0,0" Click="ClearKeysClick" />
-                        </StackPanel>
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                            <TextBlock Text="最多显示" VerticalAlignment="Center" />
-                            <TextBox x:Name="MaxKeyCharsBox" Width="60" Margin="8,0,8,0" />
-                            <TextBlock Text="个字符（空格和分隔符也计入，默认 18）" VerticalAlignment="Center" />
+                        <StackPanel x:Name="KeyboardOptionsPanel" Visibility="Collapsed">
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <TextBlock Text="显示最近" VerticalAlignment="Center" />
+                                <TextBox x:Name="KeyCountBox" Width="60" Margin="8,0,8,0" />
+                                <TextBlock Text="个按键      连续重复超过" VerticalAlignment="Center" />
+                                <TextBox x:Name="RepeatBox" Width="60" Margin="8,0,8,0" />
+                                <TextBlock Text="次折叠为 字符×次数" VerticalAlignment="Center" />
+                                <Button Content="清空记录" Margin="16,0,0,0" Click="ClearKeysClick" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <TextBlock Text="最多显示" VerticalAlignment="Center" />
+                                <TextBox x:Name="MaxKeyCharsBox" Width="60" Margin="8,0,8,0" />
+                                <TextBlock Text="个字符（空格和分隔符也计入，默认 18）" VerticalAlignment="Center" />
+                            </StackPanel>
                         </StackPanel>
 
                         <TextBlock Text="NVIDIA 显卡（温度 / 显存 / 功耗）" Style="{StaticResource SectionTitle}" Margin="0,14,0,6" />
                         <CheckBox x:Name="NvidiaCheck" Content="启用 nvidia-smi 数据" Margin="0,0,0,10" />
-                        <StackPanel Orientation="Horizontal">
+                        <StackPanel x:Name="NvidiaOptionsPanel" Orientation="Horizontal" Visibility="Collapsed">
                             <TextBlock Text="采样间隔" VerticalAlignment="Center" />
                             <ComboBox x:Name="NvidiaIntervalCombo" Width="120" Margin="8,0,0,0" />
                         </StackPanel>
@@ -873,25 +890,27 @@
                         <TextBlock Text="启动动画" Style="{StaticResource SectionTitle}" Margin="0,16,0,6" />
                         <CheckBox x:Name="IntroCheck" Content="启动时播放打字 / 退格动画" Margin="0,0,0,8" />
                         <CheckBox x:Name="ReduceMotionCheck" Content="减少动效（关闭卡片显隐 / 补位动画）" Margin="0,0,0,8" />
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                            <TextBlock Text="欢迎语" VerticalAlignment="Center" />
-                            <TextBox x:Name="WelcomeBox" Width="220" Margin="8,0,16,0" />
-                            <TextBlock Text="速度(ms/字)" VerticalAlignment="Center" />
-                            <TextBox x:Name="TypeSpeedBox" Width="64" Margin="8,0,0,0" />
+                        <StackPanel x:Name="IntroOptionsPanel" Visibility="Collapsed">
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                <TextBlock Text="欢迎语" VerticalAlignment="Center" />
+                                <TextBox x:Name="WelcomeBox" Width="220" Margin="8,0,16,0" />
+                                <TextBlock Text="速度(ms/字)" VerticalAlignment="Center" />
+                                <TextBox x:Name="TypeSpeedBox" Width="64" Margin="8,0,0,0" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                <TextBlock Text="光标样式" VerticalAlignment="Center" />
+                                <ComboBox x:Name="CursorStyleCombo" Width="140" Margin="8,0,20,0">
+                                    <ComboBoxItem Content="不显示" Tag="None" />
+                                    <ComboBoxItem Content="方块" Tag="Block" />
+                                    <ComboBoxItem Content="竖线" Tag="Bar" />
+                                    <ComboBoxItem Content="下划线" Tag="Underline" />
+                                    <ComboBoxItem Content="空心框" Tag="Outline" />
+                                </ComboBox>
+                                <CheckBox x:Name="CursorBlinkCheck" Content="光标闪烁" />
+                            </StackPanel>
+                            <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,2,0,0"
+                                       Text="打字 / 退格时会显示模拟光标，全部信息显示完成后光标自动消失。启动动画只播放第一张可见卡片。" />
                         </StackPanel>
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                            <TextBlock Text="光标样式" VerticalAlignment="Center" />
-                            <ComboBox x:Name="CursorStyleCombo" Width="140" Margin="8,0,20,0">
-                                <ComboBoxItem Content="不显示" Tag="None" />
-                                <ComboBoxItem Content="方块" Tag="Block" />
-                                <ComboBoxItem Content="竖线" Tag="Bar" />
-                                <ComboBoxItem Content="下划线" Tag="Underline" />
-                                <ComboBoxItem Content="空心框" Tag="Outline" />
-                            </ComboBox>
-                            <CheckBox x:Name="CursorBlinkCheck" Content="光标闪烁" />
-                        </StackPanel>
-                        <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,2,0,0"
-                                   Text="打字 / 退格时会显示模拟光标，全部信息显示完成后光标自动消失。启动动画只播放第一张可见卡片。" />
 
                         <TextBlock Text="文件" Style="{StaticResource SectionTitle}" Margin="0,16,0,6" />
                         <StackPanel Orientation="Horizontal">

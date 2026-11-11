@@ -63,7 +63,7 @@
 | Breath | 每卡一个整卡大小的半透明矩形重绘；4K@300% 约 1200×900 物理像素/卡 |
 | Scanline | 只重绘一条 2px 横线，填充率远低于 Breath；仍有合成时钟 |
 | Pulse | 只重绘 1px 描边，成本最低 |
-| Contour | **CPU 成本最高**：每 130ms 重新采样两套地形 + marching squares + Chaikin + 新几何；卡片越大越贵，4K 大卡建议关闭或降低速度 |
+| Contour | **CPU 成本最高**：约 30fps 重算等高线；2.33.0 起缓存两套基础高度网格、复用容器，并把几何生成移到后台线程（冻结后交给 UI），4K 大卡仍建议关闭或降低速度 |
 | ContourSpeed | 0.1–4.0；1.0 ≈ 4 秒一个原地形变周期（不是时长/幅度） |
 | 默认 | **None**；主题示例写 `"loop": false` |
 | 关闭方式 | 设置页选“无”、`ReduceMotion=true`、`MotionProfile=Off` 任一都立即停止 |
@@ -78,7 +78,6 @@
 "appearance": {
   "industrial": {
     "monoReadouts": true,
-    "cardCodes": true,
     "decoration": "Contour",
     "decorationDensity": 0.5,
     "contourLevels": 12,
@@ -98,7 +97,7 @@
 }
 ```
 
-- `industrial`：M4 等宽读数 / M5 铭牌 / M6 装饰纹样、纹样密度、等高线五参数；
+- `industrial`：M4 等宽读数 / M6 装饰纹样、纹样密度、等高线五参数（M5 铭牌在 2.33.0 删除）；
 - `motion`：M7 档位与循环效果（`effect` / `durationMs` / `amplitude` / `speed`；`loop` 兼容旧字段）；
 - 全部 optional，不写 = 保持当前值；
 - `decoration` / `profile` 是**有界枚举**，主题不能写任意曲线或任意绘制代码；
@@ -109,12 +108,12 @@
 | 文件 | 作用 |
 |---|---|
 | `src/Core/ThemeFile.cs` | `ThemeMotion` / `ThemeIndustrial` 数据模型、解析、校验、导出 |
-| `src/Contracts/Core/Settings.cs` | `MotionProfile` / `LoopEffect` / `LoopDurationMs` / `LoopAmplitude` / `MonoReadouts` / `IndustrialHeader` / `Decoration` |
+| `src/Contracts/Core/Settings.cs` | `MotionProfile` / `LoopEffect` / `LoopDurationMs` / `LoopAmplitude` / `MonoReadouts` / `Decoration` |
 | `src/Contracts/Ui/ThemeTokens.cs` | `Success` / `Warning` / `MonoFont` 等最终令牌 |
 | `src/Ui/CardMotion.cs` | 档位 → 时长 / 位移 / 缓动 |
 | `src/Ui/OverlaySurface.cs` | 装饰画刷、等高线图层的接入、循环层、MonoFont 接线 |
 | `src/Ui/Contour/*.cs` | 从 `samples/ContourLine` 移植：地形场、marching squares、Chaikin、均衡、等高线 `FrameworkElement` |
-| `src/UiKit/CardHeader.cs` | 铭牌编号 / 徽标等宽大写 |
+| `src/UiKit/CardHeader.cs` | 标题 + 徽标 + 右侧动作（2.33.0 起不再有铭牌编号） |
 | `src/UiKit/CardStatus.cs` | Success / Warning / 进度条令牌 |
 
 **不做**：主题携带 DLL、`IThemeVisualProvider` 插件、任意 cubic-bezier 字符串。
@@ -135,7 +134,9 @@
 2. 按键状态用 `GetKeyState` + `GetAsyncKeyState` 双读；
 3. `FinishDrag` 用松手瞬间的光标重算目标，不再用可能滞后的 `_dragTarget`；
 4. 自动对齐 + 右对齐叠层：落点卡片中心在目标屏左半区时，直接用卡片左边缘作为新锚点；
-5. 拖动期间 `DpiChanged` 不调 `ApplyPosition`，并在 Render 优先级把窗口压回拖动目标。
+5. 拖动期间 `DpiChanged` 不调 `ApplyPosition`，并在 Render 优先级把窗口压回拖动目标；
+6. v2.33：拖动开始先停动画、落位、同步高度，再读取物理起点；拖动期间挂起常规布局，
+   松手时按被抓卡片计算左 / 右对齐并让其余卡片向它补位，避免残余动画 / 尺寸回调把整叠拉偏。
 
 3.3 实测：
 
@@ -151,7 +152,7 @@
 
 - `dotnet build -c Release`：**0 警告 0 错误**；
 - `--selftest`：**退出码 0、失败项 0**；新增四档参数、主题 `motion` 往返、非法 profile / decoration 拒绝；
-- 墨版 `--screenshot-cards`：装饰网格在 32% 透明度下可见；圆角 0、等宽数字、`06 文件中转站` 铭牌；
+- 墨版 `--screenshot-cards`：装饰网格在 32% 透明度下可见；圆角 0、等宽数字；2.33.0 起不再有铭牌编号；
 - 交界拖动：`SetCursorPos + mouse_event` 从 1600,240 拖到 2600,360，落点/尺寸/DPI/锚点见上表；
 - 用户设置已恢复（`X=1367 / Monitor=0 / 4 卡`，主文件与 `.bak` 同步）。
 

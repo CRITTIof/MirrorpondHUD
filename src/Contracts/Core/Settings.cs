@@ -51,6 +51,7 @@ namespace MirrorpondHUD.Core
             Style.BlurFps = (int)Clamp(Style.BlurFps, 2, 30);
             Style.IconScale = Clamp(Style.IconScale, 0.5, 3);
             Style.CardAlign = NormalizeCardAlign(Style.CardAlign);
+            Style.TextAlignment = NormalizeTextAlign(Style.TextAlignment);
             Style.GlassMode = NormalizeGlassMode(Style.GlassMode);
             Style.GlassSource = NormalizeGlassSource(Style.GlassSource);
             if (string.IsNullOrWhiteSpace(Style.BackgroundImage)) Style.BackgroundImage = "";
@@ -150,6 +151,30 @@ namespace MirrorpondHUD.Core
             return IsColorToken(text) ? text : fallback;
         }
 
+
+        /// <summary>
+        /// 文字对齐：Left / Center / Right / Justify / Card。
+        /// Card = 跟随卡片对齐方式：卡片左对齐时文字左对齐，右对齐时文字右对齐，
+        /// 自动对齐时按卡片在屏幕上的位置决定。未知值回落 Left。
+        /// </summary>
+        public static string NormalizeTextAlign(string value)
+        {
+            switch ((value ?? "").Trim().ToLowerInvariant())
+            {
+                case "center":
+                    return "Center";
+                case "right":
+                    return "Right";
+                case "justify":
+                    return "Justify";
+                case "card":
+                case "follow":
+                case "followcard":
+                    return "Card";
+                default:
+                    return "Left";
+            }
+        }
 
         /// <summary>卡片对齐：Auto / Left / Right。</summary>
         public static string NormalizeCardAlign(string value)
@@ -415,6 +440,11 @@ namespace MirrorpondHUD.Core
         public double BackgroundOpacity = 0.86;
         public double Padding = 14;
         public double LineHeight = 0;
+
+        /// <summary>
+        /// 文字对齐：Left / Center / Right / Justify / Card。
+        /// Card = 跟随卡片对齐方式（CardAlign）：显式左 / 右直接跟随，Auto 时按卡片位置决定。
+        /// </summary>
         public string TextAlignment = "Left";
 
         /// <summary>文字描边，深色/浅色背景都能看清。</summary>
@@ -542,12 +572,6 @@ namespace MirrorpondHUD.Core
         /// 指标刷新时小数点 / 数字宽度不横跳。默认 false = 维持原来的正文字体。
         /// </summary>
         public bool MonoReadouts = false;
-
-        /// <summary>
-        /// M5：卡片铭牌。true 时 CardHeader 显示两位编号，徽标改用等宽大写；
-        /// 目前只有使用 CardHeader 的卡片（文件中转站）有可见效果。
-        /// </summary>
-        public bool IndustrialHeader = false;
 
         /// <summary>
         /// M6：卡片装饰纹样。None / Grid / Scanline / Hatch / Halftone / Contour。

@@ -811,12 +811,14 @@ namespace MirrorpondHUD.Ui
             List<TextLine> built = layout.Built;
             double lineHeight = LineHeightOf();
 
-            // 先量整块：卡片宽度受「只增不减」保护，可能比当前文字宽很多，
-            // 整块按实测尺寸居中，左右留白才对称（之前extra宽度全堆在右边，看着就是"文字没居中"）。
+            // 先量整块：卡片宽度受「只增不减」保护，可能比当前文字宽很多。
+            // 整块位置必须跟对齐方式走：左对齐时贴左、居中时居中、右对齐时贴右。
+            // 之前无论选哪种都先把整块居中，导致「左对齐 / 右对齐」只剩下多行行宽差，
+            // 单行时看起来完全没生效。
             double blockWidth = layout.Width;
 
             double blockHeight = built.Count * lineHeight;
-            double originX = Math.Max(0, (ActualWidth - blockWidth) / 2);
+            double originX = AlignBlockX(blockWidth);
             double originY = Math.Max(0, (ActualHeight - blockHeight) / 2);
 
             for (int i = 0; i < built.Count; i++)
@@ -858,6 +860,21 @@ namespace MirrorpondHUD.Ui
             }
 
             dc.DrawText(ft, new Point(x, y));
+        }
+
+        /// <summary>整块文字在画布里的水平起点；行内再按 <see cref="AlignX"/> 对齐。</summary>
+        double AlignBlockX(double blockWidth)
+        {
+            double free = Math.Max(0, ActualWidth - blockWidth);
+            switch (_alignment)
+            {
+                case TextAlignment.Center:
+                    return free / 2;
+                case TextAlignment.Right:
+                    return free;
+                default:
+                    return 0;
+            }
         }
 
         double AlignX(double lineWidth, double boxWidth)

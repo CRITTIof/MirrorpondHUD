@@ -45,7 +45,6 @@
     },
     "industrial": {
       "monoReadouts": true,
-      "cardCodes": true,
       "decoration": "Scanline"
     },
     "motion": {

@@ -445,7 +445,12 @@ namespace MirrorpondHUD
                              && CardMotion.HideOffset == 0;
                 CardMotion.ApplySettings(new Settings());
 
-                bool validateOk = !Settings.IsColorToken("#GGGGGG")
+                bool alignOk = Settings.NormalizeTextAlign("follow") == "Card"
+                            && Settings.NormalizeTextAlign("CENTER") == "Center"
+                            && Settings.NormalizeTextAlign("whatever") == "Left";
+
+                bool validateOk = alignOk
+                               && !Settings.IsColorToken("#GGGGGG")
                                && !Settings.IsColorToken("123456")
                                && Settings.IsColorToken("")
                                && Settings.IsColorToken("#80FFFFFF")
@@ -526,7 +531,7 @@ namespace MirrorpondHUD
                 BackgroundOpacity = 0.9,
                 Padding = 12,
                 LineHeight = 4,
-                TextAlignment = "Center",
+                TextAlignment = "Card",
                 TextOutline = true,
                 OutlineColor = "#FFFFFF",
                 OutlineThickness = 1.5,
@@ -542,7 +547,7 @@ namespace MirrorpondHUD
                 ScrollbarHot = "#66101820",
                 MonoFont = "Consolas",
                 MonoReadouts = true,
-                IndustrialHeader = true,
+
                 Decoration = "Grid",
                 DecorationDensity = 0.35,
                 ContourLevels = 14,
@@ -644,7 +649,7 @@ namespace MirrorpondHUD
                 && applied.Style.Success == source.Style.Success
                 && applied.Style.Warning == source.Style.Warning
                 && applied.Style.MonoReadouts == source.Style.MonoReadouts
-                && applied.Style.IndustrialHeader == source.Style.IndustrialHeader
+
                 && applied.Style.Decoration == source.Style.Decoration
                 && Math.Abs(applied.Style.DecorationDensity - source.Style.DecorationDensity) < 1e-9
                 && applied.Style.ContourLevels == source.Style.ContourLevels

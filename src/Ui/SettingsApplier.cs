@@ -233,6 +233,10 @@ namespace MirrorpondHUD.Ui
             {
                 if (card.Window != null) card.Window.StopPositionMotion();
             }
+
+            // 停掉动画后先让整叠落到目标位并挂起布局，再读取拖动起点（OverlayWindow 已调整顺序）。
+            // 否则残余动画中途的坐标会被当成起点，松手时锚点算错几像素。
+            _layout.BeginDrag(slot);
         }
 
         /// <summary>
@@ -273,37 +277,48 @@ namespace MirrorpondHUD.Ui
             // 落点是物理像素；锚点是「目标工作区左上角起的 DIP」，按目标屏 DPI 反算。
             // 被拖的不一定是第一张卡，先扣掉它在叠层里的对齐 / 间距偏移。
             ScreenInfo screen = ScreenGeometry.Get(monitor);
-            if (screen == null) return;
+            if (screen == null)
+            {
+                // 目标屏信息拿不到时也必须恢复布局，否则整叠会一直停在“拖动挂起”状态。
+                _layout.EndDrag(slot, null);
+                return;
+            }
 
             double landedX = (physicalX - screen.WorkLeft) / screen.ScaleX;
             double landedY = (physicalY - screen.WorkTop) / screen.ScaleY;
-            double cardCenterX = landedX + (slot.Window == null ? 0 : slot.Window.CardWidth / 2);
+            double cardWidth = slot.Window == null ? 0 : slot.Window.CardWidth;
+            double cardCenterX = landedX + cardWidth / 2;
 
-            double offsetX = slot.Dialog.Overlay.X - settings.Overlay.X;
+            // 先量整叠宽度：右对齐时锚点 = 被抓卡左边缘 - (整叠宽 - 被抓卡宽)。
+            double stackWidth = 0;
+            foreach (CardSlot card in _host.Cards)
+            {
+                if (card.Shown && card.Window != null)
+                    stackWidth = Math.Max(stackWidth, card.Window.CardWidth);
+            }
+
             double offsetY = slot.Dialog.Overlay.Y - settings.Overlay.Y;
-
-            settings.Overlay.X = landedX - offsetX;
             settings.Overlay.Y = landedY - offsetY;
 
-            // 自动对齐 + 右对齐叠层：落点卡片到了目标屏左半区时，如果继续减旧偏移，
-            // 锚点会变成负数，自动对齐又把它翻成左对齐，整叠被拉回交界左侧。
-            // 这种“翻边”场景直接用卡片左边缘作为新锚点，让卡片停在落点。
+            // 自动对齐以“被抓住的卡片”为基准：它在屏幕左半边就整叠左对齐，
+            // 在右半边就整叠右对齐；显式左 / 右对齐也统一用同一个公式，
+            // 保证松手时被抓卡正好停在落点，其余卡片向它看齐。
             string align = Settings.NormalizeCardAlign(settings.Style.CardAlign);
             double workWidthDip = screen.WorkWidth / (screen.ScaleX > 0.1 ? screen.ScaleX : 1.0);
-            if (align == "Left"
-                || (align == "Auto" && offsetX > 0.5 && cardCenterX < workWidthDip / 2))
-            {
-                settings.Overlay.X = landedX;
-            }
+            if (align == "Auto")
+                align = cardCenterX < workWidthDip / 2 ? "Left" : "Right";
+
+            settings.Overlay.X = align == "Right"
+                ? landedX + cardWidth - stackWidth
+                : landedX;
 
             settings.Overlay.Monitor = monitor;
 
             ClampAnchorToWorkArea(slot, settings);
 
-            // 松手后才重排：自动对齐可能从屏幕一侧翻到另一侧，这里用 180ms ease-out 让
-            // 其余卡片跟过去；被拖卡也从落点滑到最终对齐位。CardMotion.Enabled=false 时
-            // ApplyPosition 会直接落位。
-            _layout.LayoutAnimated();
+            // 松手后才重排：把本次解析出的左 / 右对齐交给协调器，其余卡片用 180ms ease-out
+            // 跟过去；被拖卡按公式已经落在落点。CardMotion.Enabled=false 时直接落位。
+            _layout.EndDrag(slot, align);
             SaveSettings();
 
             _host.SyncSettingsWindowAnchor(settings.Overlay.X, settings.Overlay.Y, settings.Overlay.Monitor);

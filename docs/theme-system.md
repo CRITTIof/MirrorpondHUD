@@ -88,7 +88,6 @@
     },
     "industrial": {
       "monoReadouts": true,
-      "cardCodes": true,
       "decoration": "Grid"
     },
     "motion": {
@@ -111,14 +110,13 @@
 | `colors.accent` / `danger` | **新增** `Style.Accent` / `Style.Danger` | 现在 `#2F6FEB` 只在设置页、`#E57B6E` 硬编码在状态行 |
 | `colors.success` / `warning` | `Style.Success` / `Style.Warning` | 2.30.0 新增；空 / 不写 = 旧派生值（成功=强调色，警告=前景 0.9） |
 | `colors.muted` / `border` / `panel` / `scrollbar` / `scrollbarHot` | **新增** `Style.Muted` / `Border` / `Panel` / `Scrollbar` / `ScrollbarHot` | 把 `CliUi.cs`、`CardTextBox.cs`、`ChatCard.cs` 里的 0.45 / 0.10 / 0.045 / 0.18 / 0.40 变成可配；不填则按默认透明度推导 |
-| `typography.fontFamily` / `fontSize` / `bold` / `iconScale` / `lineHeight` / `textAlign` | `Style.*` | 现有字段；`iconScale` 的语义在 2.4.5 改为「1.0 = 图标与文字等高」 |
+| `typography.fontFamily` / `fontSize` / `bold` / `iconScale` / `lineHeight` / `textAlign` | `Style.*` | 现有字段；`iconScale` 的语义在 2.4.5 改为「1.0 = 图标与文字等高」；2.33.0 起 `textAlign` 还接受 `Card`（跟随卡片对齐方式） |
 | `typography.monoFont` | **新增** `Style.MonoFont` | 现在是 `CliPanelView` 里的常量 |
 | `shape.cornerRadius` / `shadow` | `Overlay.CornerRadius` / `Overlay.Shadow` | 现有字段，属于外观 |
 | `shape.padding` | `Style.Padding` | 现有字段 |
 | `outline.*` | `Style.TextOutline` / `OutlineColor` / `OutlineThickness` | 现有字段 |
 | `cliPanel.*` | `Cli.*` | 2.4.5 新增的四个字段 |
 | `appearance.industrial.monoReadouts` | `Style.MonoReadouts` | 2.30.0；读数数字串用 `monoFont`，默认 false |
-| `appearance.industrial.cardCodes` | `Style.IndustrialHeader` | 2.30.0；`CardHeader` 两位编号 + 等宽大写徽标，默认 false |
 | `appearance.industrial.decoration` | `Style.Decoration` | 2.30.0；`None` / `Grid` / `Scanline` / `Hatch` / `Halftone` / `Contour`，默认 `None` |
 | `appearance.industrial.decorationDensity` | `Style.DecorationDensity` | 2.32.0；0–2，0.5 = 原间距；非等高线纹样 |
 | `appearance.industrial.contourLevels` | `Style.ContourLevels` | 2.32.0；3–48，默认 12 |

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -31,8 +32,13 @@ namespace MirrorpondHUD.Ui
         readonly ContourDecoration _contourLayer;
         readonly Border _contourHost;
         DispatcherTimer _contourTimer;
+        readonly Stopwatch _contourWatch = new Stopwatch();
         double _contourPhase;
         double _contourSpeed = 1.0;
+
+        Settings _lastSettings;
+        string _resolvedCardAlign;
+        string _lastCardAlignSetting;
 
         BitmapImage _image;
         string _imagePath;
@@ -111,6 +117,91 @@ namespace MirrorpondHUD.Ui
 
         public TextCanvas Canvas { get { return _canvas; } }
 
+        /// <summary>装饰层是否为等高线且首帧几何已就绪；截图等离屏路径用。</summary>
+        public bool ContourReady
+        {
+            get { return _contourHost.Visibility != Visibility.Visible || _contourLayer.IsReady; }
+        }
+
+        /// <summary>主动预热等高线首帧；离屏渲染不会自动跑 OnRender 的请求。</summary>
+        public void PrimeContour()
+        {
+            if (_contourHost.Visibility == Visibility.Visible) _contourLayer.Prime();
+        }
+
+        /// <summary>
+        /// 布局协调器算出的整叠对齐（Left / Right）。只影响“跟随卡片对齐”的文字；
+        /// 空 = 让表面按卡片位置自己判断（设置窗预览 / 截图等没有协调器的场景）。
+        /// </summary>
+        public void SetResolvedCardAlignment(string value)
+        {
+            string normalized = string.IsNullOrEmpty(value)
+                ? null
+                : (string.Equals(value, "Right", StringComparison.OrdinalIgnoreCase) ? "Right" : "Left");
+            if (string.Equals(_resolvedCardAlign, normalized, StringComparison.Ordinal)) return;
+            _resolvedCardAlign = normalized;
+            UpdateTextAlignment();
+        }
+
+        /// <summary>
+        /// 文字对齐：Left / Center / Right / Justify 直接映射；Card 跟随整叠对齐。
+        /// 没有协调器传入的整叠对齐时，用卡片自身在屏幕上的位置兜底。
+        /// </summary>
+        void UpdateTextAlignment()
+        {
+            if (_lastSettings == null) return;
+
+            string mode = Settings.NormalizeTextAlign(_lastSettings.Style.TextAlignment);
+            if (!string.Equals(mode, "Card", StringComparison.Ordinal))
+            {
+                _canvas.Alignment = ParseAlignment(mode);
+                return;
+            }
+
+            string cardAlign = _resolvedCardAlign;
+            if (string.IsNullOrEmpty(cardAlign))
+            {
+                cardAlign = Settings.NormalizeCardAlign(_lastSettings.Style.CardAlign);
+                if (cardAlign == "Auto") cardAlign = ResolveAutoCardAlign();
+            }
+
+            _canvas.Alignment = string.Equals(cardAlign, "Right", StringComparison.OrdinalIgnoreCase)
+                ? TextAlignment.Right
+                : TextAlignment.Left;
+        }
+
+        string ResolveAutoCardAlign()
+        {
+            try
+            {
+                ScreenInfo screen = ScreenGeometry.Get(_lastSettings.Overlay.Monitor);
+                if (screen == null) return "Left";
+
+                double scaleX = screen.ScaleX > 0.1 ? screen.ScaleX : 1.0;
+                double workWidth = screen.WorkWidth / scaleX;
+                double width = ActualWidth > 0 ? ActualWidth : 320;
+                double center = _lastSettings.Overlay.X + width / 2;
+                return center < workWidth / 2 ? "Left" : "Right";
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("判断文字跟随对齐失败，回落左对齐: " + ex.Message);
+                return "Left";
+            }
+        }
+
+        protected override void OnRenderSizeChanged(SizeChangedInfo sizeInfo)
+        {
+            base.OnRenderSizeChanged(sizeInfo);
+            if (_lastSettings != null
+                && string.Equals(Settings.NormalizeTextAlign(_lastSettings.Style.TextAlignment),
+                    "Card", StringComparison.Ordinal)
+                && string.IsNullOrEmpty(_resolvedCardAlign))
+            {
+                UpdateTextAlignment();
+            }
+        }
+
         /// <summary>
         /// 富内容里的控件能不能收到鼠标。默认 false（图片 / 视频不该挡住桌面点击）；
         /// 交互卡片（按钮 / 输入框）由宿主设成 true，否则命中测试会停在内容层外面。
@@ -183,6 +274,7 @@ namespace MirrorpondHUD.Ui
         {
             StyleSettings style = settings.Style;
             OverlaySettings overlay = settings.Overlay;
+            _lastSettings = settings;
 
             _canvas.FontFamily = new FontFamily(string.IsNullOrWhiteSpace(style.FontFamily)
                 ? "Microsoft YaHei UI"
@@ -194,8 +286,19 @@ namespace MirrorpondHUD.Ui
             _canvas.IconScale = style.IconScale > 0 ? style.IconScale : 1.0;
             _canvas.FontWeight = style.Bold ? FontWeights.SemiBold : FontWeights.Normal;
             _canvas.Foreground = GetBrush(style.Foreground, 1.0);
-            _canvas.Alignment = ParseAlignment(style.TextAlignment);
             _canvas.LineHeight = style.LineHeight > 0 ? style.LineHeight : 0;
+
+            // 卡片对齐设置变了，上一轮布局传下来的 Left / Right 就过期了；
+            // 先清掉，让本次 Apply 按新的显式值（或卡片自身位置）排版，等下一次布局再覆盖。
+            string cardAlignSetting = Settings.NormalizeCardAlign(style.CardAlign);
+            if (_lastCardAlignSetting != null
+                && !string.Equals(_lastCardAlignSetting, cardAlignSetting, StringComparison.Ordinal))
+            {
+                _resolvedCardAlign = null;
+            }
+            _lastCardAlignSetting = cardAlignSetting;
+
+            UpdateTextAlignment();
 
             _canvas.Outline = style.TextOutline && style.OutlineThickness > 0.05;
             _canvas.OutlineBrush = GetBrush(style.OutlineColor, 1.0);
@@ -342,8 +445,8 @@ namespace MirrorpondHUD.Ui
         /// 性能代价（必须知道）：
         /// - Breath / Pulse 是 WPF 合成器动画，无每帧托管分配，但持续占用 GPU 填充/合成；
         ///   Scanline 只重绘一条 2px 横线；
-        /// - Contour 不是合成动画：每 130ms 重新采样地形场、marching squares 与 Chaikin，
-        ///   卡片越大越贵（4K 大卡建议关掉或提高 loopDurationMs）；这是唯一会重新分配几何的循环。
+        /// - Contour 不是合成动画：约 30fps 重算地形与几何；基础高度网格与容器已缓存，
+        ///   几何在后台生成，UI 线程只提交冻结结果（详见 ContourDecoration）。
         /// - 4K@300% 的卡片约 1200×900 物理像素；默认关闭，ReduceMotion 一票否决。
         /// - 关掉后立即 BeginAnimation(null) / 停表并折叠，不保留动画时钟。
         /// </summary>
@@ -428,23 +531,36 @@ namespace MirrorpondHUD.Ui
 
             if (_contourTimer == null)
             {
+                // 130ms（约 8fps）在等高线上会明显一顿一顿；30fps 配合后台几何生成，
+                // 相位推进按真实经过时间计算，UI 偶发卡顿不会让动画越走越慢。
                 _contourTimer = new DispatcherTimer(DispatcherPriority.Background, Dispatcher)
                 {
-                    Interval = TimeSpan.FromMilliseconds(130)
+                    Interval = TimeSpan.FromMilliseconds(33)
                 };
                 _contourTimer.Tick += (s, e) =>
                 {
-                    _contourPhase += (2.0 * Math.PI * 0.130 / 4.0) * _contourSpeed;
+                    double elapsed = _contourWatch.IsRunning ? _contourWatch.Elapsed.TotalMilliseconds : 33.0;
+                    _contourWatch.Restart();
+                    // 休眠 / 卡顿后不要一次跳过半个周期，最多按 100ms 推进。
+                    if (elapsed < 0) elapsed = 0;
+                    if (elapsed > 100) elapsed = 100;
+
+                    _contourPhase += (2.0 * Math.PI * elapsed / 4000.0) * _contourSpeed;
                     if (_contourPhase > 2.0 * Math.PI) _contourPhase -= 2.0 * Math.PI;
                     _contourLayer.SetPhase(_contourPhase);
                 };
             }
-            if (!_contourTimer.IsEnabled) _contourTimer.Start();
+            if (!_contourTimer.IsEnabled)
+            {
+                _contourWatch.Restart();
+                _contourTimer.Start();
+            }
         }
 
         void StopContourLoop()
         {
             if (_contourTimer != null && _contourTimer.IsEnabled) _contourTimer.Stop();
+            _contourWatch.Stop();
         }
 
         static DrawingBrush BuildDecorationBrush(string kind, Color color, double density)
@@ -590,6 +706,9 @@ namespace MirrorpondHUD.Ui
                 case "center": return TextAlignment.Center;
                 case "right": return TextAlignment.Right;
                 case "justify": return TextAlignment.Justify;
+                case "card":
+                case "follow":
+                case "followcard": return TextAlignment.Left;
                 default: return TextAlignment.Left;
             }
         }

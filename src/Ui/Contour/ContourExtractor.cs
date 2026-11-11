@@ -233,8 +233,10 @@ namespace MirrorpondHUD.Ui.Contour
         }
 
         /// <summary>
-        /// 把零散线段串成折线。端点键控在 1/1000 像素上，所以相邻格子的交点
-        /// 能精确对上——这正是 marching squares 让相邻格子共享边的意义。
+        /// 把零散线段串成折线。
+        ///
+        /// 这是"一次性"版本：内部临时开一份 scratch，调用方拿到的是独立结果。
+        /// 相位动画请用 <see cref="ChainInto"/>：它复用临时容器，避免每帧分配。
         ///
         /// 先走"自由端"（只挂一条线段的端点），再收剩下的闭环：
         /// 反过来的话，闭环会从中间被切开，接缝处多出一个不存在的端点。
@@ -247,15 +249,46 @@ namespace MirrorpondHUD.Ui.Contour
                 return result;
             }
 
-            Dictionary<long, List<int>> map = new Dictionary<long, List<int>>(segments.Count * 2);
+            ContourChainScratch scratch = new ContourChainScratch();
+            ChainInto(segments, smoothIterations, scratch);
+            for (int i = 0; i < scratch.Paths.Count; i++)
+            {
+                result.Add(scratch.Paths[i]);
+            }
+            // 结果已移交给调用方：只清列表，不把路径对象 / 点数组收回池。
+            scratch.DetachPaths();
+            return result;
+        }
+
+        /// <summary>
+        /// 串联 + Chaikin 平滑，结果写进 <paramref name="scratch"/>.Paths。
+        ///
+        /// 与 <see cref="Chain"/> 的算法逐行一致，唯一区别是所有临时容器（端点字典、
+        /// 内层 List、used 数组、行走点列、Chaikin 点数组）都从 scratch 复用。
+        /// 调用方读完结果后必须调用 scratch.ReleasePaths() 归还点数组（本方法不清空 Paths）。
+        /// </summary>
+        internal static void ChainInto(List<ContourSegment> segments, int smoothIterations, ContourChainScratch scratch)
+        {
+            if (scratch == null)
+            {
+                throw new ArgumentNullException("scratch");
+            }
+
+            scratch.Reset(segments == null ? 0 : segments.Count);
+            if (segments == null || segments.Count == 0)
+            {
+                return;
+            }
+
+            Dictionary<long, List<int>> map = scratch.Map;
             for (int i = 0; i < segments.Count; i++)
             {
                 ContourSegment s = segments[i];
-                PushEnd(map, s.X0, s.Y0, i << 1);
-                PushEnd(map, s.X1, s.Y1, (i << 1) | 1);
+                PushEnd(scratch, map, s.X0, s.Y0, i << 1);
+                PushEnd(scratch, map, s.X1, s.Y1, (i << 1) | 1);
             }
 
-            bool[] used = new bool[segments.Count];
+            bool[] used = scratch.Used;
 
             for (int i = 0; i < segments.Count; i++)
             {
@@ -270,7 +303,7 @@ namespace MirrorpondHUD.Ui.Contour
                 {
                     continue;
                 }
-                Walk(map, segments, used, i, freeStart, false, smoothIterations, result);
+                Walk(scratch, map, segments, used, i, freeStart, false, smoothIterations);
             }
 
             for (int i = 0; i < segments.Count; i++)
@@ -279,10 +312,8 @@ namespace MirrorpondHUD.Ui.Contour
                 {
                     continue;
                 }
-                Walk(map, segments, used, i, true, true, smoothIterations, result);
+                Walk(scratch, map, segments, used, i, true, true, smoothIterations);
             }
-
-            return result;
         }
 
         /// <summary>
@@ -375,13 +406,13 @@ namespace MirrorpondHUD.Ui.Contour
             return (ix << 32) ^ (iy & 0xFFFFFFFFL);
         }
 
-        private static void PushEnd(Dictionary<long, List<int>> map, double x, double y, int code)
+        private static void PushEnd(ContourChainScratch scratch, Dictionary<long, List<int>> map, double x, double y, int code)
         {
             long key = Key(x, y);
             List<int> list;
             if (!map.TryGetValue(key, out list))
             {
-                list = new List<int>(2);
+                list = scratch.RentIntList();
                 map[key] = list;
             }
             list.Add(code);
@@ -398,16 +429,17 @@ namespace MirrorpondHUD.Ui.Contour
         }
 
         private static void Walk(
+            ContourChainScratch scratch,
             Dictionary<long, List<int>> map,
             List<ContourSegment> segments,
             bool[] used,
             int startSeg,
             bool startAtFirstEnd,
             bool tryClose,
-            int smoothIterations,
-            List<ContourPath> output)
+            int smoothIterations)
         {
-            List<Point> points = new List<Point>(24);
+            List<Point> points = scratch.Walk;
+            points.Clear();
 
             int segId = startSeg;
             bool atFirstEnd = startAtFirstEnd;
@@ -473,17 +505,219 @@ namespace MirrorpondHUD.Ui.Contour
                 return;
             }
 
-            Point[] smoothed = Chaikin(points, closed, smoothIterations);
+            Point[] smoothed = Smooth(scratch, points, closed, smoothIterations);
             if (smoothed.Length < 2)
+            {
+                scratch.ReturnPointArray(smoothed);
+                return;
+            }
+
+            ContourPath path = scratch.RentPath();
+            path.Points = smoothed;
+            path.Closed = closed;
+            path.Level = 0.0;
+            path.LevelIndex = 0;
+            path.Measure();
+            scratch.Paths.Add(path);
+        }
+
+        /// <summary>
+        /// Chaikin 平滑的"无分配"版本：输出长度可以精确算出来（每次迭代点数翻倍），
+        /// 于是中间缓冲与结果数组都能从 scratch 按长度复用，而不是每次 ToArray。
+        /// 数学与 <see cref="Chaikin"/> 完全一致（同样的 3/4、1/4 权重与点的排列顺序）。
+        /// </summary>
+        private static Point[] Smooth(ContourChainScratch scratch, IList<Point> source, bool closed, int iterations)
+        {
+            int n = source.Count;
+            if (n < 3 || iterations <= 0)
+            {
+                Point[] copy = scratch.RentPointArray(n);
+                for (int i = 0; i < n; i++)
+                {
+                    copy[i] = source[i];
+                }
+                return copy;
+            }
+
+            // 先把源点复制进池化数组，后面每一轮就只处理数组，不再区分 List/数组两种源。
+            Point[] current = scratch.RentPointArray(n);
+            for (int i = 0; i < n; i++)
+            {
+                current[i] = source[i];
+            }
+            int count = n;
+
+            for (int it = 0; it < iterations; it++)
+            {
+                int nextCount = count * 2;
+                Point[] next = scratch.RentPointArray(nextCount);
+
+                if (closed)
+                {
+                    for (int i = 0; i < count; i++)
+                    {
+                        Point p = current[i];
+                        Point q = current[(i + 1) % count];
+                        next[i * 2] = new Point(p.X * 0.75 + q.X * 0.25, p.Y * 0.75 + q.Y * 0.25);
+                        next[i * 2 + 1] = new Point(p.X * 0.25 + q.X * 0.75, p.Y * 0.25 + q.Y * 0.75);
+                    }
+                }
+                else
+                {
+                    next[0] = current[0];
+                    int k = 1;
+                    for (int i = 0; i < count - 1; i++)
+                    {
+                        Point p = current[i];
+                        Point q = current[i + 1];
+                        next[k] = new Point(p.X * 0.75 + q.X * 0.25, p.Y * 0.75 + q.Y * 0.25);
+                        next[k + 1] = new Point(p.X * 0.25 + q.X * 0.75, p.Y * 0.25 + q.Y * 0.75);
+                        k += 2;
+                    }
+                    next[k] = current[count - 1];
+                }
+
+                scratch.ReturnPointArray(current);
+                current = next;
+                count = nextCount;
+            }
+
+            return current;
+        }
+    }
+
+    /// <summary>
+    /// Chain / Chaikin 的可复用临时容器（单线程使用）。
+    ///
+    /// 为什么要它：相位动画每帧要对十几级等高线各做一次串联与平滑。旧实现每次
+    /// new 字典、new bool[]、每级 new List&lt;ContourSegment&gt;(512)，再对每条折线
+    /// ToArray——30fps 下每秒上百次 Gen0 分配，GC 抖动正是动画掉帧的来源之一。
+    /// 这里把端点字典、内层 List、used 数组、行走点列与 Chaikin 点数组全部按实例复用。
+    ///
+    /// 实例由 ContourGeometryBuilder 持有（每个 ContourDecoration 一份），不做静态共享，
+    /// 避免多张卡片之间互相串扰；同一时刻只允许一个后台任务使用（UI 侧的 _inFlight 串行化）。
+    /// </summary>
+    internal sealed class ContourChainScratch
+    {
+        /// <summary>端点 → 线段端点编码（segId&lt;&lt;1 | 哪一端）。每帧清空、桶容量保留。</summary>
+        internal readonly Dictionary<long, List<int>> Map = new Dictionary<long, List<int>>();
+
+        /// <summary>本帧串联出的折线；调用方读完后必须 ReleasePaths 或 DetachPaths。</summary>
+        internal readonly List<ContourPath> Paths = new List<ContourPath>();
+
+        /// <summary>当前这条折线的行走点列（每 Walk 一次清空复用）。</summary>
+        internal readonly List<Point> Walk = new List<Point>(64);
+
+        readonly Stack<List<int>> _intLists = new Stack<List<int>>();
+        readonly Stack<ContourPath> _pathPool = new Stack<ContourPath>();
+        readonly Dictionary<int, Stack<Point[]>> _pointArrays = new Dictionary<int, Stack<Point[]>>();
+
+        bool[] _used = new bool[0];
+        int _pooledPointArrays;
+
+        /// <summary>点数组池上限：极端形状变化下不让内存无限增长（超出上限的数组直接交给 GC）。</summary>
+        const int MaxPooledPointArrays = 512;
+
+        internal bool[] Used
+        {
+            get { return _used; }
+        }
+
+        internal void Reset(int segmentCount)
+        {
+            // 端点字典每帧重建：内层 List 收回池里复用，桶容量保留在字典上。
+            foreach (List<int> list in Map.Values)
+            {
+                list.Clear();
+                _intLists.Push(list);
+            }
+            Map.Clear();
+
+            if (_used.Length < segmentCount)
+            {
+                _used = new bool[Math.Max(segmentCount, 16)];
+            }
+            else
+            {
+                Array.Clear(_used, 0, segmentCount);
+            }
+
+            Paths.Clear();
+        }
+
+        internal List<int> RentIntList()
+        {
+            return _intLists.Count > 0 ? _intLists.Pop() : new List<int>(2);
+        }
+
+        internal ContourPath RentPath()
+        {
+            return _pathPool.Count > 0 ? _pathPool.Pop() : new ContourPath();
+        }
+
+        /// <summary>归还本帧全部折线（点数组 + 路径对象回池），供下一帧复用。</summary>
+        internal void ReleasePaths()
+        {
+            for (int i = 0; i < Paths.Count; i++)
+            {
+                ReleasePath(Paths[i]);
+            }
+            Paths.Clear();
+        }
+
+        internal void ReleasePath(ContourPath path)
+        {
+            if (path == null)
+            {
+                return;
+            }
+            ReturnPointArray(path.Points);
+            path.Points = null;
+            path.Closed = false;
+            _pathPool.Push(path);
+        }
+
+        /// <summary>结果已移交给调用方：只清列表，不回收路径对象。</summary>
+        internal void DetachPaths()
+        {
+            Paths.Clear();
+        }
+
+        internal Point[] RentPointArray(int length)
+        {
+            if (length <= 0)
+            {
+                return new Point[0];
+            }
+
+            Stack<Point[]> stack;
+            if (_pointArrays.TryGetValue(length, out stack) && stack.Count > 0)
+            {
+                _pooledPointArrays--;
+                return stack.Pop();
+            }
+            return new Point[length];
+        }
+
+        internal void ReturnPointArray(Point[] array)
+        {
+            if (array == null || array.Length == 0)
+            {
+                return;
+            }
+            if (_pooledPointArrays >= MaxPooledPointArrays)
             {
                 return;
             }
 
-            ContourPath path = new ContourPath();
-            path.Points = smoothed;
-            path.Closed = closed;
-            path.Measure();
-            output.Add(path);
+            Stack<Point[]> stack;
+            if (!_pointArrays.TryGetValue(array.Length, out stack))
+            {
+                stack = new Stack<Point[]>();
+                _pointArrays[array.Length] = stack;
+            }
+            stack.Push(array);
+            _pooledPointArrays++;
         }
     }
 }

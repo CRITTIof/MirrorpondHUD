@@ -81,7 +81,6 @@ namespace MirrorpondHUD.Ui
                 CornerSlider.Value = s.Overlay.CornerRadius;
                 ShadowCheck.IsChecked = s.Overlay.Shadow;
                 MonoReadoutsCheck.IsChecked = s.Style.MonoReadouts;
-                IndustrialHeaderCheck.IsChecked = s.Style.IndustrialHeader;
                 DecorationCombo.SelectedIndex = DecorationIndex(s.Style.Decoration);
                 DecorationDensitySlider.Value = s.Style.DecorationDensity;
                 ContourLevelsSlider.Value = s.Style.ContourLevels;
@@ -163,6 +162,7 @@ namespace MirrorpondHUD.Ui
             UpdateSwatches();
             UpdateDecorationUiState();
             UpdateLoopUiState();
+            UpdateContextUiState();
             RebuildCardList();
             RenderThemePreview();
             ClearDirty();
@@ -174,15 +174,17 @@ namespace MirrorpondHUD.Ui
 
         static int AlignmentIndex(string value)
         {
-            if (string.Equals(value, "Center", StringComparison.OrdinalIgnoreCase)) return 1;
-            if (string.Equals(value, "Right", StringComparison.OrdinalIgnoreCase)) return 2;
+            string mode = Settings.NormalizeTextAlign(value);
+            if (mode == "Center") return 1;
+            if (mode == "Right") return 2;
+            if (mode == "Card") return 3;
             return 0;
         }
 
         string AlignmentTag()
         {
             var item = AlignCombo.SelectedItem as ComboBoxItem;
-            return item == null ? "Left" : (item.Tag as string ?? "Left");
+            return Settings.NormalizeTextAlign(item == null ? "Left" : item.Tag as string);
         }
 
         static int DecorationIndex(string value)
@@ -247,6 +249,75 @@ namespace MirrorpondHUD.Ui
             bool contour = string.Equals(DecorationTag(), "Contour", StringComparison.OrdinalIgnoreCase);
             DecorationDensityRow.Visibility = contour ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
             ContourOptionsPanel.Visibility = contour ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+        }
+
+        /// <summary>
+        /// 外观 / 行为 / 数据源里所有“子设置只在父选项打开时才有意义”的显隐。
+        /// 统一放在一处，避免每个事件各写一套、漏掉某个入口（LoadUi / 主题应用 / 手动切换）。
+        ///
+        /// 注意：这里只控制显示与可用性，不改值。隐藏项仍会被 ReadUi 读回原值，
+        /// 所以关掉父选项再打开，用户之前的子设置不会丢。
+        /// </summary>
+        void UpdateContextUiState()
+        {
+            if (AcrylicCheck == null) return;
+
+            bool acrylic = AcrylicCheck.IsChecked == true;
+            if (GlassOptionsPanel != null)
+                GlassOptionsPanel.Visibility = acrylic ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+
+            // 系统亚克力的圆角由 DWM 底板决定；此时圆角滑块灰掉，避免用户以为改了会生效。
+            bool systemAcrylic = acrylic && string.Equals(GlassModeTag(), "System", StringComparison.OrdinalIgnoreCase);
+            if (CornerRow != null)
+            {
+                CornerRow.IsEnabled = !systemAcrylic;
+                CornerRow.Opacity = systemAcrylic ? 0.55 : 1.0;
+            }
+            if (CornerHint != null)
+                CornerHint.Visibility = systemAcrylic ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+
+            if (OutlineOptionsRow != null)
+                OutlineOptionsRow.Visibility = OutlineCheck != null && OutlineCheck.IsChecked == true
+                    ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+
+            if (ImageOptionsRow != null)
+                ImageOptionsRow.Visibility = !string.IsNullOrWhiteSpace(ImagePathBox == null ? null : ImagePathBox.Text)
+                    ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+
+            if (IntroOptionsPanel != null)
+                IntroOptionsPanel.Visibility = IntroCheck != null && IntroCheck.IsChecked == true
+                    ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+
+            // 托盘关闭时“启动后最小化到托盘”无处可去，直接禁用；值保留，重新开托盘即可复用。
+            if (StartMinCheck != null)
+                StartMinCheck.IsEnabled = TrayCheck != null && TrayCheck.IsChecked == true;
+
+            if (GpuOptionsPanel != null)
+                GpuOptionsPanel.Visibility = GpuCheck != null && GpuCheck.IsChecked == true
+                    ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+            if (DrivesOptionsPanel != null)
+                DrivesOptionsPanel.Visibility = DiskCheck != null && DiskCheck.IsChecked == true
+                    ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+            if (NetworkOptionsPanel != null)
+                NetworkOptionsPanel.Visibility = NetCheck != null && NetCheck.IsChecked == true
+                    ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+            if (KeyboardOptionsPanel != null)
+                KeyboardOptionsPanel.Visibility = KeysCheck != null && KeysCheck.IsChecked == true
+                    ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+            if (NvidiaOptionsPanel != null)
+                NvidiaOptionsPanel.Visibility = NvidiaCheck != null && NvidiaCheck.IsChecked == true
+                    ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+
+            // 减少动效 / 动效档位关闭时，循环效果不会运行：灰掉而不是隐藏，
+            // 让用户看得到自己之前选的效果，关掉覆盖后还能原样恢复。
+            bool reduceMotion = ReduceMotionCheck != null && ReduceMotionCheck.IsChecked == true;
+            bool motionOff = string.Equals(MotionProfileTag(), "Off", StringComparison.OrdinalIgnoreCase);
+            bool loopUsable = !reduceMotion && !motionOff;
+            if (MotionProfileCombo != null) MotionProfileCombo.IsEnabled = !reduceMotion;
+            if (LoopEffectCombo != null) LoopEffectCombo.IsEnabled = loopUsable;
+            if (LoopDurationRow != null) LoopDurationRow.IsEnabled = loopUsable;
+            if (LoopAmplitudeRow != null) LoopAmplitudeRow.IsEnabled = loopUsable;
+            if (ContourSpeedRow != null) ContourSpeedRow.IsEnabled = loopUsable;
         }
 
         /// <summary>
@@ -335,7 +406,6 @@ namespace MirrorpondHUD.Ui
                 s.Overlay.CornerRadius = Math.Round(CornerSlider.Value);
                 s.Overlay.Shadow = ShadowCheck.IsChecked == true;
                 s.Style.MonoReadouts = MonoReadoutsCheck.IsChecked == true;
-                s.Style.IndustrialHeader = IndustrialHeaderCheck.IsChecked == true;
                 s.Style.Decoration = DecorationTag();
                 s.Style.DecorationDensity = Math.Round(DecorationDensitySlider.Value, 2);
                 s.Style.ContourLevels = (int)Math.Round(ContourLevelsSlider.Value);

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -106,6 +107,7 @@ namespace MirrorpondHUD.Ui
                                            settings.Data.MaxKeyChars);
 
                 var stack = new StackPanel { Orientation = Orientation.Vertical };
+                var surfaces = new List<OverlaySurface>();
                 int count = 0;
 
                 foreach (CardSettings card in settings.Cards)
@@ -167,6 +169,7 @@ namespace MirrorpondHUD.Ui
                     }
 
                     stack.Children.Add(cardHost);
+                    surfaces.Add(surface);
                     count++;
                 }
 
@@ -197,6 +200,10 @@ namespace MirrorpondHUD.Ui
                 host.Measure(new Size(host.Width, host.Height));
                 host.Arrange(new Rect(0, 0, host.Width, host.Height));
                 host.UpdateLayout();
+
+                // 等高线在后台生成；RenderTargetBitmap 不会替我们等首帧。
+                foreach (OverlaySurface surface in surfaces) surface.PrimeContour();
+                WaitForContours(surfaces, 2500);
 
                 const double scale = 2.0;
                 var rtb = new RenderTargetBitmap(
@@ -271,6 +278,9 @@ namespace MirrorpondHUD.Ui
                 host.Arrange(new Rect(0, 0, width, height));
                 host.UpdateLayout();
 
+                surface.PrimeContour();
+                WaitForContours(new[] { surface }, 2500);
+
                 const double scale = 2.0;
                 var rtb = new RenderTargetBitmap(
                     (int)Math.Ceiling(width * scale),
@@ -284,6 +294,55 @@ namespace MirrorpondHUD.Ui
             catch (Exception ex)
             {
                 Log.Error("生成截图失败", ex);
+            }
+        }
+
+        /// <summary>
+        /// 等待等高线首帧：后台任务完成后会以 DispatcherPriority.Background 回投 UI，
+        /// 所以这里用嵌套 DispatcherFrame 继续跑消息循环，而不是 Thread.Sleep 把 UI 卡死。
+        /// 超时只记一条 WARN，截图继续（最多是等高线空白，不阻塞验收）。
+        /// </summary>
+        static void WaitForContours(IList<OverlaySurface> surfaces, int timeoutMs)
+        {
+            if (surfaces == null || surfaces.Count == 0) return;
+
+            bool allReady = true;
+            foreach (OverlaySurface surface in surfaces)
+            {
+                if (!surface.ContourReady) { allReady = false; break; }
+            }
+            if (allReady) return;
+
+            var frame = new DispatcherFrame();
+            var timer = new DispatcherTimer(DispatcherPriority.Background)
+            {
+                Interval = TimeSpan.FromMilliseconds(20)
+            };
+            Stopwatch watch = Stopwatch.StartNew();
+            timer.Tick += (s, e) =>
+            {
+                bool ready = true;
+                foreach (OverlaySurface surface in surfaces)
+                {
+                    if (surface.ContourReady) continue;
+                    ready = false;
+                    break;
+                }
+                if (ready || watch.ElapsedMilliseconds >= timeoutMs)
+                {
+                    timer.Stop();
+                    frame.Continue = false;
+                }
+            };
+            timer.Start();
+            try { Dispatcher.PushFrame(frame); }
+            finally { timer.Stop(); watch.Stop(); }
+
+            foreach (OverlaySurface surface in surfaces)
+            {
+                if (surface.ContourReady) continue;
+                Log.Warn("等高线首帧等待超时（" + timeoutMs + "ms），截图保留空白装饰层");
+                break;
             }
         }
 
@@ -310,7 +369,7 @@ namespace MirrorpondHUD.Ui
                 var stack = new StackPanel { Width = 520 };
 
                 var header = new CardHeader("文件中转站") { Badge = "12 个文件", Margin = new Thickness(0, 0, 0, 10) };
-                if (style.IndustrialHeader) header.Code = "03";
+
                 header.Actions.Add("打开目录", null, CardButtonTone.Normal, "在资源管理器中打开接收目录");
                 header.Actions.Add("粘贴", null, CardButtonTone.Normal, "从剪贴板添加文件");
                 header.Actions.Add("清空", null, CardButtonTone.Normal, "清空列表（不删除文件）");
