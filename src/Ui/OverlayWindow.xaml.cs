@@ -64,7 +64,8 @@ namespace MirrorpondHUD.Ui
         Action<IDataObject> _dropped;
         Action<bool, IDataObject> _dropState;
         Point _dragStartScreen;
-        Point _dragStartWindow;
+        int _dragStartPhysX;
+        int _dragStartPhysY;
         /// <summary>拖动中已经排队了一帧背景重取样（每个合成帧最多一次）。</summary>
         bool _dragFrameQueued;
 
@@ -95,10 +96,10 @@ namespace MirrorpondHUD.Ui
         public event Action LockToggleRequested;
         /// <summary>按住卡片开始拖动前触发：调用方据此取消正在跑的补位动画。</summary>
         public event Action DragStarted;
-        /// <summary>拖动中：参数是相对拖动起点的总位移（DIP）。其他卡片按增量跟随。</summary>
-        public event Action<double, double> Dragging;
-        /// <summary>拖动结束：参数是窗口相对拖动起点的位移（DIP）与所在的显示器序号。</summary>
-        public event Action<double, double, int> Moved;
+        /// <summary>拖动中：参数是相对拖动起点的物理像素总位移（dx, dy）。其他卡片按增量跟随。</summary>
+        public event Action<int, int> Dragging;
+        /// <summary>拖动结束：参数是窗口落点的物理左上角与所在显示器序号。</summary>
+        public event Action<int, int, int> Moved;
         public event Action CommandLineRequested;
         /// <summary>窗口重新置顶后触发，富内容（视频子窗口）需要据此重新摆正 z 序。</summary>
         public event Action RaisedTopmost;
@@ -116,7 +117,14 @@ namespace MirrorpondHUD.Ui
             LocationChanged += (s, e) => _glassRuntime.UpdateBackdrop();
             SizeChanged += (s, e) => _glassRuntime.UpdateBackdrop();
             IsVisibleChanged += (s, e) => _glassRuntime.UpdateBackdrop();
-            DpiChanged += (s, e) => _glassRuntime.UpdateBackdrop();
+            DpiChanged += (s, e) =>
+            {
+                // 缩放变了：重新取每屏 DPI，再按新缩放摆一次。位置本身是物理像素，
+                // 不随 DPI 变化跳；但卡片尺寸 / 锚点换算要用新比例。
+                ScreenGeometry.Invalidate();
+                ApplyPosition();
+                _glassRuntime.UpdateBackdrop();
+            };
             Closed += (s, e) =>
             {
                 _closed = true;
@@ -305,31 +313,23 @@ namespace MirrorpondHUD.Ui
             if (!animate && IsPositionMotionActive && IsVisible && !_closed)
                 animate = true;
 
-            double left = _settings.Overlay.X;
-            double top = _settings.Overlay.Y;
+            int left = 0;
+            int top = 0;
 
             try
             {
-                System.Windows.Forms.Screen[] screens = System.Windows.Forms.Screen.AllScreens;
-                if (screens.Length == 0) return;
+                ScreenInfo screen = ScreenGeometry.Get(_settings.Overlay.Monitor);
+                if (screen == null) return;
 
-                int index = Math.Max(0, Math.Min(_settings.Overlay.Monitor, screens.Length - 1));
-                System.Windows.Forms.Screen screen = screens[index];
-
-                double scale = 1.0;
-                System.Drawing.Rectangle primary = screens[0].Bounds;
-                if (primary.Width > 0)
-                {
-                    double candidate = SystemParameters.PrimaryScreenWidth / primary.Width;
-                    if (candidate > 0.1 && candidate < 10) scale = candidate;
-                }
-
-                left = screen.WorkingArea.Left * scale + _settings.Overlay.X;
-                top = screen.WorkingArea.Top * scale + _settings.Overlay.Y;
+                // 锚点是「目标工作区左上角起的 DIP」；物理位置必须按目标屏自己的 DPI 换算。
+                // 不能再用主屏缩放乘整个虚拟屏坐标：4K@300% 上会把窗口放到屏外。
+                left = screen.WorkLeft + (int)Math.Round(_settings.Overlay.X * screen.ScaleX);
+                top = screen.WorkTop + (int)Math.Round(_settings.Overlay.Y * screen.ScaleY);
             }
             catch (Exception ex)
             {
                 Log.Warn("定位失败: " + ex.Message);
+                return;
             }
 
             if (animate && CardMotion.Enabled && IsVisible && !_closed)
@@ -339,8 +339,7 @@ namespace MirrorpondHUD.Ui
             else
             {
                 StopPositionMotion();
-                Left = left;
-                Top = top;
+                SetPhysicalPosition(left, top);
             }
 
             _glassRuntime.UpdateBackdrop();
@@ -349,29 +348,77 @@ namespace MirrorpondHUD.Ui
         }
 
         /// <summary>
-        /// 窗口位置动画：从当前位置在 durationMs 内 ease-out 到目标。新的目标会取消旧动画，
+        /// 直接按物理像素移动窗口。PerMonitorV2 下这是唯一可靠的跨屏定位方式
+        /// （WPF 的 Left/Top 会按目标屏 DPI 再乘一次，混合 DPI 时不可用）。
+        /// </summary>
+        void SetPhysicalPosition(int x, int y)
+        {
+            if (!_handleReady || _closed) return;
+
+            IntPtr hwnd = new WindowInteropHelper(this).Handle;
+            if (hwnd == IntPtr.Zero) return;
+
+            Native.SetWindowPos(hwnd, IntPtr.Zero, x, y, 0, 0,
+                                Native.SwpNoSize | Native.SwpNoZorder | Native.SwpNoActivate);
+        }
+
+        /// <summary>当前窗口左上角的物理像素坐标；句柄未就绪时返回 false。</summary>
+        public bool TryGetPhysicalPosition(out int x, out int y)
+        {
+            x = 0;
+            y = 0;
+            if (!_handleReady) return false;
+
+            IntPtr hwnd = new WindowInteropHelper(this).Handle;
+            if (hwnd == IntPtr.Zero) return false;
+
+            Native.Rect rect;
+            if (!Native.GetWindowRect(hwnd, out rect)) return false;
+
+            x = rect.Left;
+            y = rect.Top;
+            return true;
+        }
+
+        /// <summary>按物理像素增量平移（拖动时其余卡片跟随用）。</summary>
+        public void OffsetPhysical(int dx, int dy)
+        {
+            int x;
+            int y;
+            if (!TryGetPhysicalPosition(out x, out y)) return;
+            SetPhysicalPosition(x + dx, y + dy);
+        }
+
+        /// <summary>
+        /// 窗口位置动画：从当前物理位置在 durationMs 内 ease-out 到目标。新的目标会取消旧动画，
         /// 从当前实际位置重新开始；拖动开始前由控制器统一 StopPositionMotion。
         /// </summary>
-        public void AnimateTo(double left, double top, int durationMs)
+        public void AnimateTo(int left, int top, int durationMs)
         {
             StopPositionMotion();
 
+            int currentX;
+            int currentY;
+            if (!TryGetPhysicalPosition(out currentX, out currentY))
+            {
+                SetPhysicalPosition(left, top);
+                return;
+            }
+
             if (!CardMotion.Enabled || !IsVisible || _closed || durationMs <= 0)
             {
-                Left = left;
-                Top = top;
+                SetPhysicalPosition(left, top);
                 return;
             }
 
-            if (Math.Abs(Left - left) < 0.5 && Math.Abs(Top - top) < 0.5)
+            if (Math.Abs(currentX - left) < 1 && Math.Abs(currentY - top) < 1)
             {
-                Left = left;
-                Top = top;
+                SetPhysicalPosition(left, top);
                 return;
             }
 
-            _moveFromLeft = Left;
-            _moveFromTop = Top;
+            _moveFromLeft = currentX;
+            _moveFromTop = currentY;
             _moveToLeft = left;
             _moveToTop = top;
             _moveDurationMs = durationMs;
@@ -397,13 +444,13 @@ namespace MirrorpondHUD.Ui
             double t = _moveDurationMs <= 0 ? 1 : elapsed / _moveDurationMs;
             double eased = CardMotion.EaseOut(t);
 
-            Left = _moveFromLeft + (_moveToLeft - _moveFromLeft) * eased;
-            Top = _moveFromTop + (_moveToTop - _moveFromTop) * eased;
+            int x = (int)Math.Round(_moveFromLeft + (_moveToLeft - _moveFromLeft) * eased);
+            int y = (int)Math.Round(_moveFromTop + (_moveToTop - _moveFromTop) * eased);
+            SetPhysicalPosition(x, y);
 
             if (t >= 1)
             {
-                Left = _moveToLeft;
-                Top = _moveToTop;
+                SetPhysicalPosition((int)Math.Round(_moveToLeft), (int)Math.Round(_moveToTop));
                 StopPositionMotion();
             }
         }
@@ -459,9 +506,21 @@ namespace MirrorpondHUD.Ui
             var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
             TimeSpan duration = TimeSpan.FromMilliseconds(CardMotion.ShowDurationMs);
 
-            double targetTop = Top;
-            Top = targetTop + CardMotion.ShowOffset;
-            AnimateTo(Left, targetTop, CardMotion.ShowDurationMs);
+            int targetLeft;
+            int targetTop;
+            if (!TryGetPhysicalPosition(out targetLeft, out targetTop))
+            {
+                ResetContentMotion();
+                return;
+            }
+
+            ScreenInfo screen = ScreenGeometry.ForPoint(targetLeft, targetTop);
+            double scale = screen != null ? screen.ScaleY : 1.0;
+            int offset = (int)Math.Round(CardMotion.ShowOffset * scale);
+
+            // 先下移 8 DIP（按当前屏缩放换成物理像素），再动画回目标位。
+            SetPhysicalPosition(targetLeft, targetTop + offset);
+            AnimateTo(targetLeft, targetTop, CardMotion.ShowDurationMs);
 
             var opacity = new DoubleAnimation(0, 1, duration)
             {
@@ -503,7 +562,20 @@ namespace MirrorpondHUD.Ui
             var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
             TimeSpan duration = TimeSpan.FromMilliseconds(CardMotion.HideDurationMs);
 
-            AnimateTo(Left, Top - CardMotion.HideOffset, CardMotion.HideDurationMs);
+            int px;
+            int py;
+            if (!TryGetPhysicalPosition(out px, out py))
+            {
+                ResetContentMotion();
+                if (completed != null) completed();
+                return;
+            }
+
+            ScreenInfo screen = ScreenGeometry.ForPoint(px, py);
+            double scale = screen != null ? screen.ScaleY : 1.0;
+            int offset = (int)Math.Round(CardMotion.HideOffset * scale);
+
+            AnimateTo(px, py - offset, CardMotion.HideDurationMs);
 
             var opacity = new DoubleAnimation(fromOpacity, 0, duration)
             {
@@ -673,7 +745,8 @@ namespace MirrorpondHUD.Ui
 
         // ==================== 拖动 ====================
         // 不用 DragMove()：它在鼠标抬起过快、窗口未激活等情况下会直接抛异常，表现为"拖动失灵"。
-        // 这里自己抓鼠标，用屏幕坐标（设备像素）算位移，再按 DPI 换算成 WPF 的 DIP。
+        // 这里自己抓鼠标，用物理屏幕坐标算位移，再 SetWindowPos 物理移动 —— 混合 DPI 下
+        // WPF 的 Left/Top 会按目标屏 DPI 再乘一次，不能用。
 
         protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
         {
@@ -682,9 +755,14 @@ namespace MirrorpondHUD.Ui
             if (!_dragEnabled) return;
             if (e.ClickCount > 1) return;
 
+            int physX;
+            int physY;
+            if (!TryGetPhysicalPosition(out physX, out physY)) return;
+
             _dragging = true;
             _dragStartScreen = PointToScreen(e.GetPosition(this));
-            _dragStartWindow = new Point(Left, Top);
+            _dragStartPhysX = physX;
+            _dragStartPhysY = physY;
 
             // 先让控制器收掉所有正在跑的补位动画；否则拖动时窗口会和旧动画抢位置。
             Action started = DragStarted;
@@ -706,15 +784,13 @@ namespace MirrorpondHUD.Ui
             }
 
             Point now = PointToScreen(e.GetPosition(this));
-            DpiScale dpi = VisualTreeHelper.GetDpi(this);
-            double sx = dpi.DpiScaleX > 0 ? dpi.DpiScaleX : 1;
-            double sy = dpi.DpiScaleY > 0 ? dpi.DpiScaleY : 1;
+            int dx = (int)Math.Round(now.X - _dragStartScreen.X);
+            int dy = (int)Math.Round(now.Y - _dragStartScreen.Y);
 
-            Left = _dragStartWindow.X + (now.X - _dragStartScreen.X) / sx;
-            Top = _dragStartWindow.Y + (now.Y - _dragStartScreen.Y) / sy;
+            SetPhysicalPosition(_dragStartPhysX + dx, _dragStartPhysY + dy);
 
-            Action<double, double> handler = Dragging;
-            if (handler != null) handler(Left - _dragStartWindow.X, Top - _dragStartWindow.Y);
+            Action<int, int> handler = Dragging;
+            if (handler != null) handler(dx, dy);
 
             QueueDragFrame();
         }
@@ -763,15 +839,20 @@ namespace MirrorpondHUD.Ui
             _dragging = false;
             if (IsMouseCaptured) ReleaseMouseCapture();
 
-            double dx = Left - _dragStartWindow.X;
-            double dy = Top - _dragStartWindow.Y;
+            int physX;
+            int physY;
+            if (!TryGetPhysicalPosition(out physX, out physY))
+            {
+                physX = _dragStartPhysX;
+                physY = _dragStartPhysY;
+            }
             int monitor = DetectMonitor();
 
             _glassRuntime.CaptureGlass();
             GlassFeed.RequestFrame(true);
 
-            Action<double, double, int> handler = Moved;
-            if (handler != null) handler(dx, dy, monitor);
+            Action<int, int, int> handler = Moved;
+            if (handler != null) handler(physX, physY, monitor);
         }
 
         /// <summary>卡片本身的可见宽度（不含投影预留的 10 DIP 透明边），右对齐时用它算 X。</summary>
@@ -796,58 +877,26 @@ namespace MirrorpondHUD.Ui
             }
         }
 
-        /// <summary>找出窗口中心所在的显示器（拖动跨屏时用）。</summary>
+        /// <summary>找出窗口中心所在的显示器（拖动跨屏时用）；坐标全是物理像素。</summary>
         int DetectMonitor()
         {
             try
             {
-                System.Windows.Forms.Screen[] screens = System.Windows.Forms.Screen.AllScreens;
-                if (screens.Length == 0) return _settings.Overlay.Monitor;
+                IntPtr hwnd = new WindowInteropHelper(this).Handle;
+                if (hwnd == IntPtr.Zero) return _settings.Overlay.Monitor;
 
-                double scale = PrimaryScale();
-                double cx = Left + ActualWidth / 2;
-                double cy = Top + ActualHeight / 2;
+                Native.Rect rect;
+                if (!Native.GetWindowRect(hwnd, out rect)) return _settings.Overlay.Monitor;
 
-                int index = 0;
-                double best = double.MaxValue;
-
-                for (int i = 0; i < screens.Length; i++)
-                {
-                    System.Drawing.Rectangle wa = screens[i].WorkingArea;
-                    double l = wa.Left * scale;
-                    double t = wa.Top * scale;
-                    double w = wa.Width * scale;
-                    double h = wa.Height * scale;
-                    double distance = Math.Abs(cx - (l + w / 2)) + Math.Abs(cy - (t + h / 2));
-                    if (distance < best)
-                    {
-                        best = distance;
-                        index = i;
-                    }
-                }
-
-                return index;
+                int cx = rect.Left + (rect.Right - rect.Left) / 2;
+                int cy = rect.Top + (rect.Bottom - rect.Top) / 2;
+                return ScreenGeometry.IndexForPoint(cx, cy);
             }
             catch (Exception ex)
             {
                 Log.Warn("识别显示器失败: " + ex.Message);
                 return _settings.Overlay.Monitor;
             }
-        }
-
-        static double PrimaryScale()
-        {
-            try
-            {
-                System.Windows.Forms.Screen[] screens = System.Windows.Forms.Screen.AllScreens;
-                if (screens.Length > 0 && screens[0].Bounds.Width > 0)
-                {
-                    double scale = SystemParameters.PrimaryScreenWidth / screens[0].Bounds.Width;
-                    if (scale > 0.1 && scale < 10) return scale;
-                }
-            }
-            catch { }
-            return 1.0;
         }
 
         protected override void OnMouseDoubleClick(MouseButtonEventArgs e)

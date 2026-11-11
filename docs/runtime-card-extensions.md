@@ -125,14 +125,15 @@
 - `ICardModule` / `IRichCardModule` / `CardModuleBase` / `RichCardModuleBase`；
 - `ICardSettingsModule` / `ICardEditorSection` / `ICardSettingsValidator` / `ICardSummary`；
 - `ICardStyleAware` / `ICardDropTarget` / `ICardDropFeedback` / `ICardHotkeySource/Target`；
-- `ICardHost` / `ICardHostAware` / `ICardActivation`；
+- `ICardHost` / `ICardActivation`（`ICardHostAware` 已于 2.29.0 删除，host 统一从 `CardRenderContext.Host` 取）；
+- `ICardDefaultProvider`（2.29.0）：模块自报默认卡片；
 - `CardRenderContext` 以及它依赖的 DTO：`Settings` / `MetricsSnapshot` / `KeyHistory` / `CardSettings`；
 - `CardHotkeyAction`、`ThemeTokens` / `ThemeResolver`（2.14.3）、`StyleSettings` 等插件确实需要的公开类型；
 - 基础工具 `Log` / `Json`（Contracts 内部实现，`InternalsVisibleTo` 只向宿主开放）与 `ColorCode` / `Icons` / `Keycaps`。
 
-内置卡的 `CommandSettings` / `MediaSettings` / `ChatSettings`、DPAPI `SecretStore` 与 4 个默认内容常量已在
-2.14.8 迁回宿主，**不再属于插件契约**；`Settings` 只保留 `Overlay` / `Style` / `Cli` / `Data` / `Behavior` /
-`Hotkey` / `CardSettings` 等通用配置。
+内置卡的 `CommandSettings` / `MediaSettings` / `ChatSettings`、DPAPI `SecretStore` 已在
+2.14.8 迁回宿主；2.29.0 起默认卡片模板回到 InfoText 插件自己的预设表
+（通过 `ICardDefaultProvider` 提供），宿主不再持有 `CardDefaults` 默认内容常量。
 
 已迁到 UiKit 的 8 个共享控件（2.14.5，命名空间 `MirrorpondHUD.Ui.Controls` 不变）：
 `CardButton` / `CardList` / `CardStatus` / `CardHeader` / `CardInput` / `CardTextBox` / `CardDropOverlay` / `CliUi`

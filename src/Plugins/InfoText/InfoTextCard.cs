@@ -27,14 +27,19 @@ namespace MirrorpondHUD.Cards
     /// 图标倍率、描边等文字能力完全一致。
     /// </summary>
     public sealed class InfoTextCard : CardModuleBase, ICardSettingsModule,
-                                    ICardPresetSource, ICardSelfTest
+                                    ICardPresetSource, ICardSelfTest, ICardDefaultProvider
     {
         static readonly List<InfoTextPreset> PresetList = new List<InfoTextPreset>
         {
-            new InfoTextPreset("metrics", "系统信息", InfoTextDefaults.MetricsContent, Icons.Cpu),
-            new InfoTextPreset("clock", "时钟", InfoTextDefaults.ClockContent, Icons.Clock),
-            new InfoTextPreset("keys", "按键", InfoTextDefaults.KeysContent, Icons.TabHotkey),
-            new InfoTextPreset("text", "文本信息", InfoTextDefaults.TextContent, Icons.Txt)
+            new InfoTextPreset("metrics", "系统信息",
+                "{cpu_icon} {cpu:0.0}%   {mem_icon} {mem_pct:0}%   {gpu_icon} {gpu:0.0}%\n" +
+                "{net_down_icon} {net_down}   {net_up_icon} {net_up}   {disk_icon} {disk:0.0}%",
+                Icons.Cpu),
+            new InfoTextPreset("clock", "时钟",
+                "{time}  {date}\n{weekday_zh}  {uptime}",
+                Icons.Clock),
+            new InfoTextPreset("keys", "按键", "KEY {keys}", Icons.TabHotkey),
+            new InfoTextPreset("text", "文本信息", "{host} · {user}", Icons.Txt)
         };
 
         public static IList<InfoTextPreset> AllPresets { get { return PresetList; } }
@@ -42,8 +47,40 @@ namespace MirrorpondHUD.Cards
         public override string Kind { get { return "infotext"; } }
         public override string DisplayName { get { return "信息与文本"; } }
         public override string Icon { get { return Icons.Txt; } }
-        public override string DefaultContent { get { return InfoTextDefaults.MetricsContent; } }
+        public override string DefaultContent { get { return DefaultFor("metrics"); } }
         public override int Order { get { return 0; } }
+
+        // ==================== 默认卡（M-1） ====================
+
+        /// <summary>默认配置里三张信息卡排在命令行 / 媒体之前。</summary>
+        public int DefaultOrder { get { return 0; } }
+
+        /// <summary>
+        /// 2.29.0 起默认卡由插件自己提供：系统信息 / 时钟 / 按键三张。
+        /// 模板就是 <see cref="PresetList"/> 里那一份，宿主不再维护第二份 CardDefaults。
+        /// </summary>
+        public IList<CardSettings> CreateDefaults()
+        {
+            var cards = new List<CardSettings>();
+            cards.Add(CreateDefaultCard("metrics", 0));
+            cards.Add(CreateDefaultCard("clock", 12));
+            cards.Add(CreateDefaultCard("keys", 12));
+            return cards;
+        }
+
+        CardSettings CreateDefaultCard(string preset, double spacing)
+        {
+            InfoTextPreset item = Find(preset);
+            return new CardSettings
+            {
+                Kind = Kind,
+                Preset = item.Id,
+                Name = DisplayName + " · " + item.Label,
+                Resident = true,
+                Spacing = spacing,
+                Content = item.DefaultContent
+            };
+        }
 
         /// <summary>
         /// 按预设决定重画节奏：系统信息跟着采样走（每帧刷），时钟 / 文本每秒一次就够，
@@ -104,8 +141,8 @@ namespace MirrorpondHUD.Cards
         public string RunSelfTest()
         {
             if (NormalizePreset("nope") != "metrics") return "未知预设没有归一到系统信息";
-            if (InferPreset("clock", InfoTextDefaults.MetricsContent) != "metrics") return "默认内容没有纠正预设";
-            if (DefaultFor("keys") != InfoTextDefaults.KeysContent) return "按键预设默认内容不一致";
+            if (InferPreset("clock", DefaultFor("metrics")) != "metrics") return "默认内容没有纠正预设";
+            if (DefaultFor("keys") != "KEY {keys}") return "按键预设默认内容不一致";
             if (ContractPresets.Count != 4) return "预设契约数量不是 4";
             return null;
         }

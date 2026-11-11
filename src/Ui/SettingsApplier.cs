@@ -19,7 +19,7 @@ namespace MirrorpondHUD.Ui
         void ShowCard(CardSlot slot, string text, bool animate);
         void HideCard(CardSlot slot, bool animate);
         void BeginCardDrag(CardSlot slot);
-        void OnCardDragging(CardSlot slot, double dx, double dy);
+        void OnCardDragging(CardSlot slot, int dx, int dy);
         void ToggleCommandCard(CardSlot slot);
         void ExitCommandLine();
         void FinishIntro();
@@ -48,8 +48,8 @@ namespace MirrorpondHUD.Ui
 
         // 拖动期间只做「其他卡片按增量跟随」：锚点等到松手才更新，避免每帧落盘与重排。
         CardSlot _dragSlot;
-        double _dragLastDx;
-        double _dragLastDy;
+        int _dragLastDx;
+        int _dragLastDy;
 
         public SettingsApplier(ISettingsHost host, RenderScheduler render,
                                CardLayoutCoordinator layout, KeyHistory keys)
@@ -239,27 +239,28 @@ namespace MirrorpondHUD.Ui
         /// 拖动中：被拖窗口已经由 OverlayWindow 自己移动，这里把其余已显示窗口按总位移的
         /// 增量平移，形成「整叠跟着走」；锚点保持不动，松手后才落盘并做补位/对齐动画。
         /// </summary>
-        public void OnCardDragging(CardSlot slot, double dx, double dy)
+        public void OnCardDragging(CardSlot slot, int dx, int dy)
         {
             if (slot == null || !ReferenceEquals(slot, _dragSlot)) return;
 
-            double stepX = dx - _dragLastDx;
-            double stepY = dy - _dragLastDy;
+            int stepX = dx - _dragLastDx;
+            int stepY = dy - _dragLastDy;
             _dragLastDx = dx;
             _dragLastDy = dy;
 
-            if (Math.Abs(stepX) < 0.01 && Math.Abs(stepY) < 0.01) return;
+            if (stepX == 0 && stepY == 0) return;
 
+            // 拖动事件给的是物理像素增量：其余卡片也按物理像素平移，
+            // 跨到不同缩放的显示器时不会因为 DIP 换算而错位。
             foreach (CardSlot card in _host.Cards)
             {
                 if (ReferenceEquals(card, slot) || !card.Shown || card.Window == null) continue;
-                card.Window.Left += stepX;
-                card.Window.Top += stepY;
+                card.Window.OffsetPhysical(stepX, stepY);
             }
         }
 
         /// <summary>拖拽整叠卡片后的新锚点：动画重排、落盘，并同步设置窗里的位置显示。</summary>
-        public void OnCardMoved(CardSlot slot, double dx, double dy, int monitor)
+        public void OnCardMoved(CardSlot slot, int physicalX, int physicalY, int monitor)
         {
             if (slot == null) return;
 
@@ -268,8 +269,17 @@ namespace MirrorpondHUD.Ui
             _dragLastDy = 0;
 
             Settings settings = _host.Settings;
-            settings.Overlay.X += dx;
-            settings.Overlay.Y += dy;
+
+            // 落点是物理像素；锚点是「目标工作区左上角起的 DIP」，按目标屏 DPI 反算。
+            // 被拖的不一定是第一张卡，先扣掉它在叠层里的对齐 / 间距偏移。
+            ScreenInfo screen = ScreenGeometry.Get(monitor);
+            if (screen == null) return;
+
+            double offsetX = slot.Dialog.Overlay.X - settings.Overlay.X;
+            double offsetY = slot.Dialog.Overlay.Y - settings.Overlay.Y;
+
+            settings.Overlay.X = (physicalX - screen.WorkLeft) / screen.ScaleX - offsetX;
+            settings.Overlay.Y = (physicalY - screen.WorkTop) / screen.ScaleY - offsetY;
             settings.Overlay.Monitor = monitor;
 
             ClampAnchorToWorkArea(slot, settings);
@@ -301,15 +311,11 @@ namespace MirrorpondHUD.Ui
                 int index = Math.Max(0, Math.Min(settings.Overlay.Monitor, screens.Length - 1));
                 System.Drawing.Rectangle work = screens[index].WorkingArea;
 
-                double scaleX = 1.0;
-                double scaleY = 1.0;
-                try
-                {
-                    System.Windows.DpiScale dpi = System.Windows.Media.VisualTreeHelper.GetDpi(slot.Window);
-                    if (dpi.DpiScaleX > 0.1) scaleX = dpi.DpiScaleX;
-                    if (dpi.DpiScaleY > 0.1) scaleY = dpi.DpiScaleY;
-                }
-                catch { }
+                ScreenInfo screen = ScreenGeometry.Get(index);
+                if (screen == null) return;
+
+                double scaleX = screen.ScaleX > 0.1 ? screen.ScaleX : 1.0;
+                double scaleY = screen.ScaleY > 0.1 ? screen.ScaleY : 1.0;
 
                 double workWidth = work.Width / scaleX;
                 double workHeight = work.Height / scaleY;

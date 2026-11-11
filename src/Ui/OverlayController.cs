@@ -190,7 +190,7 @@ namespace MirrorpondHUD.Ui
             public void ShowCard(CardSlot slot, string text, bool animate) { _owner.ShowCard(slot, text, animate); }
             public void HideCard(CardSlot slot, bool animate) { _owner.HideCard(slot, animate); }
             public void BeginCardDrag(CardSlot slot) { _owner._settingsApplier.BeginCardDrag(slot); }
-            public void OnCardDragging(CardSlot slot, double dx, double dy)
+            public void OnCardDragging(CardSlot slot, int dx, int dy)
             {
                 _owner._settingsApplier.OnCardDragging(slot, dx, dy);
             }
@@ -313,7 +313,6 @@ namespace MirrorpondHUD.Ui
             };
             slot.Rich = slot.Module as IRichCardModule;
             slot.Host = new CardHost(this, config);
-            AttachHost(slot);
 
             var window = new OverlayWindow(dialog);
             // 带按钮 / 输入框的卡片（AI 对话、按钮演示）自己声明需要鼠标，宿主据此关掉这张卡的点击穿透。
@@ -347,9 +346,7 @@ namespace MirrorpondHUD.Ui
         /// </summary>
         void RebindSlot(CardSlot slot, CardSettings config, bool summoned)
         {
-            // 换配置 = 换 host 里的配置对象；模块种类可能变，先解绑旧的再绑新的。
-            DetachHost(slot);
-
+            // 换配置 = 换 host 里的配置对象；模块种类可能变，内容签名会随之更新。
             slot.Config = config;
             slot.Module = CardRegistry.Get(config.Kind);
             slot.Rich = slot.Module as IRichCardModule;
@@ -359,7 +356,6 @@ namespace MirrorpondHUD.Ui
 
             if (slot.Host == null) slot.Host = new CardHost(this, config);
             else slot.Host.Config = config;
-            AttachHost(slot);
 
             // 设置刚变过：下一次渲染立刻生效，别被刷新间隔压住。
             slot.LastRenderUtc = DateTime.MinValue;
@@ -373,7 +369,6 @@ namespace MirrorpondHUD.Ui
         {
             if (ReferenceEquals(slot, _command.Card)) _command.Reset();
 
-            DetachHost(slot);
             ReleaseContent(slot);
             try { slot.Window.Close(); } catch { }
         }
@@ -419,30 +414,6 @@ namespace MirrorpondHUD.Ui
                     catch (Exception ex) { Log.Warn("卡片拖放处理失败: " + ex.Message); }
                 },
                 dropState);
-        }
-
-        /// <summary>让实现 <see cref="ICardHostAware"/> 的模块拿到这张卡片的宿主服务。</summary>
-        void AttachHost(CardSlot slot)
-        {
-            if (slot == null || slot.Host == null) return;
-
-            var aware = slot.Module as ICardHostAware;
-            if (aware == null) return;
-
-            try { aware.Attach(slot.Host); }
-            catch (Exception ex) { Log.Warn("卡片宿主服务接线失败(" + slot.Config.Name + "): " + ex.Message); }
-        }
-
-        /// <summary>卡片被删 / 程序退出 / 换模块时解绑。</summary>
-        void DetachHost(CardSlot slot)
-        {
-            if (slot == null || slot.Host == null) return;
-
-            var aware = slot.Module as ICardHostAware;
-            if (aware == null) return;
-
-            try { aware.Detach(slot.Host); }
-            catch (Exception ex) { Log.Warn("卡片宿主服务解绑失败(" + slot.Config.Name + "): " + ex.Message); }
         }
 
         /// <summary>模块改了数据但采样快照没变：排一次重画。</summary>
@@ -889,8 +860,6 @@ namespace MirrorpondHUD.Ui
                 {
                     try { target.Cancel(); } catch { }
                 }
-
-                DetachHost(slot);
             }
 
             try { _activation?.Set(); } catch { }

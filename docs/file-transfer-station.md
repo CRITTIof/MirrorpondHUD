@@ -46,7 +46,7 @@ M1 约 500–700 行，不碰宿主大文件。
 | `ICardDropTarget` | v2.6.3；宿主统一注册 `AllowDrop` / `DragOver` / `Drop` | 模块只写 `CanDrop` / `Drop`，不碰窗口 |
 | `HandlesOwnDrag` | v2.6.3；关掉整卡拖动 | **慎用**：一开就没法拖整张卡片（见 §7.2） |
 | `NeedsMouseInput` | 已有；关掉点击穿透，内容能收鼠标 | 列表 / 右键 / 双击需要它 |
-| `ICardHost` + `ICardHostAware` | v2.7.0；每卡状态目录、原子写、`RequestLayout` / `RequestRender` | 列表持久化、列表变长后重排 |
+| `ICardHost` | v2.7.0；每卡状态目录、原子写、`RequestLayout` / `RequestRender`（`ICardHostAware` 已于 2.29.0 删除） | 列表持久化、列表变长后重排 |
 | `CardStateStore` | 原子写（`.tmp` + 替换）+ 文件名 / Id 校验 | `items.json` 就放这里，不塞 `settings.json` |
 | `Extras` + `ICardSettingsModule` / `ICardEditorSection` / `ICardSettingsValidator` | v2.6.0–2.6.2 | 模式 / 目录 / 条数由模块自己管 |
 | `ICardStyleAware` | v2.8.0 起；v2.9.4 起 CLI 也能就地换肤 | 换主题时列表不重建、不闪 |
@@ -198,8 +198,9 @@ public sealed class DropStationCard : RichCardModuleBase,
 ### 6.2 内容控件拿不到 `ICardHost`（v2.10.2 已补）
 
 原始缺口：`CardRenderContext` 只有 `Settings / MetricsSnapshot / KeyHistory / CardSettings / Variables`，
-没有 `ICardHost`；而 `ICardHostAware.Attach(host)` 又约定「模块是单例，不要把 host 存进字段」。
-结果是列表变长、需要 `host.RequestLayout()` 时，内容控件拿不到 host。
+没有 `ICardHost`；而当时的 `ICardHostAware.Attach(host)` 又约定「模块是单例，不要把 host 存进字段」。
+结果是列表变长、需要 `host.RequestLayout()` 时，内容控件拿不到 host。该接口已于 2.29.0 删除，
+现在只保留 `CardRenderContext.Host` 这一条路径。
 
 **v2.10.2 已按方案 A 落地**：`CardRenderContext.Host`（可空），宿主在 `EnsureContent` / `RenderCardText` /
 `SyncCards` 构造上下文时传 `slot.Host`；内容控件在构造函数里保存这份 host 即可，

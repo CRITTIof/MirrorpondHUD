@@ -19,7 +19,7 @@ namespace MirrorpondHUD.Cards
     /// </summary>
     public sealed class CommandCard : RichCardModuleBase, ICardSettingsModule, ICardEditorSection,
                                       ICardSettingsValidator, ICardSummary, ICardStyleAware, ICardActivation,
-                                      ICardSelfTest
+                                      ICardSelfTest, ICardDefaultProvider
     {
         /// <summary>命令行设置存在 <see cref="CardSettings.Extras"/> 里的键名。</summary>
         public const string SettingsKey = "command";
@@ -33,6 +33,26 @@ namespace MirrorpondHUD.Cards
         public override bool NeedsMouseInput { get { return true; } }
         public override string DefaultHotkey { get { return "F9"; } }
         public override int Order { get { return 4; } }
+
+        /// <summary>默认配置里命令行排在信息卡之后、媒体之前。</summary>
+        public int DefaultOrder { get { return 10; } }
+
+        /// <summary>全新配置自带一张按 F9 呼出的命令行卡（M-1：由插件自己声明）。</summary>
+        public IList<CardSettings> CreateDefaults()
+        {
+            return new List<CardSettings>
+            {
+                new CardSettings
+                {
+                    Kind = Kind,
+                    Name = DisplayName,
+                    Resident = false,
+                    Spacing = 12,
+                    Hotkey = DefaultHotkey,
+                    Content = ""
+                }
+            };
+        }
 
         public override FrameworkElement CreateContent(CardRenderContext context)
         {

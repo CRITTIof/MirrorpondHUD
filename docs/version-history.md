@@ -1,4 +1,4 @@
-# 版本修改记录（2.4.1 → 2.28.0）
+# 版本修改记录（2.4.1 → 2.29.0）
 
 > 范围：本文只记录**这一轮接手后我做的版本**（v2.4.1 起）。v2.4.0 及更早是既有历史，不在本文档里。
 > 数据全部取自仓库真实提交（`git diff --shortstat <上一版>..<本版>`），文件行的 `+ / -` 就是实际增删行数。
@@ -10,10 +10,10 @@
 > `f67a255` / `5f8933c` / `ef70cea`，**未发布、未合并**）；`v2.14.5`（`a0fe549`）/ `v2.14.6`（`3e6abc6`）
 > 已推送到 `origin/feature/runtime-card-loading`；
 > `v2.14.7`（`abcbcec`）/ `v2.14.8`（`633e9d6`）已随文档同步提交 `d73d2ec` 推送到同一分支（未发布、未合并）；
-> `v2.14.9`（`aba873a`）已推送；`v2.15.0`（`78d3381`）已推送（文档同步提交 `2eba9b4`）；`v2.16.0`（代码 `6406d96`，文档同步 `d1fd414`）**已推送并快进合并到 `main`**；`v2.17.0`（`27b8bbd`）/ `v2.18.0`（`1e1c6ac`）/ `v2.19.0`（`d21773c`）**已推送并快进合并到 `main`**；`v2.20.0`（代码 `d8f36ab`，文档 `de64021`）**已推送并快进合并到 `main`**；`v2.21.0`（代码 `0d687e9`，文档 `4911e1b`）**已推送并快进合并到 `main`**，未打 tag、未发布 Release；`v2.22.0`（代码为 `73837aa`–`2907be0` 的 12 个提交，文档同步本次提交）**已合并 `main`**，未打 tag、未发布 Release。 `v2.23.0`（本轮 6 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.24.0`（本轮 4 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.25.0`（本轮 2 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.26.0`（本轮 2 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.27.0`（本轮按审阅复核顺序修复 + 性能采样，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.28.0`（UX 批次，未合并 main）**已完成**，未打 tag、未发布 Release。
+> `v2.14.9`（`aba873a`）已推送；`v2.15.0`（`78d3381`）已推送（文档同步提交 `2eba9b4`）；`v2.16.0`（代码 `6406d96`，文档同步 `d1fd414`）**已推送并快进合并到 `main`**；`v2.17.0`（`27b8bbd`）/ `v2.18.0`（`1e1c6ac`）/ `v2.19.0`（`d21773c`）**已推送并快进合并到 `main`**；`v2.20.0`（代码 `d8f36ab`，文档 `de64021`）**已推送并快进合并到 `main`**；`v2.21.0`（代码 `0d687e9`，文档 `4911e1b`）**已推送并快进合并到 `main`**，未打 tag、未发布 Release；`v2.22.0`（代码为 `73837aa`–`2907be0` 的 12 个提交，文档同步本次提交）**已合并 `main`**，未打 tag、未发布 Release。 `v2.23.0`（本轮 6 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.24.0`（本轮 4 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.25.0`（本轮 2 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.26.0`（本轮 2 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.27.0`（本轮按审阅复核顺序修复 + 性能采样，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.28.0`（UX 批次，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.29.0`（性能 + M-1/M-4 + L-13 混合 DPI 实测，未合并 main）**已完成**，未打 tag、未发布 Release。
 > `v2.14.1` / `v2.14.2` / `v2.14.4` 的规模用对应提交的 `git show --shortstat`；`v2.14.3` / `v2.14.5` / `v2.14.6`
 > 按当时提交前工作区的 `git diff --shortstat` 计算；`v2.14.7` / `v2.14.8` 用对应提交的 `git show --shortstat`；
-> `v2.14.9` 用提交前工作区的 `git diff --shortstat -- MirrorpondHUD.csproj src`；`v2.15.0` 用 `git show --shortstat 78d3381`；`v2.16.0` 用 `git show --shortstat 6406d96`；`v2.17.0` 用 `git show --shortstat 27b8bbd`；`v2.18.0` 用 `git show --shortstat 1e1c6ac`；`v2.19.0` 用 `git show --shortstat d21773c`；`v2.20.0` 用 `git show --shortstat d8f36ab`；`v2.21.0` 用 `git show --shortstat 0d687e9`（文档同步另计；评审指出的 `d6e1af3` 是未合并的游离提交，实际合并进 main 的是 `0d687e9`）；`v2.22.0` 用 `git diff --shortstat b366e32..4899f3f`（30 文件，+1116 / −246；版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.23.0` 用 `git diff --shortstat 6da03f0..HEAD`（58 文件，+6304 / −4618；版本号 15 文件 +15 / −15 与版本记录另计）。 `v2.24.0` 用 `git diff --shortstat 96acd1b..HEAD`（55 文件，+1876 / −301；版本号 15 文件 +15 / −15 与版本记录另计）。 `v2.25.0` 用 `git diff --shortstat 29efb91..HEAD`（24 文件，+520 / −153；版本号 15 文件 +15 / −15 与版本记录另计）。 `v2.26.0` 源码改动 14 文件，+165 / −87（版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.27.0` 源码改动 31 文件，+765 / −164（含新增 PerformanceProbe 127 行；版本号与文档同步另计）。 `v2.28.0` 源码改动 18 文件，+509 / −13（版本号与文档同步另计）。
+> `v2.14.9` 用提交前工作区的 `git diff --shortstat -- MirrorpondHUD.csproj src`；`v2.15.0` 用 `git show --shortstat 78d3381`；`v2.16.0` 用 `git show --shortstat 6406d96`；`v2.17.0` 用 `git show --shortstat 27b8bbd`；`v2.18.0` 用 `git show --shortstat 1e1c6ac`；`v2.19.0` 用 `git show --shortstat d21773c`；`v2.20.0` 用 `git show --shortstat d8f36ab`；`v2.21.0` 用 `git show --shortstat 0d687e9`（文档同步另计；评审指出的 `d6e1af3` 是未合并的游离提交，实际合并进 main 的是 `0d687e9`）；`v2.22.0` 用 `git diff --shortstat b366e32..4899f3f`（30 文件，+1116 / −246；版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.23.0` 用 `git diff --shortstat 6da03f0..HEAD`（58 文件，+6304 / −4618；版本号 15 文件 +15 / −15 与版本记录另计）。 `v2.24.0` 用 `git diff --shortstat 96acd1b..HEAD`（55 文件，+1876 / −301；版本号 15 文件 +15 / −15 与版本记录另计）。 `v2.25.0` 用 `git diff --shortstat 29efb91..HEAD`（24 文件，+520 / −153；版本号 15 文件 +15 / −15 与版本记录另计）。 `v2.26.0` 源码改动 14 文件，+165 / −87（版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.27.0` 源码改动 31 文件，+765 / −164（含新增 PerformanceProbe 127 行；版本号与文档同步另计）。 `v2.28.0` 源码改动 18 文件，+509 / −13（版本号与文档同步另计）。 `v2.29.0` 源码改动 19 文件，+864 / −297（含新增 `ScreenGeometry.cs` 194 行；版本号 15 文件 +15 / −15 与文档同步另计）。
 
 ## 0. 总览
 
@@ -81,6 +81,7 @@
 | v2.26.0 | 2026-11-10 | 本轮 2 个提交 | 非常驻卡（命令卡）呼出/收起动画 + 布局调度不再打断动画；Reicon 图标换 Lucide（键帽保留） | 14 文件，+165 / −87（版本号与版本记录另计） |
 | v2.27.0 | 2026-11-10 | 本轮修复+采样 | 审阅复核修复：中转站根路径/列表只读、主题名、ConfigStore I/O 三态、保存回滚、复制任务出 UI 线程、ffmpeg 热更新、玻璃边界、唤醒重试、CTS/模板/Chat 签名；新增 `--perf` 基线 | 31 文件，+765 / −164（版本号与版本记录另计） |
 | v2.28.0 | 2026-11-10 | UX 批次 | 未保存提示、托盘/设置区块失败反馈、减少动效、边缘吸附、GIF 预算、卡片复制/拖动排序、命令历史、颜色/热键内联校验 | 18 文件，+509 / −13（版本号与版本记录另计） |
+| v2.29.0 | 2026-11-11 | 性能 + 模块化 + 混合 DPI | TextCanvas 排版缓存、GlassFeed 缓冲复用、`ICardDefaultProvider` 默认卡注册表化、删除 `ICardHostAware`、L-13 物理像素定位 / 4K@300% 实测 | 19 文件，+864 / −297（版本号与版本记录另计） |
 
 ---
 
@@ -2855,16 +2856,80 @@ JSON 绑定错误静默置空等。2.22.0 按「失败必须可见」铁律完�
 
 ---
 
-## 63. 不在版本里的东西
+## 63. v2.29.0（性能 + M-1/M-4 + L-13 实测，未合并 main）
+
+### 背景
+
+2.26.0 审阅里剩下的性能项 P-1 / P-2、模块化项 M-1 / M-4 一直排期未做；同时 L-13
+（混合 DPI 下只用主屏缩放定位）标注“需真机实测”。本轮用户接入 4K 屏（副屏 3840×2160@300%，
+主屏 1920×1080@100%），正好构成可复现的混合 DPI 环境：先实测确认问题，再改成物理像素定位。
+
+### 改动
+
+1. **P-1 TextCanvas 排版缓存**：新增 `TextLayout` 缓存，Measure 与 OnRender 共用同一份
+   `BuildLine` 结果；`"Ag"` 行高按实例缓存；字体 / 字号 / 字重 / 图标倍率 / 前景色 / DPI 变化时整表作废。
+   缓存键是文本原文，因此启动动画里“布局文本”和“逐字显示文本”各占一个键，不会互相覆盖。
+2. **P-2 GlassFeed 缓冲复用**：`Target.CaptureBuffer` 按尺寸复用，`Marshal.Copy` / `BoxBlur` /
+   `BitmapSource.Create` 都吃同一块；`ReleaseSurface` 时清空。`PerformanceProbe.GlassBuffer`
+   只在真正分配时计数，`LastFrame` 仍保留为“上一次推送帧”的独立快照。
+3. **M-1 默认卡注册表化**：新增可选能力 `ICardDefaultProvider`（`DefaultOrder` + `CreateDefaults`）；
+   `CardModel.CreateDefaultCards()` 遍历 `CardRegistry.Modules` 收集默认卡，不再写死
+   infotext / command / media。InfoText 提供 3 张、Command / Media 各 1 张；删除宿主
+   `CardDefaults.cs` 与插件 `InfoTextDefaults.cs`，模板只保留在 InfoText 预设表里。
+4. **M-4 删除 `ICardHostAware`**：宿主不再在 `CreateSlot` / `RebindSlot` / `CloseSlot` /
+   `Dispose` 调 `Attach` / `Detach`；插件统一从 `CardRenderContext.Host` 取每卡宿主服务。
+   `ICardHost` 保留，接口说明改为指向 `CardRenderContext.Host`。
+5. **L-13 物理像素定位**：新增 `ScreenGeometry`（`Screen.AllScreens` 顺序 + 物理矩形 +
+   `GetDpiForMonitor` 每屏 DPI）；`OverlayWindow` 的初始定位、拖动、补位 / 显隐动画全部改用
+   `SetWindowPos` 物理坐标，锚点仍存 DIP、按目标屏缩放换算；`DetectMonitor` 用物理中心命中显示器；
+   `CardLayoutCoordinator.ResolveAlign` 与 `SettingsApplier.ClampAnchorToWorkArea` 改用目标屏 DPI。
+   原因：WPF `Window.Left/Top` 在 PerMonitorV2 下会按目标屏 DPI 再乘一次，实测 4K@300% 上
+   `Left=1920` 落到物理 5760（屏外），无法用 DIP 跨屏。
+6. **版本**：宿主 / Contracts / UiKit / 6 个插件工程与 manifest 统一 2.29.0；Schema 仍为 7，
+   插件 API 仍为 2。
+
+### 验证
+
+- `dotnet build -c Release`：**0 警告 0 错误**；
+- `--selftest`：**退出码 0、失败项 0**；新增默认卡断言（5 张、3 张 infotext、command/media 各一、
+  Id 唯一、至少 3 个模块实现 `ICardDefaultProvider`、模板来自 InfoText 预设表）；
+- 同配置 A/B（2.28.0 worktree vs 2.29.0，4 卡，`--perf 15 --visible`）：`BuildLine` 422→204、
+  `FormattedText run` 794→510、每次 Measure+OnRender 的 BuildLine 2.50→0.99；
+  像素缓冲分配 360→7（3.36 MB→0.08 MB）；GC 分配 12.35→9.71 MB；
+- 4K@300%：首卡物理 `(2220,300)`、DPI=288（= 副屏原点 1920 + 100 DIP×3）；模拟拖动 120px 后
+  锚点 `(140,140)`、`显示器=1`（= 120÷3=40 DIP）；`--perf 12 --visible` 下 81 轮取样只分配 9 次，
+  `LOH=4` 全部来自尺寸变化；
+- 全新配置：临时移走 `settings.json` 与 `.bak` 后启动，日志“卡片已创建，数量=5”，
+  F11 热键注册成功（媒体卡在默认配置里），没有“插件不可用”占位卡；
+- `--screenshot-cards` / `--screenshot-settings` / `--screenshot` 全部退出码 0，设置页显示 v2.29.0，
+  卡片图标 / 键帽 / 命令行排版与改动前观感一致。
+
+### 风险 / 未验证
+
+- 删除 `ICardHostAware` 是契约破坏性变更：第三方插件若实现过它，升级到 2.29.0 会加载失败，
+  需要删掉接口与 `Attach` / `Detach`，改用 `context.Host`；内置 6 张卡均未使用，自检全绿。
+- 4K 副屏的桌面玻璃仍回退 GDI：`DesktopFrameSource` 只对主屏输出建 duplication，
+  请求区域超出主输出会记 WARN 并走 GDI。要让副屏也走 GPU 玻璃，需按 `IDXGIOutput1`
+  为每个输出各建实例（本轮未做，L-2 只保证“不读错像素 / 不静默”）。
+- L-13 的真机验证覆盖“主屏 100% + 副屏 300%”的初始定位与拖动；主屏高 DPI + 副屏低 DPI、
+  运行中改缩放、跨屏拖动到一半松手等组合未逐一压测。
+- TextCanvas 缓存上限 12 份，指标卡 8Hz 换文本时约每十几次刷新整表重建一次；
+  真机未观察到掉帧，但极长文本 + 多张指标卡的组合未单独压测。
+- 拖动实测是 `SetCursorPos + mouse_event` 注入，不是人手逐帧拖放；手感 / 鼠标捕获异常
+  仍需一次真人拖动确认。
+
+---
+
+## 64. 不在版本里的东西
 
 - 验收脚本、样张与测量脚本都在仓库外维护，**没有提交**。
 - 发布：`main` 与标签已推送到 [github.com/CRITTIof/MirrorpondHUD](https://github.com/CRITTIof/MirrorpondHUD)；
   [v2.9.2 Release](https://github.com/CRITTIof/MirrorpondHUD/releases/tag/v2.9.2) 只有两个附件
   （`MirrorpondHUD-x64-requires-dotnet.exe`、`MirrorpondHUD-arm64-requires-dotnet.exe`，均需 .NET 8 桌面运行时，已自签名）；
   更早的 Release 正文与附件保留原样，v2.4.0 的 Release 已删除（tag `v2.4.0` 保留，历史仍可检出）。
-- 仓库追踪的文件共 207 个（v2.21.0 时 174 个；2.23.0 结构性拆分 +20，2.24.0 +7，2.25.0 新增 CardMotion +1，2.27.0 新增 PerformanceProbe / 性能基线 +2），`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
+- 仓库追踪的文件共 206 个（v2.21.0 时 174 个；2.23.0 结构性拆分 +20，2.24.0 +7，2.25.0 新增 CardMotion +1，2.27.0 新增 PerformanceProbe / 性能基线 +2，2.29.0 新增 ScreenGeometry +1、删除 CardDefaults / InfoTextDefaults −2），`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
 
-## 64. 已知代价（跨版本）
+## 65. 已知代价（跨版本）
 
 - 桌面亚克力为了不拍到自己，会把卡片排除在截屏之外 —— 这个模式下截图 / 录屏里**看不到卡片**，观感只能靠肉眼与离屏渲染验证。
 - 兼容实现每帧对身后窗口做 `PrintWindow`，拖动时最多 ~21 帧/秒；要更高只能走桌面亚克力（DXGI）。

@@ -16,7 +16,8 @@ namespace MirrorpondHUD.Cards
     /// </summary>
     public sealed class MediaCard : RichCardModuleBase, ICardHotkeySource, ICardHotkeyTarget,
                                     ICardSettingsModule, ICardEditorSection, ICardSettingsValidator,
-                                    ICardSummary, ICardStyleAware, ICardScreenshotProvider, ICardSelfTest
+                                    ICardSummary, ICardStyleAware, ICardScreenshotProvider, ICardSelfTest,
+                                    ICardDefaultProvider
     {
         /// <summary>媒体设置存在 <see cref="CardSettings.Extras"/> 里的键名。</summary>
         public const string SettingsKey = "media";
@@ -36,6 +37,26 @@ namespace MirrorpondHUD.Cards
         public override bool DefaultResident { get { return false; } }
         public override string DefaultHotkey { get { return "F11"; } }
         public override int Order { get { return 5; } }
+
+        /// <summary>默认配置里媒体卡排在最后。</summary>
+        public int DefaultOrder { get { return 20; } }
+
+        /// <summary>全新配置自带一张按 F11 呼出的媒体卡（M-1：由插件自己声明）。</summary>
+        public IList<CardSettings> CreateDefaults()
+        {
+            return new List<CardSettings>
+            {
+                new CardSettings
+                {
+                    Kind = Kind,
+                    Name = DisplayName,
+                    Resident = false,
+                    Spacing = 12,
+                    Hotkey = DefaultHotkey,
+                    Content = ""
+                }
+            };
+        }
 
         /// <summary>「热键」页里媒体卡片那一组的动作。</summary>
         public IList<CardHotkeyAction> HotkeyActions { get { return Actions; } }

@@ -17,6 +17,7 @@ namespace MirrorpondHUD.Ui
 
         public const uint SwpNoMove = 0x0002;
         public const uint SwpNoSize = 0x0001;
+        public const uint SwpNoZorder = 0x0004;
         public const uint SwpNoActivate = 0x0010;
         public const uint SwpNoOwnerZorder = 0x0200;
         public const uint SwpFrameChanged = 0x0020;

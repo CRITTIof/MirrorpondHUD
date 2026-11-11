@@ -136,6 +136,8 @@ namespace MirrorpondHUD.Ui
                 _text = value;
                 _blinkOn = true;
                 UpdateBlinkTimer(true);
+                // 排版缓存以文本字符串为键，换文本自然 miss，不能在这里清表：
+                // 清表会把 Measure 正在用的布局文本一起丢掉，启动动画里两边就又会各排一遍。
                 InvalidateMeasure();
                 InvalidateVisual();
             }
@@ -152,6 +154,7 @@ namespace MirrorpondHUD.Ui
             {
                 if (string.Equals(_layoutText, value, StringComparison.Ordinal)) return;
                 _layoutText = value;
+                // 同 Text：排版缓存按字符串区分，换布局文本只是换一个键，不清表。
                 InvalidateMeasure();
             }
         }
@@ -162,6 +165,8 @@ namespace MirrorpondHUD.Ui
             _hasStable = false;
             _stableWidth = 0;
             _stableHeight = 0;
+            // 这是"重新来过"的信号，连排版缓存一起丢：调用方换的是整套外观，旧排版用不上。
+            InvalidateLayoutCache();
             InvalidateMeasure();
         }
 
@@ -207,6 +212,8 @@ namespace MirrorpondHUD.Ui
                 value = Math.Max(0.4, Math.Min(3, value));
                 if (Math.Abs(_iconScale - value) < 0.005) return;
                 _iconScale = value;
+                // 图标 run 的 FormattedText 字号与行高都会变；正文基线不受影响，不用 InvalidateMetrics。
+                InvalidateLayoutCache();
                 InvalidateMeasure();
                 InvalidateVisual();
             }
@@ -232,6 +239,8 @@ namespace MirrorpondHUD.Ui
             {
                 if (value == null || value.Equals(_foreground)) return;
                 _foreground = value;
+                // 每个 run 的 FormattedText 都持有这个画刷，缓存的排版必须连画刷一起作废。
+                InvalidateLayoutCache();
                 InvalidateVisual();
             }
         }
@@ -243,6 +252,9 @@ namespace MirrorpondHUD.Ui
             {
                 if (Math.Abs(_lineHeight - value) < 0.01) return;
                 _lineHeight = value;
+                // 行高只改行间距、不改 run 排版，但一并作废最省心：
+                // 免得以后行高真参与行内布局时，这里留着"改了行高却复用旧排版"的口子。
+                InvalidateLayoutCache();
                 InvalidateMeasure();
                 InvalidateVisual();
             }
@@ -369,21 +381,17 @@ namespace MirrorpondHUD.Ui
         protected override Size MeasureOverride(Size availableSize)
         {
             PerformanceProbe.TextMeasure();
-            string layout = _layoutText ?? _text;
-            List<string> lines = Split(layout);
+            // P-1：Measure 与 OnRender 共用同一份排版。这里按布局文本取缓存，
+            // 布局文本没变时（启动动画逐字打字期间）一次 BuildLine 都不用做。
+            TextLayout layout = GetLayout(_layoutText ?? _text);
             double lineHeight = LineHeightOf();
 
-            double width = 0;
-            foreach (string line in lines)
-            {
-                double lineWidth = BuildLine(line).Width;
-                if (lineWidth > width) width = lineWidth;
-            }
+            double width = layout.Width;
 
             // 光标画在行尾，给右侧留一点余量，避免被裁掉
             if (_cursorVisible) width += Math.Max(3, _fontSize * 0.75);
 
-            double height = Math.Max(1, lineHeight * lines.Count);
+            double height = Math.Max(1, lineHeight * layout.Lines.Count);
             width = Math.Max(1, width);
 
             if (_fixedWidth > 0) width = _fixedWidth;
@@ -407,12 +415,17 @@ namespace MirrorpondHUD.Ui
         {
             if (_lineHeight > 0) return _lineHeight;
 
+            // P-1：行高只由字体 / 字号 / 字重与图标倍率决定，按实例缓存；
+            // 原来每次 Measure 与 OnRender 各 CreateRun("Ag") 一次，8Hz 下每秒几十个 FormattedText。
+            if (!double.IsNaN(_cachedLineHeight)) return _cachedLineHeight;
+
             TextRun run = CreateRun("Ag", RunKind.Text);
             double textHeight = run.Text.Height > 0 ? run.Text.Height : _fontSize * 1.35;
 
             // 图标放大到超过行高时把行高撑开，否则会被裁掉；正常倍率下这条不生效。
             double iconRoom = _fontSize * _iconScale * 0.78 + 1;
-            return Math.Max(textHeight, iconRoom);
+            _cachedLineHeight = Math.Max(textHeight, iconRoom);
+            return _cachedLineHeight;
         }
 
         static List<string> Split(string text)
@@ -452,6 +465,58 @@ namespace MirrorpondHUD.Ui
                 Width += run.Width;
             }
         }
+
+        /// <summary>
+        /// 一份文本的完整排版结果：拆好的行字符串、每行排好的 run、最宽行宽度。
+        /// P-1（review-2.26.0）缓存的就是这份结果，Measure 与 OnRender 共用同一份，
+        /// 不再各自 BuildLine 一遍；光标定位也直接复用这里的行宽。
+        /// </summary>
+        sealed class TextLayout
+        {
+            public readonly List<string> Lines;
+            public readonly List<TextLine> Built;
+            public readonly double Width;
+
+            public TextLayout(List<string> lines, List<TextLine> built, double width)
+            {
+                Lines = lines;
+                Built = built;
+                Width = width;
+            }
+        }
+
+        /// <summary>
+        /// 文本 → 排版结果的缓存（P-1）。Measure 用 <c>_layoutText ?? _text</c>，OnRender 用 <c>_text</c>，
+        /// 同一次刷新里两者往往不同（启动动画期间的完整布局文本 + 逐字显示的文本），
+        /// 所以必须按字符串分别缓存，不能只留一个槽——只留一个槽会让 Measure / OnRender 互相覆盖，
+        /// 覆盖后双方都退化成 miss，等于没优化。
+        /// </summary>
+        readonly Dictionary<string, TextLayout> _layoutCache = new Dictionary<string, TextLayout>(StringComparer.Ordinal);
+
+        /// <summary>
+        /// 键上限只是防御：正常只有「显示文本 / 布局文本 / 光标行前缀」几个键，
+        /// 但指标卡每 125ms 换一次文本，会不断产生新字符串；到上限整表清空，
+        /// 宁可重建一次（最坏每十几次刷新一次），也不让字典无限增长。
+        /// </summary>
+        const int LayoutCacheLimit = 12;
+
+        /// <summary>
+        /// 建缓存时的样式快照。setter 改动都会主动清表，这里兜的是两类漏网情况：
+        /// ① PixelsPerDip 变化没有 setter 可挂（换显示器 / 改缩放）；
+        /// ② 以后新增影响排版的样式字段却忘了置脏——宁可重建，也不要把旧排版画出去。
+        /// </summary>
+        FontFamily _layoutCacheFamily;
+        double _layoutCacheFontSize;
+        double _layoutCacheIconScale;
+        FontWeight _layoutCacheWeight;
+        Brush _layoutCacheForeground;
+        double _layoutCachePixelsPerDip;
+
+        /// <summary>
+        /// "Ag" 行高缓存：<see cref="LineHeightOf"/> 原本每次 Measure + OnRender 都要 CreateRun 一次，
+        /// 而它只取决于 (字体, 字号, 字重) 与字号 × 图标倍率——这些都在 setter 里置脏。
+        /// </summary>
+        double _cachedLineHeight = double.NaN;
 
         /// <summary>
         /// 字形墨迹范围缓存（键 = 字体|字号|字重|文本）。对齐图标要用真实墨迹而不是字体度量：
@@ -551,11 +616,15 @@ namespace MirrorpondHUD.Ui
             return bounds;
         }
 
-        /// <summary>字体变了，正文基线 / 墨迹中心要重新量。</summary>
+        /// <summary>
+        /// 字体 / 字号 / 字重变了：正文基线、墨迹中心、以及缓存的排版与 "Ag" 行高都要重新算。
+        /// 排版缓存放在这里一起清，保证所有走 InvalidateMetrics 的 setter 都不会漏。
+        /// </summary>
         void InvalidateMetrics()
         {
             _refBaseline = double.NaN;
             _refInkCenter = 0;
+            InvalidateLayoutCache();
         }
 
         static RunKind KindOf(char c)
@@ -591,6 +660,73 @@ namespace MirrorpondHUD.Ui
             return result;
         }
 
+        /// <summary>
+        /// 取一份文本的排版（P-1）：命中缓存直接复用，未命中才 Split + BuildLine。
+        /// Measure 与 OnRender 都走这里，所以同一次刷新只排版一次；行宽也算好存下来，
+        /// 光标定位不用再为整行 / 前缀重复排版。
+        /// </summary>
+        TextLayout GetLayout(string text)
+        {
+            text = text ?? "";
+            EnsureLayoutCache();
+
+            TextLayout cached;
+            if (_layoutCache.TryGetValue(text, out cached)) return cached;
+
+            List<string> lines = Split(text);
+            var built = new List<TextLine>(lines.Count);
+            double width = 0;
+            for (int i = 0; i < lines.Count; i++)
+            {
+                TextLine line = BuildLine(lines[i]);
+                built.Add(line);
+                if (line.Width > width) width = line.Width;
+            }
+
+            var layout = new TextLayout(lines, built, width);
+            if (_layoutCache.Count >= LayoutCacheLimit) _layoutCache.Clear();
+            _layoutCache[text] = layout;
+            return layout;
+        }
+
+        /// <summary>
+        /// 校验缓存对应的样式快照，不一致就整表作废并记下新快照。
+        /// Text / LayoutText 不在检查范围：它们就是缓存键，换了自然 miss（也因此不能在这里清表，
+        /// 否则启动动画里 Measure 的布局文本与 OnRender 的显示文本会互相清掉对方的缓存）。
+        /// </summary>
+        void EnsureLayoutCache()
+        {
+            double pixelsPerDip = PixelsPerDip();
+            if (_layoutCache.Count > 0
+                && _layoutCacheFontSize == _fontSize
+                && _layoutCacheIconScale == _iconScale
+                && _layoutCacheWeight == _fontWeight
+                && _layoutCachePixelsPerDip == pixelsPerDip
+                && object.ReferenceEquals(_layoutCacheFamily, _fontFamily)
+                && object.ReferenceEquals(_layoutCacheForeground, _foreground))
+            {
+                return;
+            }
+
+            _layoutCache.Clear();
+            _layoutCacheFamily = _fontFamily;
+            _layoutCacheFontSize = _fontSize;
+            _layoutCacheIconScale = _iconScale;
+            _layoutCacheWeight = _fontWeight;
+            _layoutCacheForeground = _foreground;
+            _layoutCachePixelsPerDip = pixelsPerDip;
+        }
+
+        /// <summary>
+        /// 影响排版的样式变了：缓存的 FormattedText 与 "Ag" 行高全部作废。
+        /// 字体基线 / 墨迹中心的作废由 <see cref="InvalidateMetrics"/> 负责，两者职责分开。
+        /// </summary>
+        void InvalidateLayoutCache()
+        {
+            _layoutCache.Clear();
+            _cachedLineHeight = double.NaN;
+        }
+
         double PixelsPerDip()
         {
             try
@@ -602,6 +738,18 @@ namespace MirrorpondHUD.Ui
             return 1.0;
         }
 
+        /// <summary>
+        /// 换显示器 / 改缩放时 PixelsPerDip 变了，缓存的 FormattedText 是按旧 DPI 排的，必须整表作废；
+        /// 连同基线 / 墨迹中心一起重算，并重新 Measure（原来这里没有处理，跨屏拖动后尺寸会停在旧值）。
+        /// </summary>
+        protected override void OnDpiChanged(DpiScale oldDpi, DpiScale newDpi)
+        {
+            base.OnDpiChanged(oldDpi, newDpi);
+            InvalidateMetrics();
+            InvalidateMeasure();
+            InvalidateVisual();
+        }
+
         // ==================== 绘制 ====================
 
         protected override void OnRender(DrawingContext dc)
@@ -611,21 +759,16 @@ namespace MirrorpondHUD.Ui
 
             EnsureMetrics();
 
-            List<string> lines = Split(_text);
+            // P-1：与 MeasureOverride 共用缓存；布局文本与显示文本不同也各有一份，互不覆盖。
+            TextLayout layout = GetLayout(_text);
+            List<TextLine> built = layout.Built;
             double lineHeight = LineHeightOf();
 
             // 先量整块：卡片宽度受「只增不减」保护，可能比当前文字宽很多，
             // 整块按实测尺寸居中，左右留白才对称（之前extra宽度全堆在右边，看着就是"文字没居中"）。
-            var built = new List<TextLine>(lines.Count);
-            double blockWidth = 0;
-            for (int i = 0; i < lines.Count; i++)
-            {
-                TextLine line = BuildLine(lines[i]);
-                built.Add(line);
-                if (line.Width > blockWidth) blockWidth = line.Width;
-            }
+            double blockWidth = layout.Width;
 
-            double blockHeight = lines.Count * lineHeight;
+            double blockHeight = built.Count * lineHeight;
             double originX = Math.Max(0, (ActualWidth - blockWidth) / 2);
             double originY = Math.Max(0, (ActualHeight - blockHeight) / 2);
 
@@ -644,7 +787,7 @@ namespace MirrorpondHUD.Ui
                 }
             }
 
-            if (_cursorVisible) DrawCursor(dc, lines, lineHeight, originX, originY, blockWidth);
+            if (_cursorVisible) DrawCursor(dc, layout, lineHeight, originX, originY, blockWidth);
         }
 
         void DrawLine(DrawingContext dc, FormattedText ft, double x, double y)
@@ -683,12 +826,15 @@ namespace MirrorpondHUD.Ui
             }
         }
 
-        void DrawCursor(DrawingContext dc, List<string> lines, double lineHeight,
+        void DrawCursor(DrawingContext dc, TextLayout layout, double lineHeight,
                         double originX, double originY, double blockWidth)
         {
             string style = _cursorStyle ?? "Block";
             if (string.Equals(style, "None", StringComparison.OrdinalIgnoreCase)) return;
             if (_cursorBlink && !_blinkOn) return;
+
+            List<string> lines = layout.Lines;
+            if (lines.Count == 0) return;
 
             int offset = _cursorIndex;
             if (offset < 0 || offset > _text.Length) offset = _text.Length;
@@ -711,7 +857,6 @@ namespace MirrorpondHUD.Ui
             }
 
             if (lineIndex >= lines.Count) lineIndex = Math.Max(0, lines.Count - 1);
-            if (lines.Count == 0) return;
 
             string line = lines[lineIndex];
             int column = 0;
@@ -722,8 +867,10 @@ namespace MirrorpondHUD.Ui
             if (column > line.Length) column = line.Length;
 
             string prefix = line.Substring(0, Math.Max(0, column));
-            double lineWidth = BuildLine(line).Width;
-            double prefixWidth = BuildLine(prefix).Width;
+            // 整行宽度直接取缓存里排好的结果；前缀是光标移动才变的短字符串，
+            // 同样走排版缓存（命中就零分配，未命中与原来一样只排这一小段）。
+            double lineWidth = layout.Built[lineIndex].Width;
+            double prefixWidth = GetLayout(prefix).Width;
             double x = originX + AlignX(lineWidth, blockWidth) + prefixWidth;
             double y = originY + lineIndex * lineHeight;
 

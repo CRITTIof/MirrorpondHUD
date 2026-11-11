@@ -29,16 +29,16 @@
 
 | 文件 | 职责 |
 | --- | --- |
-| `src/Contracts/Cards/CardModule.cs` | `ICardModule` 接口、`CardRenderContext`、`CardModuleBase` 默认实现 |
+| `src/Contracts/Cards/CardModule.cs` | `ICardModule` 接口、`CardRenderContext`、`CardModuleBase` 默认实现、`ICardDefaultProvider`（2.29.0 默认卡能力） |
 | `src/Contracts/Cards/RichCard.cs` | `IRichCardModule` / `RichCardModuleBase`：返回任意 WPF 内容的卡片契约（含 `NeedsMouseInput`） |
 | `src/Cards/CardRegistry.cs` | 反射扫描宿主程序集（2.16.0 起为空）+ 合并运行时插件模块，按 `Order` 排序；`ClearExternal()` 供退出 |
-| `src/Cards/CardModel.cs` | 卡片列表的创建、补全、校验、名称去重（宿主不认具体卡片类型） |
+| `src/Cards/CardModel.cs` | 卡片列表的创建、补全、校验、名称去重；默认卡由 `ICardDefaultProvider` 收集，宿主不再写死 Kind |
 | `src/Contracts/Cards/CardSettingsModule.cs` | 卡片自己的契约：`ICardSettingsModule`、`ICardEditorSection`、`ICardSettingsValidator`、`ICardSummary`、`ICardStyleAware`（旧 `ICardLegacyAlias` 已于 2.14.7 删除） |
 | `src/Plugins/InfoText/InfoTextCard.cs` | 信息与文本卡：系统信息 / 时钟 / 按键 / 文本四个预设；实现 `ICardPresetSource` / `ICardSelfTest`（旧 Kind 别名 2.14.7 已删除） |
 | `src/Plugins/Command/CommandCard.cs` / `CommandCardEditor.cs` | 命令行卡（富内容面板，见 §9）与它自己的设置区块；设置存在 `CardSettings.Extras.command` |
 | `src/Plugins/Media/MediaCard.cs` / `MediaCardSettingsView.xaml(.cs)` | 媒体卡：图片 / 动图 / 视频；文件与缩放参数在 `Extras.media`，内容控件用 UiKit 的 `CardMediaView` |
 | `src/Plugins/Chat/ChatCard.cs` / `ChatCardSettingsView.xaml(.cs)` | AI 对话卡；接口 / 模型 / Key 在 `Extras.chat`，设置区块由模块自己提供（`ChatSettings` 在插件工程里） |
-| `src/Contracts/Cards/CardHost.cs` | 每卡宿主服务 `ICardHost`（状态目录、重画 / 布局、`SaveSettings()`、`Shell`）与 `ICardHostAware`；2.16.0 新增宿主服务契约见 `CardHostServices.cs` |
+| `src/Contracts/Cards/CardHost.cs` | 每卡宿主服务 `ICardHost`（状态目录、重画 / 布局、`SaveSettings()`、`Shell`）；2.16.0 新增宿主服务契约见 `CardHostServices.cs`；`ICardHostAware` 已于 2.29.0 删除 |
 | `src/Core/CardStateStore.cs` | 每卡状态文件：`<settings.json 目录>\cards\<Id>\`，临时文件 + 替换的原子写，卡片 Id / 文件名都做路径校验 |
 | `src/Ui/GlassBackdrops.cs` | 毛玻璃实现选择：`GlassPolicy`（纯决策）+ `IGlassBackdrop` + 系统亚克力 / 桌面亚克力两块底板（v2.8.1） |
 | `src/UiKit/CliUi.cs` | CLI 面板公共件：面板骨架 `CliPanelView`、内部小面板 `CliEntryPanel`、卡片风格滑块 `CliScrollBars`、取色 `CardPalette` |
@@ -149,33 +149,23 @@ public sealed class MyMediaCard : RichCardModuleBase
 拖放与锁定：锁定状态是点击穿透（`WS_EX_TRANSPARENT`），窗口收不到拖放——这是「锁定 = 不挡鼠标」的既有语义，
 需要拖入时先解锁。模块不需要自己碰窗口样式。
 
-**宿主服务**（v2.7.0 起）：需要持久状态或主动刷新时，模块实现 `ICardHostAware`：
-
-```csharp
-public void Attach(ICardHost host)
-{
-    // 每张卡一份：host.StateDirectory 是 <settings.json 目录>\cards\<卡片 Id>\
-    // 状态不要塞进 settings.json（配置会越读越大，还会和 Normalize 打架）
-    host.WriteState("draft.json", "{}");
-    host.RequestLayout();   // 内容尺寸变了
-}
-
-public void Detach(ICardHost host) { }   // 删卡 / 退出时
-```
-
-宿主在**建卡与应用设置**时 Attach、**删卡与退出**时 Detach。模块是单例，
-所以**不要把 host 存进字段**——需要跨次使用的状态放进内容控件或状态文件。
-
-v2.10.2 起，富内容的 `CreateContent` / `ApplyStyle` 上下文里也带了一份同样的 host：
-`CardRenderContext.Host`（文字渲染 / 截图路径为 null）。内容控件在自己的构造函数里保存它即可：
+**宿主服务**（v2.7.0 起；2.29.0 起唯一入口是 `CardRenderContext.Host`）：需要持久状态或主动刷新时，
+在 `CreateContent` / `ApplyStyle` 里把 `context.Host` 交给当前这张卡的内容控件：
 
 ```csharp
 public override FrameworkElement CreateContent(CardRenderContext context)
 {
-    // 每个内容控件一份；模块本身仍然是无状态的单例
+    // 每个内容控件一份；host.StateDirectory 是 <settings.json 目录>\cards\<卡片 Id>\
+    // 状态不要塞进 settings.json（配置会越读越大，还会和 Normalize 打架）
+    context.Host.WriteState("draft.json", "{}");
+    context.Host.RequestLayout();   // 内容尺寸变了
     return new MyView(context.Settings, context.Config, context.Host);
 }
 ```
+
+模块是单例，所以**不要把 host 存进模块字段**——需要跨次使用的状态放进内容控件或状态文件。
+`ICardHostAware` / `Attach` / `Detach` 已于 2.29.0 删除（同种卡有多张时无法把 host 与具体卡片对应，
+这个扩展点只会被写错）；旧插件需要改用 `context.Host`。
 
 拿到 host 后可以直接 `RequestLayout()`（列表变长）、`RequestRender()`、`ReadState/WriteState`
 （状态目录与 `CardStateStore` 是同一套），以及 2.16.0 新增的 `SaveSettings()`（把当前整棵设置树写回磁盘）
@@ -224,6 +214,24 @@ public sealed class DropStationCard : RichCardModuleBase,
 
 把插件放进 `src/Plugins/<Name>/`（含 `plugin.csproj` + `manifest.json`）：宿主 csproj 会构建并复制到 `<exe>/plugins/cards/builtin.*/`，`CardPluginLoader` 启动时加载，
 「添加卡片」菜单、设置页编辑、默认内容、热键校验全部自动生效。
+
+### 默认卡片与 `ICardDefaultProvider`（2.29.0）
+
+全新配置的默认卡片不再由宿主写死 Kind。模块实现可选能力 `ICardDefaultProvider`：
+
+```csharp
+public interface ICardDefaultProvider
+{
+    int DefaultOrder { get; }                 // 整叠里的顺序，小的在前
+    IList<CardSettings> CreateDefaults();     // 宿主补 Id / Extras / 名称兜底
+}
+```
+
+`CardModel.CreateDefaultCards()` 遍历 `CardRegistry.Modules`，按 `DefaultOrder` 排序后收集；
+InfoText 提供 3 张（系统信息 / 时钟 / 按键），Command 与 Media 各提供 1 张。
+没有模块提供默认卡时返回空列表，**不会**伪造「插件不可用」占位卡；宿主里的
+`CardDefaults` 与插件里的 `InfoTextDefaults` 已删除，模板只保留在 InfoText 的预设表里。
+没实现本接口的模块（Chat / 中转站 / 按钮演示）不进入默认配置，仍可从「添加卡片」手动添加。
 
 > 中转站本身的调研与设计（数据模型、引用 / 复制 / 移动、拖出、锁定语义、分阶段）见
 > [file-transfer-station.md](file-transfer-station.md)。

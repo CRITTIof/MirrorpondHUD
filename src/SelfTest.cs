@@ -1156,25 +1156,54 @@ namespace MirrorpondHUD
             return contractsOk && registryOk && placeholderOk;
         }
 
-        /// <summary>宿主默认内容模板与默认卡片布局（3 张信息文本 + 命令行 + 媒体）。</summary>
+        /// <summary>默认卡片布局（3 张信息文本 + 命令行 + 媒体）与 M-1 的模块自报默认卡。</summary>
         static bool CheckCardDefaults()
         {
-            // 宿主默认内容模板仍可用（CardDefaults 保留在宿主）。
-            bool cardDefaultsOk = CardDefaults.MetricsContent.IndexOf("{cpu", StringComparison.Ordinal) >= 0
-                               && CardDefaults.ClockContent.IndexOf("{time", StringComparison.Ordinal) >= 0
-                               && CardDefaults.KeysContent.IndexOf("{keys", StringComparison.Ordinal) >= 0
-                               && CardDefaults.TextContent.IndexOf("{host", StringComparison.Ordinal) >= 0;
-
-            // 默认卡片：3 张信息文本 + 命令行 + 媒体，且交互卡只有 1 张。
             var defaultCards = CardModel.CreateDefaultCards();
             var defaultKinds = new List<string>();
-            foreach (CardSettings item in defaultCards) defaultKinds.Add(item.Kind);
+            var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            bool uniqueIds = true;
+            foreach (CardSettings item in defaultCards)
+            {
+                defaultKinds.Add(item.Kind);
+                if (!ids.Add(item.Id)) uniqueIds = false;
+            }
+
             bool defaultCardsOk = defaultCards.Count == 5
                                && defaultKinds.FindAll(k => k == "infotext").Count == 3
                                && defaultKinds.Contains("command") && defaultKinds.Contains("media")
-                               && CardModel.CountInteractive(defaultCards) == 1;
+                               && CardModel.CountInteractive(defaultCards) == 1
+                               && uniqueIds;
 
-            return cardDefaultsOk && defaultCardsOk;
+            // M-1：默认卡必须全部来自 ICardDefaultProvider，且模板只在插件里有一份。
+            bool providersOk = true;
+            int providerCount = 0;
+            foreach (ICardModule module in CardRegistry.Modules)
+            {
+                var provider = module as ICardDefaultProvider;
+                if (provider == null) continue;
+
+                providerCount++;
+                IList<CardSettings> cards = provider.CreateDefaults();
+                if (cards == null || cards.Count == 0) { providersOk = false; continue; }
+                foreach (CardSettings item in cards)
+                {
+                    if (item == null || string.IsNullOrWhiteSpace(item.Kind)) providersOk = false;
+                }
+            }
+
+            bool templatesOk = false;
+            var infoProvider = CardRegistry.Get("infotext") as ICardDefaultProvider;
+            if (infoProvider != null)
+            {
+                IList<CardSettings> infoCards = infoProvider.CreateDefaults();
+                templatesOk = infoCards != null && infoCards.Count == 3
+                           && infoCards[0].Content.IndexOf("{cpu", StringComparison.Ordinal) >= 0
+                           && infoCards[1].Content.IndexOf("{time", StringComparison.Ordinal) >= 0
+                           && infoCards[2].Content.IndexOf("{keys", StringComparison.Ordinal) >= 0;
+            }
+
+            return defaultCardsOk && providersOk && templatesOk && providerCount >= 3;
         }
 
         /// <summary>通用插件自检：遍历实现 ICardSelfTest 的模块；结论写进自检输出。</summary>

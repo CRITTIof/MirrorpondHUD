@@ -240,7 +240,10 @@ namespace MirrorpondHUD.Ui
                 }
                 else
                 {
-                    text = TemplateEngine.Render(CardDefaults.MetricsContent,
+                    // 没有真实卡片时用信息卡模块自己的默认模板，避免再维护一份宿主常量。
+                    string fallback = CardRegistry.Get("infotext").DefaultContent;
+                    if (string.IsNullOrWhiteSpace(fallback)) fallback = "{cpu:0.0}%";
+                    text = TemplateEngine.Render(fallback,
                                                  Variables.Build(snap, settings, keys));
                 }
 

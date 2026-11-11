@@ -67,7 +67,10 @@ namespace MirrorpondHUD.Ui
             new PresetInfo
             {
                 Name = "标准面板",
-                Content = CardDefaults.MetricsContent
+                // 这是「模板目录」里的一个可选项，与默认卡片解耦：默认卡由
+                // ICardDefaultProvider 提供，这里不再引用宿主模板常量。
+                Content = "{cpu_icon} {cpu:0.0}%   {mem_icon} {mem_pct:0}%   {gpu_icon} {gpu:0.0}%\n" +
+                          "{net_down_icon} {net_down}   {net_up_icon} {net_up}   {disk_icon} {disk:0.0}%"
             },
             new PresetInfo
             {

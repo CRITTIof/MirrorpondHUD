@@ -56,6 +56,15 @@ namespace MirrorpondHUD.Ui
             public byte[] LastFrame;
             public int LastWidth;
             public int LastHeight;
+
+            /// <summary>
+            /// P-2：这张卡复用的取样缓冲，只有尺寸变化才重分配。
+            /// 以前每帧 new byte[w * h * 4]：600x400 的卡缩到 1/2 后是 240KB，
+            /// 已经超过 85KB 的 LOH 门槛，每卡每帧一块大对象。
+            /// 复用是安全的：<c>BitmapSource.Create</c> 在建图时就把像素复制进它自己的原生缓冲
+            /// （依据见 Render 里的注释），下一帧覆写这块数组不会改到已经交给卡片的那张位图。
+            /// </summary>
+            public byte[] CaptureBuffer;
         }
 
         static readonly List<Target> Live = new List<Target>();
@@ -529,8 +538,7 @@ namespace MirrorpondHUD.Ui
                             width, height, Srccopy))
                 return;     // 这一轮没取到就跳过，别把上一次的残留当成取样结果
 
-            var buffer = new byte[w * h * 4];
-            PerformanceProbe.GlassBuffer(buffer.Length);
+            byte[] buffer = EnsureCaptureBuffer(target, w, h);
             Marshal.Copy(target.Bits, buffer, 0, buffer.Length);
 
             GlassCapture.BoxBlur(buffer, w, h, _blurRadius, true);
@@ -545,6 +553,16 @@ namespace MirrorpondHUD.Ui
             if (SameAsLastFrame(target, buffer, w, h)) return;
 
             // Bgr32 = 忽略 alpha：从屏幕 DC 拷出来的数据 alpha 全是 0，用 Bgra32 建图会整块透明
+            //
+            // P-2：这里可以直接传复用的 CaptureBuffer，因为 BitmapSource.Create 在**建图时**
+            // 就把 pixels 复制进 CachedBitmap 自己的原生缓冲（PresentationCore 的
+            // CachedBitmap 构造会走一次像素拷贝），位图不持有调用方数组。
+            // 依据（本机 net8.0-windows 实测）：建图后立刻把源数组整体清零，
+            // 再 CopyPixels 回来仍然是原来的 BGR 值；Freeze 后在另一线程 CopyPixels 也一样。
+            // 所以下一帧覆写同一块数组是安全的，不需要为每张卡保留「位图专属」的副本。
+            // LastFrame 是另一件事：它是「上一次真正推送出去的帧」的独立快照，
+            // 给 SameAsLastFrame 的跳过重画优化用 —— 因为 buffer 下一帧就会被覆写，
+            // 没有这份快照就没法比较。它同时也在尺寸变化时被清掉。
             PerformanceProbe.GlassBitmap();
             BitmapSource image = BitmapSource.Create(w, h, 96, 96, PixelFormats.Bgr32, null, buffer, w * 4);
             image.Freeze();
@@ -562,6 +580,26 @@ namespace MirrorpondHUD.Ui
             catch (Exception ex) { Log.Warn("设置卡片玻璃失败: " + ex.Message); }
 
             TraceFrame(buffer, w, h);
+        }
+
+        /// <summary>
+        /// 取这张卡复用的取样缓冲，只有需要的字节数真的变了才分配。
+        /// P-2 之前这里每帧每卡 <c>new byte[w * h * 4]</c>：600x400 的卡缩到一半是 240KB，
+        /// 超过 LOH 的 85KB 门槛，10fps × 5 张约 12MB/s；而这块缓冲的内容每帧都会被
+        /// Marshal.Copy 整块覆写，生命周期完全一样，没有理由反复分配。
+        /// PerformanceProbe.GlassBuffer 只在**真的分配**时调用 —— 它统计的是「像素缓冲分配」，
+        /// 尺寸稳定后这条计数应变成常数，正好用 --perf 验收复用是否生效。
+        /// 缓冲按 Target 独立持有，且只在 UI 线程（DispatcherTimer / RequestFrame）读写，不加锁。
+        /// （宽高互换但字节数相同时继续复用是安全的：所有消费者都显式传 w / h。）
+        /// </summary>
+        static byte[] EnsureCaptureBuffer(Target target, int w, int h)
+        {
+            int bytes = w * h * 4;
+            if (target.CaptureBuffer != null && target.CaptureBuffer.Length == bytes) return target.CaptureBuffer;
+
+            target.CaptureBuffer = new byte[bytes];
+            PerformanceProbe.GlassBuffer(bytes);
+            return target.CaptureBuffer;
         }
 
         static bool EnsureSurface(Target target, int w, int h)
@@ -627,6 +665,9 @@ namespace MirrorpondHUD.Ui
             target.Width = 0;
             target.Height = 0;
             target.LastFrame = null;
+            // P-2：取样缓冲跟着取样面一起丢掉，卡片移除 / 改尺寸后不把这块 LOH 对象扛到进程结束。
+            // 下次 Render 会按新尺寸重新分配（并计入 GlassBuffer 的分配计数）。
+            target.CaptureBuffer = null;
         }
 
         static bool SameAsLastFrame(Target target, byte[] buffer, int w, int h)

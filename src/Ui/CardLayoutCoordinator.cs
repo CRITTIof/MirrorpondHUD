@@ -135,21 +135,14 @@ namespace MirrorpondHUD.Ui
 
             try
             {
-                System.Windows.Forms.Screen[] screens = System.Windows.Forms.Screen.AllScreens;
-                if (screens.Length == 0) return "Left";
+                ScreenInfo screen = ScreenGeometry.Get(settings.Overlay.Monitor);
+                if (screen == null) return "Left";
 
-                int index = Math.Max(0, Math.Min(settings.Overlay.Monitor, screens.Length - 1));
-                System.Drawing.Rectangle work = screens[index].WorkingArea;
-
-                double scale = 1.0;
-                if (screens[0].Bounds.Width > 0)
-                {
-                    double candidate = System.Windows.SystemParameters.PrimaryScreenWidth / screens[0].Bounds.Width;
-                    if (candidate > 0.1 && candidate < 10) scale = candidate;
-                }
+                double scaleX = screen.ScaleX > 0.1 ? screen.ScaleX : 1.0;
+                double workWidthDip = screen.WorkWidth / scaleX;
 
                 double center = settings.Overlay.X + stackWidth / 2;
-                return center < work.Width * scale / 2 ? "Left" : "Right";
+                return center < workWidthDip / 2 ? "Left" : "Right";
             }
             catch
             {

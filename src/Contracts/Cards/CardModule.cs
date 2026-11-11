@@ -56,6 +56,31 @@ namespace MirrorpondHUD.Cards
     }
 
     /// <summary>
+    /// 可选能力：模块参与「全新配置的默认卡片」。
+    ///
+    /// 2.29.0 起宿主不再写死 infotext / command / media 的默认卡，而是遍历
+    /// <c>CardRegistry.Modules</c> 收集实现了本接口的模块。这样删掉某个内置插件后，
+    /// 首次启动不会再落一张「插件不可用」的占位卡；模块自己也能决定默认卡的数量、
+    /// 预设与顺序，不必再和宿主里的模板常量人肉同步。
+    ///
+    /// 没实现 = 这种卡不进入默认配置（用户仍可从「添加卡片」里手动添加）。
+    /// </summary>
+    public interface ICardDefaultProvider
+    {
+        /// <summary>
+        /// 默认卡在整叠里的排序，小的在前；同一次返回的多张卡按返回顺序排列。
+        /// 与 <see cref="ICardModule.Order"/>（添加菜单排序）分开，避免为了默认顺序改动菜单。
+        /// </summary>
+        int DefaultOrder { get; }
+
+        /// <summary>
+        /// 返回默认卡。宿主负责补 Id、Extras、名称兜底与模块级归一化，
+        /// 模块只填 Kind / 名称 / 预设 / 内容 / 常驻 / 间距 / 热键即可。
+        /// </summary>
+        IList<CardSettings> CreateDefaults();
+    }
+
+    /// <summary>
     /// 插件模块可选的生命周期回调：宿主退出、卸载插件 ALC 之前调用，
     /// 插件应在这里停掉自己的线程 / 定时器、解绑静态事件。
     /// 插件替换 / 更新统一在宿主重启后生效，没有热插拔。

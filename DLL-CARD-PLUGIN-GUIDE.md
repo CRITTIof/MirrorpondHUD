@@ -905,6 +905,7 @@ Lucide 负责全部卡片 / 设置页图标；ReiconFont 只保留键帽字形�
 | `ICardEditorCommit` | 插件 → 宿主 | 设置区块里的“失焦才提交”草稿（如 API Key 输入框）；宿主点确定前调用 `CommitPendingEdits()` |
 | `ICardScreenshotProvider` | 插件 → 宿主 | 文档截图前把富内容切到可离屏渲染的状态（如视频卡画第一帧封面） |
 | `ICardPresetSource` + `CardPreset` | 插件 → 宿主 | 通用预设下拉（信息与文本卡的四个预设）；宿主设置页不再认识具体卡片 |
+| `ICardDefaultProvider` | 插件 → 宿主 | 2.29.0：模块自报“全新配置里的默认卡片”；不实现就不进默认配置 |
 | `ICardRuntimeSettingsMerge` | 插件 → 宿主 | 卡片有绕过设置窗直接写 live settings 的运行时字段（对话模式）时，保存前做三方合并 |
 | `ICardSelfTest` | 插件 → 宿主 | 插件自带回归；`--selftest` 会逐个调用，返回 null / 空串表示通过 |
 
@@ -927,18 +928,10 @@ public sealed class MyCard : RichCardModuleBase, ICardSelfTest, ICardPresetSourc
 新插件拿 `ICardHost` 的正确方式是 `CreateContent(CardRenderContext)` 里的 `context.Host`：它和当前这张卡
 一一对应，`UpdateContent` / `OnVisibilityChanged` 也能从内容控件拿到同一份宿主服务。
 
-`ICardHostAware` 是 apiVersion 2 **保留的兼容扩展点**，不是死代码，但内置卡都不实现它。原因是模块是单例、
-`Attach(host)` 不携带卡片 / 内容标识，同种卡有多张时无法知道 host 属于哪一张。只有「该种卡最多一张」
-或不需要把 host 与具体卡片关联的模块才适合用它；`Attach` 里也不要把 host 存成模块的长期字段：
-
-```csharp
-public void Attach(ICardHost host)
-{
-    // 单例模块只做与具体卡片无关的登记；多卡种类请改用 context.Host 传给内容控件。
-}
-
-public void Detach(ICardHost host) { }
-```
+**2.29.0 起 `ICardHostAware` 已删除**：模块是单例、Attach 不携带卡片标识，同种卡有多张时无法知道
+host 属于哪一张，这个扩展点只会被写错。需要宿主服务的插件一律用 `context.Host`，并把它交给当前这张卡
+的内容控件（每个内容控件一份）；不要存进模块字段。旧插件若实现了 `ICardHostAware`，升级到本版本后
+需要删掉该接口与 `Attach` / `Detach` 方法，改为从 `context.Host` 取。
 
 `ICardHost`：
 
@@ -992,8 +985,8 @@ CLI 面板可实现 `IClifFocusTarget`（`CliPanelView` 已实现）。
 
 - 模块实例是**单例**，一张卡的富内容控件按卡片分别创建；不要把某张卡的 `ICardHost` /
   `CardSettings` / 控件存进模块字段；
-- 新插件优先在 `CreateContent` 里用 `context.Host` 拿宿主服务；`ICardHostAware.Attach(host)` 在卡片
-  创建 / 应用设置时调用、`Detach(host)` 在删卡 / 退出时调用，但只适合单张卡种类，原因见 §7；
+- 新插件优先在 `CreateContent` 里用 `context.Host` 拿宿主服务；2.29.0 起不再有
+  `ICardHostAware.Attach / Detach`，宿主服务只跟着内容控件走；
 - 富内容控件实现 `IDisposable` 时，卡片销毁会调用 `Dispose()`；`OnVisibilityChanged(content, false)`
   适合暂停视频 / 动图 / 轮询；
 - `ICardHost.RequestRender()` / `RequestLayout()` 通知宿主数据或尺寸变化；
@@ -1207,13 +1200,9 @@ public interface ICardModuleLifetime
 
 ### 12.6 宿主服务
 
-```csharp
-public interface ICardHostAware
-{
-    void Attach(ICardHost host);
-    void Detach(ICardHost host);
-}
+`ICardHostAware` 已于 2.29.0 删除；通过 `CardRenderContext.Host` 获取宿主服务，见 §7。
 
+```csharp
 public interface ICardHost
 {
     CardSettings Config { get; }
@@ -1288,6 +1277,11 @@ public interface ICardPresetSource
     IList<CardPreset> Presets { get; }
     string CurrentPreset(CardSettings config);
     void ApplyPreset(CardSettings config, string presetId);
+}
+public interface ICardDefaultProvider
+{
+    int DefaultOrder { get; }                 // 整叠里的顺序，小的在前
+    IList<CardSettings> CreateDefaults();     // 宿主补 Id / Extras / 名称兜底
 }
 
 public interface ICardScreenshotProvider
