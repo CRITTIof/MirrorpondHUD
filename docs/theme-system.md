@@ -96,7 +96,8 @@
       "effect": "Scanline",
       "loop": true,
       "durationMs": 2600,
-      "amplitude": 0.10
+      "amplitude": 0.10,
+      "speed": 1.0
     }
   }
 }
@@ -119,11 +120,18 @@
 | `appearance.industrial.monoReadouts` | `Style.MonoReadouts` | 2.30.0；读数数字串用 `monoFont`，默认 false |
 | `appearance.industrial.cardCodes` | `Style.IndustrialHeader` | 2.30.0；`CardHeader` 两位编号 + 等宽大写徽标，默认 false |
 | `appearance.industrial.decoration` | `Style.Decoration` | 2.30.0；`None` / `Grid` / `Scanline` / `Hatch` / `Halftone` / `Contour`，默认 `None` |
+| `appearance.industrial.decorationDensity` | `Style.DecorationDensity` | 2.32.0；0–2，0.5 = 原间距；非等高线纹样 |
+| `appearance.industrial.contourLevels` | `Style.ContourLevels` | 2.32.0；3–48，默认 12 |
+| `appearance.industrial.contourEvening` | `Style.ContourEvening` | 2.32.0；0–1，默认 0.72 |
+| `appearance.industrial.contourRelief` | `Style.ContourRelief` | 2.32.0；0.2–4.0，默认 1.0 |
+| `appearance.industrial.contourSmooth` | `Style.ContourSmooth` | 2.32.0；0–6，默认 2 |
+| `appearance.industrial.contourMinLoopArea` | `Style.ContourMinLoopArea` | 2.32.0；0–5000，默认 26 |
 | `appearance.motion.profile` | `Style.MotionProfile` | 2.31.0；`Current` / `Cut` / `Industrial` / `Off`，默认 `Current` |
 | `appearance.motion.loop` | `Style.LoopMotion` | 2.31.0；旧布尔兼容字段，由 `effect` 派生 |
 | `appearance.motion.effect` | `Style.LoopEffect` | 2.31.0；`None` / `Breath` / `Scanline` / `Pulse` |
 | `appearance.motion.durationMs` | `Style.LoopDurationMs` | 2.31.0；600–20000，默认 2600 |
 | `appearance.motion.amplitude` | `Style.LoopAmplitude` | 2.31.0；0.02–0.8，默认 0.10 |
+| `appearance.motion.speed` | `Style.ContourSpeed` | 2.32.0；仅 Contour 原地形变，0.1–4.0，默认 1.0 |
 
 **故意不放进主题**：`Acrylic` / `GlassMode` / `GlassSource` / `BlurRadius` / `BlurFps`、卡片列表与内容、位置与显示器、
 热键、`Behavior`（刷新率 / 启动动画）、`Data`、API Key。理由见开头：这些是能力与布署参数，不是外观；混进来会让

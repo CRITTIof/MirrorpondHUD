@@ -83,8 +83,15 @@ namespace MirrorpondHUD.Ui
                 MonoReadoutsCheck.IsChecked = s.Style.MonoReadouts;
                 IndustrialHeaderCheck.IsChecked = s.Style.IndustrialHeader;
                 DecorationCombo.SelectedIndex = DecorationIndex(s.Style.Decoration);
+                DecorationDensitySlider.Value = s.Style.DecorationDensity;
+                ContourLevelsSlider.Value = s.Style.ContourLevels;
+                ContourEveningSlider.Value = s.Style.ContourEvening;
+                ContourReliefSlider.Value = s.Style.ContourRelief;
+                ContourSmoothSlider.Value = s.Style.ContourSmooth;
+                ContourMinLoopSlider.Value = s.Style.ContourMinLoopArea;
                 MotionProfileCombo.SelectedIndex = MotionProfileIndex(s.Style.MotionProfile);
                 LoopEffectCombo.SelectedIndex = LoopEffectIndex(s.Style.LoopEffect);
+                ContourSpeedSlider.Value = s.Style.ContourSpeed;
                 LoopDurationSlider.Value = s.Style.LoopDurationMs;
                 LoopAmplitudeSlider.Value = s.Style.LoopAmplitude;
                 SuccessColorBox.Text = s.Style.Success ?? "";
@@ -154,6 +161,8 @@ namespace MirrorpondHUD.Ui
             }
 
             UpdateSwatches();
+            UpdateDecorationUiState();
+            UpdateLoopUiState();
             RebuildCardList();
             RenderThemePreview();
             ClearDirty();
@@ -219,6 +228,7 @@ namespace MirrorpondHUD.Ui
                 case "Breath": return 1;
                 case "Scanline": return 2;
                 case "Pulse": return 3;
+                case "Contour": return 4;
                 default: return 0;
             }
         }
@@ -227,6 +237,31 @@ namespace MirrorpondHUD.Ui
         {
             var item = LoopEffectCombo == null ? null : LoopEffectCombo.SelectedItem as ComboBoxItem;
             return Settings.NormalizeLoopEffect(item == null ? null : item.Tag as string, false);
+        }
+
+        /// <summary>只有选择“等高线”才展示五项等高线参数；否则展示纹样密度。</summary>
+        void UpdateDecorationUiState()
+        {
+            if (DecorationDensityRow == null || ContourOptionsPanel == null) return;
+
+            bool contour = string.Equals(DecorationTag(), "Contour", StringComparison.OrdinalIgnoreCase);
+            DecorationDensityRow.Visibility = contour ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
+            ContourOptionsPanel.Visibility = contour ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+        }
+
+        /// <summary>
+        /// 循环时长用于 Breath / Scanline / Pulse；呼吸幅度只在 Breath 出现；
+        /// Contour 是原地形变，用“变化速度”而不是时长/幅度。
+        /// </summary>
+        void UpdateLoopUiState()
+        {
+            if (LoopDurationRow == null || LoopAmplitudeRow == null || ContourSpeedRow == null) return;
+
+            string effect = LoopEffectTag();
+            bool timed = effect == "Breath" || effect == "Scanline" || effect == "Pulse";
+            LoopDurationRow.Visibility = timed ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+            LoopAmplitudeRow.Visibility = effect == "Breath" ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+            ContourSpeedRow.Visibility = effect == "Contour" ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
         }
 
         static int StretchIndex(string value)        {
@@ -302,6 +337,13 @@ namespace MirrorpondHUD.Ui
                 s.Style.MonoReadouts = MonoReadoutsCheck.IsChecked == true;
                 s.Style.IndustrialHeader = IndustrialHeaderCheck.IsChecked == true;
                 s.Style.Decoration = DecorationTag();
+                s.Style.DecorationDensity = Math.Round(DecorationDensitySlider.Value, 2);
+                s.Style.ContourLevels = (int)Math.Round(ContourLevelsSlider.Value);
+                s.Style.ContourEvening = Math.Round(ContourEveningSlider.Value, 2);
+                s.Style.ContourRelief = Math.Round(ContourReliefSlider.Value, 2);
+                s.Style.ContourSmooth = (int)Math.Round(ContourSmoothSlider.Value);
+                s.Style.ContourMinLoopArea = Math.Round(ContourMinLoopSlider.Value);
+                s.Style.ContourSpeed = Math.Round(ContourSpeedSlider.Value, 2);
                 s.Style.MotionProfile = MotionProfileTag();
                 s.Style.LoopEffect = LoopEffectTag();
                 s.Style.LoopDurationMs = (int)Math.Round(LoopDurationSlider.Value);

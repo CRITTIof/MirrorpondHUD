@@ -83,6 +83,8 @@ namespace MirrorpondHUD.Core
         public string Effect;
         public double? DurationMs;
         public double? Amplitude;
+        /// <summary>Contour 原地形变速度（0.1–4.0）。</summary>
+        public double? Speed;
     }
 
     /// <summary>
@@ -96,6 +98,12 @@ namespace MirrorpondHUD.Core
         public bool? CardCodes;
         /// <summary>M6：None / Grid / Scanline / Hatch / Halftone / Contour。</summary>
         public string Decoration;
+        public double? DecorationDensity;
+        public double? ContourLevels;
+        public double? ContourEvening;
+        public double? ContourRelief;
+        public double? ContourSmooth;
+        public double? ContourMinLoopArea;
     }
 
     /// <summary>
@@ -155,6 +163,12 @@ namespace MirrorpondHUD.Core
             if (Industrial.MonoReadouts.HasValue) style.MonoReadouts = Industrial.MonoReadouts.Value;
             if (Industrial.CardCodes.HasValue) style.IndustrialHeader = Industrial.CardCodes.Value;
             if (Industrial.Decoration != null) style.Decoration = Settings.NormalizeDecoration(Industrial.Decoration);
+            if (Industrial.DecorationDensity.HasValue) style.DecorationDensity = Industrial.DecorationDensity.Value;
+            if (Industrial.ContourLevels.HasValue) style.ContourLevels = (int)Industrial.ContourLevels.Value;
+            if (Industrial.ContourEvening.HasValue) style.ContourEvening = Industrial.ContourEvening.Value;
+            if (Industrial.ContourRelief.HasValue) style.ContourRelief = Industrial.ContourRelief.Value;
+            if (Industrial.ContourSmooth.HasValue) style.ContourSmooth = (int)Industrial.ContourSmooth.Value;
+            if (Industrial.ContourMinLoopArea.HasValue) style.ContourMinLoopArea = Industrial.ContourMinLoopArea.Value;
 
             if (Motion.Profile != null) style.MotionProfile = Settings.NormalizeMotionProfile(Motion.Profile);
             if (Motion.Effect != null)
@@ -163,6 +177,7 @@ namespace MirrorpondHUD.Core
                 style.LoopEffect = Motion.Loop.Value ? "Breath" : "None";
             if (Motion.DurationMs.HasValue) style.LoopDurationMs = (int)Motion.DurationMs.Value;
             if (Motion.Amplitude.HasValue) style.LoopAmplitude = Motion.Amplitude.Value;
+            if (Motion.Speed.HasValue) style.ContourSpeed = Motion.Speed.Value;
 
             if (Shape.Padding.HasValue) style.Padding = Shape.Padding.Value;
 
@@ -464,6 +479,12 @@ namespace MirrorpondHUD.Core
             industrial["monoReadouts"] = style.MonoReadouts;
             industrial["cardCodes"] = style.IndustrialHeader;
             industrial["decoration"] = Settings.NormalizeDecoration(style.Decoration);
+            industrial["decorationDensity"] = style.DecorationDensity;
+            industrial["contourLevels"] = style.ContourLevels;
+            industrial["contourEvening"] = style.ContourEvening;
+            industrial["contourRelief"] = style.ContourRelief;
+            industrial["contourSmooth"] = style.ContourSmooth;
+            industrial["contourMinLoopArea"] = style.ContourMinLoopArea;
 
             var motion = new Dictionary<string, object>();
             motion["profile"] = Settings.NormalizeMotionProfile(style.MotionProfile);
@@ -471,6 +492,7 @@ namespace MirrorpondHUD.Core
             motion["loop"] = style.LoopEffect != "None";
             motion["durationMs"] = style.LoopDurationMs;
             motion["amplitude"] = style.LoopAmplitude;
+            motion["speed"] = style.ContourSpeed;
 
             var appearance = new Dictionary<string, object>();
             appearance["colors"] = colors;
@@ -669,6 +691,19 @@ namespace MirrorpondHUD.Core
                         doc.Industrial.Decoration = Settings.NormalizeDecoration(decoration);
                     }
                 }
+
+                doc.Industrial.DecorationDensity = industrial.Number("decorationDensity");
+                industrial.Range(doc.Industrial.DecorationDensity, "decorationDensity", 0, 1);
+                doc.Industrial.ContourLevels = industrial.Number("contourLevels");
+                industrial.Range(doc.Industrial.ContourLevels, "contourLevels", 4, 30);
+                doc.Industrial.ContourEvening = industrial.Number("contourEvening");
+                industrial.Range(doc.Industrial.ContourEvening, "contourEvening", 0, 1);
+                doc.Industrial.ContourRelief = industrial.Number("contourRelief");
+                industrial.Range(doc.Industrial.ContourRelief, "contourRelief", 0.5, 1.8);
+                doc.Industrial.ContourSmooth = industrial.Number("contourSmooth");
+                industrial.Range(doc.Industrial.ContourSmooth, "contourSmooth", 0, 3);
+                doc.Industrial.ContourMinLoopArea = industrial.Number("contourMinLoopArea");
+                industrial.Range(doc.Industrial.ContourMinLoopArea, "contourMinLoopArea", 0, 400);
             }
 
             var motion = appearance.Child("motion");
@@ -705,6 +740,8 @@ namespace MirrorpondHUD.Core
                 motion.Range(doc.Motion.DurationMs, "durationMs", 600, 20000);
                 doc.Motion.Amplitude = motion.Number("amplitude");
                 motion.Range(doc.Motion.Amplitude, "amplitude", 0.02, 0.8);
+                doc.Motion.Speed = motion.Number("speed");
+                motion.Range(doc.Motion.Speed, "speed", 0.1, 4.0);
             }
 
             string first = root.Error

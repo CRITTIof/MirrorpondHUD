@@ -102,6 +102,11 @@ public static double Corner(double radius, double minimum)
 ## 6. M6：装饰纹样
 
 - `StyleSettings.Decoration`：`None / Grid / Scanline / Hatch / Halftone / Contour`，未知值回落 `None`；
+- `StyleSettings.DecorationDensity`：0–2，0.5 = 原间距；只作用于非等高线纹样；
+- 等高线（2.32.0）：从 `samples/ContourLine` 移植地形场 + marching squares + Chaikin，
+  删除首/计曲线区分、高程数字与示坡线，只保留同色线；参数范围：级数 3–48、疏密均衡 0–1、
+  地形起伏 0.2–4.0、平滑轮数 0–6、最小闭合环面积 0–5000；`LoopEffect=Contour` 时
+  每 130ms 在两个固定地形场之间混合（原地形变，不漂移），用 `ContourSpeed` 控制速度；
 - `OverlaySurface` 增加一个不参与命中测试的 `Border` 装饰层，位于底色 / 背景图之上、文字 / 富内容之下；
 - 用冻结的 `DrawingBrush` 平铺：
   - `Grid` 24px 1px 线；

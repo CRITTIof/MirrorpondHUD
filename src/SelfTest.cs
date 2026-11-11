@@ -13,6 +13,7 @@ using System.Windows.Threading;
 using MirrorpondHUD.Cards;
 using MirrorpondHUD.Core;
 using MirrorpondHUD.Ui;
+using MirrorpondHUD.Ui.Contour;
 using MirrorpondHUD.Ui.Controls;
 
 namespace MirrorpondHUD
@@ -407,6 +408,31 @@ namespace MirrorpondHUD
                              && MirrorpondHUD.Ui.Controls.CardPalette.Corner(7, 3) == 7
                              && MirrorpondHUD.Ui.Controls.CardPalette.Corner(-1, 4) == 0;
 
+                // 等高线：级数 / 疏密 / 起伏 / 平滑 / 最小闭环都必须被夹到合法范围，
+                // ContourLevels 只产出指定条数且单调递增。
+                ContourLevels contourLevels = ContourLevels.FromRange(0.2, 0.8, 9);
+                bool contourOk = contourLevels.Count == 9
+                              && contourLevels.Values[0] > 0.2
+                              && contourLevels.Values[8] < 0.8
+                              && contourLevels.Values[0] < contourLevels.Values[8];
+                var contourStyle = new StyleSettings
+                {
+                    ContourLevels = 999,
+                    ContourEvening = -1,
+                    ContourRelief = 99,
+                    ContourSmooth = 99,
+                    ContourMinLoopArea = -5,
+                    DecorationDensity = 5
+                };
+                new Settings { Style = contourStyle }.Normalize();
+                contourOk = contourOk
+                         && contourStyle.ContourLevels == 48
+                         && contourStyle.ContourEvening == 0
+                         && contourStyle.ContourRelief == 4.0
+                         && contourStyle.ContourSmooth == 6
+                         && contourStyle.ContourMinLoopArea == 0
+                         && contourStyle.DecorationDensity == 2;
+
                 // M7：四档动效参数是纯数据，Cut 必须零位移、90ms 补位。
                 var cutMotion = new Settings();
                 cutMotion.Style.MotionProfile = "Cut";
@@ -458,7 +484,7 @@ namespace MirrorpondHUD
                                && badToken.Muted == ThemeResolver.WithAlpha(fg, 0.45)
                                && badToken.Accent == System.Windows.Media.Color.FromRgb(0x2F, 0x6F, 0xEB);
 
-                themeOk = defaultOk && mutedOk && scrollOk && statusOk && cornerOk && motionOk
+                themeOk = defaultOk && mutedOk && scrollOk && statusOk && cornerOk && contourOk && motionOk
                        && validateOk && normalizeOk && codeOk && fallbackOk;
             }
             catch (Exception ex)
@@ -518,6 +544,13 @@ namespace MirrorpondHUD
                 MonoReadouts = true,
                 IndustrialHeader = true,
                 Decoration = "Grid",
+                DecorationDensity = 0.35,
+                ContourLevels = 14,
+                ContourEvening = 0.6,
+                ContourRelief = 1.2,
+                ContourSmooth = 3,
+                ContourMinLoopArea = 55,
+                ContourSpeed = 1.6,
                 MotionProfile = "Industrial",
                 LoopEffect = "Scanline",
                 LoopDurationMs = 3200,
@@ -613,6 +646,13 @@ namespace MirrorpondHUD
                 && applied.Style.MonoReadouts == source.Style.MonoReadouts
                 && applied.Style.IndustrialHeader == source.Style.IndustrialHeader
                 && applied.Style.Decoration == source.Style.Decoration
+                && Math.Abs(applied.Style.DecorationDensity - source.Style.DecorationDensity) < 1e-9
+                && applied.Style.ContourLevels == source.Style.ContourLevels
+                && Math.Abs(applied.Style.ContourEvening - source.Style.ContourEvening) < 1e-9
+                && Math.Abs(applied.Style.ContourRelief - source.Style.ContourRelief) < 1e-9
+                && applied.Style.ContourSmooth == source.Style.ContourSmooth
+                && Math.Abs(applied.Style.ContourMinLoopArea - source.Style.ContourMinLoopArea) < 1e-9
+                && Math.Abs(applied.Style.ContourSpeed - source.Style.ContourSpeed) < 1e-9
                 && applied.Style.MotionProfile == source.Style.MotionProfile
                 && applied.Style.LoopEffect == source.Style.LoopEffect
                 && applied.Style.LoopDurationMs == source.Style.LoopDurationMs

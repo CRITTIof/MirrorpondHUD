@@ -44,6 +44,7 @@
 | `Breath` | 整卡明暗呼吸 | `_loopLayer` 整卡填充 + Opacity 往返 |
 | `Scanline` | 一条横线从上往下扫过 | `_loopBand`（2px）+ TranslateTransform.Y 循环 |
 | `Pulse` | 1px 描边明暗脉冲 | `_loopLayer` 只设 BorderBrush / BorderThickness |
+| `Contour` | 等高线原地形变（不漂移） | 每 130ms 推进两套固定地形场的混合相位（`TerrainField` 按 phase 混合 A/B），重算几何；仅装饰纹样=Contour 时有效 |
 
 可调参数：
 
@@ -51,7 +52,7 @@
 - `LoopAmplitude`：0.02–0.8，默认 0.10（叠加层最大不透明度）；
 - `LoopMotion`：2.31 的旧布尔字段，仅用于旧配置兼容；读入后由 `LoopEffect` 派生。
 
-关闭 / 卡片重建 / `ReduceMotion` 时执行 `BeginAnimation(..., null)` 并折叠，不保留动画时钟；
+关闭 / 卡片重建 / `ReduceMotion` 时执行 `BeginAnimation(..., null)`、停表并折叠，不保留动画时钟；
 主题文件：`appearance.motion.effect` / `durationMs` / `amplitude`（`loop` 仍兼容）；
 设置入口：外观 → 工业风格 → **循环效果 / 循环时长 / 呼吸幅度**。
 
@@ -59,11 +60,11 @@
 
 | 项 | 代价 |
 |---|---|
-| 动画机制 | WPF 合成器动画，无 `DispatcherTimer`、无每帧托管分配 |
 | Breath | 每卡一个整卡大小的半透明矩形重绘；4K@300% 约 1200×900 物理像素/卡 |
-| Scanline | 只重绘一条 2px 横线，填充率远低于 Breath；仍有每帧合成时钟 |
+| Scanline | 只重绘一条 2px 横线，填充率远低于 Breath；仍有合成时钟 |
 | Pulse | 只重绘 1px 描边，成本最低 |
-| 典型影响 | 集显 / 远程桌面 / 高刷新屏上会多占一点 GPU 与电量；不会造成布局抖动 |
+| Contour | **CPU 成本最高**：每 130ms 重新采样两套地形 + marching squares + Chaikin + 新几何；卡片越大越贵，4K 大卡建议关闭或降低速度 |
+| ContourSpeed | 0.1–4.0；1.0 ≈ 4 秒一个原地形变周期（不是时长/幅度） |
 | 默认 | **None**；主题示例写 `"loop": false` |
 | 关闭方式 | 设置页选“无”、`ReduceMotion=true`、`MotionProfile=Off` 任一都立即停止 |
 
@@ -78,20 +79,27 @@
   "industrial": {
     "monoReadouts": true,
     "cardCodes": true,
-    "decoration": "Grid"
+    "decoration": "Contour",
+    "decorationDensity": 0.5,
+    "contourLevels": 12,
+    "contourEvening": 0.72,
+    "contourRelief": 1.0,
+    "contourSmooth": 2,
+    "contourMinLoopArea": 26
   },
   "motion": {
     "profile": "Industrial",
-    "effect": "Scanline",
+    "effect": "Contour",
     "loop": true,
     "durationMs": 2600,
-    "amplitude": 0.10
+    "amplitude": 0.10,
+    "speed": 1.0
   }
 }
 ```
 
-- `industrial`：M4 等宽读数 / M5 铭牌 / M6 装饰纹样；
-- `motion`：M7 档位与循环效果（`effect` / `durationMs` / `amplitude`；`loop` 兼容旧字段）；
+- `industrial`：M4 等宽读数 / M5 铭牌 / M6 装饰纹样、纹样密度、等高线五参数；
+- `motion`：M7 档位与循环效果（`effect` / `durationMs` / `amplitude` / `speed`；`loop` 兼容旧字段）；
 - 全部 optional，不写 = 保持当前值；
 - `decoration` / `profile` 是**有界枚举**，主题不能写任意曲线或任意绘制代码；
 - schema 仍为 1，旧主题不受影响；`ThemeFile` 导出会写出这两个段，往返自检覆盖。
@@ -104,7 +112,8 @@
 | `src/Contracts/Core/Settings.cs` | `MotionProfile` / `LoopEffect` / `LoopDurationMs` / `LoopAmplitude` / `MonoReadouts` / `IndustrialHeader` / `Decoration` |
 | `src/Contracts/Ui/ThemeTokens.cs` | `Success` / `Warning` / `MonoFont` 等最终令牌 |
 | `src/Ui/CardMotion.cs` | 档位 → 时长 / 位移 / 缓动 |
-| `src/Ui/OverlaySurface.cs` | 装饰画刷、循环层、MonoFont 接线 |
+| `src/Ui/OverlaySurface.cs` | 装饰画刷、等高线图层的接入、循环层、MonoFont 接线 |
+| `src/Ui/Contour/*.cs` | 从 `samples/ContourLine` 移植：地形场、marching squares、Chaikin、均衡、等高线 `FrameworkElement` |
 | `src/UiKit/CardHeader.cs` | 铭牌编号 / 徽标等宽大写 |
 | `src/UiKit/CardStatus.cs` | Success / Warning / 进度条令牌 |
 

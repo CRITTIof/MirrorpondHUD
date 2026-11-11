@@ -7,7 +7,9 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Effects;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using MirrorpondHUD.Core;
+using MirrorpondHUD.Ui.Contour;
 
 namespace MirrorpondHUD.Ui
 {
@@ -26,6 +28,11 @@ namespace MirrorpondHUD.Ui
         readonly Border _loopBand;
         readonly Border _contentLayer;
         readonly TextCanvas _canvas;
+        readonly ContourDecoration _contourLayer;
+        readonly Border _contourHost;
+        DispatcherTimer _contourTimer;
+        double _contourPhase;
+        double _contourSpeed = 1.0;
 
         BitmapImage _image;
         string _imagePath;
@@ -66,6 +73,15 @@ namespace MirrorpondHUD.Ui
                 Opacity = 0,
                 RenderTransform = new TranslateTransform()
             };
+            _contourLayer = new ContourDecoration { Visibility = Visibility.Visible };
+            _contourLayer.SizeChanged += (s, e) => _contourLayer.InvalidateVisual();
+            _contourHost = new Border
+            {
+                Visibility = Visibility.Collapsed,
+                IsHitTestVisible = false,
+                ClipToBounds = true,
+                Child = _contourLayer
+            };
             _contentLayer = new Border
             {
                 Visibility = Visibility.Collapsed,
@@ -78,10 +94,12 @@ namespace MirrorpondHUD.Ui
             _root.Children.Add(_tintLayer);
             _root.Children.Add(_imageLayer);
             _root.Children.Add(_decorLayer);
+            _root.Children.Add(_contourHost);
             _root.Children.Add(_loopLayer);
             _root.Children.Add(_loopBand);
             _root.Children.Add(_canvas);
             _root.Children.Add(_contentLayer);
+            Unloaded += (s, e) => StopContourLoop();
 
 
             Child = _root;
@@ -283,10 +301,26 @@ namespace MirrorpondHUD.Ui
             {
                 _decorLayer.Background = null;
                 _decorLayer.Visibility = Visibility.Collapsed;
+                _contourHost.Visibility = Visibility.Collapsed;
+                StopContourLoop();
                 return;
             }
 
-            DrawingBrush brush = BuildDecorationBrush(kind, tokens.Border);
+            if (string.Equals(kind, "Contour", StringComparison.Ordinal))
+            {
+                // 等高线不是平铺画刷：它是按卡片尺寸 + 地形场实时生成的几何。
+                _decorLayer.Background = null;
+                _decorLayer.Visibility = Visibility.Collapsed;
+                _contourHost.CornerRadius = CornerRadius;
+                _contourHost.Visibility = Visibility.Visible;
+                _contourLayer.Apply(style, ThemeResolver.WithAlpha(tokens.Border, 0.22));
+                return;
+            }
+
+            _contourHost.Visibility = Visibility.Collapsed;
+            StopContourLoop();
+
+            DrawingBrush brush = BuildDecorationBrush(kind, tokens.Border, style.DecorationDensity);
             if (brush == null)
             {
                 _decorLayer.Background = null;
@@ -302,15 +336,16 @@ namespace MirrorpondHUD.Ui
         }
 
         /// <summary>
-        /// M7 循环动效：None / Breath（整卡明暗） / Scanline（横线扫过） / Pulse（描边明暗）。
+        /// M7 循环动效：None / Breath（整卡明暗） / Scanline（横线扫过） / Pulse（描边明暗） /
+        /// Contour（等高线相位漂移）。
         ///
         /// 性能代价（必须知道）：
-        /// - 每个开启的卡片有一个**常驻**合成动画；不经过 DispatcherTimer，不产生每帧托管分配，
-        ///   但 GPU 合成器会持续重绘这一层卡片大小的矩形（Scanline 只重绘一条 2px 横线）。
-        /// - 4K@300% 的卡片约 1200×900 物理像素，4 张 Breath 卡约 4 个全卡面积/帧的填充率；
-        ///   Scanline 的成本远低于 Breath；Pulse 只重绘 1px 描边。
-        /// - 集成显卡 / 远程桌面 / 高刷新屏上会多占一点 GPU 与电量；默认关闭，ReduceMotion 一票否决。
-        /// - 关掉后立即 BeginAnimation(null) 并折叠，不保留动画时钟。
+        /// - Breath / Pulse 是 WPF 合成器动画，无每帧托管分配，但持续占用 GPU 填充/合成；
+        ///   Scanline 只重绘一条 2px 横线；
+        /// - Contour 不是合成动画：每 130ms 重新采样地形场、marching squares 与 Chaikin，
+        ///   卡片越大越贵（4K 大卡建议关掉或提高 loopDurationMs）；这是唯一会重新分配几何的循环。
+        /// - 4K@300% 的卡片约 1200×900 物理像素；默认关闭，ReduceMotion 一票否决。
+        /// - 关掉后立即 BeginAnimation(null) / 停表并折叠，不保留动画时钟。
         /// </summary>
         void ApplyLoopMotion(StyleSettings style, ThemeTokens tokens)
         {
@@ -328,6 +363,7 @@ namespace MirrorpondHUD.Ui
             _loopBand.Visibility = Visibility.Collapsed;
             var bandTransform = _loopBand.RenderTransform as TranslateTransform;
             if (bandTransform != null) bandTransform.BeginAnimation(TranslateTransform.YProperty, null);
+            StopContourLoop();
 
             string effect = Settings.NormalizeLoopEffect(style.LoopEffect, style.LoopMotion);
             if (effect == "None" || !CardMotion.Enabled) return;
@@ -336,6 +372,12 @@ namespace MirrorpondHUD.Ui
             double amplitude = Math.Max(0.02, Math.Min(0.8, style.LoopAmplitude));
             var brush = new SolidColorBrush(tokens.Accent);
             brush.Freeze();
+
+            if (effect == "Contour")
+            {
+                StartContourLoop(style.ContourSpeed);
+                return;
+            }
 
             if (effect == "Scanline")
             {
@@ -376,15 +418,48 @@ namespace MirrorpondHUD.Ui
             _loopLayer.BeginAnimation(UIElement.OpacityProperty, pulse);
         }
 
-        static DrawingBrush BuildDecorationBrush(string kind, Color color)
+        void StartContourLoop(double styleSpeed)
         {
+            if (_contourHost.Visibility != Visibility.Visible) return;
+
+            // 原地形变：phase 只改变两套固定地形场的混合权重，不移动噪声坐标。
+            // 速度 1.0 ≈ 4 秒一个形变周期；2.0 约 2 秒，0.5 约 8 秒。
+            _contourSpeed = Math.Max(0.1, Math.Min(4.0, styleSpeed));
+
+            if (_contourTimer == null)
+            {
+                _contourTimer = new DispatcherTimer(DispatcherPriority.Background, Dispatcher)
+                {
+                    Interval = TimeSpan.FromMilliseconds(130)
+                };
+                _contourTimer.Tick += (s, e) =>
+                {
+                    _contourPhase += (2.0 * Math.PI * 0.130 / 4.0) * _contourSpeed;
+                    if (_contourPhase > 2.0 * Math.PI) _contourPhase -= 2.0 * Math.PI;
+                    _contourLayer.SetPhase(_contourPhase);
+                };
+            }
+            if (!_contourTimer.IsEnabled) _contourTimer.Start();
+        }
+
+        void StopContourLoop()
+        {
+            if (_contourTimer != null && _contourTimer.IsEnabled) _contourTimer.Stop();
+        }
+
+        static DrawingBrush BuildDecorationBrush(string kind, Color color, double density)
+        {
+            double densityValue = Math.Max(0.0, Math.Min(2.0, density));
+            double factor = densityValue <= 1.0
+                ? 1.6 - 1.2 * densityValue
+                : Math.Max(0.18, 0.4 / densityValue);
             double size;
             Drawing drawing;
 
             switch (kind)
             {
                 case "Grid":
-                    size = 24;
+                    size = 24 * factor;
                     drawing = Stroked(new GeometryGroup
                     {
                         Children =
@@ -396,27 +471,21 @@ namespace MirrorpondHUD.Ui
                     break;
 
                 case "Scanline":
-                    size = 4;
+                    size = 4 * factor;
                     drawing = Stroked(new LineGeometry(new Point(0, 0), new Point(size, 0)), color);
                     break;
 
                 case "Hatch":
-                    size = 12;
+                    size = 12 * factor;
                     drawing = Stroked(new LineGeometry(new Point(0, size), new Point(size, 0)), color);
                     break;
 
                 case "Halftone":
-                    size = 8;
+                    size = 8 * factor;
                     var dot = new SolidColorBrush(color);
                     dot.Freeze();
                     drawing = new GeometryDrawing(dot, null,
                         new EllipseGeometry(new Point(size / 2, size / 2), 1.1, 1.1));
-                    break;
-
-                case "Contour":
-                    // 不规则波形等高线 + 两个偏移闭合环；不要画同心圆（那会像靶心 / 排队）。
-                    size = 96;
-                    drawing = Stroked(BuildContourGeometry(), color);
                     break;
 
                 default:
@@ -441,63 +510,6 @@ namespace MirrorpondHUD.Ui
             var drawing = new GeometryDrawing(null, pen, geometry);
             drawing.Freeze();
             return drawing;
-        }
-
-        /// <summary>
-        /// 等高线纹样的“地形”部分：几条相位 / 振幅不同的波形线 + 两个偏心闭合环。
-        /// 波形在 x=0 与 x=96 处同高，平铺接缝连续；闭合环只作为局部山头，不是同心圆。
-        /// </summary>
-        static Geometry BuildContourGeometry()
-        {
-            var group = new GeometryGroup();
-
-            for (int i = 0; i < 5; i++)
-            {
-                double y = 10 + i * 19;
-                double amp = i % 2 == 0 ? 7 : 4;
-                var line = new StreamGeometry();
-                using (StreamGeometryContext ctx = line.Open())
-                {
-                    ctx.BeginFigure(new Point(0, y), false, false);
-                    ctx.BezierTo(new Point(24, y - amp), new Point(48, y + amp), new Point(72, y), true, false);
-                    ctx.BezierTo(new Point(82, y - amp * 0.6), new Point(90, y + amp * 0.6),
-                                 new Point(96, y), true, false);
-                }
-                line.Freeze();
-                group.Children.Add(line);
-            }
-
-            // 两个偏心的闭合“山头”，形状不对称；与波形错开，避免排成一行。
-            var hillA = new StreamGeometry();
-            using (StreamGeometryContext ctx = hillA.Open())
-            {
-                ctx.BeginFigure(new Point(24, 38), true, true);
-                ctx.BezierTo(new Point(30, 28), new Point(46, 26), new Point(52, 36),
-                             true, false);
-                ctx.BezierTo(new Point(57, 45), new Point(42, 52), new Point(30, 46),
-                             true, false);
-                ctx.BezierTo(new Point(26, 43), new Point(23, 41), new Point(24, 38),
-                             true, false);
-            }
-            hillA.Freeze();
-            group.Children.Add(hillA);
-
-            var hillB = new StreamGeometry();
-            using (StreamGeometryContext ctx = hillB.Open())
-            {
-                ctx.BeginFigure(new Point(66, 72), true, true);
-                ctx.BezierTo(new Point(72, 62), new Point(86, 64), new Point(88, 73),
-                             true, false);
-                ctx.BezierTo(new Point(90, 82), new Point(77, 88), new Point(68, 82),
-                             true, false);
-                ctx.BezierTo(new Point(65, 79), new Point(64, 75), new Point(66, 72),
-                             true, false);
-            }
-            hillB.Freeze();
-            group.Children.Add(hillB);
-
-            group.Freeze();
-            return group;
         }
 
         static BitmapImage LoadImage(string path)

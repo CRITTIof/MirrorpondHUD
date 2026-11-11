@@ -41,6 +41,13 @@ namespace MirrorpondHUD.Ui
             BindNumberBox(IconScaleValue, IconScaleSlider, "0.00");
             BindNumberBox(LoopDurationValue, LoopDurationSlider, "0");
             BindNumberBox(LoopAmplitudeValue, LoopAmplitudeSlider, "0.00");
+            BindNumberBox(DecorationDensityValue, DecorationDensitySlider, "0.00");
+            BindNumberBox(ContourLevelsValue, ContourLevelsSlider, "0");
+            BindNumberBox(ContourEveningValue, ContourEveningSlider, "0.00");
+            BindNumberBox(ContourReliefValue, ContourReliefSlider, "0.00");
+            BindNumberBox(ContourSmoothValue, ContourSmoothSlider, "0");
+            BindNumberBox(ContourMinLoopValue, ContourMinLoopSlider, "0");
+            BindNumberBox(ContourSpeedValue, ContourSpeedSlider, "0.00");
             BindCliBoxes();
         }
 

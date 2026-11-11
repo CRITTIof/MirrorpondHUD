@@ -113,9 +113,15 @@ namespace MirrorpondHUD.Ui
             MonoReadoutsCheck.Unchecked += (s, e) => UiChanged();
             IndustrialHeaderCheck.Checked += (s, e) => UiChanged();
             IndustrialHeaderCheck.Unchecked += (s, e) => UiChanged();
-            DecorationCombo.SelectionChanged += (s, e) => UiChanged();
+            DecorationCombo.SelectionChanged += (s, e) => { UiChanged(); UpdateDecorationUiState(); };
+            DecorationDensitySlider.ValueChanged += (s, e) => UiChanged();
+            ContourLevelsSlider.ValueChanged += (s, e) => UiChanged();
+            ContourEveningSlider.ValueChanged += (s, e) => UiChanged();
+            ContourReliefSlider.ValueChanged += (s, e) => UiChanged();
+            ContourSmoothSlider.ValueChanged += (s, e) => UiChanged();
+            ContourMinLoopSlider.ValueChanged += (s, e) => UiChanged();
             MotionProfileCombo.SelectionChanged += (s, e) => UiChanged();
-            LoopEffectCombo.SelectionChanged += (s, e) => UiChanged();
+            LoopEffectCombo.SelectionChanged += (s, e) => { UiChanged(); UpdateLoopUiState(); };
             LoopDurationSlider.ValueChanged += (s, e) => UiChanged();
             LoopAmplitudeSlider.ValueChanged += (s, e) => UiChanged();
             SuccessColorBox.TextChanged += (s, e) => UiChanged();

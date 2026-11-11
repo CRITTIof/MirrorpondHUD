@@ -1,4 +1,4 @@
-# 版本修改记录（2.4.1 → 2.31.0）
+# 版本修改记录（2.4.1 → 2.32.0）
 
 > 范围：本文只记录**这一轮接手后我做的版本**（v2.4.1 起）。v2.4.0 及更早是既有历史，不在本文档里。
 > 数据全部取自仓库真实提交（`git diff --shortstat <上一版>..<本版>`），文件行的 `+ / -` 就是实际增删行数。
@@ -10,10 +10,10 @@
 > `f67a255` / `5f8933c` / `ef70cea`，**未发布、未合并**）；`v2.14.5`（`a0fe549`）/ `v2.14.6`（`3e6abc6`）
 > 已推送到 `origin/feature/runtime-card-loading`；
 > `v2.14.7`（`abcbcec`）/ `v2.14.8`（`633e9d6`）已随文档同步提交 `d73d2ec` 推送到同一分支（未发布、未合并）；
-> `v2.14.9`（`aba873a`）已推送；`v2.15.0`（`78d3381`）已推送（文档同步提交 `2eba9b4`）；`v2.16.0`（代码 `6406d96`，文档同步 `d1fd414`）**已推送并快进合并到 `main`**；`v2.17.0`（`27b8bbd`）/ `v2.18.0`（`1e1c6ac`）/ `v2.19.0`（`d21773c`）**已推送并快进合并到 `main`**；`v2.20.0`（代码 `d8f36ab`，文档 `de64021`）**已推送并快进合并到 `main`**；`v2.21.0`（代码 `0d687e9`，文档 `4911e1b`）**已推送并快进合并到 `main`**，未打 tag、未发布 Release；`v2.22.0`（代码为 `73837aa`–`2907be0` 的 12 个提交，文档同步本次提交）**已合并 `main`**，未打 tag、未发布 Release。 `v2.23.0`（本轮 6 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.24.0`（本轮 4 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.25.0`（本轮 2 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.26.0`（本轮 2 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.27.0`（本轮按审阅复核顺序修复 + 性能采样，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.28.0`（UX 批次，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.29.0`（性能 + M-1/M-4 + L-13 混合 DPI 实测，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.30.0`（终末地 M1–M6 选项 + M7/M8 调研，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.31.0`（M7 四档动效 + 循环效果 + M8 主题数据 + 边界拖动修复，未合并 main）**已完成**，未打 tag、未发布 Release。
+> `v2.14.9`（`aba873a`）已推送；`v2.15.0`（`78d3381`）已推送（文档同步提交 `2eba9b4`）；`v2.16.0`（代码 `6406d96`，文档同步 `d1fd414`）**已推送并快进合并到 `main`**；`v2.17.0`（`27b8bbd`）/ `v2.18.0`（`1e1c6ac`）/ `v2.19.0`（`d21773c`）**已推送并快进合并到 `main`**；`v2.20.0`（代码 `d8f36ab`，文档 `de64021`）**已推送并快进合并到 `main`**；`v2.21.0`（代码 `0d687e9`，文档 `4911e1b`）**已推送并快进合并到 `main`**，未打 tag、未发布 Release；`v2.22.0`（代码为 `73837aa`–`2907be0` 的 12 个提交，文档同步本次提交）**已合并 `main`**，未打 tag、未发布 Release。 `v2.23.0`（本轮 6 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.24.0`（本轮 4 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.25.0`（本轮 2 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.26.0`（本轮 2 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.27.0`（本轮按审阅复核顺序修复 + 性能采样，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.28.0`（UX 批次，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.29.0`（性能 + M-1/M-4 + L-13 混合 DPI 实测，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.30.0`（终末地 M1–M6 选项 + M7/M8 调研，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.31.0`（M7 四档动效 + 循环效果 + M8 主题数据 + 边界拖动修复，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.32.0`（ContourLine 等高线移植 + 纹样密度 + 等高线原地变化，未合并 main）**已完成**，未打 tag、未发布 Release。
 > `v2.14.1` / `v2.14.2` / `v2.14.4` 的规模用对应提交的 `git show --shortstat`；`v2.14.3` / `v2.14.5` / `v2.14.6`
 > 按当时提交前工作区的 `git diff --shortstat` 计算；`v2.14.7` / `v2.14.8` 用对应提交的 `git show --shortstat`；
-> `v2.14.9` 用提交前工作区的 `git diff --shortstat -- MirrorpondHUD.csproj src`；`v2.15.0` 用 `git show --shortstat 78d3381`；`v2.16.0` 用 `git show --shortstat 6406d96`；`v2.17.0` 用 `git show --shortstat 27b8bbd`；`v2.18.0` 用 `git show --shortstat 1e1c6ac`；`v2.19.0` 用 `git show --shortstat d21773c`；`v2.20.0` 用 `git show --shortstat d8f36ab`；`v2.21.0` 用 `git show --shortstat 0d687e9`（文档同步另计；评审指出的 `d6e1af3` 是未合并的游离提交，实际合并进 main 的是 `0d687e9`）；`v2.22.0` 用 `git diff --shortstat b366e32..4899f3f`（30 文件，+1116 / −246；版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.23.0` 用 `git diff --shortstat 6da03f0..HEAD`（58 文件，+6304 / −4618；版本号 15 文件 +15 / −15 与版本记录另计）。 `v2.24.0` 用 `git diff --shortstat 96acd1b..HEAD`（55 文件，+1876 / −301；版本号 15 文件 +15 / −15 与版本记录另计）。 `v2.25.0` 用 `git diff --shortstat 29efb91..HEAD`（24 文件，+520 / −153；版本号 15 文件 +15 / −15 与版本记录另计）。 `v2.26.0` 源码改动 14 文件，+165 / −87（版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.27.0` 源码改动 31 文件，+765 / −164（含新增 PerformanceProbe 127 行；版本号与文档同步另计）。 `v2.28.0` 源码改动 18 文件，+509 / −13（版本号与文档同步另计）。 `v2.29.0` 源码改动 19 文件，+864 / −297（含新增 `ScreenGeometry.cs` 194 行；版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.30.0` 源码改动 18 文件，+552 / −41（两套主题与 docs/UI 文档另计；版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.31.0` 源码改动 13 文件，+720 / −57（docs/UI 文档另计；版本号 15 文件 +15 / −15 与文档同步另计）。
+> `v2.14.9` 用提交前工作区的 `git diff --shortstat -- MirrorpondHUD.csproj src`；`v2.15.0` 用 `git show --shortstat 78d3381`；`v2.16.0` 用 `git show --shortstat 6406d96`；`v2.17.0` 用 `git show --shortstat 27b8bbd`；`v2.18.0` 用 `git show --shortstat 1e1c6ac`；`v2.19.0` 用 `git show --shortstat d21773c`；`v2.20.0` 用 `git show --shortstat d8f36ab`；`v2.21.0` 用 `git show --shortstat 0d687e9`（文档同步另计；评审指出的 `d6e1af3` 是未合并的游离提交，实际合并进 main 的是 `0d687e9`）；`v2.22.0` 用 `git diff --shortstat b366e32..4899f3f`（30 文件，+1116 / −246；版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.23.0` 用 `git diff --shortstat 6da03f0..HEAD`（58 文件，+6304 / −4618；版本号 15 文件 +15 / −15 与版本记录另计）。 `v2.24.0` 用 `git diff --shortstat 96acd1b..HEAD`（55 文件，+1876 / −301；版本号 15 文件 +15 / −15 与版本记录另计）。 `v2.25.0` 用 `git diff --shortstat 29efb91..HEAD`（24 文件，+520 / −153；版本号 15 文件 +15 / −15 与版本记录另计）。 `v2.26.0` 源码改动 14 文件，+165 / −87（版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.27.0` 源码改动 31 文件，+765 / −164（含新增 PerformanceProbe 127 行；版本号与文档同步另计）。 `v2.28.0` 源码改动 18 文件，+509 / −13（版本号与文档同步另计）。 `v2.29.0` 源码改动 19 文件，+864 / −297（含新增 `ScreenGeometry.cs` 194 行；版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.30.0` 源码改动 18 文件，+552 / −41（两套主题与 docs/UI 文档另计；版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.31.0` 源码改动 13 文件，+720 / −57（docs/UI 文档另计；版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.32.0` 源码改动 15 文件，+1,546 / −83（含新增 `src/Ui/Contour/*` 7 个文件；版本号 15 文件 +15 / −15 与文档同步另计）。
 
 ## 0. 总览
 
@@ -84,6 +84,7 @@
 | v2.29.0 | 2026-11-11 | 性能 + 模块化 + 混合 DPI | TextCanvas 排版缓存、GlassFeed 缓冲复用、`ICardDefaultProvider` 默认卡注册表化、删除 `ICardHostAware`、L-13 物理像素定位 / 4K@300% 实测 | 19 文件，+864 / −297（版本号与版本记录另计） |
 | v2.30.0 | 2026-11-11 | 终末地 M1–M6 | 两套终末地主题、圆角跟随配置、Success/Warning 令牌、等宽读数、CardHeader 铭牌、六种装饰纹样；M7/M8 可行性调研 | 18 文件，+552 / −41（主题与 UI 文档另计） |
 | v2.31.0 | 2026-11-11 | M7/M8 与边界拖动 | 四档动效 + 循环效果（None/Breath/Scanline/Pulse，时长/幅度可调，注明 GPU 代价）、`appearance.motion` 主题数据、跨 DPI 拖动修复、状态色取色器 | 13 文件，+720 / −57（文档另计） |
+| v2.32.0 | 2026-11-11 | 等高线 + 纹样密度 | 按 `samples/ContourLine` 移植地形等高线（级数/均衡/起伏/平滑/最小闭环），删除首/计曲线与注记；新增 `LoopEffect=Contour` 原地形变与纹样密度 | 15 文件，+1,546 / −83（文档另计） |
 
 ---
 
@@ -3024,16 +3025,67 @@ M7 / M8 只有调研没有实现。本轮一起收口。
 
 ---
 
-## 66. 不在版本里的东西
+## 66. v2.32.0（ContourLine 等高线 + 纹样密度 + 等高线原地变化，未合并 main）
+
+### 背景
+
+2.31.0 的 `Contour` 还是“波形线 + 偏心环”的示意纹样，不像真正的地形图；
+`Grid / Scanline / Hatch / Halftone` 的疏密固定；循环效果只有呼吸 / 扫描线 / 描边脉冲。
+本轮按 `samples/ContourLine` 移植地形等高线，并补密度与原地变化动画。
+
+### 改动
+
+1. **移植 ContourLine 核心算法**：`src/Ui/Contour/` 新增 `NoiseField`、`TerrainField`、
+   `ScalarGrid`、`FieldEqualizer`、`ContourExtractor`、`ContourLevels`、
+   `ContourDecoration`；链路为“地形场 → 网格采样 → marching squares → 串联 → Chaikin → StreamGeometry”。
+2. **保留五项设置**：`ContourLevels`（3–48）、`ContourEvening`（0–1）、
+   `ContourRelief`（0.2–4.0）、`ContourSmooth`（0–6）、`ContourMinLoopArea`（0–5000）。
+3. **删除首曲线 / 计曲线区别**：`ContourLevels` 不再有 `IsIndex`，所有线同色同宽；
+   `ContourExtractor` 不再生成注记 / 示坡线，界面上也没有高程数字和标记。
+4. **等高线原地变化进循环效果**：`LoopEffect` 增加 `Contour`；`TerrainField` 在两套固定地形场
+   之间按 phase 做余弦混合，轮廓原地形变、不整体漂移；每 130ms 重算几何，`ContourSpeed`
+   （0.1–4.0，默认 1.0 ≈ 4 秒一周期）控制速度。选中 Contour 时设置页把“循环时长/呼吸幅度”
+   换成“变化速度”；只有 Breath 才显示呼吸幅度。性能代价：这是唯一会重新分配几何的循环，
+   卡片越大越贵；4K 大卡建议关闭或降低速度。
+5. **其他纹样密度**：`Style.DecorationDensity`（0–2，0.5 = 原间距），作用于
+   Grid / Scanline / Hatch / Halftone；等高线用五项专用参数，不受它影响。
+6. **设置页 / 主题**：纹样密度与等高线参数按选择互斥显示（选等高线隐藏密度、显示五项参数）；
+   `appearance.industrial` 增加对应字段；`appearance.motion.effect` 增加 `Contour` 与 `speed`。
+7. **版本**：宿主 / Contracts / UiKit / 6 个插件工程与 manifest 统一 2.32.0；
+   Schema 仍为 7，插件 API 仍为 2，主题 schema 仍为 1。
+
+### 验证
+
+- `dotnet build -c Release`：**0 警告 0 错误**；
+- `--selftest`：**退出码 0、失败项 0**；新增等高线级数/范围夹取、主题往返（含五项等高线
+  参数与密度）；
+- 墨版 `--screenshot-cards`：16 级等高线呈现真实地形闭合线 / 山谷走向，圆角裁剪正确，
+  没有高程数字与计曲线加粗；
+- `--smoke 7 --smoke-visible`（`Decoration=Contour` + `LoopEffect=Contour`）：退出码 0，
+  无新异常；日志里的 ALC WARN 是既有卸载探针噪音；
+- 设置页可见纹样密度、五项等高线参数、循环效果（含“等高线变化（原地形变）”）；
+  选 Contour 时只显示“变化速度”，选 Breath 时才显示呼吸幅度。
+
+### 风险 / 未验证
+
+- 等高线生成在 UI 线程；卡片小（约 300×80）时很轻，4K 大卡 + Contour 原地变化会明显更贵；
+- 默认 12 级；16 级在信息卡上偏密，属用户可调范围；
+- 地形是示意地形，不对应真实高程；没有注记是刻意的（按本轮要求删除）；
+- 纹样密度只影响非等高线纹样；等高线的疏密由级数 / 均衡决定；
+- 未做逐 DPI 的线宽微调，4K 下细线仍按 WPF 像素对齐。
+
+---
+
+## 67. 不在版本里的东西
 
 - 验收脚本、样张与测量脚本都在仓库外维护，**没有提交**。
 - 发布：`main` 与标签已推送到 [github.com/CRITTIof/MirrorpondHUD](https://github.com/CRITTIof/MirrorpondHUD)；
   [v2.9.2 Release](https://github.com/CRITTIof/MirrorpondHUD/releases/tag/v2.9.2) 只有两个附件
   （`MirrorpondHUD-x64-requires-dotnet.exe`、`MirrorpondHUD-arm64-requires-dotnet.exe`，均需 .NET 8 桌面运行时，已自签名）；
   更早的 Release 正文与附件保留原样，v2.4.0 的 Release 已删除（tag `v2.4.0` 保留，历史仍可检出）。
-- 仓库追踪的文件共 212 个（v2.21.0 时 174 个；2.23.0 结构性拆分 +20，2.24.0 +7，2.25.0 新增 CardMotion +1，2.27.0 新增 PerformanceProbe / 性能基线 +2，2.29.0 新增 ScreenGeometry +1、删除 CardDefaults / InfoTextDefaults −2，2.30.0 新增两套终末地主题 +2、docs/UI 三篇 +3，2.31.0 新增 M7/M8 实现记录 +1），`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
+- 仓库追踪的文件共 219 个（v2.21.0 时 174 个；2.23.0 结构性拆分 +20，2.24.0 +7，2.25.0 新增 CardMotion +1，2.27.0 新增 PerformanceProbe / 性能基线 +2，2.29.0 新增 ScreenGeometry +1、删除 CardDefaults / InfoTextDefaults −2，2.30.0 新增两套终末地主题 +2、docs/UI 三篇 +3，2.31.0 新增 M7/M8 实现记录 +1，2.32.0 新增等高线核心 +7），`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
 
-## 67. 已知代价（跨版本）
+## 68. 已知代价（跨版本）
 
 - 桌面亚克力为了不拍到自己，会把卡片排除在截屏之外 —— 这个模式下截图 / 录屏里**看不到卡片**，观感只能靠肉眼与离屏渲染验证。
 - 兼容实现每帧对身后窗口做 `PrintWindow`，拖动时最多 ~21 帧/秒；要更高只能走桌面亚克力（DXGI）。

@@ -112,6 +112,13 @@ namespace MirrorpondHUD.Core
             Style.ScrollbarHot = NormalizeColorToken(Style.ScrollbarHot, "");
             Style.MonoFont = (Style.MonoFont ?? "").Trim();
             Style.Decoration = NormalizeDecoration(Style.Decoration);
+            Style.DecorationDensity = Clamp(Style.DecorationDensity, 0, 2);
+            Style.ContourLevels = (int)Clamp(Style.ContourLevels, 3, 48);
+            Style.ContourEvening = Clamp(Style.ContourEvening, 0, 1);
+            Style.ContourRelief = Clamp(Style.ContourRelief, 0.2, 4.0);
+            Style.ContourSmooth = (int)Clamp(Style.ContourSmooth, 0, 6);
+            Style.ContourMinLoopArea = Clamp(Style.ContourMinLoopArea, 0, 5000);
+            Style.ContourSpeed = Clamp(Style.ContourSpeed, 0.1, 4.0);
             Style.MotionProfile = NormalizeMotionProfile(Style.MotionProfile);
             Style.LoopEffect = NormalizeLoopEffect(Style.LoopEffect, Style.LoopMotion);
             Style.LoopMotion = Style.LoopEffect != "None";
@@ -231,6 +238,9 @@ namespace MirrorpondHUD.Core
                 case "pulse":
                 case "border":
                     return "Pulse";
+                case "contour":
+                case "drift":
+                    return "Contour";
                 case "none":
                     return "None";
                 default:
@@ -544,6 +554,30 @@ namespace MirrorpondHUD.Core
         /// 默认 None；只作为低透明度点缀，不参与命中测试，也不改变排版。
         /// </summary>
         public string Decoration = "None";
+
+        /// <summary>
+        /// 非等高线纹样的密度：0 = 最疏，2 = 最密；0.5 = 原来的间距。
+        /// 等高线用下面五个专用参数，不受这个值影响。
+        /// </summary>
+        public double DecorationDensity = 0.5;
+
+        /// <summary>等高线级数（3–48）。</summary>
+        public int ContourLevels = 12;
+
+        /// <summary>疏密均衡 0–1：0 完全按真实坡度，1 在画面上彻底摊匀。</summary>
+        public double ContourEvening = 0.72;
+
+        /// <summary>地形起伏 0.2–4.0：越大山体越大、等高线越舒展。</summary>
+        public double ContourRelief = 1.0;
+
+        /// <summary>Chaikin 平滑轮数 0–6。</summary>
+        public int ContourSmooth = 2;
+
+        /// <summary>最小闭合环面积（平方像素，0–5000）；小于它的闭环直接不画。</summary>
+        public double ContourMinLoopArea = 26.0;
+
+        /// <summary>等高线原地形变速度（0.1–4.0）；1.0 约 4 秒走完一个形变循环。</summary>
+        public double ContourSpeed = 1.0;
 
     }
 

@@ -547,9 +547,87 @@
                                 <ComboBoxItem Content="扫描线（终端底纹）" Tag="Scanline" />
                                 <ComboBoxItem Content="45° 斜纹（危险 / 施工）" Tag="Hatch" />
                                 <ComboBoxItem Content="半调网点（标题条渐隐）" Tag="Halftone" />
-                                <ComboBoxItem Content="等高线（工程图）" Tag="Contour" />
+                                <ComboBoxItem Content="等高线（地形图）" Tag="Contour" />
                             </ComboBox>
                         </Grid>
+
+                        <Grid x:Name="DecorationDensityRow" Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="110" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="纹样密度" VerticalAlignment="Center" />
+                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <Slider x:Name="DecorationDensitySlider" Width="260" Minimum="0" Maximum="2" />
+                                <TextBox x:Name="DecorationDensityValue" Width="58" Margin="10,0,0,0" TextAlignment="Right" />
+                            </StackPanel>
+                        </Grid>
+
+                        <StackPanel x:Name="ContourOptionsPanel">
+                        <TextBlock Text="等高线" Style="{StaticResource SectionTitle}" Margin="0,12,0,6" />
+
+                        <Grid Margin="0,0,0,6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="110" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="级数" VerticalAlignment="Center" />
+                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <Slider x:Name="ContourLevelsSlider" Width="260" Minimum="3" Maximum="48" />
+                                <TextBox x:Name="ContourLevelsValue" Width="58" Margin="10,0,0,0" TextAlignment="Right" />
+                            </StackPanel>
+                        </Grid>
+
+                        <Grid Margin="0,0,0,6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="110" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="疏密均衡" VerticalAlignment="Center" />
+                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <Slider x:Name="ContourEveningSlider" Width="260" Minimum="0" Maximum="1" />
+                                <TextBox x:Name="ContourEveningValue" Width="58" Margin="10,0,0,0" TextAlignment="Right" />
+                            </StackPanel>
+                        </Grid>
+
+                        <Grid Margin="0,0,0,6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="110" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="地形起伏" VerticalAlignment="Center" />
+                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <Slider x:Name="ContourReliefSlider" Width="260" Minimum="0.2" Maximum="4.0" />
+                                <TextBox x:Name="ContourReliefValue" Width="58" Margin="10,0,0,0" TextAlignment="Right" />
+                            </StackPanel>
+                        </Grid>
+
+                        <Grid Margin="0,0,0,6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="110" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="平滑轮数" VerticalAlignment="Center" />
+                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <Slider x:Name="ContourSmoothSlider" Width="260" Minimum="0" Maximum="6"
+                                        IsSnapToTickEnabled="True" TickFrequency="1" />
+                                <TextBox x:Name="ContourSmoothValue" Width="58" Margin="10,0,0,0" TextAlignment="Right" />
+                            </StackPanel>
+                        </Grid>
+
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="110" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="最小闭合环" VerticalAlignment="Center" />
+                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <Slider x:Name="ContourMinLoopSlider" Width="260" Minimum="0" Maximum="5000" />
+                                <TextBox x:Name="ContourMinLoopValue" Width="58" Margin="10,0,0,0" TextAlignment="Right" />
+                                <TextBlock Text="px²" VerticalAlignment="Center" Margin="6,0,0,0" />
+                            </StackPanel>
+                        </Grid>
+                        </StackPanel>
 
                         <Grid Margin="0,0,0,10">
                             <Grid.ColumnDefinitions>
@@ -576,10 +654,11 @@
                                 <ComboBoxItem Content="呼吸（整卡明暗）" Tag="Breath" />
                                 <ComboBoxItem Content="扫描线（横线扫过）" Tag="Scanline" />
                                 <ComboBoxItem Content="脉冲（描边明暗）" Tag="Pulse" />
+                                <ComboBoxItem Content="等高线变化（原地形变）" Tag="Contour" />
                             </ComboBox>
                         </Grid>
 
-                        <Grid Margin="0,0,0,10">
+                        <Grid x:Name="LoopDurationRow" Margin="0,0,0,10">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="110" />
                                 <ColumnDefinition Width="*" />
@@ -592,7 +671,7 @@
                             </StackPanel>
                         </Grid>
 
-                        <Grid Margin="0,0,0,10">
+                        <Grid x:Name="LoopAmplitudeRow" Margin="0,0,0,10">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="110" />
                                 <ColumnDefinition Width="*" />
@@ -604,8 +683,22 @@
                             </StackPanel>
                         </Grid>
 
+                        <Grid x:Name="ContourSpeedRow" Margin="0,0,0,10" Visibility="Collapsed">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="110" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="变化速度" VerticalAlignment="Center" />
+                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <Slider x:Name="ContourSpeedSlider" Width="260" Minimum="0.1" Maximum="4.0" />
+                                <TextBox x:Name="ContourSpeedValue" Width="58" Margin="10,0,0,0" TextAlignment="Right" />
+                                <TextBlock Text="×（1.0 ≈ 4 秒一个形变周期）" VerticalAlignment="Center" Margin="8,0,0,0"
+                                           Style="{StaticResource Hint}" />
+                            </StackPanel>
+                        </Grid>
+
                         <TextBlock Style="{StaticResource Hint}" Margin="110,0,0,10"
-                                   Text="循环效果会持续占用 GPU 合成；0.10 是克制档，0.3 以上会明显压文字。减少动效开启时自动停。" />
+                                   Text="循环效果会持续占用 GPU；等高线变化还会每 130ms 重算几何，CPU 更贵。呼吸幅度 0.10 是克制档。减少动效开启时自动停。" />
 
                         <TextBlock Text="高级（实验性）" Style="{StaticResource SectionTitle}" Margin="0,18,0,6" />
 
