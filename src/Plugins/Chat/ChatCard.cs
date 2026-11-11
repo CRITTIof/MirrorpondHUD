@@ -287,7 +287,7 @@ internal sealed class ChatView : CliPanelView, IDisposable
     /// </summary>
     internal static bool IsSafeEndpoint(string baseUrl, bool hasKey)
     {
-        if (!Uri.TryCreate((baseUrl ?? "").Trim(), UriKind.Absolute, out Uri uri)) return false;
+        if (!Uri.TryCreate((baseUrl ?? "").Trim(), UriKind.Absolute, out var uri)) return false;
 
         if (string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)) return true;
         if (!string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)) return false;
@@ -629,7 +629,7 @@ internal sealed class ChatView : CliPanelView, IDisposable
     /// <summary>从 BaseUrl 里取主机名给日志用；地址写坏也不让日志行抛异常。</summary>
     static string HostOf(string url)
     {
-        if (!string.IsNullOrWhiteSpace(url) && Uri.TryCreate(url.Trim(), UriKind.Absolute, out Uri uri))
+        if (!string.IsNullOrWhiteSpace(url) && Uri.TryCreate(url.Trim(), UriKind.Absolute, out var uri))
             return uri.IsDefaultPort ? uri.Host : $"{uri.Host}:{uri.Port}";
         return "(地址无效)";
     }

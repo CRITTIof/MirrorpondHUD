@@ -269,7 +269,7 @@ internal sealed class GlassRuntime : IDisposable
         IntPtr hwnd = new WindowInteropHelper(_window).Handle;
         if (hwnd == IntPtr.Zero) return;
 
-        if (!Native.GetWindowRect(hwnd, out Native.Rect rect)) return;
+        if (!Native.GetWindowRect(hwnd, out var rect)) return;
 
         int width = rect.Right - rect.Left;
         int height = rect.Bottom - rect.Top;

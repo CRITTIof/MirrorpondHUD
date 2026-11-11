@@ -142,7 +142,7 @@ public sealed class ThemeDocument
         if (Colors.Success is not null) style.Success = Colors.Success;
         if (Colors.Warning is not null) style.Warning = Colors.Warning;
 
-        bool hasForeground = ColorCode.TryParse(style.Foreground, out byte a, out byte r, out byte g, out byte b);
+        bool hasForeground = ColorCode.TryParse(style.Foreground, out var a, out var r, out var g, out var b);
         ApplySoft(Colors.Muted, hasForeground, a, r, g, b, ref style.Muted);
         ApplySoft(Colors.Border, hasForeground, a, r, g, b, ref style.Border);
         ApplySoft(Colors.Panel, hasForeground, a, r, g, b, ref style.Panel);
@@ -228,7 +228,7 @@ public static class ThemeFile
     /// </summary>
     public static bool TryImport(string path, Settings source, out Settings applied, out string error)
     {
-        if (TryImportCore(path, source, out applied, out string stage, out error))
+        if (TryImportCore(path, source, out applied, out var stage, out error))
             return true;
 
         // 失败必须可见（AGENTS §5）：设置窗只会显示一句 error，事后排障只能靠这条日志。
@@ -245,14 +245,14 @@ public static class ThemeFile
         error = null;
         stage = "读取主题文件";
 
-        if (!TryReadTextBounded(path, out string json, out string readError))
+        if (!TryReadTextBounded(path, out var json, out var readError))
         {
             error = readError;
             return false;
         }
 
         stage = "解析主题文件";
-        if (!TryParse(json, out ThemeDocument document, out string parseError))
+        if (!TryParse(json, out var document, out var parseError))
         {
             error = parseError;
             return false;
@@ -381,7 +381,7 @@ public static class ThemeFile
     /// <summary>把当前外观写成 `.mptheme`（UTF-8 无 BOM）。失败返回 false。</summary>
     public static bool TryExport(Settings settings, string path, out string error)
     {
-        if (TryExportCore(settings, path, out string stage, out error))
+        if (TryExportCore(settings, path, out var stage, out error))
             return true;
 
         // 失败必须可见（AGENTS §5）：设置窗只显示 error，排障时要靠日志区分
@@ -786,11 +786,11 @@ public static class ThemeFile
             _path = path;
         }
 
-        public bool Has(string key) => _map.TryGetValue(key, out object node) && node is not null;
+        public bool Has(string key) => _map.TryGetValue(key, out var node) && node is not null;
 
         public ThemeObject Child(string key)
         {
-            if (!_map.TryGetValue(key, out object node) || node is null) return null;
+            if (!_map.TryGetValue(key, out var node) || node is null) return null;
 
             var map = node as Dictionary<string, object>;
             if (map is null)
@@ -803,7 +803,7 @@ public static class ThemeFile
 
         public string String(string key)
         {
-            if (!_map.TryGetValue(key, out object node) || node is null) return null;
+            if (!_map.TryGetValue(key, out var node) || node is null) return null;
             if (!(node is string))
             {
                 Fail(key, "必须是字符串");
@@ -814,7 +814,7 @@ public static class ThemeFile
 
         public double? Number(string key)
         {
-            if (!_map.TryGetValue(key, out object node) || node is null) return null;
+            if (!_map.TryGetValue(key, out var node) || node is null) return null;
             if (!(node is double))
             {
                 Fail(key, "必须是数字");
@@ -825,7 +825,7 @@ public static class ThemeFile
 
         public bool? Bool(string key)
         {
-            if (!_map.TryGetValue(key, out object node) || node is null) return null;
+            if (!_map.TryGetValue(key, out var node) || node is null) return null;
             if (!(node is bool))
             {
                 Fail(key, "必须是 true / false");
@@ -883,7 +883,7 @@ public static class ThemeFile
 
         public ThemeSoftColor? Soft(string key)
         {
-            if (!_map.TryGetValue(key, out object node) || node is null) return null;
+            if (!_map.TryGetValue(key, out var node) || node is null) return null;
 
             if (node is string)
             {

@@ -187,21 +187,18 @@
 using MirrorpondHUD.Cards;
 using MirrorpondHUD.Core;
 
-namespace MyCard
-{
-    public sealed class MyCardModule : CardModuleBase
-    {
-        public override string Kind { get { return "my-card"; } }
-        public override string DisplayName { get { return "我的卡片"; } }
-        public override string Icon { get { return "\uE100"; } }
-        public override string DefaultContent { get { return "CPU {cpu:0.0}%"; } }
-        public override int RefreshIntervalMs(CardSettings config) { return 1000; }
+namespace MyCard;
 
-        public override string Render(CardRenderContext context)
-        {
-            return "CPU " + context.Snapshot.CpuPercent.ToString("0.0") + "%";
-        }
-    }
+public sealed class MyCardModule : CardModuleBase
+{
+    public override string Kind => "my-card";
+    public override string DisplayName => "我的卡片";
+    public override string Icon => "\uE100";
+    public override string DefaultContent => "CPU {cpu:0.0}%";
+    public override int RefreshIntervalMs(CardSettings config) => 1000;
+
+    public override string Render(CardRenderContext context)
+        => $"CPU {context.Snapshot.CpuPercent:0.0}%";
 }
 ```
 
@@ -250,24 +247,23 @@ using System.Windows;
 using MirrorpondHUD.Cards;
 using MirrorpondHUD.Core;
 
-namespace MyCard
-{
-    public sealed class MyRichCard : RichCardModuleBase
-    {
-        public override string Kind { get { return "my-rich-card"; } }
-        public override string DisplayName { get { return "我的富卡片"; } }
-        public override string Icon { get { return "\uE106"; } }
-        public override bool NeedsMouseInput { get { return true; } }
+namespace MyCard;
 
-        public override FrameworkElement CreateContent(CardRenderContext context)
+public sealed class MyRichCard : RichCardModuleBase
+{
+    public override string Kind => "my-rich-card";
+    public override string DisplayName => "我的富卡片";
+    public override string Icon => "\uE106";
+    public override bool NeedsMouseInput => true;
+
+    public override FrameworkElement CreateContent(CardRenderContext context)
+    {
+        var panel = new System.Windows.Controls.StackPanel();
+        panel.Children.Add(new System.Windows.Controls.TextBlock
         {
-            var panel = new System.Windows.Controls.StackPanel();
-            panel.Children.Add(new System.Windows.Controls.TextBlock
-            {
-                Text = "CPU " + context.Snapshot.CpuPercent.ToString("0.0") + "%"
-            });
-            return panel;
-        }
+            Text = $"CPU {context.Snapshot.CpuPercent:0.0}%"
+        });
+        return panel;
     }
 }
 ```
@@ -949,9 +945,7 @@ host 属于哪一张，这个扩展点只会被写错。需要宿主服务的插
 public sealed class MyCard : CardModuleBase, ICardHotkeySource, ICardHotkeyTarget
 {
     public IList<CardHotkeyAction> HotkeyActions
-    {
-        get { return new List<CardHotkeyAction> { new CardHotkeyAction("my.refresh", "刷新", "Ctrl+Alt+R") }; }
-    }
+        => new List<CardHotkeyAction> { new CardHotkeyAction("my.refresh", "刷新", "Ctrl+Alt+R") };
 
     public void ExecuteHotkey(string action, FrameworkElement content) { /* ... */ }
 }
@@ -1386,21 +1380,18 @@ MyCard/
 using MirrorpondHUD.Cards;
 using MirrorpondHUD.Core;
 
-namespace MyCard
-{
-    public sealed class MyCardModule : CardModuleBase
-    {
-        public override string Kind { get { return "my-card"; } }
-        public override string DisplayName { get { return "我的卡片"; } }
-        public override string Icon { get { return Icons.Txt; } }
-        public override string DefaultContent { get { return "CPU {cpu:0.0}%"; } }
-        public override int Order { get { return 40; } }
+namespace MyCard;
 
-        public override string Render(CardRenderContext context)
-        {
-            return context.RenderOrDefault(DefaultContent);
-        }
-    }
+public sealed class MyCardModule : CardModuleBase
+{
+    public override string Kind => "my-card";
+    public override string DisplayName => "我的卡片";
+    public override string Icon => Icons.Txt;
+    public override string DefaultContent => "CPU {cpu:0.0}%";
+    public override int Order => 40;
+
+    public override string Render(CardRenderContext context)
+        => context.RenderOrDefault(DefaultContent);
 }
 ```
 

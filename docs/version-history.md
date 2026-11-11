@@ -3143,9 +3143,9 @@ M7 / M8 只有调研没有实现。本轮一起收口。
 
 ### 背景
 
-`docs/review/modern-csharp-assessment.md` 对 2.33.0 做了现代化评估：全量 Nullable / record / 属性化 DTO
-会撞 JSON 反射、P/Invoke 布局和插件 ABI；建议先做治理（A），再做不改变成员形状的机械语法（B）。
-本轮按用户确认执行 A+B，并同步把 `AGENTS.md` 的风格条款改为“现代语法默认、契约/互操作红线”。
+2.33.0 的现代化评估结论：全量 Nullable / record / 属性化 DTO 会撞 JSON 反射、P/Invoke 布局和
+插件 ABI；建议先做治理（A），再做不改变成员形状的机械语法（B）。本轮按用户确认执行 A+B，
+并同步把 `AGENTS.md` 的风格条款改为“现代语法默认、契约/互操作红线”。
 
 ### 改动
 
@@ -3178,11 +3178,22 @@ M7 / M8 只有调研没有实现。本轮一起收口。
 
 ### 风险 / 未验证
 
-- 这是 **4 万行级别的重排 diff**，git blame / bisect 会断层；已单独提交，便于整体 revert；
+- 这是 **4 万行级别的重排 diff**，git blame / bisect 会断层；已单独提交并写入 `.git-blame-ignore-revs`，便于整体 revert；
 - 没有开启 Nullable / ImplicitUsings / record / 分析器（报告判定为当前 No-Go）；
 - 没有做 ARM64 实机验证；P/Invoke 字段布局虽未改，仍建议发布前在 ARM64 跑一次冒烟/截图；
 - 字符串插值只覆盖安全子集；多行消息、XAML 模板、含花括号的常量拼接保持原样；
 - 插件 API 版本保持 2；DTO 字段与公共成员形状未变，已编译插件理论上无需重编译，但本轮没有外部插件实机回归。
+
+### 2.34.0 复核修复（2026-11-11）
+
+- **P1**：`SelfTest` 的 manifest 版本断言只看 `builtin.*`，不再把用户插件算进去；
+  新增临时目录正反例（用户插件版本不一致被忽略、builtin 错版本仍失败）。
+- **P2**：`dotnet format style/whitespace --verify-no-changes` 均为 0；统一 18 个文件的行尾/空白，
+  修 `TrayIcon` 的 IDE0090；`out var` 实际转换 172 处（`Enum.TryParse` 的泛型推断点保留显式类型）。
+- **P3**：新增 `.git-blame-ignore-revs` 并写入 B 提交 `8d2b91e`；`LucideIcons.cs` 标记
+  `generated_code`；插件指南示例改现代语法；`samples/ContourLine` 去掉显式 LangVersion；
+  版本记录不再依赖未入库的评估文件路径。
+- 复核后：构建 0/0、自检 0、format 两项 verify 0。
 
 ---
 

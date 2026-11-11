@@ -127,7 +127,7 @@ public static class ConfigStore
 
                 if (!brokenBackupFailed)
                 {
-                    if (TryLoadBackup(out Settings backupSettings, out bool backupMigrated, out bool backupFuture))
+                    if (TryLoadBackup(out var backupSettings, out var backupMigrated, out var backupFuture))
                     {
                         settings = backupSettings;
                         migrated = backupMigrated;
@@ -147,7 +147,7 @@ public static class ConfigStore
         else
         {
             // 主文件缺失（杀软隔离 / OneDrive 占位 / 误删）：不要直接覆盖成默认值，先看 .bak。
-            if (TryLoadBackup(out Settings backupSettings, out bool backupMigrated, out bool backupFuture))
+            if (TryLoadBackup(out var backupSettings, out var backupMigrated, out var backupFuture))
             {
                 settings = backupSettings;
                 migrated = backupMigrated;
@@ -246,7 +246,7 @@ public static class ConfigStore
                 return true;
             }
 
-            settings = SettingsLoader.Load(text, out bool needsSave, out bool bad, out bool isFuture);
+            settings = SettingsLoader.Load(text, out var needsSave, out var bad, out var isFuture);
             migrated = needsSave;
             corrupted = bad;
             future = isFuture;
@@ -275,7 +275,7 @@ public static class ConfigStore
             string text = File.ReadAllText(backup, Encoding.UTF8);
             if (string.IsNullOrWhiteSpace(text)) return false;
 
-            Settings loaded = SettingsLoader.Load(text, out bool needsSave, out bool bad, out bool isFuture);
+            Settings loaded = SettingsLoader.Load(text, out var needsSave, out var bad, out var isFuture);
             if (bad) return false;
 
             settings = loaded;

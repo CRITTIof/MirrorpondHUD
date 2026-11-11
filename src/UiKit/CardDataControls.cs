@@ -154,7 +154,8 @@ public sealed class CardTag : Border, ICardFormControl
     public event Action<CardTag> Removed;
 
     public string Text
-    { get => _text.Text ?? ""; set => _text.Text = value ?? "";
+    {
+        get => _text.Text ?? ""; set => _text.Text = value ?? "";
     }
 
     public CardBadgeTone Tone
@@ -246,23 +247,28 @@ public sealed class CardMetricTile : Border, ICardFormControl
     }
 
     public string Title
-    { get => _title.Text ?? ""; set => _title.Text = value ?? "";
+    {
+        get => _title.Text ?? ""; set => _title.Text = value ?? "";
     }
 
     public string Value
-    { get => _value.Text ?? ""; set => _value.Text = value ?? "";
+    {
+        get => _value.Text ?? ""; set => _value.Text = value ?? "";
     }
 
     public string Unit
-    { get => _unit.Text ?? ""; set => _unit.Text = value ?? "";
+    {
+        get => _unit.Text ?? ""; set => _unit.Text = value ?? "";
     }
 
     public string Caption
-    { get => _caption.Text ?? ""; set => _caption.Text = value ?? "";
+    {
+        get => _caption.Text ?? ""; set => _caption.Text = value ?? "";
     }
 
     public string Delta
-    { get => _delta.Text ?? ""; set => _delta.Text = value ?? "";
+    {
+        get => _delta.Text ?? ""; set => _delta.Text = value ?? "";
     }
 
     public string Icon
@@ -795,15 +801,18 @@ public sealed class CardTable : Grid, ICardFormControl
     }
 
     public SelectionMode SelectionMode
-    { get => _list.SelectionMode; set => _list.SelectionMode = value;
+    {
+        get => _list.SelectionMode; set => _list.SelectionMode = value;
     }
 
     public object SelectedItem
-    { get => _list.SelectedItem; set => _list.SelectedItem = value;
+    {
+        get => _list.SelectedItem; set => _list.SelectedItem = value;
     }
 
     public int SelectedIndex
-    { get => _list.SelectedIndex; set => _list.SelectedIndex = value;
+    {
+        get => _list.SelectedIndex; set => _list.SelectedIndex = value;
     }
 
     public IList SelectedItems => _list.SelectedItems;

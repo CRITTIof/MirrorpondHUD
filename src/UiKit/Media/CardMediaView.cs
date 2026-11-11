@@ -266,7 +266,7 @@ public sealed class CardMediaView : Grid, IDisposable
     static Color ParseColor(string text)
     {
         Color fallback = Color.FromRgb(0xE6, 0xED, 0xF3);
-        return ColorCode.TryParse(text, out byte a, out byte r, out byte g, out byte b)
+        return ColorCode.TryParse(text, out var a, out var r, out var g, out var b)
             ? Color.FromArgb(a, r, g, b)
             : fallback;
     }

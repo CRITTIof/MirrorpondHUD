@@ -20,6 +20,10 @@ indent_size = 2
 end_of_line = lf
 trim_trailing_whitespace = false
 
+[src/Contracts/Core/LucideIcons.cs]
+# 6,900 行图标码位静态表：不参与格式化，避免每次工具变更产生整文件重排。
+generated_code = true
+
 [*.cs]
 # 现代化风格（B 批次的机械项）；只作为 dotnet format 的输入，不提升为构建错误。
 csharp_style_namespace_declarations = file_scoped:warning

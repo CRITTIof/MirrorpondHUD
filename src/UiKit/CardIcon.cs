@@ -31,7 +31,8 @@ public sealed class CardIcon : TextBlock, ICardFormControl
 
     /// <summary>Lucide 字形，推荐用 <see cref="LucideIcons"/> 里的常量或 <see cref="LucideIcons.Get"/>。</summary>
     public string Icon
-    { get => Text ?? ""; set => Text = value ?? "";
+    {
+        get => Text ?? ""; set => Text = value ?? "";
     }
 
     /// <summary>图标字号（DIP）；默认 16。</summary>

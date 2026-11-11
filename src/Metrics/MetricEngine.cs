@@ -206,7 +206,7 @@ public sealed class MetricEngine : IDisposable
         {
             InstanceValue item = instances[i];
             string luid = ExtractLuid(item.Name);
-            if (!byLuid.TryGetValue(luid, out double acc))
+            if (!byLuid.TryGetValue(luid, out var acc))
             {
                 acc = 0;
                 keys.Add(luid);

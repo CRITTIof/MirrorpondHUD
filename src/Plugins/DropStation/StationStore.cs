@@ -57,7 +57,7 @@ internal sealed class StationStore
         autoRemoved = 0;
         var items = new List<StationItem>();
 
-        StationState state = ReadState(out bool readFailed);
+        StationState state = ReadState(out var readFailed);
         if (readFailed)
         {
             EnterReadOnly("列表文件读取失败");
@@ -186,7 +186,7 @@ internal sealed class StationStore
                     return;
                 }
 
-                StationState disk = ReadState(out bool readFailed);
+                StationState disk = ReadState(out var readFailed);
                 if (readFailed)
                 {
                     EnterReadOnly("列表文件读取失败");
@@ -234,7 +234,7 @@ internal sealed class StationStore
         var current = new List<StationItem>(currentItems);
         var onlyOnDisk = new List<StationItem>();
 
-        StationState disk = ReadState(out bool readFailed);
+        StationState disk = ReadState(out var readFailed);
         if (readFailed)
         {
             // 磁盘状态读不出来时不能按“只剩内存条目”合并：下一次写盘会把原文件覆盖成
@@ -308,7 +308,7 @@ internal sealed class StationStore
         if (item is null || string.IsNullOrEmpty(item.AddedUtc)) return DateTime.MinValue;
 
         return DateTime.TryParse(item.AddedUtc, CultureInfo.InvariantCulture,
-                                 DateTimeStyles.RoundtripKind, out DateTime parsed)
+                                 DateTimeStyles.RoundtripKind, out var parsed)
             ? parsed
             : DateTime.MinValue;
     }

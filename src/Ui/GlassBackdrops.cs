@@ -74,7 +74,7 @@ internal sealed class SystemAcrylicBackdrop : IGlassBackdrop
 
         if (_backdrop is null)
         {
-            if (!GlassBackdrop.TryCreate(out _backdrop, out string why))
+            if (!GlassBackdrop.TryCreate(out _backdrop, out var why))
             {
                 _unavailable = true;
                 reason = why;
@@ -164,7 +164,7 @@ internal sealed class DesktopAcrylicBackdrop : IGlassBackdrop
             _unavailable = false;
         }
 
-        if (!GlassFeed.IsAvailable(out string why))
+        if (!GlassFeed.IsAvailable(out var why))
         {
             _unavailable = true;
             _permanent = true;

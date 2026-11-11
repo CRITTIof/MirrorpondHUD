@@ -204,7 +204,7 @@ internal static class ScreenGeometry
             };
 
             IntPtr monitor = MonitorFromPoint(center, MonitorDefaultToNearest);
-            if (monitor != IntPtr.Zero && GetDpiForMonitor(monitor, MdtEffectiveDpi, out uint dpiX, out uint dpiY) == 0)
+            if (monitor != IntPtr.Zero && GetDpiForMonitor(monitor, MdtEffectiveDpi, out var dpiX, out var dpiY) == 0)
             {
                 if (dpiX < 48 || dpiX > 960) dpiX = 96;
                 if (dpiY < 48 || dpiY > 960) dpiY = 96;

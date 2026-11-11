@@ -270,7 +270,7 @@ internal sealed class HotkeyRouter : IDisposable
         // 原键和回退键都失败：HotkeyManager 内部已经保留了旧绑定。
         // 把设置恢复成旧键，用户看到的热键才和真正能按的键一致；
         // 没有旧键（首次注册就失败）时保留用户输入，只提示本次未生效。
-        if (_effective.TryGetValue(action, out string old) && !string.IsNullOrWhiteSpace(old))
+        if (_effective.TryGetValue(action, out var old) && !string.IsNullOrWhiteSpace(old))
         {
             result.Effective = old;
             result.HadOld = true;

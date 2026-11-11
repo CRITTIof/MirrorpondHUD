@@ -182,7 +182,7 @@ public sealed class CardJobQueue : IDisposable
             // 只移除“已经结束”的任务，保留最近 FinishedRetention 个；
             // 排队 / 运行中的任务绝不移除，所以 Jobs 的顺序语义不变。
             int finished = _jobs.Count - _live;
-            for (int i = 0; i < _jobs.Count && finished > FinishedRetention; )
+            for (int i = 0; i < _jobs.Count && finished > FinishedRetention;)
             {
                 if (_jobs[i].IsFinished)
                 {

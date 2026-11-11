@@ -250,7 +250,7 @@ public partial class SettingsWindow : Window
         if (box is null) return;
 
         string text = (box.Text ?? "").Trim();
-        bool ok = text.Length == 0 || HotkeyManager.TryParse(text, out uint mods, out uint vk);
+        bool ok = text.Length == 0 || HotkeyManager.TryParse(text, out var mods, out var vk);
 
         if (ok)
         {
@@ -358,7 +358,7 @@ public partial class SettingsWindow : Window
         return clone is not null;
     }
 
-    static int ParseInt(string text, int fallback) => int.TryParse((text ?? "").Trim(), NumberStyles.Integer, CultureInfo.CurrentCulture, out int v) ? v : fallback;
+    static int ParseInt(string text, int fallback) => int.TryParse((text ?? "").Trim(), NumberStyles.Integer, CultureInfo.CurrentCulture, out var v) ? v : fallback;
 
-    static double ParseDouble(string text, double fallback) => double.TryParse((text ?? "").Trim(), NumberStyles.Float, CultureInfo.CurrentCulture, out double v) ? v : fallback;
+    static double ParseDouble(string text, double fallback) => double.TryParse((text ?? "").Trim(), NumberStyles.Float, CultureInfo.CurrentCulture, out var v) ? v : fallback;
 }

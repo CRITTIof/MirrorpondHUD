@@ -440,7 +440,7 @@ public class CardSparkline : FrameworkElement
         if (_values.Count == 0) return;
 
         if (!ChartDraw.TryRange(_values, _autoScale, _minimum, _maximum, 5, false,
-                                out double low, out double high, out double step)) return;
+                                out var low, out var high, out var step)) return;
 
         var plot = new Rect(1, 1, Math.Max(1, width - 2), Math.Max(1, height - 2));
         List<List<Point>> segments = ChartDraw.ProjectSegments(_values, plot, low, high);
@@ -621,10 +621,10 @@ public class CardLineChart : FrameworkElement
 
         double topInset = _showLegend ? Math.Max(16, _fontSize + 8) : 6;
         double bottomInset = _showXLabels && _labels.Count > 0 ? Math.Max(16, _fontSize + 6) : 6;
-        if (!ChartDraw.TryPlot(width, height, _showYLabels, topInset, bottomInset, out Rect plot)) return;
+        if (!ChartDraw.TryPlot(width, height, _showYLabels, topInset, bottomInset, out var plot)) return;
 
         if (!ChartDraw.TryRange(AllValues(), _autoScale, _minimum, _maximum, 5, false,
-                                out double low, out double high, out double step)) return;
+                                out var low, out var high, out var step)) return;
 
         double pixelsPerDip = VisualTreeHelper.GetDpi(this).PixelsPerDip;
         ChartDraw.DrawYAxis(dc, plot, low, high, step, _showGrid, _showYLabels, _valueFormat,
@@ -810,10 +810,10 @@ public class CardBarChart : FrameworkElement
 
         double topInset = _showLegend ? Math.Max(16, _fontSize + 8) : 6;
         double bottomInset = _showXLabels && _labels.Count > 0 ? Math.Max(16, _fontSize + 6) : 6;
-        if (!ChartDraw.TryPlot(width, height, _showYLabels, topInset, bottomInset, out Rect plot)) return;
+        if (!ChartDraw.TryPlot(width, height, _showYLabels, topInset, bottomInset, out var plot)) return;
 
         if (!ChartDraw.TryRange(AllValues(), _autoScale, _minimum, _maximum, 5, true,
-                                out double low, out double high, out double step)) return;
+                                out var low, out var high, out var step)) return;
 
         double pixelsPerDip = VisualTreeHelper.GetDpi(this).PixelsPerDip;
         ChartDraw.DrawYAxis(dc, plot, low, high, step, _showGrid, _showYLabels, _valueFormat,

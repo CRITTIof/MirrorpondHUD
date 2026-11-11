@@ -169,7 +169,7 @@ internal sealed class RenderScheduler : IDisposable
                 new CardRenderContext(_host.Settings, _last, _host.Keys, slot.Config, sharedVariables, slot.Host));
 
             // 恢复打点：只有真的从失败状态恢复才会记一条 Info，正常渲染没有额外输出。
-            if (_renderThrottles.TryGetValue(ThrottleKey(slot), out LogThrottle throttle)) throttle.Success();
+            if (_renderThrottles.TryGetValue(ThrottleKey(slot), out var throttle)) throttle.Success();
 
             return text;
         }
@@ -357,7 +357,7 @@ internal sealed class RenderScheduler : IDisposable
     {
         string key = ThrottleKey(slot);
 
-        if (_renderThrottles.TryGetValue(key, out LogThrottle throttle)) return throttle;
+        if (_renderThrottles.TryGetValue(key, out var throttle)) return throttle;
 
         string name = slot.Config is null || string.IsNullOrEmpty(slot.Config.Name) ? key : slot.Config.Name;
         throttle = new LogThrottle($"卡片渲染({name})", RenderFailureIntervalMs);

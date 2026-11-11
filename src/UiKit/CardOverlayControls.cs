@@ -103,7 +103,8 @@ public class CardModal : Grid
 
     /// <summary>面板里的内容，由调用方放。</summary>
     public UIElement Body
-    { get => _panel.Child; set => _panel.Child = value;
+    {
+        get => _panel.Child; set => _panel.Child = value;
     }
 
     /// <summary>子类可以拿到居中面板继续摆自己的内容。</summary>
@@ -276,11 +277,13 @@ public class CardDialog : CardModal
     }
 
     public string Title
-    { get => _title.Text; set => _title.Text = value ?? "";
+    {
+        get => _title.Text; set => _title.Text = value ?? "";
     }
 
     public string Message
-    { get => _message.Text; set => _message.Text = value ?? "";
+    {
+        get => _message.Text; set => _message.Text = value ?? "";
     }
 
     public CardDialogButtons Buttons
@@ -580,7 +583,8 @@ public sealed class CardTooltip : CardPopover, IDisposable
 
     /// <summary>提示文字。</summary>
     public string Text
-    { get => _text.Text; set => _text.Text = value ?? "";
+    {
+        get => _text.Text; set => _text.Text = value ?? "";
     }
 
     /// <summary>鼠标停留多久后显示，默认 400ms；0 = 立即显示。</summary>
@@ -984,7 +988,8 @@ public sealed class CardToast : Border
     public event EventHandler Closed;
 
     public string Text
-    { get => _text.Text; set => _text.Text = value ?? "";
+    {
+        get => _text.Text; set => _text.Text = value ?? "";
     }
 
     /// <summary>语气色：Info / Success / Warning / Danger。</summary>

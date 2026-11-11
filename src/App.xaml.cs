@@ -69,7 +69,7 @@ public partial class App : Application
                 "镜潭一览 · 权限受限", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
 
-        _mutex = new Mutex(true, "Local\\MirrorpondHUD.SingleInstance", out bool createdNew);
+        _mutex = new Mutex(true, "Local\\MirrorpondHUD.SingleInstance", out var createdNew);
         if (!createdNew)
         {
             // 首实例要加载插件 / 配置后才会创建唤醒事件；冷启动窗口期第二次双击
@@ -130,7 +130,7 @@ public partial class App : Application
 
             // 截图 / 自检这类「跑完即退出」的模式仍在启动 try 内执行：
             // 内部未捕获的异常走下面的初始化失败路径（记录 + 提示 + Shutdown(1)）。
-            if (CommandLineMode.TryRunImmediate(args, out int immediateExitCode))
+            if (CommandLineMode.TryRunImmediate(args, out var immediateExitCode))
             {
                 Shutdown(immediateExitCode);
                 return;

@@ -409,7 +409,7 @@ public static class ContourExtractor
     private static void PushEnd(ContourChainScratch scratch, Dictionary<long, List<int>> map, double x, double y, int code)
     {
         long key = Key(x, y);
-        if (!map.TryGetValue(key, out List<int> list))
+        if (!map.TryGetValue(key, out var list))
         {
             list = scratch.RentIntList();
             map[key] = list;
@@ -419,7 +419,7 @@ public static class ContourExtractor
 
     private static int Degree(Dictionary<long, List<int>> map, double x, double y)
     {
-        if (!map.TryGetValue(Key(x, y), out List<int> list))
+        if (!map.TryGetValue(Key(x, y), out var list))
         {
             return 0;
         }
@@ -465,7 +465,7 @@ public static class ContourExtractor
 
             points.Add(target);
 
-            if (!map.TryGetValue(Key(target.X, target.Y), out List<int> candidates))
+            if (!map.TryGetValue(Key(target.X, target.Y), out var candidates))
             {
                 break;
             }
@@ -675,7 +675,7 @@ internal sealed class ContourChainScratch
             return new Point[0];
         }
 
-        if (_pointArrays.TryGetValue(length, out Stack<Point[]> stack) && stack.Count > 0)
+        if (_pointArrays.TryGetValue(length, out var stack) && stack.Count > 0)
         {
             _pooledPointArrays--;
             return stack.Pop();
@@ -694,7 +694,7 @@ internal sealed class ContourChainScratch
             return;
         }
 
-        if (!_pointArrays.TryGetValue(array.Length, out Stack<Point[]> stack))
+        if (!_pointArrays.TryGetValue(array.Length, out var stack))
         {
             stack = new Stack<Point[]>();
             _pointArrays[array.Length] = stack;

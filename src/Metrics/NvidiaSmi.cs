@@ -137,7 +137,7 @@ internal sealed class NvidiaSmi
     {
         s = s.Trim();
         if (s.Length == 0) return double.NaN;
-        if (double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out double v)) return v;
+        if (double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var v)) return v;
         return double.NaN; // "[N/A]" 之类
     }
 

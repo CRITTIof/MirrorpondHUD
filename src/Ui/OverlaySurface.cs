@@ -204,7 +204,8 @@ public sealed class OverlaySurface : Border
     /// 交互卡片（按钮 / 输入框）由宿主设成 true，否则命中测试会停在内容层外面。
     /// </summary>
     public bool ContentHitTestVisible
-    { get => _contentLayer.IsHitTestVisible; set => _contentLayer.IsHitTestVisible = value;
+    {
+        get => _contentLayer.IsHitTestVisible; set => _contentLayer.IsHitTestVisible = value;
     }
 
     /// <summary>富内容（图片 / 动图 / 视频）的宿主；有内容时文字层隐藏。</summary>
@@ -699,7 +700,7 @@ public sealed class OverlaySurface : Border
     public static SolidColorBrush GetBrush(string hex, double opacity)
     {
         string key = $"{(hex ?? "#000000")}|{opacity:0.00}";
-        if (BrushCache.TryGetValue(key, out SolidColorBrush cached)) return cached;
+        if (BrushCache.TryGetValue(key, out var cached)) return cached;
 
         Color color = ParseColor(hex);
         color.A = (byte)Math.Round(Math.Max(0, Math.Min(1, opacity)) * 255);
@@ -715,7 +716,7 @@ public sealed class OverlaySurface : Border
     /// <summary>解析颜色；非法值返回 <paramref name="fallback"/>。唯一实现委托给 <see cref="ColorCode"/>。</summary>
     public static Color ParseColor(string hex, Color fallback)
     {
-        if (!ColorCode.TryParse(hex, out byte a, out byte r, out byte g, out byte b)) return fallback;
+        if (!ColorCode.TryParse(hex, out var a, out var r, out var g, out var b)) return fallback;
         return Color.FromArgb(a, r, g, b);
     }
 }

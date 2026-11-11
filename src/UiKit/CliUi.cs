@@ -19,7 +19,7 @@ public static class CardPalette
 {
     public static Color TryColor(string hex, Color fallback)
     {
-        if (!ColorCode.TryParse(hex, out byte a, out byte r, out byte g, out byte b)) return fallback;
+        if (!ColorCode.TryParse(hex, out var a, out var r, out var g, out var b)) return fallback;
         return Color.FromArgb(a, r, g, b);
     }
 

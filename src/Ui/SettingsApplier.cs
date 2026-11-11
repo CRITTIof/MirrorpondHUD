@@ -172,12 +172,12 @@ internal sealed class SettingsApplier
 
         foreach (CardSettings config in _host.Settings.Cards)
         {
-            if (existing.TryGetValue(config.Id, out CardSlot slot))
+            if (existing.TryGetValue(config.Id, out var slot))
             {
                 existing.Remove(config.Id);
 
                 // 呼出状态跨设置应用保留：没在这次快照里出现的卡片沿用当前值。
-                if (!summoned.TryGetValue(config.Id, out bool summonedNow)) summonedNow = slot.Summoned;
+                if (!summoned.TryGetValue(config.Id, out var summonedNow)) summonedNow = slot.Summoned;
 
                 _host.RebindSlot(slot, config, summonedNow);
                 _render.RefreshSlot(slot, config);

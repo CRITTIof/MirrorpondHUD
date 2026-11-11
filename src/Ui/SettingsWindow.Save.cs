@@ -31,7 +31,7 @@ public partial class SettingsWindow
         }
 
         if (!string.IsNullOrWhiteSpace(s.Hotkeys.ToggleOverlay) &&
-            !HotkeyManager.TryParse(s.Hotkeys.ToggleOverlay, out uint mods, out uint vk))
+            !HotkeyManager.TryParse(s.Hotkeys.ToggleOverlay, out var mods, out var vk))
             return $"显示/隐藏热键无效：{s.Hotkeys.ToggleOverlay}";
 
         if (!string.IsNullOrWhiteSpace(s.Hotkeys.OpenSettings) &&
@@ -122,7 +122,7 @@ public partial class SettingsWindow
         // 控制器会把实时锚点带回来，同步到界面，避免下次保存又写回旧坐标。
         SyncAnchor(s.Overlay.X, s.Overlay.Y, s.Overlay.Monitor);
 
-        if (TryClone(s, out Settings next, out string cloneError))
+        if (TryClone(s, out var next, out var cloneError))
         {
             _loadFailed = false;
             _working = next;
@@ -161,7 +161,7 @@ public partial class SettingsWindow
     /// <summary>记录「用户还没动过」的运行时字段基线；克隆失败时退化成不合并（宁可保持旧行为）。</summary>
     void CaptureRuntimeBaseline()
     {
-        if (TryClone(_working, out Settings baseline, out string error))
+        if (TryClone(_working, out var baseline, out var error))
         {
             _runtimeBaseline = baseline;
             return;
@@ -237,14 +237,14 @@ public partial class SettingsWindow
         {
             if (card is null || string.IsNullOrEmpty(card.Id)) continue;
 
-            if (!liveCards.TryGetValue(card.Id, out CardSettings liveCard)) continue;
-            if (!baselineCards.TryGetValue(card.Id, out CardSettings baselineCard)) continue;
+            if (!liveCards.TryGetValue(card.Id, out var liveCard)) continue;
+            if (!baselineCards.TryGetValue(card.Id, out var baselineCard)) continue;
             if (liveCard is null || baselineCard is null) continue;
 
             card.Hotkey = MergeRuntimeValue(card.Hotkey, baselineCard.Hotkey, liveCard.Hotkey);
 
             // 卡片自己的运行时字段（对话模式等）由模块声明合并规则，宿主不认 Kind / Extras。
-            var merge = CardRegistry.TryGet(card.Kind, out ICardModule module)
+            var merge = CardRegistry.TryGet(card.Kind, out var module)
                 ? module as ICardRuntimeSettingsMerge
                 : null;
             if (merge is null) continue;

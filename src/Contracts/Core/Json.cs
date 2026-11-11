@@ -344,7 +344,7 @@ public static class Json
 
             foreach (var f in target.GetFields(BindingFlags.Public | BindingFlags.Instance))
             {
-                if (!map.TryGetValue(f.Name, out object raw)) continue;
+                if (!map.TryGetValue(f.Name, out var raw)) continue;
                 try { f.SetValue(inst, Bind(f.FieldType, raw)); }
                 catch (Exception ex) { Log.Warn($"配置字段 {f.Name} 解析失败: {ex.Message}"); }
             }

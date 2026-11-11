@@ -95,7 +95,7 @@ internal static class CommandLineMode
             string perfValue = GetOption(args, "--perf");
             if (perfValue is not null && !perfValue.StartsWith("--", StringComparison.Ordinal))
             {
-                if (int.TryParse(perfValue, out int parsed)) perfSeconds = Math.Max(3, Math.Min(120, parsed));
+                if (int.TryParse(perfValue, out var parsed)) perfSeconds = Math.Max(3, Math.Min(120, parsed));
                 args.Remove(perfValue);
             }
             args.Remove("--perf");
@@ -125,7 +125,7 @@ internal static class CommandLineMode
         if (visible) args.Add("--visible");
         else if (!args.Contains("--minimized")) args.Add("--minimized");
 
-        if (!int.TryParse(smoke, out int seconds)) seconds = 6;
+        if (!int.TryParse(smoke, out var seconds)) seconds = 6;
 
         var timer = new DispatcherTimer();
         timer.Interval = TimeSpan.FromSeconds(Math.Max(1, seconds));

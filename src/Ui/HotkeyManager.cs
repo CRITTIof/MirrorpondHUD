@@ -90,7 +90,7 @@ public sealed class HotkeyManager : IDisposable
 
     void OnHotkeyMessage(int id)
     {
-        if (!_idToActions.TryGetValue(id, out List<string> actions) || actions.Count == 0) return;
+        if (!_idToActions.TryGetValue(id, out var actions) || actions.Count == 0) return;
 
         // 复制一份：处理过程中可能有卡片被删除并重新注册热键。
         string[] snapshot = actions.ToArray();
@@ -117,7 +117,7 @@ public sealed class HotkeyManager : IDisposable
             return false;
         }
 
-        if (!TryParse(combination, out uint mods, out uint vk))
+        if (!TryParse(combination, out var mods, out var vk))
         {
             // P2-3：不能先 Detach 再解析。解析失败 / 新键被占用时必须保留旧绑定。
             Log.Warn($"无法识别的热键: {combination}（{action}），保留原绑定");
@@ -125,11 +125,11 @@ public sealed class HotkeyManager : IDisposable
         }
 
         string key = KeyOf(mods, vk);
-        _actionToId.TryGetValue(action, out int oldId);
+        _actionToId.TryGetValue(action, out var oldId);
 
-        if (_keyToId.TryGetValue(key, out int existingId))
+        if (_keyToId.TryGetValue(key, out var existingId))
         {
-            if (!_idToActions.TryGetValue(existingId, out List<string> shared))
+            if (!_idToActions.TryGetValue(existingId, out var shared))
             {
                 shared = new List<string>();
                 _idToActions[existingId] = shared;
@@ -175,7 +175,7 @@ public sealed class HotkeyManager : IDisposable
     /// <summary>只把一个动作从指定 id 上摘掉；id 上还有别的动作时保留组合键注册（P2-3）。</summary>
     void RemoveActionFromId(string action, int id)
     {
-        if (!_idToActions.TryGetValue(id, out List<string> actions)) return;
+        if (!_idToActions.TryGetValue(id, out var actions)) return;
 
         actions.RemoveAll(a => string.Equals(a, action, StringComparison.OrdinalIgnoreCase));
         if (actions.Count > 0) return;
@@ -183,7 +183,7 @@ public sealed class HotkeyManager : IDisposable
         _idToActions.Remove(id);
         if (_window is not null) UnregisterHotKey(_window.Handle, id);
 
-        if (_idToKey.TryGetValue(id, out string key))
+        if (_idToKey.TryGetValue(id, out var key))
         {
             _idToKey.Remove(id);
             _keyToId.Remove(key);
@@ -193,10 +193,10 @@ public sealed class HotkeyManager : IDisposable
     /// <summary>解除一个动作的绑定；组合键上还有别的动作时保持注册。</summary>
     public void Detach(string action)
     {
-        if (!_actionToId.TryGetValue(action, out int id)) return;
+        if (!_actionToId.TryGetValue(action, out var id)) return;
         _actionToId.Remove(action);
 
-        if (!_idToActions.TryGetValue(id, out List<string> actions)) return;
+        if (!_idToActions.TryGetValue(id, out var actions)) return;
 
         actions.RemoveAll(a => string.Equals(a, action, StringComparison.OrdinalIgnoreCase));
         if (actions.Count > 0) return;
@@ -204,7 +204,7 @@ public sealed class HotkeyManager : IDisposable
         _idToActions.Remove(id);
         if (_window is not null) UnregisterHotKey(_window.Handle, id);
 
-        if (_idToKey.TryGetValue(id, out string key))
+        if (_idToKey.TryGetValue(id, out var key))
         {
             _idToKey.Remove(id);
             _keyToId.Remove(key);

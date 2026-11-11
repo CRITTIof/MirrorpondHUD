@@ -75,7 +75,7 @@ public partial class SettingsWindow
         _applyingTheme = true;
         try
         {
-            if (!TryClone(_working, out Settings next, out string error))
+            if (!TryClone(_working, out var next, out var error))
             {
                 ThemeStatusText.Text = $"套用主题失败：{error}";
                 return;
@@ -111,7 +111,7 @@ public partial class SettingsWindow
         Settings source = _working;
         string path = dialog.FileName;
 
-        if (!TryClone(source, out Settings snapshot, out string cloneError))
+        if (!TryClone(source, out var snapshot, out var cloneError))
         {
             ThemeStatusText.Text = $"导入失败：复制当前设置失败：{cloneError}";
             return;
@@ -123,7 +123,7 @@ public partial class SettingsWindow
         {
             ThemeImportOutcome outcome = await Task.Run(() =>
             {
-                bool ok = ThemeFile.TryImport(path, snapshot, out Settings imported, out string importError);
+                bool ok = ThemeFile.TryImport(path, snapshot, out var imported, out var importError);
                 return new ThemeImportOutcome { Ok = ok, Applied = imported, Error = importError };
             });
 
@@ -191,7 +191,7 @@ public partial class SettingsWindow
             return;
         }
 
-        if (!ThemeFile.TryExport(current, dialog.FileName, out string error))
+        if (!ThemeFile.TryExport(current, dialog.FileName, out var error))
         {
             ThemeStatusText.Text = $"导出失败：{error}";
             return;
@@ -207,7 +207,7 @@ public partial class SettingsWindow
         _applyingTheme = true;
         try
         {
-            if (!TryClone(_working, out Settings next, out string error))
+            if (!TryClone(_working, out var next, out var error))
             {
                 ThemeStatusText.Text = $"还原失败：{error}";
                 return;

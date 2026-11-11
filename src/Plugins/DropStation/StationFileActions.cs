@@ -158,7 +158,7 @@ internal sealed class StationFileActions
         var failures = new List<string>();
         foreach (StationItem item in recyclable)
         {
-            if (!RecycleBin.TryMoveToRecycleBin(owner, item.StoredPath, out int errorCode))
+            if (!RecycleBin.TryMoveToRecycleBin(owner, item.StoredPath, out var errorCode))
             {
                 failed++;
                 // 失败必须留底：哪个文件、哪个返回码，否则静默半删后数据去向无从追查。

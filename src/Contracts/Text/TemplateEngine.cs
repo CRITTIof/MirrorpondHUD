@@ -11,14 +11,14 @@ namespace MirrorpondHUD.Core;
 /// </summary>
 public static class TemplateEngine
 {
-    public static string Render(string template, IDictionary<string, object> variables) => Render(template, variables, out List<string> ignored);
+    public static string Render(string template, IDictionary<string, object> variables) => Render(template, variables, out var ignored);
 
     public static string Render(string template, IDictionary<string, object> variables, out List<string> unknown) => Render(template, variables, out unknown, null);
 
     /// <summary>
     /// 把所有占位符替换成固定值，用于启动动画阶段展示 "---"。
     /// </summary>
-    public static string RenderPlaceholder(string template, string placeholder) => Render(template, null, out List<string> ignored, placeholder ?? "---");
+    public static string RenderPlaceholder(string template, string placeholder) => Render(template, null, out var ignored, placeholder ?? "---");
 
     public static string Render(string template, IDictionary<string, object> variables, out List<string> unknown, string forceValue)
     {
@@ -39,7 +39,7 @@ public static class TemplateEngine
             if (close < 0) { sb.Append(c); i++; continue; }
 
             string token = working.Substring(i + 1, close - i - 1);
-            if (TryParseToken(token, out string name, out int alignment, out string format))
+            if (TryParseToken(token, out var name, out var alignment, out var format))
             {
                 if (forceValue is not null)
                 {
@@ -47,7 +47,7 @@ public static class TemplateEngine
                 }
                 else
                 {
-                    if (variables is not null && variables.TryGetValue(name, out object value))
+                    if (variables is not null && variables.TryGetValue(name, out var value))
                     {
                         sb.Append(FormatValue(value, alignment, format));
                     }

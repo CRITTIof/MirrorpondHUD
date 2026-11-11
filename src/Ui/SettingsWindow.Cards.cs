@@ -33,7 +33,7 @@ public partial class SettingsWindow
 
         foreach (CardSettings config in _working.Cards)
         {
-            if (!_expanded.TryGetValue(config.Id, out bool expanded)) expanded = true;
+            if (!_expanded.TryGetValue(config.Id, out var expanded)) expanded = true;
 
             var editor = new CardEditor(config, CardRegistry.Get(config.Kind), _working, expanded);
             string id = config.Id;

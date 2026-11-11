@@ -92,7 +92,7 @@ public static class ProcessIntegrity
             IntPtr buffer = Marshal.AllocHGlobal(256);
             try
             {
-                if (!GetTokenInformation(token, TokenIntegrityLevel, buffer, 256, out uint returned))
+                if (!GetTokenInformation(token, TokenIntegrityLevel, buffer, 256, out var returned))
                 {
                     _lastError = Marshal.GetLastWin32Error();
                     return;

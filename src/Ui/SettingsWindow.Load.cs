@@ -22,7 +22,7 @@ public partial class SettingsWindow
         _suppress = true;
         try
         {
-            if (!TryClone(s, out Settings working, out string cloneError))
+            if (!TryClone(s, out var working, out var cloneError))
             {
                 // 绝不能用 new Settings() 顶上：那会让用户看到全默认值，一点保存就把默认值写盘。
                 _loadFailed = true;
@@ -333,7 +333,8 @@ public partial class SettingsWindow
         ContourSpeedRow.Visibility = effect == "Contour" ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
     }
 
-    static int StretchIndex(string value)        {
+    static int StretchIndex(string value)
+    {
         switch (Settings.NormalizeStretch(value))
         {
             case "Uniform": return 1;

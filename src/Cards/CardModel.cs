@@ -31,7 +31,7 @@ public static class CardModel
             }
 
             card.Kind = CardRegistry.ResolveKind(card.Kind);
-            bool known = CardRegistry.TryGet(card.Kind, out ICardModule module);
+            bool known = CardRegistry.TryGet(card.Kind, out var module);
 
             if (string.IsNullOrWhiteSpace(card.Id) || ids.Contains(card.Id))
                 card.Id = NewId();
@@ -89,7 +89,7 @@ public static class CardModel
         foreach (CardSettings card in cards)
         {
             if (card is null) continue;
-            if (CardRegistry.TryGet(card.Kind, out ICardModule module) && module is not null && module.IsInteractive) count++;
+            if (CardRegistry.TryGet(card.Kind, out var module) && module is not null && module.IsInteractive) count++;
         }
         return count;
     }
@@ -146,7 +146,7 @@ public static class CardModel
     {
         if (card is null) return null;
 
-        if (!CardRegistry.TryGet(card.Kind, out ICardModule module) || module is null)
+        if (!CardRegistry.TryGet(card.Kind, out var module) || module is null)
         {
             Log.Warn($"默认卡的 Kind 未注册，已跳过: {(card.Kind ?? "")}");
             return null;

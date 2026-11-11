@@ -54,7 +54,7 @@ internal sealed class TrayController : IDisposable
 
         if (_tray.Visible)
         {
-            if (_tray.TryGetRect(out int left, out int top, out int right, out int bottom))
+            if (_tray.TryGetRect(out var left, out var top, out var right, out var bottom))
                 Log.Info($"托盘图标：已显示，位置 {left},{top} - {right},{bottom}");
             else
                 Log.Warn("托盘图标：已添加但未取得屏幕位置（Win11 默认收在“隐藏图标”里）");

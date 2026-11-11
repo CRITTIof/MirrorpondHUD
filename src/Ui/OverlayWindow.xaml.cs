@@ -377,7 +377,7 @@ public partial class OverlayWindow : Window
         IntPtr hwnd = new WindowInteropHelper(this).Handle;
         if (hwnd == IntPtr.Zero) return false;
 
-        if (!Native.GetWindowRect(hwnd, out Native.Rect rect)) return false;
+        if (!Native.GetWindowRect(hwnd, out var rect)) return false;
 
         x = rect.Left;
         y = rect.Top;
@@ -387,7 +387,7 @@ public partial class OverlayWindow : Window
     /// <summary>按物理像素增量平移（拖动时其余卡片跟随用）。</summary>
     public void OffsetPhysical(int dx, int dy)
     {
-        if (!TryGetPhysicalPosition(out int x, out int y)) return;
+        if (!TryGetPhysicalPosition(out var x, out var y)) return;
         SetPhysicalPosition(x + dx, y + dy);
     }
 
@@ -399,7 +399,7 @@ public partial class OverlayWindow : Window
     {
         StopPositionMotion();
 
-        if (!TryGetPhysicalPosition(out int currentX, out int currentY))
+        if (!TryGetPhysicalPosition(out var currentX, out var currentY))
         {
             SetPhysicalPosition(left, top);
             return;
@@ -503,7 +503,7 @@ public partial class OverlayWindow : Window
         var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
         TimeSpan duration = TimeSpan.FromMilliseconds(CardMotion.ShowDurationMs);
 
-        if (!TryGetPhysicalPosition(out int targetLeft, out int targetTop))
+        if (!TryGetPhysicalPosition(out var targetLeft, out var targetTop))
         {
             ResetContentMotion();
             return;
@@ -557,7 +557,7 @@ public partial class OverlayWindow : Window
         var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
         TimeSpan duration = TimeSpan.FromMilliseconds(CardMotion.HideDurationMs);
 
-        if (!TryGetPhysicalPosition(out int px, out int py))
+        if (!TryGetPhysicalPosition(out var px, out var py))
         {
             ResetContentMotion();
             if (completed is not null) completed();
@@ -670,7 +670,8 @@ public partial class OverlayWindow : Window
     /// 鼠标按下就完全交给内容，不会再「一按就拖卡」。
     /// </summary>
     public bool DragEnabled
-    { get => _dragEnabled; set => _dragEnabled = value;
+    {
+        get => _dragEnabled; set => _dragEnabled = value;
     }
 
     /// <summary>
@@ -744,7 +745,7 @@ public partial class OverlayWindow : Window
         if (e.ClickCount > 1) return;
 
         _dragging = true;
-        if (!Native.GetCursorPos(out Native.CursorPoint startCursor))
+        if (!Native.GetCursorPos(out var startCursor))
         {
             _dragging = false;
             return;
@@ -757,7 +758,7 @@ public partial class OverlayWindow : Window
         Action started = DragStarted;
         if (started is not null) started();
 
-        if (!TryGetPhysicalPosition(out int physX, out int physY))
+        if (!TryGetPhysicalPosition(out var physX, out var physY))
         {
             _dragging = false;
             return;
@@ -812,7 +813,7 @@ public partial class OverlayWindow : Window
 
     void UpdateDragFromCursor()
     {
-        if (!Native.GetCursorPos(out Native.CursorPoint cursor)) return;
+        if (!Native.GetCursorPos(out var cursor)) return;
 
         int dx = cursor.X - (int)Math.Round(_dragStartScreen.X);
         int dy = cursor.Y - (int)Math.Round(_dragStartScreen.Y);
@@ -898,7 +899,7 @@ public partial class OverlayWindow : Window
 
     void SyncDragTargetToCursor()
     {
-        if (!Native.GetCursorPos(out Native.CursorPoint cursor)) return;
+        if (!Native.GetCursorPos(out var cursor)) return;
 
         int dx = cursor.X - (int)Math.Round(_dragStartScreen.X);
         int dy = cursor.Y - (int)Math.Round(_dragStartScreen.Y);

@@ -50,12 +50,14 @@ public sealed class CardTreeItem : INotifyPropertyChanged
 
     /// <summary>可选图标字形（空 = 不显示）。</summary>
     public string Icon
-    { get => _icon; set => Set(ref _icon, value ?? "", nameof(Icon));
+    {
+        get => _icon; set => Set(ref _icon, value ?? "", nameof(Icon));
     }
 
     /// <summary>可选悬停提示（空 / null = 不弹提示）。</summary>
     public string Tooltip
-    { get => _tooltip; set => Set(ref _tooltip, value, nameof(Tooltip));
+    {
+        get => _tooltip; set => Set(ref _tooltip, value, nameof(Tooltip));
     }
 
     /// <summary>宿主自定义的业务对象，控件不解释它。</summary>
@@ -191,7 +193,8 @@ public sealed class CardTree : Grid
 
     /// <summary>当前选中项（未生成容器时设置会尽量展开父节点后再选中）。</summary>
     public CardTreeItem SelectedItem
-    { get => _tree.SelectedItem as CardTreeItem; set => Select(value);
+    {
+        get => _tree.SelectedItem as CardTreeItem; set => Select(value);
     }
 
     /// <summary>空树时显示的提示文字。</summary>
@@ -469,22 +472,26 @@ public sealed class CardTimelineItem : INotifyPropertyChanged
 
     /// <summary>左侧时间文字（字符串，控件不解析时间）。</summary>
     public string Time
-    { get => _time; set => Set(ref _time, value ?? "", nameof(Time));
+    {
+        get => _time; set => Set(ref _time, value ?? "", nameof(Time));
     }
 
     /// <summary>标题。</summary>
     public string Title
-    { get => _title; set => Set(ref _title, value ?? "", nameof(Title));
+    {
+        get => _title; set => Set(ref _title, value ?? "", nameof(Title));
     }
 
     /// <summary>详情（空 = 只显示标题）。</summary>
     public string Detail
-    { get => _detail; set => Set(ref _detail, value ?? "", nameof(Detail));
+    {
+        get => _detail; set => Set(ref _detail, value ?? "", nameof(Detail));
     }
 
     /// <summary>可选图标字形。</summary>
     public string Icon
-    { get => _icon; set => Set(ref _icon, value ?? "", nameof(Icon));
+    {
+        get => _icon; set => Set(ref _icon, value ?? "", nameof(Icon));
     }
 
     /// <summary>语气：决定左侧圆点颜色。</summary>
@@ -502,7 +509,8 @@ public sealed class CardTimelineItem : INotifyPropertyChanged
 
     /// <summary>宿主自定义业务对象。</summary>
     public object Tag
-    { get => _tag; set => Set(ref _tag, value, nameof(Tag));
+    {
+        get => _tag; set => Set(ref _tag, value, nameof(Tag));
     }
 
     /// <summary>圆点颜色（跟随语气与主题）。</summary>

@@ -212,7 +212,7 @@ public sealed class TrayIcon : IDisposable
     }
 
     /// <summary>是否真的显示在托盘里（用 Shell_NotifyIconGetRect 验证）。</summary>
-    public bool IsPresentInTray => TryGetRect(out int left, out int top, out int right, out int bottom);
+    public bool IsPresentInTray => TryGetRect(out var left, out var top, out var right, out var bottom);
 
     /// <summary>
     /// 最近一次 <see cref="Visible"/>=true 请求后图标是否真的加进了托盘。
@@ -232,7 +232,7 @@ public sealed class TrayIcon : IDisposable
                 hWnd = _window.Handle,
                 uID = TRAY_ICON_ID
             };
-            int hr = Shell_NotifyIconGetRect(ref id, out Rect rect);
+            int hr = Shell_NotifyIconGetRect(ref id, out var rect);
             if (hr != 0) return false;
             left = rect.Left;
             top = rect.Top;
@@ -288,7 +288,7 @@ public sealed class TrayIcon : IDisposable
         _added = false;
     }
 
-    NotifyIconData NewData() => new NotifyIconData
+    NotifyIconData NewData() => new()
     {
         cbSize = (uint)Marshal.SizeOf(typeof(NotifyIconData)),
         hWnd = _window.Handle,

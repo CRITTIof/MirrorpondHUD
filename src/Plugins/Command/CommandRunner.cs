@@ -66,7 +66,7 @@ public static class CommandRunner
             case "pwsh": return "pwsh.exe";
             case "custom":
                 string customExe;
-                SplitCommandLine(ResolveTemplate(settings), out customExe, out string customArgs);
+                SplitCommandLine(ResolveTemplate(settings), out customExe, out var customArgs);
                 return string.IsNullOrWhiteSpace(customExe) ? "cmd.exe" : customExe;
             default: return "cmd.exe";
         }
@@ -170,7 +170,7 @@ public static class CommandRunner
         var result = new CommandResult { Command = command ?? "" };
         CommandSettings command_settings = commandSettings is null ? new CommandSettings() : commandSettings;
 
-        BuildProcess(command_settings, command, out string executable, out string arguments);
+        BuildProcess(command_settings, command, out var executable, out var arguments);
 
         try
         {

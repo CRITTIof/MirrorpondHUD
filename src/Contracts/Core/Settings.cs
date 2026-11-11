@@ -136,7 +136,7 @@ public sealed class Settings
         string text = (value ?? "").Trim();
         if (text.Length == 0) return true;
 
-        return ColorCode.TryParse(text, out byte a, out byte r, out byte g, out byte b);
+        return ColorCode.TryParse(text, out var a, out var r, out var g, out var b);
     }
 
     static string NormalizeColorToken(string value, string fallback)

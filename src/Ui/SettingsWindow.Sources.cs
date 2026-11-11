@@ -19,25 +19,25 @@ public partial class SettingsWindow
 
     void FillGpuCombo(int selected)
     {
-        GpuCombo.ItemsSource = SettingsDeviceCatalog.GetGpuOptions(selected, out int index);
+        GpuCombo.ItemsSource = SettingsDeviceCatalog.GetGpuOptions(selected, out var index);
         GpuCombo.SelectedIndex = index;
     }
 
     void FillRefreshCombo(int current)
     {
-        RefreshCombo.ItemsSource = SettingsDeviceCatalog.GetRefreshOptions(current, out int index);
+        RefreshCombo.ItemsSource = SettingsDeviceCatalog.GetRefreshOptions(current, out var index);
         RefreshCombo.SelectedIndex = index;
     }
 
     void FillNvidiaCombo(int current)
     {
-        NvidiaIntervalCombo.ItemsSource = SettingsDeviceCatalog.GetNvidiaOptions(current, out int index);
+        NvidiaIntervalCombo.ItemsSource = SettingsDeviceCatalog.GetNvidiaOptions(current, out var index);
         NvidiaIntervalCombo.SelectedIndex = index;
     }
 
     void FillAdapterCombo(string current)
     {
-        AdapterCombo.ItemsSource = SettingsDeviceCatalog.GetAdapterOptions(current, out int index);
+        AdapterCombo.ItemsSource = SettingsDeviceCatalog.GetAdapterOptions(current, out var index);
         AdapterCombo.SelectedIndex = index;
     }
 
@@ -66,7 +66,7 @@ public partial class SettingsWindow
 
     void FillMonitors(int current)
     {
-        MonitorCombo.ItemsSource = SettingsDeviceCatalog.GetMonitorOptions(current, out int index);
+        MonitorCombo.ItemsSource = SettingsDeviceCatalog.GetMonitorOptions(current, out var index);
         MonitorCombo.SelectedIndex = index;
     }
 

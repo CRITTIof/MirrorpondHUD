@@ -957,7 +957,7 @@ internal sealed class FfmpegPlayer : IDisposable
             if (fps.Success)
             {
                 if (double.TryParse(fps.Groups[1].Value, NumberStyles.Float,
-                                    CultureInfo.InvariantCulture, out double value) &&
+                                    CultureInfo.InvariantCulture, out var value) &&
                     value >= 1 && value <= 121)
                     info.Fps = value;
             }

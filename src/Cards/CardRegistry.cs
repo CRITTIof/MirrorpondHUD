@@ -49,7 +49,7 @@ public static class CardRegistry
             }
 
             List<ICardModule> builtins = Discover();
-            List<ICardModule> modules = Merge(builtins, external, out int added);
+            List<ICardModule> modules = Merge(builtins, external, out var added);
             Sort(modules);
 
             _builtins = new List<ICardModule>(builtins);
@@ -79,7 +79,7 @@ public static class CardRegistry
     {
         EnsureInitialized();
 
-        if (TryGet(kind, out ICardModule module)) return module;
+        if (TryGet(kind, out var module)) return module;
 
         string key = (kind ?? "").Trim();
         if (key.Length == 0)
@@ -112,7 +112,7 @@ public static class CardRegistry
     {
         EnsureInitialized();
         string trimmed = (kind ?? "").Trim();
-        if (TryGet(trimmed, out ICardModule module)) return module.Kind;
+        if (TryGet(trimmed, out var module)) return module.Kind;
         if (trimmed.Length > 0) return trimmed;
         return _modules.Count == 0 ? "infotext" : _modules[0].Kind;
     }

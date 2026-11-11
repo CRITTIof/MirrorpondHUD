@@ -630,7 +630,7 @@ public sealed class TextCanvas : FrameworkElement
     {
         if (string.IsNullOrEmpty(key)) return Rect.Empty;
 
-        if (InkCache.TryGetValue(key, out Rect cached)) return cached;
+        if (InkCache.TryGetValue(key, out var cached)) return cached;
 
         Rect bounds;
         try
@@ -703,7 +703,7 @@ public sealed class TextCanvas : FrameworkElement
         text = text ?? "";
         EnsureLayoutCache();
 
-        if (_layoutCache.TryGetValue(text, out TextLayout cached)) return cached;
+        if (_layoutCache.TryGetValue(text, out var cached)) return cached;
 
         List<string> lines = Split(text);
         var built = new List<TextLine>(lines.Count);

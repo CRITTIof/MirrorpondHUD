@@ -83,20 +83,24 @@ public sealed class CardList : Grid
     }
 
     public DataTemplate ItemTemplate
-    { get => _list.ItemTemplate; set => _list.ItemTemplate = value;
+    {
+        get => _list.ItemTemplate; set => _list.ItemTemplate = value;
     }
 
     public object SelectedItem
-    { get => _list.SelectedItem; set => _list.SelectedItem = value;
+    {
+        get => _list.SelectedItem; set => _list.SelectedItem = value;
     }
 
     public int SelectedIndex
-    { get => _list.SelectedIndex; set => _list.SelectedIndex = value;
+    {
+        get => _list.SelectedIndex; set => _list.SelectedIndex = value;
     }
 
     /// <summary>单选 / 扩展多选；中转站用 Extended 支持 Ctrl / Shift。</summary>
     public SelectionMode SelectionMode
-    { get => _list.SelectionMode; set => _list.SelectionMode = value;
+    {
+        get => _list.SelectionMode; set => _list.SelectionMode = value;
     }
 
     /// <summary>当前选中的行（多选时可能多条）。</summary>
@@ -108,7 +112,8 @@ public sealed class CardList : Grid
     public event Action<object> ItemActivated;
 
     public event SelectionChangedEventHandler SelectionChanged
-    { add => _list.SelectionChanged += value; remove => _list.SelectionChanged -= value;
+    {
+        add => _list.SelectionChanged += value; remove => _list.SelectionChanged -= value;
     }
 
     public void SetEmptyText(string text)

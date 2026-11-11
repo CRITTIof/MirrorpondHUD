@@ -265,7 +265,7 @@ internal sealed class StationView : Grid, IDisposable, IStationCopySink
     /// <summary>从剪贴板取文件列表；没有文件时给出提示，不弹对话框。</summary>
     void PasteFromClipboard()
     {
-        if (_host is null || !_host.Shell.TryGetClipboardFiles(out string[] paths) || paths is null || paths.Length == 0)
+        if (_host is null || !_host.Shell.TryGetClipboardFiles(out var paths) || paths is null || paths.Length == 0)
         {
             SetStatus("剪贴板里没有文件。", CardStatusKind.Warning);
             return;
@@ -433,7 +433,7 @@ internal sealed class StationView : Grid, IDisposable, IStationCopySink
         if (e.ChangedButton != MouseButton.Left) return;
 
         Point point = e.GetPosition(_list.Inner);
-        StationItem item = _selection.ItemAt(point, out FrameworkElement row);
+        StationItem item = _selection.ItemAt(point, out var row);
         if (item is null) { _dragItem = null; return; }
 
         bool ctrl = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
@@ -495,7 +495,7 @@ internal sealed class StationView : Grid, IDisposable, IStationCopySink
 
     void OnRowRightButtonDown(object sender, MouseButtonEventArgs e)
     {
-        StationItem item = _selection.ItemAt(e.GetPosition(_list.Inner), out FrameworkElement row);
+        StationItem item = _selection.ItemAt(e.GetPosition(_list.Inner), out var row);
         if (item is null) return;
 
         _selection.KeepSelection(item, row);
@@ -647,7 +647,7 @@ internal sealed class StationView : Grid, IDisposable, IStationCopySink
 
     void LoadItems()
     {
-        List<StationItem> loaded = _store.Load(_station.AutoRemoveMissing, out int autoRemoved);
+        List<StationItem> loaded = _store.Load(_station.AutoRemoveMissing, out var autoRemoved);
         _items.AddRange(loaded);
         _autoRemoved = autoRemoved;
     }

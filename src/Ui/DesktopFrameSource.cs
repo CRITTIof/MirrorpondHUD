@@ -411,7 +411,7 @@ internal sealed class DesktopFrameSource : IDisposable
             _frameHeight = height;
             _frameAvailable = true;
 
-            int mapHr = _map(_context, _staging, 0, MapRead, 0, out MappedSubresource mapped);
+            int mapHr = _map(_context, _staging, 0, MapRead, 0, out var mapped);
             if (mapHr < 0)
             {
                 _failures++;
@@ -495,7 +495,7 @@ internal sealed class DesktopFrameSource : IDisposable
         _frameLeft = int.MinValue;
         _frameTop = int.MinValue;
 
-        if (!CreateDuplication(out string reason))
+        if (!CreateDuplication(out var reason))
         {
             _dead = true;
             Log.Warn($"桌面复制失效后重建失败，改回 GDI 读屏：{reason}");

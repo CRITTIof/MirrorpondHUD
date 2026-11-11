@@ -167,13 +167,15 @@ public sealed class OverlayController : IDisposable
         }
 
         public Settings Settings
-        { get => _owner._settings; set => _owner._settings = value;
+        {
+            get => _owner._settings; set => _owner._settings = value;
         }
 
         public IList<CardSlot> Cards => _owner._cards;
 
         public bool OverlayVisible
-        { get => _owner._overlayVisible; set => _owner._overlayVisible = value;
+        {
+            get => _owner._overlayVisible; set => _owner._overlayVisible = value;
         }
 
         public CardSlot CreateSlot(CardSettings config) => _owner.CreateSlot(config);

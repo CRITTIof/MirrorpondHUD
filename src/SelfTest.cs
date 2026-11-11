@@ -240,7 +240,7 @@ internal static class SelfTest
         try
         {
             var vars = new Dictionary<string, object> { { "cpu", 23.44 }, { "n", 5 } };
-            string text = TemplateEngine.Render("CPU {cpu:0.0}% {{ok}} {n,3} {nope}", vars, out List<string> unknown);
+            string text = TemplateEngine.Render("CPU {cpu:0.0}% {{ok}} {n,3} {nope}", vars, out var unknown);
 
             templateOk = text == "CPU 23.4% {ok}   5 {nope}";
             unknownOk = unknown.Count == 1 && unknown[0] == "nope";
@@ -470,7 +470,7 @@ internal static class SelfTest
                             && bad.Style.Success == "" && bad.Style.Warning == ""
                             && bad.Style.Decoration == "None";
 
-            bool codeOk = ColorCode.TryParse("#80E6EDF3", out byte ca, out byte cr, out byte cg, out byte cb)
+            bool codeOk = ColorCode.TryParse("#80E6EDF3", out var ca, out var cr, out var cg, out var cb)
                        && ca == 0x80 && cr == 0xE6 && cg == 0xED && cb == 0xF3
                        && !ColorCode.TryParse("nope", out ca, out cr, out cg, out cb)
                        && !ColorCode.TryParse("#12345", out ca, out cr, out cg, out cb);
@@ -558,7 +558,7 @@ internal static class SelfTest
 
         string json = ThemeFile.Export(source, "往返测试");
 
-        bool parseOk = ThemeFile.TryParse(json, out ThemeDocument parsed, out string error)
+        bool parseOk = ThemeFile.TryParse(json, out var parsed, out var error)
                     && parsed is not null
                     && parsed.Name == "往返测试"
                     && parsed.Schema == ThemeFile.SupportedSchema;
@@ -571,7 +571,7 @@ internal static class SelfTest
 
         // 软色写数字 = 按前景派生：0.45 * 255 ≈ 0x73
         const string softJson = "{\"schema\":1,\"appearance\":{\"colors\":{\"foreground\":\"#E6EDF3\",\"muted\":0.45}}}";
-        bool softParsed = ThemeFile.TryParse(softJson, out ThemeDocument soft, out error);
+        bool softParsed = ThemeFile.TryParse(softJson, out var soft, out error);
         var softApplied = new Settings();
         if (soft is not null) soft.ApplyTo(softApplied);
         bool alphaOk = softParsed && softApplied.Style.Muted == "#73E6EDF3";
@@ -596,7 +596,7 @@ internal static class SelfTest
                 samplesOk = files.Length > 0;
                 foreach (string file in files)
                 {
-                    if (!ThemeFile.TryParse(File.ReadAllText(file), out ThemeDocument sample, out string sampleError))
+                    if (!ThemeFile.TryParse(File.ReadAllText(file), out var sample, out var sampleError))
                     {
                         samplesOk = false;
                         Log.Error($"示例主题解析失败 {Path.GetFileName(file)}: {sampleError}");
@@ -666,7 +666,7 @@ internal static class SelfTest
         bool themeRejectOk = false;
         try
         {
-            bool future = !ThemeFile.TryParse("{\"schema\":2,\"appearance\":{}}", out ThemeDocument doc, out string error)
+            bool future = !ThemeFile.TryParse("{\"schema\":2,\"appearance\":{}}", out var doc, out var error)
                        && error is not null && error.Contains("版本");
             bool badColor = !ThemeFile.TryParse("{\"schema\":1,\"appearance\":{\"colors\":{\"accent\":\"nope\"}}}", out doc, out error);
             bool badRange = !ThemeFile.TryParse("{\"schema\":1,\"appearance\":{\"typography\":{\"fontSize\":200}}}", out doc, out error);
@@ -684,10 +684,10 @@ internal static class SelfTest
             current.Style.Accent = "#123456";
             string temp = Path.Combine(Path.GetTempPath(), $"mph-theme-selftest-{Guid.NewGuid():N}.mptheme");
             File.WriteAllText(temp, "{\"schema\":9,\"appearance\":{}}");
-            bool rejectedOk = !ThemeFile.TryImport(temp, current, out Settings rejected, out error) && rejected is null;
+            bool rejectedOk = !ThemeFile.TryImport(temp, current, out var rejected, out error) && rejected is null;
 
             File.WriteAllText(temp, ThemeFile.Export(new Settings(), "临时"));
-            bool importedOk = ThemeFile.TryImport(temp, current, out Settings imported, out error)
+            bool importedOk = ThemeFile.TryImport(temp, current, out var imported, out error)
                            && imported is not null
                            && imported.Style.Accent == new Settings().Style.Accent
                            && current.Style.Accent == "#123456";
@@ -695,7 +695,7 @@ internal static class SelfTest
             // P2-7：超过 1 MB 的主题文件必须明确拒绝，不能整读。
             string big = $"{temp}.big";
             File.WriteAllBytes(big, new byte[ThemeFile.MaxImportBytes + 1]);
-            bool bigOk = !ThemeFile.TryImport(big, current, out Settings bigImported, out error)
+            bool bigOk = !ThemeFile.TryImport(big, current, out var bigImported, out error)
                       && bigImported is null
                       && error is not null && error.Contains("过大");
 
@@ -740,9 +740,9 @@ internal static class SelfTest
         try
         {
             // #7：克隆失败必须返回 false + null，绝不能拿 new Settings() 顶替（那会写默认值回盘）。
-            bool guarded = !SettingsWindow.TryClone(null, out Settings badClone, out string badError) && badClone is null;
+            bool guarded = !SettingsWindow.TryClone(null, out var badClone, out var badError) && badClone is null;
 
-            bool works = SettingsWindow.TryClone(new Settings(), out Settings goodClone, out string goodError)
+            bool works = SettingsWindow.TryClone(new Settings(), out var goodClone, out var goodError)
                       && goodClone is not null;
 
             cloneGuardOk = guarded && works;
@@ -1036,8 +1036,12 @@ internal static class SelfTest
             var source = new Settings();
             var card = new CardSettings
             {
-                Id = "selftest-config", Kind = "infotext", Name = "自检卡",
-                Preset = "clock", Content = "{time}", Spacing = 16
+                Id = "selftest-config",
+                Kind = "infotext",
+                Name = "自检卡",
+                Preset = "clock",
+                Content = "{time}",
+                Spacing = 16
             };
             card.Extras["command"] = new Dictionary<string, object>
             {
@@ -1082,7 +1086,7 @@ internal static class SelfTest
     /// <summary>设置加载：损坏 / 旧 Schema / v6→v7 迁移 / 无版本 / 未来版本只读 / 数字溢出 / 未知 Kind 保留。</summary>
     static bool CheckSettingsLoader()
     {
-        Settings broken = SettingsLoader.Load("{\"SchemaVersion\":7,", out bool needsSave, out bool corrupted);
+        Settings broken = SettingsLoader.Load("{\"SchemaVersion\":7,", out var needsSave, out var corrupted);
         bool brokenOk = corrupted && !needsSave && broken is not null;
 
         Settings oldSchema = SettingsLoader.Load("{\"SchemaVersion\":1,\"Cards\":[]}", out needsSave, out corrupted);
@@ -1095,7 +1099,7 @@ internal static class SelfTest
                           && unversioned.Cards[0].Kind == "infotext";
 
         Settings future = SettingsLoader.Load("{\"SchemaVersion\":999,\"Cards\":[]}",
-                                                  out needsSave, out corrupted, out bool futureFlag);
+                                                  out needsSave, out corrupted, out var futureFlag);
         bool futureOk = !corrupted && futureFlag && !needsSave && future is not null;
 
         Settings overflow = SettingsLoader.Load("{\"SchemaVersion\":1e300,\"Cards\":[]}",
@@ -1112,10 +1116,10 @@ internal static class SelfTest
         bool v6ChatModeOk = false;
         if (v6.Cards is not null && v6.Cards.Count == 1 && v6.Cards[0].Extras is not null)
         {
-            if (v6.Cards[0].Extras.TryGetValue("chat", out object chatNode))
+            if (v6.Cards[0].Extras.TryGetValue("chat", out var chatNode))
             {
                 var chat = chatNode as Dictionary<string, object>;
-                if (chat is not null && chat.TryGetValue("Mode", out object modeNode))
+                if (chat is not null && chat.TryGetValue("Mode", out var modeNode))
                     v6ChatModeOk = string.Equals(Convert.ToString(modeNode), "Context", StringComparison.Ordinal);
             }
         }
@@ -1139,7 +1143,10 @@ internal static class SelfTest
         var unknownSettings = new Settings();
         unknownSettings.Cards.Add(new CardSettings
         {
-            Id = "plugin-missing", Kind = "example-clock", Name = "插件卡", Content = "插件内容",
+            Id = "plugin-missing",
+            Kind = "example-clock",
+            Name = "插件卡",
+            Content = "插件内容",
             Extras = new Dictionary<string, object> { { "plugin", "keep" } }
         });
         CardModel.Normalize(unknownSettings);
@@ -1238,12 +1245,13 @@ internal static class SelfTest
 
         // 版本纪律：6 个内置 manifest 的 version 必须与宿主程序集版本一致。
         // 以前 CardPluginLoader 只把 manifest.version 写日志、不校验，漏改是静默的。
+        // 用户插件与内置版本本来就不要求一致，所以只检查 builtin.* 目录。
         bool manifestOk = CheckBundledManifestVersions();
 
         return contractsOk && registryOk && placeholderOk && manifestOk;
     }
 
-    /// <summary>内置插件 manifest 版本必须与宿主一致；缺目录 / 缺文件都按失败处理。</summary>
+    /// <summary>内置插件 manifest 版本必须与宿主一致；用户插件不参与这项检查。</summary>
     static bool CheckBundledManifestVersions()
     {
         try
@@ -1251,29 +1259,80 @@ internal static class SelfTest
             string root = Path.Combine(AppContext.BaseDirectory, "plugins", "cards");
             if (!Directory.Exists(root)) return false;
 
-            string[] files = Directory.GetFiles(root, "manifest.json", SearchOption.AllDirectories);
-            if (files.Length < 6) return false;
-
             Version host = typeof(SelfTest).Assembly.GetName().Version;
             string expected = host is null ? "" : host.ToString(3);
             if (expected.Length == 0) return false;
 
-            foreach (string file in files)
-            {
-                var manifest = Json.Deserialize<ManifestVersionProbe>(File.ReadAllText(file));
-                if (manifest is null) return false;
-                if (!string.Equals((manifest.version ?? "").Trim(), expected, StringComparison.OrdinalIgnoreCase))
-                {
-                    Log.Warn($"内置插件 manifest 版本不一致: {file} version={(manifest.version ?? "")} 期望={expected}");
-                    return false;
-                }
-            }
-            return true;
+            bool builtinOk = CheckManifestVersions(root, expected, 6);
+            if (!builtinOk) return false;
+
+            // 反例：用户插件目录里放一个版本不一致的 manifest，不能影响内置检查。
+            return CheckUserManifestIsIgnored(expected);
         }
         catch (Exception ex)
         {
             Log.Warn($"内置插件 manifest 版本检查失败: {ex.Message}");
             return false;
+        }
+    }
+
+    /// <summary>只读 builtin.* 目录下的 manifest；用户插件目录不进入检查。</summary>
+    static bool CheckManifestVersions(string root, string expected, int minBuiltinCount, bool logMismatch = true)
+    {
+        if (!Directory.Exists(root)) return false;
+
+        string[] dirs = Directory.GetDirectories(root, "builtin.*", SearchOption.TopDirectoryOnly);
+        if (dirs.Length < minBuiltinCount) return false;
+
+        foreach (string dir in dirs)
+        {
+            string file = Path.Combine(dir, "manifest.json");
+            if (!File.Exists(file)) return false;
+
+            var manifest = Json.Deserialize<ManifestVersionProbe>(File.ReadAllText(file));
+            if (manifest is null) return false;
+            if (!string.Equals((manifest.version ?? "").Trim(), expected, StringComparison.OrdinalIgnoreCase))
+            {
+                if (logMismatch)
+                    Log.Warn($"内置插件 manifest 版本不一致: {file} version={(manifest.version ?? "")} 期望={expected}");
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /// <summary>临时目录里同时放 builtin 与 user 插件，验证 user 的版本不参与内置检查。</summary>
+    static bool CheckUserManifestIsIgnored(string expected)
+    {
+        string root = Path.Combine(Path.GetTempPath(), $"mhud-manifest-selftest-{Guid.NewGuid():N}");
+        try
+        {
+            string builtinDir = Path.Combine(root, "builtin.test");
+            string userDir = Path.Combine(root, "user.card");
+            Directory.CreateDirectory(builtinDir);
+            Directory.CreateDirectory(userDir);
+
+            string builtinManifest = Path.Combine(builtinDir, "manifest.json");
+            File.WriteAllText(builtinManifest, "{\"version\":\"" + expected + "\"}");
+            File.WriteAllText(Path.Combine(userDir, "manifest.json"), "{\"version\":\"1.0.0\"}");
+
+            bool userIgnored = CheckManifestVersions(root, expected, 1, false);
+
+            // 反证：builtin 自己写错时必须失败；这是预期负例，不写 WARN。
+            File.WriteAllText(builtinManifest, "{\"version\":\"9.9.9\"}");
+            bool builtinMismatchFails = !CheckManifestVersions(root, expected, 1, false);
+
+            return userIgnored && builtinMismatchFails;
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"用户插件 manifest 隔离检查失败: {ex.Message}");
+            return false;
+        }
+        finally
+        {
+            try { if (Directory.Exists(root)) Directory.Delete(root, true); }
+            catch (Exception ex) { Log.Warn($"用户插件 manifest 隔离目录清理失败: {ex.Message}"); }
         }
     }
 
@@ -1382,7 +1441,7 @@ internal static class SelfTest
             string stored = SecretStore.Protect(secret);
             secretOk = SecretStore.IsProtected(stored)
                     && stored.StartsWith(SecretStore.Prefix, StringComparison.Ordinal)
-                    && SecretStore.TryUnprotect(stored, out string plain)
+                    && SecretStore.TryUnprotect(stored, out var plain)
                     && plain == secret
                     && !SecretStore.IsProtected(secret);
         }
@@ -1559,7 +1618,7 @@ internal static class SelfTest
 
         public string LastWrittenState { get; private set; }
 
-        public string ReadState(string fileName) => _state.TryGetValue(fileName ?? "", out string value) ? value : null;
+        public string ReadState(string fileName) => _state.TryGetValue(fileName ?? "", out var value) ? value : null;
 
         public bool WriteState(string fileName, string text)
         {

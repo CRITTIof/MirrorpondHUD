@@ -179,7 +179,7 @@ internal sealed class WaveOutPlayer : IDisposable
                 Size = 0
             };
 
-            int code = waveOutOpen(out nint handle, -1, ref format, IntPtr.Zero, IntPtr.Zero, 0);
+            int code = waveOutOpen(out var handle, -1, ref format, IntPtr.Zero, IntPtr.Zero, 0);
             if (code != 0)
             {
                 _lastErrorName = MmsysErrorName(code);
@@ -259,7 +259,7 @@ internal sealed class WaveOutPlayer : IDisposable
         {
             if (!_deviceVolumeSaved)
             {
-                if (waveOutGetVolume(handle, out uint original) != 0)
+                if (waveOutGetVolume(handle, out var original) != 0)
                 {
                     // 连原音量都读不到，就更不该覆盖用户的系统设置。
                     Log.Warn("读取系统波形音量失败，保持系统音量不变");

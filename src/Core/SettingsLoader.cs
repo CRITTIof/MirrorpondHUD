@@ -13,7 +13,7 @@ namespace MirrorpondHUD.Core;
 /// </summary>
 internal static class SettingsLoader
 {
-    public static Settings Load(string json, out bool needsSave, out bool corrupted) => Load(json, out needsSave, out corrupted, out bool future);
+    public static Settings Load(string json, out bool needsSave, out bool corrupted) => Load(json, out needsSave, out corrupted, out var future);
 
     public static Settings Load(string json, out bool needsSave, out bool corrupted, out bool futureVersion)
     {
@@ -21,8 +21,8 @@ internal static class SettingsLoader
         corrupted = false;
         futureVersion = false;
 
-        if (!TryReadRoot(json, out Dictionary<string, object> root) ||
-            !TryReadVersion(root, out int version, out bool hasVersion))
+        if (!TryReadRoot(json, out var root) ||
+            !TryReadVersion(root, out var version, out var hasVersion))
         {
             corrupted = true;
             Log.Warn("设置文件不是合法的 JSON 对象，按损坏处理");
@@ -258,7 +258,7 @@ internal static class SettingsLoader
         version = 0;
         hasVersion = false;
 
-        if (root is null || !root.TryGetValue("SchemaVersion", out object raw) || raw is null)
+        if (root is null || !root.TryGetValue("SchemaVersion", out var raw) || raw is null)
             return true;
 
         hasVersion = true;

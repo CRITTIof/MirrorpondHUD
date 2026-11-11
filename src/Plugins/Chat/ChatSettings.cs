@@ -85,7 +85,7 @@ public sealed class ChatSettings
             return;
         }
 
-        if (!SecretStore.TryProtect(plain, out string stored))
+        if (!SecretStore.TryProtect(plain, out var stored))
         {
             Log.Error("API Key 加密失败，保留原 Key，新 Key 未保存");
             return;
@@ -112,7 +112,7 @@ public sealed class ChatSettings
         ApiKey = (ApiKey ?? "").Trim();
         if (ApiKey.Length > 0 && !SecretStore.IsProtected(ApiKey))
         {
-            if (SecretStore.TryProtect(ApiKey, out string stored)) ApiKey = stored;
+            if (SecretStore.TryProtect(ApiKey, out var stored)) ApiKey = stored;
             else ApiKey = "";
         }
 

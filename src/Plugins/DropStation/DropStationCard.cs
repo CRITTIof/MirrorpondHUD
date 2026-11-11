@@ -355,5 +355,5 @@ internal sealed class StationEditor : StackPanel
         _browse.IsEnabled = copy;
     }
 
-    static int ParseInt(string text, int fallback) => int.TryParse((text ?? "").Trim(), out int value) ? value : fallback;
+    static int ParseInt(string text, int fallback) => int.TryParse((text ?? "").Trim(), out var value) ? value : fallback;
 }

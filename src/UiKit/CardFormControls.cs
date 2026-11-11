@@ -84,7 +84,8 @@ public sealed class CardSlider : Grid, ICardFormControl
     public Slider InnerSlider => _slider;
 
     public string Label
-    { get => _label.Text ?? ""; set => _label.Text = value ?? "";
+    {
+        get => _label.Text ?? ""; set => _label.Text = value ?? "";
     }
 
     public double Minimum
@@ -208,7 +209,8 @@ public sealed class CardToggle : CheckBox, ICardFormControl
     }
 
     public string Text
-    { get => Content as string ?? ""; set => Content = value ?? "";
+    {
+        get => Content as string ?? ""; set => Content = value ?? "";
     }
 
     public void ApplyStyle(StyleSettings style, double cornerRadius)
@@ -300,7 +302,8 @@ public sealed class CardSelect : Grid, ICardFormControl
     }
 
     public IEnumerable<string> ItemsSource
-    { get => _combo.ItemsSource as IEnumerable<string>; set => _combo.ItemsSource = value;
+    {
+        get => _combo.ItemsSource as IEnumerable<string>; set => _combo.ItemsSource = value;
     }
 
     public string SelectedItem
@@ -315,7 +318,8 @@ public sealed class CardSelect : Grid, ICardFormControl
     }
 
     public int SelectedIndex
-    { get => _combo.SelectedIndex; set => _combo.SelectedIndex = value;
+    {
+        get => _combo.SelectedIndex; set => _combo.SelectedIndex = value;
     }
 
     public ComboBox InnerComboBox => _combo;
@@ -438,7 +442,8 @@ public sealed class CardNumberInput : Grid, ICardFormControl
     public double Maximum { get; set; }
 
     public double Value
-    { get => Parse(_box.Text); set => _box.Text = Math.Max(Minimum, Math.Min(Maximum, value)).ToString(ValueFormat, CultureInfo.CurrentCulture);
+    {
+        get => Parse(_box.Text); set => _box.Text = Math.Max(Minimum, Math.Min(Maximum, value)).ToString(ValueFormat, CultureInfo.CurrentCulture);
     }
 
     public string ValueFormat { get; set; } = "0.##";
@@ -470,7 +475,7 @@ public sealed class CardNumberInput : Grid, ICardFormControl
 
     double Parse(string text)
     {
-        if (!double.TryParse((text ?? "").Trim(), NumberStyles.Float, CultureInfo.CurrentCulture, out double value) &&
+        if (!double.TryParse((text ?? "").Trim(), NumberStyles.Float, CultureInfo.CurrentCulture, out var value) &&
             !double.TryParse((text ?? "").Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out value))
             value = Minimum;
         return Math.Max(Minimum, Math.Min(Maximum, value));
@@ -521,7 +526,8 @@ public sealed class CardColorPicker : Grid, ICardFormControl
     public event Action<string> ValueChanged;
 
     public string Label
-    { get => _label.Text ?? ""; set => _label.Text = value ?? "";
+    {
+        get => _label.Text ?? ""; set => _label.Text = value ?? "";
     }
 
     public string Value
@@ -557,7 +563,7 @@ public sealed class CardColorPicker : Grid, ICardFormControl
 
     void UpdatePreview()
     {
-        if (TryParseColor(_box.Text, out Color color))
+        if (TryParseColor(_box.Text, out var color))
         {
             _preview.Background = new SolidColorBrush(color);
             _box.BorderBrush = CardPalette.Brush(_foreground, 0.24);
@@ -578,7 +584,7 @@ public sealed class CardColorPicker : Grid, ICardFormControl
 
     static bool TryParseColor(string text, out Color color)
     {
-        if (!ColorCode.TryParse(text, out byte a, out byte r, out byte g, out byte b))
+        if (!ColorCode.TryParse(text, out var a, out var r, out var g, out var b))
         {
             color = Colors.Transparent;
             return false;
@@ -732,7 +738,8 @@ public sealed class CardFormRow : Grid, ICardFormControl
     }
 
     public string Label
-    { get => _label.Text ?? ""; set => _label.Text = value ?? "";
+    {
+        get => _label.Text ?? ""; set => _label.Text = value ?? "";
     }
 
     public FrameworkElement ContentElement => _content;

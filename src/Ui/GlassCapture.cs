@@ -149,7 +149,7 @@ internal static class GlassCapture
                 if (hwnd == IntPtr.Zero) return true;
                 if (!IsWindowVisible(hwnd)) return true;
 
-                if (!GetWindowRect(hwnd, out RECT rect)) return true;
+                if (!GetWindowRect(hwnd, out var rect)) return true;
                 if (rect.Width < 16 || rect.Height < 16) return true;
                 if (rect.Right <= left || rect.Left >= right) return true;
                 if (rect.Bottom <= top || rect.Top >= bottom) return true;
@@ -167,7 +167,7 @@ internal static class GlassCapture
 
                 if (layers.Count >= MaxLayers) return true;
 
-                GetWindowThreadProcessId(hwnd, out uint pid);
+                GetWindowThreadProcessId(hwnd, out var pid);
                 if (pid == self) return true;
                 if (IsCaptureOverlay(cls, pid)) return true;
 
@@ -315,7 +315,7 @@ internal static class GlassCapture
 
             if (layer.Window == IntPtr.Zero)
             {
-                if (!DesktopBackground.TryGet(layer.Rect, out DesktopBackground.Frame frame)) continue;
+                if (!DesktopBackground.TryGet(layer.Rect, out var frame)) continue;
 
                 pixels[i] = frame.Pixels;
                 sourceWidths[i] = frame.Width;
@@ -494,7 +494,7 @@ internal static class GlassCapture
                 }
             };
 
-            dib = CreateDIBSection(memoryDc, ref info, 0, out nint bits, IntPtr.Zero, 0);
+            dib = CreateDIBSection(memoryDc, ref info, 0, out var bits, IntPtr.Zero, 0);
             if (dib == IntPtr.Zero || bits == IntPtr.Zero) return null;
 
             previous = SelectObject(memoryDc, dib);

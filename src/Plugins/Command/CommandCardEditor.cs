@@ -182,7 +182,7 @@ internal static class CommandCardEditor
     {
         Action apply = () =>
         {
-            if (int.TryParse((box.Text ?? "").Trim(), out int value)) set(value);
+            if (int.TryParse((box.Text ?? "").Trim(), out var value)) set(value);
             else box.Text = get().ToString("0");
         };
 

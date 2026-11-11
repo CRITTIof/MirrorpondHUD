@@ -51,7 +51,7 @@ public static class Keycaps
             suffix = token.Substring(repeat);
         }
 
-        if (Map.TryGetValue(name, out char glyph))
+        if (Map.TryGetValue(name, out var glyph))
         {
             sb.Append(glyph);
             sb.Append(suffix);

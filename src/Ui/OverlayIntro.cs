@@ -170,16 +170,16 @@ internal sealed class OverlayIntro : IDisposable
         switch (_phase)
         {
             case Phase.WelcomeTyping:
-            {
-                int n = Math.Min(chars, _welcome.Length);
-                ShowText(_welcome.Substring(0, n));
-                if (n >= _welcome.Length)
                 {
-                    _phase = Phase.WelcomeHold;
-                    _phaseStart = DateTime.UtcNow;
+                    int n = Math.Min(chars, _welcome.Length);
+                    ShowText(_welcome.Substring(0, n));
+                    if (n >= _welcome.Length)
+                    {
+                        _phase = Phase.WelcomeHold;
+                        _phaseStart = DateTime.UtcNow;
+                    }
+                    break;
                 }
-                break;
-            }
 
             case Phase.WelcomeHold:
                 if ((DateTime.UtcNow - _phaseStart).TotalMilliseconds >= 650)
@@ -190,25 +190,25 @@ internal sealed class OverlayIntro : IDisposable
                 break;
 
             case Phase.WelcomeErase:
-            {
-                int removed = Math.Min(chars, _welcome.Length);
-                int remain = _welcome.Length - removed;
-                ShowText(remain <= 0 ? "" : _welcome.Substring(0, remain));
-                if (remain <= 0)
                 {
-                    _phase = Phase.ContentTyping;
-                    _phaseStart = DateTime.UtcNow;
+                    int removed = Math.Min(chars, _welcome.Length);
+                    int remain = _welcome.Length - removed;
+                    ShowText(remain <= 0 ? "" : _welcome.Substring(0, remain));
+                    if (remain <= 0)
+                    {
+                        _phase = Phase.ContentTyping;
+                        _phaseStart = DateTime.UtcNow;
+                    }
+                    break;
                 }
-                break;
-            }
 
             case Phase.ContentTyping:
-            {
-                int n = Math.Min(chars, _content.Length);
-                ShowText(_content.Substring(0, n));
-                if (n >= _content.Length) Finish();
-                break;
-            }
+                {
+                    int n = Math.Min(chars, _content.Length);
+                    ShowText(_content.Substring(0, n));
+                    if (n >= _content.Length) Finish();
+                    break;
+                }
         }
     }
 

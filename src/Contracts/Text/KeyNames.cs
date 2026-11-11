@@ -11,7 +11,7 @@ public static class KeyNames
 
     public static string Of(int vk)
     {
-        if (Special.TryGetValue(vk, out string name)) return name;
+        if (Special.TryGetValue(vk, out var name)) return name;
 
         if (vk >= 0x30 && vk <= 0x39) return ((char)vk).ToString();      // 0-9
         if (vk >= 0x41 && vk <= 0x5A) return ((char)vk).ToString();      // A-Z

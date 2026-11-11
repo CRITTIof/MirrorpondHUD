@@ -6914,7 +6914,7 @@ public static class LucideIcons
     {
         string key = (name ?? "").Trim().ToLowerInvariant();
         if (key.StartsWith("icon-", StringComparison.Ordinal)) key = key.Substring(5);
-        return Glyphs.TryGetValue(key, out string glyph) ? glyph : "";
+        return Glyphs.TryGetValue(key, out var glyph) ? glyph : "";
     }
 
     /// <summary>按名字取字形；未知返回 false。</summary>

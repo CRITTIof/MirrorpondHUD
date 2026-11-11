@@ -85,7 +85,8 @@ public sealed class CardInput : Grid
     }
 
     public bool IsReadOnly
-    { get => _box.IsReadOnly; set => _box.IsReadOnly = value;
+    {
+        get => _box.IsReadOnly; set => _box.IsReadOnly = value;
     }
 
     public void Submit()

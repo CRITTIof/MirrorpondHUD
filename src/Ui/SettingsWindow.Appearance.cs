@@ -90,7 +90,7 @@ public partial class SettingsWindow
     static double ParseBox(TextBox box, double fallback)
     {
         if (!double.TryParse((box.Text ?? "").Trim(), NumberStyles.Float,
-                CultureInfo.CurrentCulture, out double value))
+                CultureInfo.CurrentCulture, out var value))
             return fallback;
         return value;
     }
@@ -112,7 +112,7 @@ public partial class SettingsWindow
         {
             if (updating) return;
             if (!double.TryParse((box.Text ?? "").Trim(), NumberStyles.Float,
-                    CultureInfo.CurrentCulture, out double value))
+                    CultureInfo.CurrentCulture, out var value))
             {
                 box.Text = slider.Value.ToString(format, CultureInfo.InvariantCulture);
                 return;

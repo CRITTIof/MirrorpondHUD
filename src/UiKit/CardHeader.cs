@@ -54,7 +54,8 @@ public sealed class CardHeader : Grid
     public CardToolbar Actions { get; private set; }
 
     public string Title
-    { get => _title.Text ?? ""; set => _title.Text = value ?? "";
+    {
+        get => _title.Text ?? ""; set => _title.Text = value ?? "";
     }
 
     /// <summary>标题右侧的小字（“12 个文件”“只读”）；null / 空串隐藏。</summary>

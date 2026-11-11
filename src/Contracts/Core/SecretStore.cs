@@ -52,7 +52,7 @@ public static class SecretStore
     /// <summary>
     /// 加密成 <c>dpapi:base64</c>。失败时返回空串（拒绝明文落盘），由调用方决定是否清空 Key。
     /// </summary>
-    public static string Protect(string plain) => TryProtect(plain, out string stored) ? stored : "";
+    public static string Protect(string plain) => TryProtect(plain, out var stored) ? stored : "";
 
     /// <summary>加密成功返回 true；失败不返回明文，只把原因写日志。</summary>
     public static bool TryProtect(string plain, out string stored)

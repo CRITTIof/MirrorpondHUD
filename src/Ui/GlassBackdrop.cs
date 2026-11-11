@@ -111,7 +111,7 @@ internal sealed class GlassBackdrop : IDisposable
             return false;
         }
 
-        int hr = DwmIsCompositionEnabled(out bool compositionEnabled);
+        int hr = DwmIsCompositionEnabled(out var compositionEnabled);
         if (hr != 0 || !compositionEnabled)
         {
             reason = "DWM 合成未启用";

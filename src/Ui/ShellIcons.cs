@@ -46,7 +46,7 @@ public static class ShellIcons
 
         lock (Gate)
         {
-            if (Icons.TryGetValue(key, out ImageSource cached)) return cached;
+            if (Icons.TryGetValue(key, out var cached)) return cached;
         }
 
         ImageSource icon = LoadIcon(path, size, extensionOnly);
@@ -68,7 +68,7 @@ public static class ShellIcons
         string key = ThumbnailKey(path, size);
         lock (Gate)
         {
-            if (Thumbnails.TryGetValue(key, out ImageSource cached)) return Task.FromResult(cached);
+            if (Thumbnails.TryGetValue(key, out var cached)) return Task.FromResult(cached);
         }
 
         return Worker.Value.Run(() => LoadThumbnail(path, size)).ContinueWith(task =>
@@ -170,11 +170,11 @@ public static class ShellIcons
             if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return null;
 
             Guid iid = typeof(IShellItemImageFactory).GUID;
-            SHCreateItemFromParsingName(path, IntPtr.Zero, ref iid, out IShellItemImageFactory factory);
+            SHCreateItemFromParsingName(path, IntPtr.Zero, ref iid, out var factory);
             if (factory is null) return null;
 
             factory.GetImage(new SIZE { cx = size, cy = size },
-                             SIIGBF.THUMBNAILONLY | SIIGBF.RESIZETOFIT, out nint hBitmap);
+                             SIIGBF.THUMBNAILONLY | SIIGBF.RESIZETOFIT, out var hBitmap);
             if (hBitmap == IntPtr.Zero) return null;
 
             try

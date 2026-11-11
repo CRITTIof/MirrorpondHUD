@@ -77,7 +77,7 @@ internal sealed class PdhQuery : IDisposable
             if (_query == IntPtr.Zero) return false;
             if (_counters.ContainsKey(path)) return true;
 
-            uint rc = PdhAddEnglishCounterW(_query, path, IntPtr.Zero, out nint handle);
+            uint rc = PdhAddEnglishCounterW(_query, path, IntPtr.Zero, out var handle);
             if (rc != 0)
             {
                 Log.Warn($"添加计数器失败 0x{rc:X8} : {path}");
@@ -105,7 +105,7 @@ internal sealed class PdhQuery : IDisposable
         lock (_sync)
         {
             if (_query == IntPtr.Zero) return false;
-            if (!_counters.TryGetValue(path, out IntPtr counter)) return false;
+            if (!_counters.TryGetValue(path, out var counter)) return false;
 
             uint size = 0;
             uint count = 0;

@@ -96,7 +96,8 @@ public sealed class CardStatus : Grid
     public CardStatusKind Kind => _kind;
 
     public string Text
-    { get => _text.Text ?? ""; set => SetText(value);
+    {
+        get => _text.Text ?? ""; set => SetText(value);
     }
 
     /// <summary>设置文字与状态（Busy 会自动开始转圈）。</summary>

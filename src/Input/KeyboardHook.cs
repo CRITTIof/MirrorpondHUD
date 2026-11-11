@@ -115,7 +115,7 @@ public sealed class KeyboardHook : IDisposable
 
         _ready.Set();
 
-        while (_running && GetMessage(out Msg msg, IntPtr.Zero, 0, 0) > 0)
+        while (_running && GetMessage(out var msg, IntPtr.Zero, 0, 0) > 0)
         {
             TranslateMessage(ref msg);
             DispatchMessage(ref msg);

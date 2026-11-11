@@ -40,7 +40,7 @@ public static class ThemeCatalog
                     using (var reader = new StreamReader(stream))
                         json = reader.ReadToEnd();
 
-                    if (!ThemeFile.TryParse(json, out ThemeDocument document, out string error))
+                    if (!ThemeFile.TryParse(json, out var document, out var error))
                     {
                         Log.Warn($"内置主题解析失败 {name}：{error}");
                         continue;

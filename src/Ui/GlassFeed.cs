@@ -318,7 +318,7 @@ internal static class GlassFeed
 
         foreach (Target target in snapshot)
         {
-            if (!TryGetScreenRect(target.Window, out int l, out int t, out int w, out int h)) continue;
+            if (!TryGetScreenRect(target.Window, out var l, out var t, out var w, out var h)) continue;
 
             count++;
             if (l < left) left = l;
@@ -518,7 +518,7 @@ internal static class GlassFeed
     /// <summary>从共享的屏幕图里取自己这一块，缩小 + 模糊，然后交给卡片画出来。</summary>
     static void Render(Target target, int originLeft, int originTop, ref int rendered, ref int black)
     {
-        if (!TryGetScreenRect(target.Window, out int left, out int top, out int width, out int height)) return;
+        if (!TryGetScreenRect(target.Window, out var left, out var top, out var width, out var height)) return;
 
         int w = Math.Max(2, width / Downscale);
         int h = Math.Max(2, height / Downscale);
@@ -715,7 +715,7 @@ internal static class GlassFeed
         if (_frameSource is not null || _frameSourceTried) return _frameSource;
         _frameSourceTried = true;
 
-        if (DesktopFrameSource.TryCreate(_source, out DesktopFrameSource source, out string reason))
+        if (DesktopFrameSource.TryCreate(_source, out var source, out var reason))
         {
             _frameSource = source;
             _frameSourceIdle = DateTime.UtcNow;
@@ -760,7 +760,7 @@ internal static class GlassFeed
         try
         {
             _sharedDc = CreateCompatibleDC(screen);
-            _sharedDib = CreateDIBSection(screen, ref bmi, 0, out nint bits, IntPtr.Zero, 0);
+            _sharedDib = CreateDIBSection(screen, ref bmi, 0, out var bits, IntPtr.Zero, 0);
             _sharedBits = bits;
         }
         finally

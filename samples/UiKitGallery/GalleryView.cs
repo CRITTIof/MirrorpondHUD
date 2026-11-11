@@ -177,7 +177,7 @@ internal sealed class GalleryView : ScrollViewer
         tag.Margin = new Thickness(0, 0, 6, 6);
         tag.ApplyStyle(_style, _corner);
         _tag = tag;
-        tag.Removed += delegate(CardTag removed)
+        tag.Removed += delegate (CardTag removed)
         {
             removed.Visibility = Visibility.Collapsed;
             SetStatus("CardTag.Removed：标签已从布局里移除（演示，不写配置）", CardStatusKind.Info);
@@ -218,7 +218,7 @@ internal sealed class GalleryView : ScrollViewer
         {
             SetStatus($"CardList 选中：{Describe(list.SelectedItem)}", CardStatusKind.Info);
         };
-        list.ItemActivated += delegate(object item)
+        list.ItemActivated += delegate (object item)
         {
             SetStatus($"CardList 激活（双击 / 回车）：{Describe(item)}", CardStatusKind.Success);
         };
@@ -378,7 +378,7 @@ internal sealed class GalleryView : ScrollViewer
         tree.AddRoot("第二个根节点", "tag");
         tree.ExpandAll();
         tree.ApplyStyle(_style, _corner);
-        tree.SelectionChanged += delegate(CardTreeItem item)
+        tree.SelectionChanged += delegate (CardTreeItem item)
         {
             SetStatus($"CardTree 选中：{(item is null ? "（空）" : item.Text)}", CardStatusKind.Info);
         };
@@ -392,7 +392,7 @@ internal sealed class GalleryView : ScrollViewer
         timeline.Add("10:05", "挂载控件", "25 个以上公共控件", CardTimelineTone.Accent);
         timeline.Add("10:10", "等待主题", "颜色 / 字号跟随卡片外观", CardTimelineTone.Success);
         timeline.ApplyStyle(_style, _corner);
-        timeline.SelectionChanged += delegate(CardTimelineItem item)
+        timeline.SelectionChanged += delegate (CardTimelineItem item)
         {
             SetStatus($"CardTimeline 选中：{(item is null ? "（空）" : item.Title)}", CardStatusKind.Info);
         };
@@ -440,7 +440,7 @@ internal sealed class GalleryView : ScrollViewer
         form.AddDescription("以上控件由 CardSettingsForm 统一排版；改值只更新状态行，不写配置文件。");
         form.AddDivider();
 
-        slider.ValueChanged += delegate(double value)
+        slider.ValueChanged += delegate (double value)
         {
             SetStatus($"CardSlider 值：{value.ToString("0")}", CardStatusKind.Info);
         };
@@ -452,19 +452,19 @@ internal sealed class GalleryView : ScrollViewer
         {
             SetStatus("CardToggle：已关闭", CardStatusKind.Normal);
         };
-        select.SelectionChanged += delegate(string item)
+        select.SelectionChanged += delegate (string item)
         {
             SetStatus($"CardSelect 选中：{Describe(item)}", CardStatusKind.Info);
         };
-        number.ValueChanged += delegate(double value)
+        number.ValueChanged += delegate (double value)
         {
             SetStatus($"CardNumberInput 值：{value.ToString("0.##")}", CardStatusKind.Info);
         };
-        color.ValueChanged += delegate(string value)
+        color.ValueChanged += delegate (string value)
         {
             SetStatus($"CardColorPicker 值：{value}", CardStatusKind.Info);
         };
-        segment.SelectionChanged += delegate(int index, string item)
+        segment.SelectionChanged += delegate (int index, string item)
         {
             SetStatus($"CardSegmentedControl 选中：{index} / {Describe(item)}", CardStatusKind.Info);
         };
@@ -516,7 +516,7 @@ internal sealed class GalleryView : ScrollViewer
             MinHeight = 34
         };
         _input.ApplyStyle(_style, _corner);
-        _input.Submitted += delegate(string text)
+        _input.Submitted += delegate (string text)
         {
             SetStatus(string.IsNullOrWhiteSpace(text) ? "CardInput：提交了空内容" : $"CardInput 提交：{text}",
                 CardStatusKind.Success);
@@ -726,7 +726,7 @@ internal sealed class GalleryView : ScrollViewer
     static Color ResolveForeground(StyleSettings style, ThemeTokens tokens)
     {
         string code = style is null ? null : style.Foreground;
-        if (ColorCode.TryParse(code, out byte a, out byte r, out byte g, out byte b))
+        if (ColorCode.TryParse(code, out var a, out var r, out var g, out var b))
         {
             // 正文始终按不透明绘制；alpha 只在软色令牌里使用。
             return Color.FromArgb(255, r, g, b);
