@@ -41,6 +41,8 @@ public partial class SettingsWindow
         BindNumberBox(IconScaleValue, IconScaleSlider, "0.00");
         BindNumberBox(LoopDurationValue, LoopDurationSlider, "0");
         BindNumberBox(LoopAmplitudeValue, LoopAmplitudeSlider, "0.00");
+        BindNumberBox(PulseThicknessValue, PulseThicknessSlider, "0");
+        BindNumberBox(ScanlineThicknessValue, ScanlineThicknessSlider, "0");
         BindNumberBox(DecorationDensityValue, DecorationDensitySlider, "0.00");
         BindNumberBox(ContourLevelsValue, ContourLevelsSlider, "0");
         BindNumberBox(ContourEveningValue, ContourEveningSlider, "0.00");

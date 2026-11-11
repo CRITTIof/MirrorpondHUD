@@ -6,6 +6,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using WinForms = System.Windows.Forms;
 using MirrorpondHUD.Core;
+using MirrorpondHUD.Ui.Controls;
 
 namespace MirrorpondHUD.Ui;
 

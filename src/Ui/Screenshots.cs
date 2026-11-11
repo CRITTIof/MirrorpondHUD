@@ -677,6 +677,22 @@ public static class Screenshots
         }
     }
 
+    static void CollapseSettingsSections(DependencyObject root)
+    {
+        if (root is null) return;
+        int count = VisualTreeHelper.GetChildrenCount(root);
+        for (int i = 0; i < count; i++)
+        {
+            DependencyObject child = VisualTreeHelper.GetChild(root, i);
+            if (child is Expander expander)
+            {
+                expander.IsExpanded = false;
+                continue;
+            }
+            CollapseSettingsSections(child);
+        }
+    }
+
     static string StationLabel(string view) => view switch
     {
         "LargeIcon" => "大图标",
@@ -728,6 +744,13 @@ public static class Screenshots
             // 截图验收可强制浅色设置页；MIRRORPOND_SETTINGS_LIGHT=1。
             if (Environment.GetEnvironmentVariable("MIRRORPOND_SETTINGS_LIGHT") == "1")
                 settings.Behavior.SettingsTheme = "Light";
+            // 截图验收循环粗细行；MIRRORPOND_LOOP_DEMO=Scanline / Pulse。
+            string loopDemo = Environment.GetEnvironmentVariable("MIRRORPOND_LOOP_DEMO");
+            if (!string.IsNullOrWhiteSpace(loopDemo))
+            {
+                settings.Style.LoopEffect = Settings.NormalizeLoopEffect(loopDemo, true);
+                settings.Style.LoopMotion = settings.Style.LoopEffect != "None";
+            }
             // ApplySettings 现在返回 bool（P0-2）：截图模式下用恒真 stub。
             var window = new SettingsWindow(settings, s => true, (x, y, m) => { }, () => { });
             window.WindowStartupLocation = WindowStartupLocation.Manual;
@@ -748,6 +771,9 @@ public static class Screenshots
                 window.CloseForReal();
                 return;
             }
+
+            if (Environment.GetEnvironmentVariable("MIRRORPOND_SETTINGS_COLLAPSE") == "1")
+                CollapseSettingsSections(root);
 
             double width = Math.Max(1, window.ActualWidth);
             double height = Math.Max(1, window.ActualHeight);

@@ -25,6 +25,7 @@ public partial class SettingsWindow
     {
         if (CardHotkeyPanel is null) return;
 
+        MoveCardHotkeyPanelOutOfGlobalGroup();
         CardHotkeyPanel.Children.Clear();
         _cardHotkeyBoxes.Clear();
 
@@ -36,33 +37,26 @@ public partial class SettingsWindow
             if (card is not null && !string.IsNullOrWhiteSpace(card.Kind)) kinds.Add(card.Kind);
         }
 
-        Brush line = null;
-        try { line = FindResource("BorderSoft") as Brush; } catch { }
+        Style sectionStyle = null;
+        try { sectionStyle = FindResource("SettingsSection") as Style; } catch { }
 
-        Style sectionTitle = null;
-        try { sectionTitle = FindResource("SectionTitle") as Style; } catch { }
-
+        bool any = false;
         foreach (ICardModule module in CardRegistry.Modules)
         {
             var source = module as ICardHotkeySource;
             if (source is null || source.HotkeyActions is null || source.HotkeyActions.Count == 0) continue;
             if (!kinds.Contains(module.Kind)) continue;
 
-            var section = new StackPanel { Margin = new Thickness(0, 18, 0, 0) };
-
-            section.Children.Add(new Border
+            if (!any)
             {
-                Height = 1,
-                Background = line ?? Brushes.Gray,
-                Margin = new Thickness(0, 0, 0, 12)
-            });
-
-            section.Children.Add(new TextBlock
-            {
-                Text = $"{module.DisplayName}卡片",
-                Style = sectionTitle,
-                Margin = new Thickness(0, 0, 0, 8)
-            });
+                CardHotkeyPanel.Children.Add(new TextBlock
+                {
+                    Text = "卡片定义的热键",
+                    Style = FindResource("Hint") as Style,
+                    Margin = new Thickness(0, 10, 0, 4)
+                });
+                any = true;
+            }
 
             var grid = new Grid();
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(200) });
@@ -102,7 +96,7 @@ public partial class SettingsWindow
                     Padding = new Thickness(10, 2, 10, 2),
                     Margin = new Thickness(8, 0, 0, 10),
                     VerticalAlignment = VerticalAlignment.Center,
-                    ToolTip = "清除这个热键（留空 = 不启用）"
+                    ToolTip = "清除这个热键"
                 };
                 clear.Click += ClearHotkeyBoxClick;
 
@@ -117,9 +111,44 @@ public partial class SettingsWindow
                 row++;
             }
 
-            section.Children.Add(grid);
+            var section = new Expander
+            {
+                Header = $"{module.DisplayName}卡片",
+                Content = grid,
+                Style = sectionStyle,
+                IsExpanded = true
+            };
             CardHotkeyPanel.Children.Add(section);
         }
+    }
+
+    /// <summary>
+    /// XAML 里 CardHotkeyPanel 暂放在“全局”组的内容里；第一次构建时把它提到页面级，
+    /// 让每张卡片的热键成为与“全局”同级的独立折叠组。
+    /// </summary>
+    void MoveCardHotkeyPanelOutOfGlobalGroup()
+    {
+        if (CardHotkeyPanel.Parent is not Panel body) return;
+
+        Expander global = null;
+        DependencyObject current = body;
+        while (current is not null)
+        {
+            if (current is Expander expander)
+            {
+                global = expander;
+                break;
+            }
+            current = LogicalTreeHelper.GetParent(current);
+        }
+
+        if (global?.Parent is not Panel host) return;
+
+        body.Children.Remove(CardHotkeyPanel);
+        int index = host.Children.IndexOf(global);
+        if (index < 0) index = host.Children.Count - 1;
+        host.Children.Insert(index + 1, CardHotkeyPanel);
+        CardHotkeyPanel.Margin = new Thickness(0, 8, 0, 0);
     }
 
     void HotkeyBoxPreviewKeyDown(object sender, KeyEventArgs e)

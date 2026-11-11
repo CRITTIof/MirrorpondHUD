@@ -30,7 +30,7 @@
     <SolidColorBrush x:Key="MenuText" Color="#111111" />
     <SolidColorBrush x:Key="MenuBorder" Color="#D8D8D0" />
     <SolidColorBrush x:Key="MenuHover" Color="#F0F0E8" />
-    <SolidColorBrush x:Key="MenuMuted" Color="#777777" />
+    <SolidColorBrush x:Key="MenuMuted" Color="#555555" />
 
     <!-- LucideFont：设置页页签 / 按钮 / 卡片模块图标统一使用的图标字体 -->
     <FontFamily x:Key="LucideFont">pack://application:,,,/assets/icons/#lucide</FontFamily>
@@ -212,6 +212,28 @@
     </Style>
 
     <!-- ================= 输入框 ================= -->
+    <Style TargetType="ToolTip">
+        <Setter Property="Background" Value="{DynamicResource CardBg}" />
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderSoft}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Padding" Value="8,5" />
+        <Setter Property="FontFamily" Value="Microsoft YaHei UI" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToolTip">
+                    <Border Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="4" Padding="{TemplateBinding Padding}">
+                        <ContentPresenter />
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <Style TargetType="TextBox">
         <Setter Property="FontFamily" Value="Microsoft YaHei UI" />
         <Setter Property="FontSize" Value="13" />
@@ -268,6 +290,37 @@
         <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
         <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="CheckBox">
+                    <StackPanel Orientation="Horizontal" Background="Transparent">
+                        <Border x:Name="Box" Width="15" Height="15" CornerRadius="2"
+                                Background="{DynamicResource InputBg}"
+                                BorderBrush="{DynamicResource BorderSoft}" BorderThickness="1"
+                                VerticalAlignment="Center">
+                            <Path x:Name="Mark" Data="M2,7 L5.5,10 L12,3" Stroke="{DynamicResource AccentText}"
+                                  StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                  Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ContentPresenter Margin="8,0,0,0" VerticalAlignment="Center"
+                                          RecognizesAccessKey="True" />
+                    </StackPanel>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Box" Property="Background" Value="{DynamicResource Accent}" />
+                            <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource Accent}" />
+                            <Setter TargetName="Mark" Property="Visibility" Value="Visible" />
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource Accent}" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.5" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <!-- ================= 下拉框（纯扁平，无渐变） ================= -->
@@ -374,9 +427,72 @@
     </Style>
 
     <!-- ================= 滑块 ================= -->
+    <Style x:Key="SliderDecreaseButton" TargetType="RepeatButton">
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="IsTabStop" Value="False" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RepeatButton">
+                    <Border Height="4" CornerRadius="2" Background="{DynamicResource Accent}"
+                            VerticalAlignment="Center" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="SliderIncreaseButton" TargetType="RepeatButton">
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="IsTabStop" Value="False" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RepeatButton">
+                    <Border Height="4" CornerRadius="2" Background="{DynamicResource HoverBg}"
+                            VerticalAlignment="Center" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="SliderThumb" TargetType="Thumb">
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="Width" Value="14" />
+        <Setter Property="Height" Value="18" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Thumb">
+                    <Border Background="{DynamicResource Accent}"
+                            BorderBrush="{DynamicResource AccentText}" BorderThickness="1"
+                            CornerRadius="2" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <Style TargetType="Slider">
         <Setter Property="VerticalAlignment" Value="Center" />
         <Setter Property="MinHeight" Value="24" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Slider">
+                    <Grid Height="24" Background="Transparent">
+                        <Track x:Name="PART_Track" VerticalAlignment="Center">
+                            <Track.DecreaseRepeatButton>
+                                <RepeatButton Style="{StaticResource SliderDecreaseButton}"
+                                              Command="{x:Static Slider.DecreaseLarge}" />
+                            </Track.DecreaseRepeatButton>
+                            <Track.IncreaseRepeatButton>
+                                <RepeatButton Style="{StaticResource SliderIncreaseButton}"
+                                              Command="{x:Static Slider.IncreaseLarge}" />
+                            </Track.IncreaseRepeatButton>
+                            <Track.Thumb>
+                                <Thumb Style="{StaticResource SliderThumb}" />
+                            </Track.Thumb>
+                        </Track>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <!-- ================= 页签（左侧竖排） ================= -->

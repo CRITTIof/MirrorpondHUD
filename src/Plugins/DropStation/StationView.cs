@@ -520,6 +520,7 @@ internal sealed class StationView : Grid, IDisposable, IStationCopySink
     ContextMenu BuildMenu()
     {
         var menu = new ContextMenu();
+        HudMenuStyle.Apply(menu);
 
         var open = new MenuItem { Header = "打开" };
         open.Click += (s, e) => _files.Open(_selection.Selected());

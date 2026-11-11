@@ -83,6 +83,10 @@ public sealed class ThemeMotion
     public string Effect;
     public double? DurationMs;
     public double? Amplitude;
+    /// <summary>Pulse 描边粗细（1–8px）。</summary>
+    public double? PulseThickness;
+    /// <summary>Scanline 横线粗细（1–10px）。</summary>
+    public double? ScanlineThickness;
     /// <summary>Contour 原地形变速度（0.1–4.0）。</summary>
     public double? Speed;
 }
@@ -173,6 +177,8 @@ public sealed class ThemeDocument
             style.LoopEffect = Motion.Loop.Value ? "Breath" : "None";
         if (Motion.DurationMs.HasValue) style.LoopDurationMs = (int)Motion.DurationMs.Value;
         if (Motion.Amplitude.HasValue) style.LoopAmplitude = Motion.Amplitude.Value;
+        if (Motion.PulseThickness.HasValue) style.LoopPulseThickness = (int)Motion.PulseThickness.Value;
+        if (Motion.ScanlineThickness.HasValue) style.LoopScanlineThickness = (int)Motion.ScanlineThickness.Value;
         if (Motion.Speed.HasValue) style.ContourSpeed = Motion.Speed.Value;
 
         if (Shape.Padding.HasValue) style.Padding = Shape.Padding.Value;
@@ -481,6 +487,8 @@ public static class ThemeFile
         motion["loop"] = style.LoopEffect != "None";
         motion["durationMs"] = style.LoopDurationMs;
         motion["amplitude"] = style.LoopAmplitude;
+        motion["pulseThickness"] = style.LoopPulseThickness;
+        motion["scanlineThickness"] = style.LoopScanlineThickness;
         motion["speed"] = style.ContourSpeed;
 
         var appearance = new Dictionary<string, object>();
@@ -728,6 +736,10 @@ public static class ThemeFile
             motion.Range(doc.Motion.DurationMs, "durationMs", 600, 20000);
             doc.Motion.Amplitude = motion.Number("amplitude");
             motion.Range(doc.Motion.Amplitude, "amplitude", 0.02, 0.8);
+            doc.Motion.PulseThickness = motion.Number("pulseThickness");
+            motion.Range(doc.Motion.PulseThickness, "pulseThickness", 1, 8);
+            doc.Motion.ScanlineThickness = motion.Number("scanlineThickness");
+            motion.Range(doc.Motion.ScanlineThickness, "scanlineThickness", 1, 10);
             doc.Motion.Speed = motion.Number("speed");
             motion.Range(doc.Motion.Speed, "speed", 0.1, 4.0);
         }

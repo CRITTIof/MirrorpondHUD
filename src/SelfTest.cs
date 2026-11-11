@@ -901,9 +901,15 @@ internal static class SelfTest
                 if (entry is MenuItem item) item.ApplyTemplate();
             menu.Measure(new Size(320, 220));
             menu.Arrange(new Rect(0, 0, 320, 220));
+            var menuBg = Application.Current?.TryFindResource("MenuBg") as SolidColorBrush;
+            var menuText = Application.Current?.TryFindResource("MenuText") as SolidColorBrush;
+            var accentText = Application.Current?.TryFindResource("AccentText") as SolidColorBrush;
             bool menuOk = menu.Items.Count == 4
                        && menu.Style is not null
-                       && menu.ItemContainerStyle is not null;
+                       && menu.ItemContainerStyle is not null
+                       && menuBg is not null && menuBg.Color == Colors.White
+                       && menuText is not null && menuText.Color.R < 50
+                       && accentText is not null && accentText.Color.R < 50;
 
             widgetsOk = emptyOk && countOk && selectOk && busyOk && errorOk && legacyOk && menuOk;
         }

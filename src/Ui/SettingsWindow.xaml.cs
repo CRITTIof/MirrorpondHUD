@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using MirrorpondHUD.Cards;
 using MirrorpondHUD.Core;
@@ -302,6 +303,28 @@ public partial class SettingsWindow : Window
         UpdateThemeToggleText();
         MarkDirty();
     }
+
+    void TitleBarMouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton != System.Windows.Input.MouseButton.Left) return;
+        if (e.OriginalSource is ButtonBase) return;
+
+        if (e.ClickCount == 2)
+        {
+            WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+            return;
+        }
+
+        try { DragMove(); }
+        catch (InvalidOperationException)
+        {
+            // 双击 / 非客户区释放等良性竞态：拖拽未真正开始，不影响窗口。
+        }
+    }
+
+    void TitleBarMinimizeClick(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
+
+    void TitleBarCloseClick(object sender, RoutedEventArgs e) => Close();
 
     void UpdateThemeToggleText()
     {
