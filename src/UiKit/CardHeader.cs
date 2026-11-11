@@ -129,6 +129,7 @@ public sealed class CardHeader : Grid
         _badgeHost.Background = CardPalette.Brush(tokens.Accent, 0.12);
         _badgeHost.BorderBrush = CardPalette.Brush(tokens.Accent, 0.42);
         _badgeHost.BorderThickness = new Thickness(1);
+        _badgeHost.CutSize = EndfieldVisuals.CutCorners(s) ? 6 : 0;
         UpdateBadgeText();
         // 徽标里常见计数（2/5），数字列对齐可以避免刷新时左右跳。
         Typography.SetNumeralAlignment(_badge, FontNumeralAlignment.Tabular);

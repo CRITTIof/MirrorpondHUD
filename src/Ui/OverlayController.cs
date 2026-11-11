@@ -799,7 +799,20 @@ public sealed class OverlayController : IDisposable
     /// <summary>非常驻卡片的呼出 / 收起。</summary>
     void ToggleCard(CardSlot slot) => _settingsApplier.ToggleCard(slot);
 
-    public void Exit() => Application.Current.Shutdown();
+    public void Exit()
+    {
+        // 退出软件不是「退出设置」：先无提示关闭设置窗，避免未保存弹窗挡住 Shutdown。
+        try
+        {
+            if (_settingsWindow is not null) _settingsWindow.CloseForShutdown();
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"退出前关闭设置窗失败: {ex.Message}");
+        }
+
+        Application.Current.Shutdown();
+    }
 
     public void Dispose()
     {

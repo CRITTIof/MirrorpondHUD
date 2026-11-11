@@ -30,19 +30,15 @@ public sealed class CardMediaView : Grid, IDisposable
         ".mp4", ".m4v", ".wmv", ".avi", ".mov", ".mkv", ".webm", ".mpg", ".mpeg", ".ts"
     };
 
-    readonly Grid _header;
-    readonly TextBlock _name;
-    readonly TextBlock _statusText;
-    readonly Border _statusHost;
+    readonly CardHeader _header;
+    readonly Border _rule;
     readonly Grid _hostFrame;
     readonly Grid _host;
     readonly CornerBrackets _brackets;
     readonly Image _image;
     readonly TextBlock _message;
-    readonly Grid _footer;
+    readonly CardStatus _status;
     readonly CardFooter _metaFooter;
-    readonly Border _track;
-    readonly Border _fill;
 
     GifAnimator _gif;
     VideoWindow _videoWindow;
@@ -61,9 +57,8 @@ public sealed class CardMediaView : Grid, IDisposable
     int _videoRun;
     Size _natural = new(320, 180);
     double _cornerRadius = 10;
-    double _padX = 14;
-    double _padY = 10;
-    double _titleSize = 12;
+    double _padX = 15;
+    double _padY = 12;
     double _speed = 1;
     bool _playing = true;
     Color _foreground = Color.FromRgb(0xE6, 0xED, 0xF3);
@@ -78,40 +73,10 @@ public sealed class CardMediaView : Grid, IDisposable
         ClipToBounds = true;
         SnapsToDevicePixels = true;
 
-        _name = new TextBlock
-        {
-            TextTrimming = TextTrimming.CharacterEllipsis,
-            TextWrapping = TextWrapping.NoWrap,
-            VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Stretch
-        };
+        _header = new CardHeader();
+        _header.Visibility = Visibility.Collapsed;
 
-        _statusText = new TextBlock
-        {
-            VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Right
-        };
-
-        // 卡片底色可能是浅色的（毛玻璃 / 淡背景），状态行加一层深色圆角小底，
-        // 保证「▶ 00:05 / 00:12 · 1.5×」在任何背景上都看得清。
-        _statusHost = new Border
-        {
-            Background = new SolidColorBrush(Color.FromArgb(110, 0, 0, 0)),
-            CornerRadius = new CornerRadius(4),
-            Padding = new Thickness(6, 1, 6, 2),
-            VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            Margin = new Thickness(8, 0, 0, 0),
-            Child = _statusText
-        };
-
-        _header = new Grid();
-        _header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        _header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        _header.Children.Add(_name);
-        _header.Children.Add(_statusHost);
-        Grid.SetColumn(_name, 0);
-        Grid.SetColumn(_statusHost, 1);
+        _rule = new Border { Height = 1, Visibility = Visibility.Collapsed };
 
         _image = new Image
         {
@@ -149,29 +114,13 @@ public sealed class CardMediaView : Grid, IDisposable
         _hostFrame.Children.Add(_host);
         _hostFrame.Children.Add(_brackets);
 
-        _track = new Border
+        // 和对话卡一致的底部状态行：媒体时间 / 倍速 / 音频备注都走这里，
+        // 不再在标题右侧塞一块半透明黑底，标题区也就有和 CLU 面板同样的呼吸。
+        _status = new CardStatus
         {
-            Height = 3,
-            CornerRadius = new CornerRadius(1.5),
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            VerticalAlignment = VerticalAlignment.Center
+            ShowIcon = false,
+            Visibility = Visibility.Collapsed
         };
-
-        _fill = new Border
-        {
-            Height = 3,
-            CornerRadius = new CornerRadius(1.5),
-            HorizontalAlignment = HorizontalAlignment.Left,
-            VerticalAlignment = VerticalAlignment.Center,
-            Width = 0
-        };
-
-        var trackHost = new Grid();
-        trackHost.Children.Add(_track);
-        trackHost.Children.Add(_fill);
-
-        _footer = new Grid { Visibility = Visibility.Collapsed };
-        _footer.Children.Add(trackHost);
 
         _metaFooter = new CardFooter { Visibility = Visibility.Collapsed };
 
@@ -179,14 +128,17 @@ public sealed class CardMediaView : Grid, IDisposable
         RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         Children.Add(_header);
+        Children.Add(_rule);
         Children.Add(_hostFrame);
-        Children.Add(_footer);
+        Children.Add(_status);
         Children.Add(_metaFooter);
         SetRow(_header, 0);
-        SetRow(_hostFrame, 1);
-        SetRow(_footer, 2);
-        SetRow(_metaFooter, 3);
+        SetRow(_rule, 1);
+        SetRow(_hostFrame, 2);
+        SetRow(_status, 3);
+        SetRow(_metaFooter, 4);
 
         ApplyChrome();
 
@@ -206,7 +158,6 @@ public sealed class CardMediaView : Grid, IDisposable
         // 只在媒体区域真的变尺寸时重算圆角裁剪。
         // 放进 LayoutUpdated 会变成「设 Clip → 重绘 → 再布局」的循环，白烧 CPU。
         _host.SizeChanged += (s, e) => ApplyClip();
-        _track.SizeChanged += (s, e) => UpdateProgress();
     }
 
     /// <summary>媒体尺寸变化（视频打开、图片解码完成）时通知宿主重新排布叠层。</summary>
@@ -247,35 +198,34 @@ public sealed class CardMediaView : Grid, IDisposable
     void ApplyChrome()
     {
         StyleSettings style = _style;
+        ThemeTokens tokens = ThemeResolver.Resolve(style);
 
-        _padX = Math.Max(6, style is null ? 14 : style.Padding);
-        _padY = Math.Max(5, (style is null ? 14 : style.Padding) * 0.7);
-        _titleSize = Math.Max(11, (style is null ? 15 : Math.Max(4, style.FontSize)) * 0.8);
+        // 比 2.35 更松一档：标题、画面、状态、页脚之间都留出独立间距，
+        // 不再让文件名和画面贴在一起。夹在上下限内，Padding=0 时也不会挤没。
+        _padX = Math.Max(12, (style is null ? 14 : style.Padding) * 1.1);
+        _padY = Math.Max(10, (style is null ? 14 : style.Padding) * 0.85);
 
         Color foreground = ParseColor(style is null ? null : style.Foreground);
         if (foreground != _foreground) _foreground = foreground;
 
-        _name.FontFamily = new FontFamily(style is null || string.IsNullOrWhiteSpace(style.FontFamily)
-            ? "Microsoft YaHei UI"
-            : style.FontFamily);
-        _name.FontSize = _titleSize;
-        _name.FontWeight = style is not null && style.Bold ? FontWeights.SemiBold : FontWeights.Normal;
-        _name.Foreground = Solid(_foreground, 0.92);
-        _header.Margin = new Thickness(_padX, Math.Max(2, _padY * 0.5), _padX, Math.Max(1, _padY * 0.3));
+        _header.ApplyStyle(style, _cornerRadius);
+        _header.Margin = new Thickness(_padX, Math.Max(8, _padY * 0.55), _padX, Math.Max(6, _padY * 0.35));
 
-        _statusText.FontFamily = _name.FontFamily;
-        _statusText.FontSize = Math.Max(10, _titleSize * 0.9);
-        _statusText.Foreground = Solid(_foreground, 0.95);
+        _rule.Background = Solid(_foreground, 0.14);
+        _rule.Margin = new Thickness(_padX, 0, _padX, Math.Max(8, _padY * 0.55));
 
-        _hostFrame.Margin = new Thickness(_padX, 0, _padX, 0);
+        _hostFrame.Margin = new Thickness(_padX, 0, _padX, Math.Max(8, _padY * 0.6));
         _host.Margin = new Thickness(0);
-        _footer.Margin = new Thickness(_padX, 5, _padX, 0);
-        _metaFooter.Margin = new Thickness(_padX, 4, _padX, Math.Max(7, _padY * 0.85));
+        _status.Margin = new Thickness(_padX, 0, _padX, Math.Max(3, _padY * 0.22));
+        _status.ApplyStyle(style);
+        _status.TextFont = new FontFamily(tokens.MonoFont);
+        _metaFooter.Margin = new Thickness(_padX, 4, _padX, Math.Max(10, _padY * 0.9));
         _metaFooter.ApplyStyle(style);
         _brackets.ApplyStyle(Solid(_foreground, 0.62).Color);
-
-        _track.Background = Solid(_foreground, 0.20);
-        _fill.Background = Solid(_foreground, 0.85);
+        _message.Foreground = Solid(_foreground, 0.55);
+        if (_message.Visibility == Visibility.Visible)
+            _brackets.Visibility = EndfieldVisuals.CornerBrackets(style)
+                ? Visibility.Visible : Visibility.Collapsed;
 
         UpdateStatus();
         ApplySize();
@@ -296,22 +246,30 @@ public sealed class CardMediaView : Grid, IDisposable
             : fallback;
     }
 
-    /// <summary>M6：卡片模块注入面包屑与系统页脚；文件名前加 “// 03 / ”。</summary>
+    /// <summary>M6：卡片模块注入面包屑与系统页脚；标题由 CardHeader 自己排版。</summary>
     public void SetMeta(string code, string footer)
     {
         _metaCode = code ?? "";
+        _header.Code = _metaCode;
         _metaFooter.Left = footer ?? "";
         _metaFooter.ApplyStyle(_style);
+        _metaFooter.Visibility = string.IsNullOrEmpty(_metaFooter.Left)
+            ? Visibility.Collapsed : Visibility.Visible;
         if (!string.IsNullOrEmpty(_loadedPath)) RefreshName(_loadedPath);
-        _metaFooter.Visibility = _header.Visibility == Visibility.Visible
-                                 && !string.IsNullOrEmpty(_metaFooter.Left)
-            ? Visibility.Visible : Visibility.Collapsed;
     }
 
     void RefreshName(string path)
     {
-        string name = FileName(path);
-        _name.Text = _metaCode.Length == 0 ? name : _metaCode + name;
+        _header.Title = FileName(path);
+        _header.ToolTip = path;
+        _header.Badge = KindLabel(path);
+    }
+
+    static string KindLabel(string path)
+    {
+        string extension = SafeExtension(path);
+        if (string.Equals(extension, ".gif", StringComparison.OrdinalIgnoreCase)) return "动图";
+        return IsVideo(path) ? "视频" : "图片";
     }
 
     // ==================== 绑定 ====================
@@ -334,22 +292,26 @@ public sealed class CardMediaView : Grid, IDisposable
         if (path.Length == 0)
         {
             ShowMessage("媒体卡片\n在「设置 → 内容 → 媒体」里选择图片 / 动图 / 视频");
-            _name.Text = "";
-            _header.Visibility = Visibility.Collapsed;
-            _footer.Visibility = Visibility.Collapsed;
-            _metaFooter.Visibility = Visibility.Collapsed;
-            _brackets.Visibility = Visibility.Collapsed;
-            _statusHost.Visibility = Visibility.Collapsed;
+            _header.Title = "媒体";
+            _header.Badge = "未选择";
+            _header.Visibility = Visibility.Visible;
+            _rule.Visibility = Visibility.Visible;
+            _status.Visibility = Visibility.Collapsed;
+            _status.SetProgress(null);
+            _metaFooter.Visibility = string.IsNullOrEmpty(_metaFooter.Left)
+                ? Visibility.Collapsed : Visibility.Visible;
             _loadedPath = "";
             ApplySize();
             return;
         }
 
         RefreshName(path);
-        _name.ToolTip = path;
         _header.Visibility = Visibility.Visible;
-        _brackets.Visibility = Visibility.Visible;
-        _metaFooter.Visibility = string.IsNullOrEmpty(_metaFooter.Left) ? Visibility.Collapsed : Visibility.Visible;
+        _rule.Visibility = Visibility.Visible;
+        _message.Visibility = Visibility.Collapsed;
+        _brackets.Visibility = Visibility.Collapsed;
+        _metaFooter.Visibility = string.IsNullOrEmpty(_metaFooter.Left)
+            ? Visibility.Collapsed : Visibility.Visible;
 
         if (!File.Exists(path))
         {
@@ -360,9 +322,12 @@ public sealed class CardMediaView : Grid, IDisposable
         }
 
         bool video = IsVideo(path);
-        _footer.Visibility = video ? Visibility.Visible : Visibility.Collapsed;
-        _statusHost.Visibility = video ? Visibility.Visible : Visibility.Collapsed;
+        _status.Visibility = video ? Visibility.Visible : Visibility.Collapsed;
+        _status.SetProgress(video ? 0 : null);
+        _brackets.Visibility = Visibility.Collapsed;
         _speed = _settings.Speed > 0 ? _settings.Speed : 1;
+        // 先给出一行 00:00 / 00:00；真正的时长等 MediaOpened / ffmpeg 启动后由 StartProgress 刷新。
+        UpdateStatus();
 
         if (samePath)
         {
@@ -471,9 +436,9 @@ public sealed class CardMediaView : Grid, IDisposable
 
             if (!string.IsNullOrEmpty(GifAnimator.LastSkipReason))
             {
-                _statusHost.Visibility = Visibility.Visible;
-                _statusText.Text = "动图过大，已仅显示首帧";
-                _statusHost.ToolTip = GifAnimator.LastSkipReason;
+                _status.Visibility = Visibility.Visible;
+                _status.SetText("动图过大，已仅显示首帧", CardStatusKind.Warning);
+                _status.ToolTip = GifAnimator.LastSkipReason;
             }
         }
 
@@ -868,8 +833,8 @@ public sealed class CardMediaView : Grid, IDisposable
             };
         }
 
-        _footer.Visibility = Visibility.Visible;
-        _statusHost.Visibility = Visibility.Visible;
+        _status.Visibility = Visibility.Visible;
+        _status.SetProgress(0);
         if (!_progressTimer.IsEnabled) _progressTimer.Start();
         UpdateProgress();
         UpdateStatus();
@@ -899,8 +864,7 @@ public sealed class CardMediaView : Grid, IDisposable
         }
 
         double fraction = duration > 0.05 ? Math.Min(1, Math.Max(0, position / duration)) : 0;
-        double width = _track.ActualWidth * fraction;
-        _fill.Width = double.IsNaN(width) || width < 0 ? 0 : width;
+        _status.SetProgress(fraction);
     }
 
     // ==================== 尺寸 ====================
@@ -984,8 +948,10 @@ public sealed class CardMediaView : Grid, IDisposable
         _message.Text = text;
         _message.Visibility = Visibility.Visible;
         _image.Source = null;
-        _footer.Visibility = Visibility.Collapsed;
-        _statusHost.Visibility = Visibility.Collapsed;
+        _status.SetProgress(null);
+        _status.Visibility = Visibility.Collapsed;
+        _brackets.Visibility = EndfieldVisuals.CornerBrackets(_style)
+            ? Visibility.Visible : Visibility.Collapsed;
     }
 
     // ==================== 播放控制 ====================
@@ -1151,14 +1117,10 @@ public sealed class CardMediaView : Grid, IDisposable
 
     // ==================== 状态行 ====================
 
-    // 播放 / 暂停状态图标：2.26.0 起统一用 Lucide，不再从 Reicon 资源里取。
-    static FontFamily IconFont() => LucideIcons.FontFamily;
-
-    /// <summary>右上角：播放 / 暂停状态、当前时长 / 总时长、非 1× 时的速度。</summary>
+    /// <summary>底部状态行：播放 / 暂停、当前时长 / 总时长、非 1× 时的速度、音频备注。</summary>
     void UpdateStatus()
     {
-        if (_statusText is null) return;
-        if (_statusHost.Visibility != Visibility.Visible) return;
+        if (_status.Visibility != Visibility.Visible) return;
 
         double position = 0;
         double duration = 0;
@@ -1179,24 +1141,15 @@ public sealed class CardMediaView : Grid, IDisposable
             catch { }
         }
 
-        _statusText.Inlines.Clear();
-        _statusText.Inlines.Add(new Run(_playing ? Icons.PauseMedia : Icons.Play)
-        {
-            FontFamily = IconFont(),
-            FontSize = _statusText.FontSize + 1
-        });
-        _statusText.Inlines.Add(new Run($" {Clock(position)} / {Clock(duration)}"));
+        string text = (_playing ? "▶ " : "❚❚ ") + Clock(position) + " / " + Clock(duration);
 
         if (Math.Abs(_speed - 1) > 0.001)
-        {
-            _statusText.Inlines.Add(new Run($" · {_speed.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}×"));
-        }
+            text += $" · {_speed.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}×";
 
         // P1-6：音频不可用的备注（ffmpeg 解码、WaveOut 起不来时）。
-        if (_audioNote is not null)
-        {
-            _statusText.Inlines.Add(new Run($" · {_audioNote}") { FontWeight = FontWeights.Normal });
-        }
+        if (_audioNote is not null) text += $" · {_audioNote}";
+
+        _status.SetText(text, CardStatusKind.Normal);
     }
 
     static string Clock(double seconds)
@@ -1238,9 +1191,8 @@ public sealed class CardMediaView : Grid, IDisposable
         _videoRun++;
 
         if (_progressTimer is not null) _progressTimer.Stop();
-        _footer.Visibility = Visibility.Collapsed;
-        _statusHost.Visibility = Visibility.Collapsed;
-        _fill.Width = 0;
+        _status.SetProgress(null);
+        _status.Visibility = Visibility.Collapsed;
 
         if (_player is not null)
         {

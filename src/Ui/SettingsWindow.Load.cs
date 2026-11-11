@@ -79,6 +79,7 @@ public partial class SettingsWindow
             CornerSlider.Value = s.Overlay.CornerRadius;
             ShadowCheck.IsChecked = s.Overlay.Shadow;
             MonoReadoutsCheck.IsChecked = s.Style.MonoReadouts;
+            LoadEndfieldUi(s.Style);
             DecorationCombo.SelectedIndex = DecorationIndex(s.Style.Decoration);
             DecorationDensitySlider.Value = s.Style.DecorationDensity;
             ContourLevelsSlider.Value = s.Style.ContourLevels;
@@ -316,6 +317,7 @@ public partial class SettingsWindow
         if (LoopDurationRow is not null) LoopDurationRow.IsEnabled = loopUsable;
         if (LoopAmplitudeRow is not null) LoopAmplitudeRow.IsEnabled = loopUsable;
         if (ContourSpeedRow is not null) ContourSpeedRow.IsEnabled = loopUsable;
+        UpdateEndfieldUiState();
     }
 
     /// <summary>
@@ -405,6 +407,7 @@ public partial class SettingsWindow
             s.Overlay.CornerRadius = Math.Round(CornerSlider.Value);
             s.Overlay.Shadow = ShadowCheck.IsChecked == true;
             s.Style.MonoReadouts = MonoReadoutsCheck.IsChecked == true;
+            ReadEndfieldUi(s.Style);
             s.Style.Decoration = DecorationTag();
             s.Style.DecorationDensity = Math.Round(DecorationDensitySlider.Value, 2);
             s.Style.ContourLevels = (int)Math.Round(ContourLevelsSlider.Value);

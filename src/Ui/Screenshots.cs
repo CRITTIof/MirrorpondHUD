@@ -102,6 +102,20 @@ public static class Screenshots
             Settings settings = ConfigStore.Load();
             // 文档截图关掉投影、拉开间距：卡片边缘干净，不会互相压到。
             settings.Overlay.Shadow = false;
+            // 验收 M2–M8 关闭分支：全部关掉时应当回到 2.34 的观感，且不留下空白页脚。
+            if (Environment.GetEnvironmentVariable("MIRRORPOND_ENDFIELD_OFF") == "1")
+            {
+                settings.Style.Endfield = new EndfieldStyleSettings
+                {
+                    Shadow = false,
+                    SelectionBar = false,
+                    Buttons = false,
+                    SegmentProgress = false,
+                    Meta = false,
+                    CornerBrackets = false,
+                    CutCorners = false
+                };
+            }
             MetricsSnapshot snap = DemoSnapshot();
             KeyHistory keys = DemoKeys(settings.Data.KeyHistoryCount, settings.Data.RepeatThreshold,
                                        settings.Data.MaxKeyChars);
@@ -547,6 +561,161 @@ public static class Screenshots
         grid.Children.Add(left);
         grid.Children.Add(right);
         return grid;
+    }
+
+    /// <summary>四种中转站显示方式的验收样张：每个视图一份，共用同一批假文件。</summary>
+    public static void CaptureStationViews(string path)
+    {
+        try
+        {
+            Settings settings = ConfigStore.Load();
+            var module = CardRegistry.Get("dropstation") as IRichCardModule;
+            if (module is null)
+            {
+                Log.Warn("中转站插件不可用，跳过显示方式截图");
+                return;
+            }
+
+            var host = new ScreenshotCardHost();
+            var panel = new WrapPanel
+            {
+                Width = 1040,
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Top
+            };
+
+            string[] views =
+            {
+                "LargeIcon", "MediumIcon", "SmallIcon", "List"
+            };
+
+            foreach (string view in views)
+            {
+                var extras = new Dictionary<string, object>
+                {
+                    ["dropstation"] = new Dictionary<string, object>
+                    {
+                        ["View"] = view,
+                        ["ShowIcons"] = true
+                    }
+                };
+
+                var config = new CardSettings
+                {
+                    Id = "screenshot-station-" + view,
+                    Kind = "dropstation",
+                    Name = "文件中转站",
+                    Extras = extras
+                };
+                host.Config = config;
+
+                FrameworkElement content = module.CreateContent(
+                    new CardRenderContext(settings, null, null, config, null, host));
+                var screenshot = module as ICardScreenshotProvider;
+                if (screenshot is not null) screenshot.PrepareScreenshot(content);
+
+                var label = new TextBlock
+                {
+                    Text = StationLabel(view),
+                    Foreground = new SolidColorBrush(Color.FromRgb(0xD8, 0xD8, 0xCE)),
+                    FontFamily = new FontFamily("Microsoft YaHei UI"),
+                    FontSize = 14,
+                    Margin = new Thickness(4, 0, 0, 6)
+                };
+
+                var card = new Border
+                {
+                    Background = CardPalette.Brush(
+                        OverlaySurface.ParseColor(settings.Style.Background, Color.FromRgb(0x0D, 0x11, 0x17)),
+                        settings.Style.BackgroundOpacity),
+                    CornerRadius = new CornerRadius(settings.Overlay.CornerRadius),
+                    Padding = new Thickness(16),
+                    Margin = new Thickness(4, 4, 12, 16),
+                    Child = content
+                };
+
+                var cell = new StackPanel { Width = 500, Margin = new Thickness(0, 0, 0, 8) };
+                cell.Children.Add(label);
+                cell.Children.Add(card);
+                panel.Children.Add(cell);
+            }
+
+            var root = new Grid
+            {
+                Width = 1080,
+                Background = new LinearGradientBrush(
+                    Color.FromRgb(0x14, 0x1B, 0x2B),
+                    Color.FromRgb(0x2A, 0x1D, 0x2A),
+                    45)
+            };
+            root.Children.Add(panel);
+            panel.Measure(new Size(1040, double.PositiveInfinity));
+            panel.Arrange(new Rect(0, 0, 1040, panel.DesiredSize.Height));
+            panel.UpdateLayout();
+            root.Height = Math.Max(500, panel.DesiredSize.Height + 32);
+
+            root.Measure(new Size(root.Width, root.Height));
+            root.Arrange(new Rect(0, 0, root.Width, root.Height));
+            root.UpdateLayout();
+
+            const double scale = 2.0;
+            var rtb = new RenderTargetBitmap(
+                (int)Math.Ceiling(root.Width * scale),
+                (int)Math.Ceiling(root.Height * scale),
+                96 * scale, 96 * scale, PixelFormats.Pbgra32);
+            rtb.Render(root);
+
+            SavePng(rtb, path);
+            Log.Info($"已生成中转站视图截图: {path}");
+        }
+        catch (Exception ex)
+        {
+            Log.Error("生成中转站视图截图失败", ex);
+        }
+    }
+
+    static string StationLabel(string view) => view switch
+    {
+        "LargeIcon" => "大图标",
+        "MediumIcon" => "中图标",
+        "SmallIcon" => "小图标",
+        _ => "列表"
+    };
+
+    /// <summary>截图用的最小宿主：只提供 Shell 图标，其余状态读写都不落盘。</summary>
+    sealed class ScreenshotCardHost : ICardHost
+    {
+        public CardSettings Config { get; set; }
+        public string StateDirectory => "";
+        public string ReadState(string fileName) => null;
+        public bool WriteState(string fileName, string text) => false;
+        public bool DeleteState(string fileName) => true;
+        public void RequestRender() { }
+        public void RequestLayout() { }
+        public bool SaveSettings() => false;
+        public void RefreshContentSignature() { }
+        public ICardShellService Shell { get; } = new ScreenshotShell();
+    }
+
+    sealed class ScreenshotShell : ICardShellService
+    {
+        public bool TryGetClipboardFiles(out string[] paths)
+        {
+            paths = Array.Empty<string>();
+            return false;
+        }
+
+        public bool TrySetClipboardText(string text) => false;
+
+        public ImageSource GetFileIcon(string path, int size, bool extensionOnly) =>
+            ShellIcons.GetIcon(path, size, extensionOnly);
+
+        public DragDropEffects BeginDragFiles(FrameworkElement source, IList<string> paths,
+                                              DragDropEffects allowed) => DragDropEffects.None;
+
+        public void OpenPath(string path) { }
+        public void RevealPath(string path) { }
     }
 
     public static void CaptureSettings(string path)

@@ -77,7 +77,7 @@ public sealed class ChatCard : RichCardModuleBase, ICardHotkeySource, ICardHotke
         Settings settings = context is null ? null : context.Settings;
 
         var view = new ChatView(settings, config, context is null ? null : context.Host);
-        view.SetMeta(CardMeta.Header(settings, card), CardMeta.Footer(settings));
+        view.SetMeta(CardMeta.Header(settings, card), CardMeta.Footer(settings, card));
         return view;
     }
 
@@ -95,7 +95,7 @@ public sealed class ChatCard : RichCardModuleBase, ICardHotkeySource, ICardHotke
 
         CardSettings card = context.Config ?? (context.Host is null ? null : context.Host.Config);
         view.Refresh(context.Settings, card, context.Host);
-        view.SetMeta(CardMeta.Header(context.Settings, card), CardMeta.Footer(context.Settings));
+        view.SetMeta(CardMeta.Header(context.Settings, card), CardMeta.Footer(context.Settings, card));
     }
 
     // ==================== 模块自己的设置 ====================
@@ -161,6 +161,9 @@ public sealed class ChatCard : RichCardModuleBase, ICardHotkeySource, ICardHotke
         view.Refresh(context.Settings,       // 同时换 ChatSettings 与 ICardHost（P1-5）
                      context.Config ?? (context.Host is null ? null : context.Host.Config),
                      context.Host);
+        // 只改页脚模板 / M6 开关时宿主不会重建内容，换肤后必须重算铭牌。
+        CardSettings card = context.Config ?? (context.Host is null ? null : context.Host.Config);
+        view.SetMeta(CardMeta.Header(context.Settings, card), CardMeta.Footer(context.Settings, card));
     }
 
     /// <inheritdoc />

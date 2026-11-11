@@ -15,12 +15,17 @@ namespace MirrorpondHUD.Ui.Controls;
 ///
 /// 只负责“容器与交互”，行内容由卡片通过 <see cref="ItemTemplate"/> 或直接往 <see cref="Items"/> 里放控件决定。
 /// 典型消费者：文件中转站、剪贴板历史、待办、搜索结果。
+/// 2.36.0 起支持 <see cref="SetViewMode"/> 切换到 WrapPanel，供中转站的图标视图复用同一套选择 / 拖动逻辑。
 /// </summary>
 public sealed class CardList : Grid
 {
     readonly CardListBox _list;
     readonly Border _emptyHost;
     readonly TextBlock _emptyText;
+
+    StyleSettings _lastStyle;
+    CliSettings _lastCli;
+    bool _tiles;
 
     public CardList()
     {
@@ -108,6 +113,41 @@ public sealed class CardList : Grid
 
     public bool IsEmpty => _list.Items.Count == 0;
 
+    /// <summary>true = WrapPanel 图标网格（不虚拟化）；false = 原来的虚拟化纵向列表。</summary>
+    public bool Tiles => _tiles;
+
+    /// <summary>
+    /// 切换列表 / 图标网格。图标网格的条目宽度由行自己决定，CardList 只负责换 ItemsPanel；
+    /// 选择、右键、拖拽仍然走同一个 ListBox，避免中转站维护两套交互。
+    /// </summary>
+    public void SetViewMode(bool tiles)
+    {
+        if (_tiles == tiles) return;
+        _tiles = tiles;
+
+        if (tiles)
+        {
+            var panel = new FrameworkElementFactory(typeof(WrapPanel));
+            panel.SetValue(WrapPanel.OrientationProperty, Orientation.Horizontal);
+            panel.SetValue(HorizontalAlignmentProperty, HorizontalAlignment.Stretch);
+            panel.SetValue(VerticalAlignmentProperty, VerticalAlignment.Top);
+            _list.ItemsPanel = new ItemsPanelTemplate(panel);
+            VirtualizingPanel.SetIsVirtualizing(_list, false);
+            VirtualizingPanel.SetVirtualizationMode(_list, VirtualizationMode.Standard);
+            ScrollViewer.SetCanContentScroll(_list, false);
+        }
+        else
+        {
+            _list.ClearValue(ItemsControl.ItemsPanelProperty);
+            VirtualizingPanel.SetIsVirtualizing(_list, true);
+            VirtualizingPanel.SetVirtualizationMode(_list, VirtualizationMode.Recycling);
+            ScrollViewer.SetCanContentScroll(_list, true);
+        }
+
+        // 调用方可能先 SetViewMode 再 ApplyStyle；若已经套过样式，这里补一次行模板。
+        if (_lastStyle is not null) ApplyStyle(_lastStyle, _lastCli);
+    }
+
     /// <summary>双击一行或按回车时触发（参数是当前选中项）。</summary>
     public event Action<object> ItemActivated;
 
@@ -126,13 +166,16 @@ public sealed class CardList : Grid
     public void ApplyStyle(StyleSettings style, CliSettings cli)
     {
         StyleSettings s = style ?? new StyleSettings();
+        _lastStyle = s;
+        _lastCli = cli;
+
         ThemeTokens tokens = ThemeResolver.Resolve(s);
         Color foreground = CardPalette.TryColor(s.Foreground, Color.FromRgb(0xE6, 0xED, 0xF3));
 
         _list.FontFamily = CardPalette.ResolveFont(s.FontFamily);
         _list.FontSize = Math.Max(10, s.FontSize - 1);
         _list.Foreground = new SolidColorBrush(foreground);
-        _list.ItemContainerStyle = BuildItemStyle(tokens, foreground);
+        _list.ItemContainerStyle = BuildItemStyle(tokens, foreground, EndfieldVisuals.SelectionBar(s), _tiles);
 
         CliScrollBars.Apply(this, tokens.Scrollbar, tokens.ScrollbarHot);
 
@@ -162,20 +205,28 @@ public sealed class CardList : Grid
         if (handler is not null) handler(item);
     }
 
-    static Style BuildItemStyle(ThemeTokens tokens, Color foreground)
+    static Style BuildItemStyle(ThemeTokens tokens, Color foreground, bool selectionBar, bool tiles)
     {
+        bool bar = selectionBar && !tiles;
+        string contentMargin = bar ? "4,0,0,0" : "0";
+        string barSetter = bar
+            ? "<Setter TargetName=\"Bar\" Property=\"Visibility\" Value=\"Visible\"/>"
+            : "";
+        double selectedAlpha = selectionBar ? 0.24 : 0.16;
+
         const string templateXaml =
             "<ControlTemplate TargetType=\"ListBoxItem\" xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\">" +
-            "<Border x:Name=\"ItemHost\" Background=\"{TemplateBinding Background}\" Padding=\"{TemplateBinding Padding}\" CornerRadius=\"0\">" +
+            "<Border x:Name=\"ItemHost\" Background=\"{TemplateBinding Background}\" Padding=\"{TemplateBinding Padding}\" " +
+            "BorderBrush=\"{TemplateBinding BorderBrush}\" BorderThickness=\"{TemplateBinding BorderThickness}\" CornerRadius=\"%RADIUS%\">" +
             "<Grid>" +
             "<Border x:Name=\"Bar\" Width=\"3\" Height=\"18\" HorizontalAlignment=\"Left\" " +
             "VerticalAlignment=\"Center\" Background=\"%BAR%\" Visibility=\"Collapsed\"/>" +
-            "<ContentPresenter Margin=\"4,0,0,0\" HorizontalAlignment=\"{TemplateBinding HorizontalContentAlignment}\" " +
+            "<ContentPresenter Margin=\"%CONTENTMARGIN%\" HorizontalAlignment=\"{TemplateBinding HorizontalContentAlignment}\" " +
             "VerticalAlignment=\"{TemplateBinding VerticalContentAlignment}\"/>" +
             "</Grid></Border>" +
             "<ControlTemplate.Triggers>" +
             "<Trigger Property=\"IsSelected\" Value=\"True\">" +
-            "<Setter TargetName=\"Bar\" Property=\"Visibility\" Value=\"Visible\"/>" +
+            "%BARSETTER%" +
             "</Trigger>" +
             "</ControlTemplate.Triggers>" +
             "</ControlTemplate>";
@@ -183,13 +234,21 @@ public sealed class CardList : Grid
         var style = new Style(typeof(ListBoxItem));
         style.Setters.Add(new Setter(Control.BackgroundProperty, Brushes.Transparent));
         style.Setters.Add(new Setter(Control.BorderThicknessProperty, new Thickness(0)));
-        style.Setters.Add(new Setter(Control.PaddingProperty, new Thickness(8, 6, 8, 6)));
-        style.Setters.Add(new Setter(Control.MarginProperty, new Thickness(0, 0, 0, 1)));
+        style.Setters.Add(new Setter(Control.BorderBrushProperty, Brushes.Transparent));
+        style.Setters.Add(new Setter(Control.PaddingProperty,
+            tiles ? new Thickness(4) : new Thickness(8, 6, 8, 6)));
+        style.Setters.Add(new Setter(Control.MarginProperty,
+            tiles ? new Thickness(3) : new Thickness(0, 0, 0, 1)));
         style.Setters.Add(new Setter(Control.HorizontalContentAlignmentProperty, HorizontalAlignment.Stretch));
+        style.Setters.Add(new Setter(Control.VerticalContentAlignmentProperty, VerticalAlignment.Center));
         style.Setters.Add(new Setter(Control.ForegroundProperty, new SolidColorBrush(foreground)));
         style.Setters.Add(new Setter(Control.FocusVisualStyleProperty, null));
-        string template = templateXaml.Replace(
-            "%BAR%", ThemeResolver.WithAlpha(tokens.Accent, 0.9).ToString());
+
+        string template = templateXaml
+            .Replace("%RADIUS%", tiles ? "4" : "0")
+            .Replace("%CONTENTMARGIN%", contentMargin)
+            .Replace("%BAR%", ThemeResolver.WithAlpha(tokens.Accent, 0.9).ToString())
+            .Replace("%BARSETTER%", barSetter);
         style.Setters.Add(new Setter(Control.TemplateProperty, (ControlTemplate)XamlReader.Parse(template)));
 
         var hover = new Trigger { Property = IsMouseOverProperty, Value = true };
@@ -197,7 +256,13 @@ public sealed class CardList : Grid
         style.Triggers.Add(hover);
 
         var selected = new Trigger { Property = ListBoxItem.IsSelectedProperty, Value = true };
-        selected.Setters.Add(new Setter(Control.BackgroundProperty, CardPalette.Brush(tokens.Accent, 0.24)));
+        selected.Setters.Add(new Setter(Control.BackgroundProperty, CardPalette.Brush(tokens.Accent, selectedAlpha)));
+        if (tiles)
+        {
+            var border = new Setter(Control.BorderBrushProperty, CardPalette.Brush(tokens.Accent, 0.55));
+            selected.Setters.Add(border);
+            selected.Setters.Add(new Setter(Control.BorderThicknessProperty, new Thickness(1)));
+        }
         style.Triggers.Add(selected);
 
         return style;

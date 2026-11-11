@@ -77,7 +77,8 @@ public sealed class MediaCard : RichCardModuleBase, ICardHotkeySource, ICardHotk
         view.Bind(Media(context));
         view.SetMeta(CardMeta.Header(context is null ? null : context.Settings,
                                      context is null ? null : context.Config),
-                     CardMeta.Footer(context is null ? null : context.Settings));
+                     CardMeta.Footer(context is null ? null : context.Settings,
+                                     context is null ? null : context.Config));
         return view;
     }
 
@@ -88,7 +89,8 @@ public sealed class MediaCard : RichCardModuleBase, ICardHotkeySource, ICardHotk
         view.Bind(Media(context));
         view.SetMeta(CardMeta.Header(context is null ? null : context.Settings,
                                      context is null ? null : context.Config),
-                     CardMeta.Footer(context is null ? null : context.Settings));
+                     CardMeta.Footer(context is null ? null : context.Settings,
+                                     context is null ? null : context.Config));
     }
 
     public override void OnVisibilityChanged(FrameworkElement content, bool visible)
@@ -138,6 +140,9 @@ public sealed class MediaCard : RichCardModuleBase, ICardHotkeySource, ICardHotk
 
         view.ApplyStyle(context.Settings is null ? null : context.Settings.Style,
                         context.Settings is null ? 10 : context.Settings.Overlay.CornerRadius);
+        // 只改页脚模板 / M6 开关时宿主不会重建内容，换肤后必须重算铭牌。
+        CardSettings card = context.Config ?? (context.Host is null ? null : context.Host.Config);
+        view.SetMeta(CardMeta.Header(context.Settings, card), CardMeta.Footer(context.Settings, card));
     }
 
     /// <inheritdoc />

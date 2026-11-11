@@ -249,7 +249,8 @@ public sealed class CardTree : Grid
         _tree.Foreground = CardPalette.Brush(_foreground, 0.9);
 
         // 用隐式资源样式，嵌套层级的 TreeViewItem 也会套用同一套自绘模板。
-        _tree.Resources[typeof(TreeViewItem)] = BuildItemStyle(_tokens, _foreground, _fontSize, _radius);
+        _tree.Resources[typeof(TreeViewItem)] = BuildItemStyle(
+            _tokens, _foreground, _fontSize, _radius, EndfieldVisuals.SelectionBar(style));
         CliScrollBars.Apply(this, _tokens.Scrollbar, _tokens.ScrollbarHot);
 
         _emptyText.FontFamily = _font;
@@ -408,10 +409,11 @@ public sealed class CardTree : Grid
         return (DataTemplate)XamlReader.Parse(xaml);
     }
 
-    static Style BuildItemStyle(ThemeTokens tokens, Color foreground, double fontSize, double radius)
+    static Style BuildItemStyle(ThemeTokens tokens, Color foreground, double fontSize, double radius,
+                                bool selectionBar)
     {
         string template =
-            $"<ControlTemplate TargetType=\"TreeViewItem\" xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\"><Grid><Grid.RowDefinitions><RowDefinition Height=\"Auto\"/><RowDefinition Height=\"Auto\"/></Grid.RowDefinitions><Border x:Name=\"ItemHost\" Background=\"Transparent\" CornerRadius=\"%RADIUS%\" Padding=\"3,2,6,2\" Margin=\"0,0,0,1\"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width=\"15\"/><ColumnDefinition Width=\"*\"/></Grid.ColumnDefinitions><Border x:Name=\"Bar\" Width=\"3\" Height=\"16\" HorizontalAlignment=\"Left\" VerticalAlignment=\"Center\" Background=\"%BAR%\" Visibility=\"Collapsed\"/><TextBlock x:Name=\"Glyph\" Text=\"▸\" FontSize=\"%GLYPH%\" Foreground=\"%MUTED%\" VerticalAlignment=\"Center\" HorizontalAlignment=\"Left\" Visibility=\"Collapsed\"/><ContentPresenter Grid.Column=\"1\" ContentSource=\"Header\" HorizontalAlignment=\"Stretch\" VerticalAlignment=\"Center\"/></Grid></Border><ItemsPresenter x:Name=\"ItemsHost\" Grid.Row=\"1\" Margin=\"15,0,0,0\" Visibility=\"Collapsed\"/></Grid><ControlTemplate.Triggers><MultiTrigger><MultiTrigger.Conditions><Condition Property=\"HasItems\" Value=\"True\"/><Condition Property=\"IsExpanded\" Value=\"False\"/></MultiTrigger.Conditions><Setter TargetName=\"Glyph\" Property=\"Visibility\" Value=\"Visible\"/></MultiTrigger><MultiTrigger><MultiTrigger.Conditions><Condition Property=\"HasItems\" Value=\"True\"/><Condition Property=\"IsExpanded\" Value=\"True\"/></MultiTrigger.Conditions><Setter TargetName=\"Glyph\" Property=\"Visibility\" Value=\"Visible\"/><Setter TargetName=\"Glyph\" Property=\"Text\" Value=\"▾\"/><Setter TargetName=\"ItemsHost\" Property=\"Visibility\" Value=\"Visible\"/></MultiTrigger><Trigger SourceName=\"ItemHost\" Property=\"IsMouseOver\" Value=\"True\"><Setter TargetName=\"ItemHost\" Property=\"Background\" Value=\"%HOVER%\"/></Trigger><Trigger Property=\"IsSelected\" Value=\"True\"><Setter TargetName=\"ItemHost\" Property=\"Background\" Value=\"%SELECTED%\"/><Setter TargetName=\"Bar\" Property=\"Visibility\" Value=\"Visible\"/></Trigger></ControlTemplate.Triggers></ControlTemplate>";
+            $"<ControlTemplate TargetType=\"TreeViewItem\" xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\"><Grid><Grid.RowDefinitions><RowDefinition Height=\"Auto\"/><RowDefinition Height=\"Auto\"/></Grid.RowDefinitions><Border x:Name=\"ItemHost\" Background=\"Transparent\" CornerRadius=\"%RADIUS%\" Padding=\"3,2,6,2\" Margin=\"0,0,0,1\"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width=\"15\"/><ColumnDefinition Width=\"*\"/></Grid.ColumnDefinitions><Border x:Name=\"Bar\" Width=\"3\" Height=\"16\" HorizontalAlignment=\"Left\" VerticalAlignment=\"Center\" Background=\"%BAR%\" Visibility=\"Collapsed\"/><TextBlock x:Name=\"Glyph\" Text=\"▸\" FontSize=\"%GLYPH%\" Foreground=\"%MUTED%\" VerticalAlignment=\"Center\" HorizontalAlignment=\"Left\" Visibility=\"Collapsed\"/><ContentPresenter Grid.Column=\"1\" ContentSource=\"Header\" HorizontalAlignment=\"Stretch\" VerticalAlignment=\"Center\"/></Grid></Border><ItemsPresenter x:Name=\"ItemsHost\" Grid.Row=\"1\" Margin=\"15,0,0,0\" Visibility=\"Collapsed\"/></Grid><ControlTemplate.Triggers><MultiTrigger><MultiTrigger.Conditions><Condition Property=\"HasItems\" Value=\"True\"/><Condition Property=\"IsExpanded\" Value=\"False\"/></MultiTrigger.Conditions><Setter TargetName=\"Glyph\" Property=\"Visibility\" Value=\"Visible\"/></MultiTrigger><MultiTrigger><MultiTrigger.Conditions><Condition Property=\"HasItems\" Value=\"True\"/><Condition Property=\"IsExpanded\" Value=\"True\"/></MultiTrigger.Conditions><Setter TargetName=\"Glyph\" Property=\"Visibility\" Value=\"Visible\"/><Setter TargetName=\"Glyph\" Property=\"Text\" Value=\"▾\"/><Setter TargetName=\"ItemsHost\" Property=\"Visibility\" Value=\"Visible\"/></MultiTrigger><Trigger SourceName=\"ItemHost\" Property=\"IsMouseOver\" Value=\"True\"><Setter TargetName=\"ItemHost\" Property=\"Background\" Value=\"%HOVER%\"/></Trigger><Trigger Property=\"IsSelected\" Value=\"True\"><Setter TargetName=\"ItemHost\" Property=\"Background\" Value=\"%SELECTED%\"/>%BARSETTER%</Trigger></ControlTemplate.Triggers></ControlTemplate>";
 
         template = template
             .Replace("%RADIUS%", radius.ToString("0.##", CultureInfo.InvariantCulture))
@@ -419,7 +421,10 @@ public sealed class CardTree : Grid
             .Replace("%MUTED%", tokens.Muted.ToString())
             .Replace("%HOVER%", ThemeResolver.WithAlpha(foreground, 0.06).ToString())
             .Replace("%BAR%", ThemeResolver.WithAlpha(tokens.Accent, 0.9).ToString())
-            .Replace("%SELECTED%", ThemeResolver.WithAlpha(tokens.Accent, 0.24).ToString());
+            .Replace("%SELECTED%", ThemeResolver.WithAlpha(tokens.Accent, selectionBar ? 0.24 : 0.16).ToString())
+            .Replace("%BARSETTER%", selectionBar
+                ? "<Setter TargetName=\"Bar\" Property=\"Visibility\" Value=\"Visible\"/>"
+                : "");
 
         var style = new Style(typeof(TreeViewItem));
         style.Setters.Add(new Setter(Control.TemplateProperty, (ControlTemplate)XamlReader.Parse(template)));
@@ -714,7 +719,8 @@ public sealed class CardTimeline : Grid
         _list.FontFamily = _font;
         _list.FontSize = _fontSize;
         _list.Foreground = CardPalette.Brush(_foreground, 0.9);
-        _list.ItemContainerStyle = BuildItemStyle(_tokens, _foreground, _radius);
+        _list.ItemContainerStyle = BuildItemStyle(
+            _tokens, _foreground, _radius, EndfieldVisuals.SelectionBar(style));
         CliScrollBars.Apply(this, _tokens.Scrollbar, _tokens.ScrollbarHot);
 
         for (int i = 0; i < _items.Count; i++) _items[i].ApplyTheme(_tokens, _foreground);
@@ -788,7 +794,7 @@ public sealed class CardTimeline : Grid
         return (DataTemplate)XamlReader.Parse(xaml);
     }
 
-    static Style BuildItemStyle(ThemeTokens tokens, Color foreground, double radius)
+    static Style BuildItemStyle(ThemeTokens tokens, Color foreground, double radius, bool selectionBar)
     {
         string template =
             "<ControlTemplate TargetType=\"ListBoxItem\" " +
@@ -799,7 +805,7 @@ public sealed class CardTimeline : Grid
             "<Grid>" +
             "<Border x:Name=\"Bar\" Width=\"3\" Height=\"16\" HorizontalAlignment=\"Left\" " +
             "VerticalAlignment=\"Center\" Background=\"%BAR%\" Visibility=\"Collapsed\"/>" +
-            "<ContentPresenter Margin=\"4,0,0,0\" HorizontalAlignment=\"{TemplateBinding HorizontalContentAlignment}\" " +
+            "<ContentPresenter Margin=\"%CONTENTMARGIN%\" HorizontalAlignment=\"{TemplateBinding HorizontalContentAlignment}\" " +
             "VerticalAlignment=\"{TemplateBinding VerticalContentAlignment}\"/>" +
             "</Grid></Border>" +
             "<ControlTemplate.Triggers>" +
@@ -807,15 +813,19 @@ public sealed class CardTimeline : Grid
             "<Setter TargetName=\"ItemHost\" Property=\"Background\" Value=\"%HOVER%\"/></Trigger>" +
             "<Trigger Property=\"IsSelected\" Value=\"True\">" +
             "<Setter TargetName=\"ItemHost\" Property=\"Background\" Value=\"%SELECTED%\"/>" +
-            "<Setter TargetName=\"Bar\" Property=\"Visibility\" Value=\"Visible\"/></Trigger>" +
+            "%BARSETTER%</Trigger>" +
             "</ControlTemplate.Triggers>" +
             "</ControlTemplate>";
 
         template = template
             .Replace("%RADIUS%", radius.ToString("0.##", CultureInfo.InvariantCulture))
+            .Replace("%CONTENTMARGIN%", selectionBar ? "4,0,0,0" : "0")
             .Replace("%HOVER%", ThemeResolver.WithAlpha(foreground, 0.06).ToString())
             .Replace("%BAR%", ThemeResolver.WithAlpha(tokens.Accent, 0.9).ToString())
-            .Replace("%SELECTED%", ThemeResolver.WithAlpha(tokens.Accent, 0.24).ToString());
+            .Replace("%SELECTED%", ThemeResolver.WithAlpha(tokens.Accent, selectionBar ? 0.24 : 0.16).ToString())
+            .Replace("%BARSETTER%", selectionBar
+                ? "<Setter TargetName=\"Bar\" Property=\"Visibility\" Value=\"Visible\"/>"
+                : "");
 
         var style = new Style(typeof(ListBoxItem));
         style.Setters.Add(new Setter(Control.TemplateProperty, (ControlTemplate)XamlReader.Parse(template)));

@@ -20,7 +20,8 @@ namespace MirrorpondHUD.Cards;
 /// </summary>
 public sealed class DropStationCard : RichCardModuleBase,
     ICardSettingsModule, ICardEditorSection, ICardSettingsValidator,
-    ICardSummary, ICardStyleAware, ICardDropTarget, ICardDropFeedback, ICardSelfTest
+    ICardSummary, ICardStyleAware, ICardDropTarget, ICardDropFeedback, ICardSelfTest,
+    ICardScreenshotProvider
 {
     public const string SettingsKey = "dropstation";
 
@@ -98,6 +99,14 @@ public sealed class DropStationCard : RichCardModuleBase,
         if (station.Mode != "Copy" || station.MaxEntries != 1) return "中转站设置归一化失败";
         if (string.IsNullOrEmpty(Validate(config))) return "空接收目录应当校验失败";
 
+        var viewStation = new StationSettings { View = "medium" };
+        viewStation.Normalize();
+        if (viewStation.View != StationDisplayMode.MediumIcon) return "中转站显示方式没有归一化到中图标";
+        if (!StationDisplayMode.IsTiles(viewStation.View)) return "中图标没有识别为网格视图";
+        viewStation.View = "unknown";
+        viewStation.Normalize();
+        if (viewStation.View != StationDisplayMode.List) return "未知显示方式没有回落到列表";
+
         // B-1：盘符根不能被当成普通条目的文件名，否则目标会组合到接收目录外。
         string root = Path.GetPathRoot(Environment.SystemDirectory);
         if (!StationFiles.IsRootPath(root)) return $"盘符根没有被识别: {root}";
@@ -144,6 +153,9 @@ public sealed class DropStationCard : RichCardModuleBase,
         }
         view.ShowDropHint(over, count);
     }
+
+    /// <summary>截图专用：给中转站塞一组样张，不写入 items.json，也不影响真实卡片。</summary>
+    public void PrepareScreenshot(FrameworkElement content) => (content as StationView)?.LoadScreenshotSamples();
 }
 
 /// <summary>中转站的设置（住在 CardSettings.Extras）。</summary>
@@ -159,6 +171,9 @@ public sealed class StationSettings
     public int MaxEntries = 50;
 
     public bool ShowIcons = true;
+
+    /// <summary>列表显示方式：LargeIcon / MediumIcon / SmallIcon / List。</summary>
+    public string View = "List";
 
     /// <summary>加载状态时自动移除已经不存在的列表项（只清列表，不删文件）。</summary>
     public bool AutoRemoveMissing = false;
@@ -177,6 +192,7 @@ public sealed class StationSettings
             catch (Exception ex) { Log.Warn($"中转站接收目录规范化失败，保留原值: {ex.Message}"); }
         }
         MaxEntries = (int)Settings.Clamp(MaxEntries, 1, 500);
+        View = StationDisplayMode.Normalize(View);
     }
 
     public StationSettings Clone() => new StationSettings
@@ -185,6 +201,7 @@ public sealed class StationSettings
         Directory = Directory,
         MaxEntries = MaxEntries,
         ShowIcons = ShowIcons,
+        View = View,
         AutoRemoveMissing = AutoRemoveMissing
     };
 }
@@ -237,6 +254,7 @@ internal sealed class StationEditor : StackPanel
     readonly TextBox _directory;
     readonly Button _browse;
     readonly TextBox _maxEntries;
+    readonly ComboBox _view;
     readonly CheckBox _showIcons;
     readonly CheckBox _autoRemove;
 
@@ -291,6 +309,28 @@ internal sealed class StationEditor : StackPanel
         maxRow.Children.Add(new TextBlock { Text = " 条（超出丢最旧的列表项，不删文件）", VerticalAlignment = VerticalAlignment.Center });
         Children.Add(maxRow);
 
+        var viewRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
+        viewRow.Children.Add(new TextBlock { Text = "显示方式", Width = 90, VerticalAlignment = VerticalAlignment.Center });
+        _view = new ComboBox { Width = 180 };
+        _view.Items.Add(new ComboBoxItem { Content = "大图标", Tag = StationDisplayMode.LargeIcon });
+        _view.Items.Add(new ComboBoxItem { Content = "中图标", Tag = StationDisplayMode.MediumIcon });
+        _view.Items.Add(new ComboBoxItem { Content = "小图标", Tag = StationDisplayMode.SmallIcon });
+        _view.Items.Add(new ComboBoxItem { Content = "列表", Tag = StationDisplayMode.List });
+        _view.SelectedIndex = station.View == StationDisplayMode.LargeIcon ? 0
+            : station.View == StationDisplayMode.MediumIcon ? 1
+            : station.View == StationDisplayMode.SmallIcon ? 2 : 3;
+        _view.SelectionChanged += (s, e) => Commit();
+        viewRow.Children.Add(_view);
+        viewRow.Children.Add(new TextBlock
+        {
+            Text = "大 / 中图标会换成网格；小图标与列表仍是单行",
+            FontSize = 12,
+            Opacity = 0.72,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(10, 0, 0, 0)
+        });
+        Children.Add(viewRow);
+
         var optionRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
         _showIcons = new CheckBox
         {
@@ -337,6 +377,8 @@ internal sealed class StationEditor : StackPanel
         station.Mode = _mode.SelectedIndex == 1 ? "Copy" : _mode.SelectedIndex == 2 ? "Move" : "Reference";
         station.Directory = _directory.Text;
         station.MaxEntries = ParseInt(_maxEntries.Text, station.MaxEntries);
+        var viewItem = _view.SelectedItem as ComboBoxItem;
+        station.View = StationDisplayMode.Normalize(viewItem is null ? null : viewItem.Tag as string);
         station.ShowIcons = _showIcons.IsChecked == true;
         station.AutoRemoveMissing = _autoRemove.IsChecked == true;
         station.Normalize();

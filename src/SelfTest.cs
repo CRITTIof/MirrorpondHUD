@@ -481,8 +481,36 @@ internal static class SelfTest
                            && badToken.Muted == ThemeResolver.WithAlpha(fg, 0.45)
                            && badToken.Accent == System.Windows.Media.Color.FromRgb(0x2F, 0x6F, 0xEB);
 
+            // 2.36.0：M2–M8 默认全开；关闭 M6 后铭牌必须整体消失，信息 / 文本卡始终不显示。
+            var metaSettings = new Settings();
+            var metaCard = new CardSettings { Id = "chat", Kind = "chat", Name = "对话" };
+            metaSettings.Cards.Add(metaCard);
+            metaSettings.Overlay.Monitor = 2;
+            bool metaOk = metaSettings.Style.Endfield.Shadow
+                       && metaSettings.Style.Endfield.SelectionBar
+                       && metaSettings.Style.Endfield.Buttons
+                       && metaSettings.Style.Endfield.SegmentProgress
+                       && metaSettings.Style.Endfield.Meta
+                       && metaSettings.Style.Endfield.CornerBrackets
+                       && metaSettings.Style.Endfield.CutCorners
+                       && CardMeta.Enabled(metaSettings, metaCard)
+                       && !CardMeta.Enabled(metaSettings, new CardSettings { Kind = "infotext" })
+                       && CardMeta.Header(metaSettings, metaCard) == "// 01 / ";
+
+            metaSettings.Style.Endfield.FooterText = "{code}|{name}|{monitor}";
+            string customFooter = CardMeta.Footer(metaSettings, metaCard);
+            bool footerOk = customFooter == "01|对话|03";
+
+            metaSettings.Style.Endfield.Meta = false;
+            bool metaOffOk = !CardMeta.Enabled(metaSettings, metaCard)
+                          && CardMeta.Header(metaSettings, metaCard).Length == 0
+                          && CardMeta.Footer(metaSettings, metaCard).Length == 0;
+            metaSettings.Style.Endfield.Meta = true;
+
+            bool endfieldOk = metaOk && footerOk && metaOffOk;
+
             themeOk = defaultOk && mutedOk && scrollOk && statusOk && cornerOk && contourOk && motionOk
-                   && validateOk && normalizeOk && codeOk && fallbackOk;
+                   && validateOk && normalizeOk && codeOk && fallbackOk && endfieldOk;
         }
         catch (Exception ex)
         {
@@ -808,7 +836,33 @@ internal static class SelfTest
             status.SetProgress(null);
             bool errorOk = status.Kind == CardStatusKind.Error;
 
-            widgetsOk = emptyOk && countOk && selectOk && busyOk && errorOk;
+            // 2.36.0：关闭工业按钮 / 分段进度后必须能走回旧模板，而不是抛异常。
+            var legacyStyle = new StyleSettings
+            {
+                FontSize = 15,
+                Foreground = "#E6EDF3",
+                Endfield = new EndfieldStyleSettings
+                {
+                    Buttons = false,
+                    SegmentProgress = false,
+                    CutCorners = false,
+                    SelectionBar = false
+                }
+            };
+            var legacyButton = new CardButton("旧按钮", CardButtonTone.Primary);
+            legacyButton.ApplyStyle(legacyStyle, 12);
+            legacyButton.Measure(new Size(200, 100));
+            legacyButton.Arrange(new Rect(0, 0, 120, 30));
+            var legacyStatus = new CardStatus();
+            legacyStatus.ApplyStyle(legacyStyle);
+            legacyStatus.SetProgress(0.5);
+            legacyStatus.Measure(new Size(300, 80));
+            legacyStatus.Arrange(new Rect(0, 0, 300, 40));
+            bool legacyOk = legacyButton.CornerRadius <= 7
+                         && legacyButton.Template is not null
+                         && legacyStatus.Kind == CardStatusKind.Normal;
+
+            widgetsOk = emptyOk && countOk && selectOk && busyOk && errorOk && legacyOk;
         }
         catch (Exception ex)
         {

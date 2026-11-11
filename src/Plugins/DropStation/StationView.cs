@@ -191,11 +191,16 @@ internal sealed class StationView : Grid, IDisposable, IStationCopySink
         CliSettings cli = _settings.Cli ?? new CliSettings();
         Width = Math.Max(240, cli.MaxWidth);
 
+        // 显示方式存在 Extras 里；设置窗改动后宿主可能只调 ApplyStyle 不重建控件。
+        StationSettings latest = DropStationCard.StationOf(_config);
+        _station.View = latest.View;
+
         _header.Code = CardMeta.Header(_settings, _config);
         _header.ApplyStyle(_settings.Style, _settings.Overlay.CornerRadius);
-        _footer.Left = CardMeta.Footer(_settings);
+        _footer.Left = CardMeta.Footer(_settings, _config);
         _footer.ApplyStyle(_settings.Style);
         _search.ApplyStyle(_settings.Style, _settings.Overlay.CornerRadius);
+        _list.SetViewMode(StationDisplayMode.IsTiles(_station.View));
         _list.ApplyStyle(_settings.Style, cli);
         _status.ApplyStyle(_settings.Style, _settings.Overlay.CornerRadius);
         _cancelCopy.ApplyStyle(_settings.Style, _settings.Overlay.CornerRadius);
@@ -390,7 +395,7 @@ internal sealed class StationView : Grid, IDisposable, IStationCopySink
         {
             if (!Matches(item)) continue;
 
-            FrameworkElement row = StationRow.Build(item, _station, _host, _foreground);
+            FrameworkElement row = StationRow.Build(item, _station, _host, _foreground, _station.View);
             _list.Items.Add(row);
             if (selectedItems.Contains(item)) _list.Inner.SelectedItems.Add(row);
         }
@@ -660,6 +665,36 @@ internal sealed class StationView : Grid, IDisposable, IStationCopySink
         _items.AddRange(loaded);
         _autoRemoved = autoRemoved;
     }
+
+    /// <summary>
+    /// 截图专用样张：不读 items.json，也不写盘；只让四种显示方式在同一张图里有内容可看。
+    /// 由 <see cref="DropStationCard.PrepareScreenshot"/> 调用，正常运行路径永远不会走到这里。
+    /// </summary>
+    internal void LoadScreenshotSamples()
+    {
+        _items.Clear();
+        _items.Add(Sample("设计稿.zip", 12.4 * 1024 * 1024, false));
+        _items.Add(Sample("截图 2026-11-11.png", 2.1 * 1024 * 1024, false));
+        _items.Add(Sample("说明文档.txt", 8 * 1024, false));
+        string folder = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+        _items.Add(Sample("项目资料", 0, true,
+                          string.IsNullOrEmpty(folder) ? Environment.SystemDirectory : folder));
+        _items.Add(Sample("演示视频.mp4", 248.0 * 1024 * 1024, false));
+        _filter = "";
+        _selection.Anchor = null;
+        Rebuild();
+        SetStatus("就绪", CardStatusKind.Normal);
+    }
+
+    static StationItem Sample(string name, double size, bool directory, string path = null) => new()
+    {
+        Id = StationFiles.NewId(),
+        Path = path ?? @"C:\Screenshots\" + name,
+        Name = name,
+        Size = (long)size,
+        AddedUtc = StationFiles.UtcNow(),
+        IsDirectory = directory
+    };
 
     /// <summary>
     /// 已销毁的旧视图绝不能再写整表，否则会用旧快照覆盖新视图的结果；

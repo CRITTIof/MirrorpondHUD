@@ -1,4 +1,4 @@
-# 版本修改记录（2.4.1 → 2.35.0）
+# 版本修改记录（2.4.1 → 2.36.0）
 
 > 范围：本文只记录**这一轮接手后我做的版本**（v2.4.1 起）。v2.4.0 及更早是既有历史，不在本文档里。
 > 数据全部取自仓库真实提交（`git diff --shortstat <上一版>..<本版>`），文件行的 `+ / -` 就是实际增删行数。
@@ -10,10 +10,10 @@
 > `f67a255` / `5f8933c` / `ef70cea`，**未发布、未合并**）；`v2.14.5`（`a0fe549`）/ `v2.14.6`（`3e6abc6`）
 > 已推送到 `origin/feature/runtime-card-loading`；
 > `v2.14.7`（`abcbcec`）/ `v2.14.8`（`633e9d6`）已随文档同步提交 `d73d2ec` 推送到同一分支（未发布、未合并）；
-> `v2.14.9`（`aba873a`）已推送；`v2.15.0`（`78d3381`）已推送（文档同步提交 `2eba9b4`）；`v2.16.0`（代码 `6406d96`，文档同步 `d1fd414`）**已推送并快进合并到 `main`**；`v2.17.0`（`27b8bbd`）/ `v2.18.0`（`1e1c6ac`）/ `v2.19.0`（`d21773c`）**已推送并快进合并到 `main`**；`v2.20.0`（代码 `d8f36ab`，文档 `de64021`）**已推送并快进合并到 `main`**；`v2.21.0`（代码 `0d687e9`，文档 `4911e1b`）**已推送并快进合并到 `main`**，未打 tag、未发布 Release；`v2.22.0`（代码为 `73837aa`–`2907be0` 的 12 个提交，文档同步本次提交）**已合并 `main`**，未打 tag、未发布 Release。 `v2.23.0`（本轮 6 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.24.0`（本轮 4 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.25.0`（本轮 2 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.26.0`（本轮 2 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.27.0`（本轮按审阅复核顺序修复 + 性能采样，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.28.0`（UX 批次，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.29.0`（性能 + M-1/M-4 + L-13 混合 DPI 实测，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.30.0`（终末地 M1–M6 选项 + M7/M8 调研，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.31.0`（M7 四档动效 + 循环效果 + M8 主题数据 + 边界拖动修复，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.32.0`（ContourLine 等高线移植 + 纹样密度 + 等高线原地变化，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.33.0`（UX 收口：铭牌删除、上下文显隐、等高线性能、状态色预览、系统亚克力圆角、拖拽对齐、中转站留白、文字对齐，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.34.0`（现代 C# 治理 A + 机械语法 B，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.35.0`（终末地 M2–M8：阴影/选中/按钮/进度/铭牌/角括号/切角，未合并 main）**已完成**，未打 tag、未发布 Release。
+> `v2.14.9`（`aba873a`）已推送；`v2.15.0`（`78d3381`）已推送（文档同步提交 `2eba9b4`）；`v2.16.0`（代码 `6406d96`，文档同步 `d1fd414`）**已推送并快进合并到 `main`**；`v2.17.0`（`27b8bbd`）/ `v2.18.0`（`1e1c6ac`）/ `v2.19.0`（`d21773c`）**已推送并快进合并到 `main`**；`v2.20.0`（代码 `d8f36ab`，文档 `de64021`）**已推送并快进合并到 `main`**；`v2.21.0`（代码 `0d687e9`，文档 `4911e1b`）**已推送并快进合并到 `main`**，未打 tag、未发布 Release；`v2.22.0`（代码为 `73837aa`–`2907be0` 的 12 个提交，文档同步本次提交）**已合并 `main`**，未打 tag、未发布 Release。 `v2.23.0`（本轮 6 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.24.0`（本轮 4 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.25.0`（本轮 2 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.26.0`（本轮 2 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.27.0`（本轮按审阅复核顺序修复 + 性能采样，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.28.0`（UX 批次，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.29.0`（性能 + M-1/M-4 + L-13 混合 DPI 实测，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.30.0`（终末地 M1–M6 选项 + M7/M8 调研，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.31.0`（M7 四档动效 + 循环效果 + M8 主题数据 + 边界拖动修复，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.32.0`（ContourLine 等高线移植 + 纹样密度 + 等高线原地变化，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.33.0`（UX 收口：铭牌删除、上下文显隐、等高线性能、状态色预览、系统亚克力圆角、拖拽对齐、中转站留白、文字对齐，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.34.0`（现代 C# 治理 A + 机械语法 B，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.35.0`（终末地 M2–M8：阴影/选中/按钮/进度/铭牌/角括号/切角，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.36.0`（M2–M8 开关化、信息文本卡去页头页脚、媒体对齐对话卡、中转站四视图与搜索对齐、页脚模板、退出软件不弹未保存，未合并 main）**已完成**，未打 tag、未发布 Release。
 > `v2.14.1` / `v2.14.2` / `v2.14.4` 的规模用对应提交的 `git show --shortstat`；`v2.14.3` / `v2.14.5` / `v2.14.6`
 > 按当时提交前工作区的 `git diff --shortstat` 计算；`v2.14.7` / `v2.14.8` 用对应提交的 `git show --shortstat`；
-> `v2.14.9` 用提交前工作区的 `git diff --shortstat -- MirrorpondHUD.csproj src`；`v2.15.0` 用 `git show --shortstat 78d3381`；`v2.16.0` 用 `git show --shortstat 6406d96`；`v2.17.0` 用 `git show --shortstat 27b8bbd`；`v2.18.0` 用 `git show --shortstat 1e1c6ac`；`v2.19.0` 用 `git show --shortstat d21773c`；`v2.20.0` 用 `git show --shortstat d8f36ab`；`v2.21.0` 用 `git show --shortstat 0d687e9`（文档同步另计；评审指出的 `d6e1af3` 是未合并的游离提交，实际合并进 main 的是 `0d687e9`）；`v2.22.0` 用 `git diff --shortstat b366e32..4899f3f`（30 文件，+1116 / −246；版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.23.0` 用 `git diff --shortstat 6da03f0..HEAD`（58 文件，+6304 / −4618；版本号 15 文件 +15 / −15 与版本记录另计）。 `v2.24.0` 用 `git diff --shortstat 96acd1b..HEAD`（55 文件，+1876 / −301；版本号 15 文件 +15 / −15 与版本记录另计）。 `v2.25.0` 用 `git diff --shortstat 29efb91..HEAD`（24 文件，+520 / −153；版本号 15 文件 +15 / −15 与版本记录另计）。 `v2.26.0` 源码改动 14 文件，+165 / −87（版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.27.0` 源码改动 31 文件，+765 / −164（含新增 PerformanceProbe 127 行；版本号与文档同步另计）。 `v2.28.0` 源码改动 18 文件，+509 / −13（版本号与文档同步另计）。 `v2.29.0` 源码改动 19 文件，+864 / −297（含新增 `ScreenGeometry.cs` 194 行；版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.30.0` 源码改动 18 文件，+552 / −41（两套主题与 docs/UI 文档另计；版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.31.0` 源码改动 13 文件，+720 / −57（docs/UI 文档另计；版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.32.0` 源码改动 15 文件，+1,546 / −83（含新增 `src/Ui/Contour/*` 7 个文件；版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.33.0` 源码改动约 34 文件，+1,469 / −330（含新增 `src/Ui/Contour/ContourGeometryBuilder.cs` 323 行；版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.34.0` 约 152 文件，+41,985 / −43,367（绝大多数是 namespace / 缩进重排；含 `.editorconfig` / `Directory.Build.props` / `.gitattributes` 3 个新增治理文件，版本号 15 文件另计）。 `v2.35.0` 41 文件，+1,556 / −506（含 5 个新增 UiKit 原语与 1 篇 M2–M8 实现记录；版本号 15 文件另计）。
+> `v2.14.9` 用提交前工作区的 `git diff --shortstat -- MirrorpondHUD.csproj src`；`v2.15.0` 用 `git show --shortstat 78d3381`；`v2.16.0` 用 `git show --shortstat 6406d96`；`v2.17.0` 用 `git show --shortstat 27b8bbd`；`v2.18.0` 用 `git show --shortstat 1e1c6ac`；`v2.19.0` 用 `git show --shortstat d21773c`；`v2.20.0` 用 `git show --shortstat d8f36ab`；`v2.21.0` 用 `git show --shortstat 0d687e9`（文档同步另计；评审指出的 `d6e1af3` 是未合并的游离提交，实际合并进 main 的是 `0d687e9`）；`v2.22.0` 用 `git diff --shortstat b366e32..4899f3f`（30 文件，+1116 / −246；版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.23.0` 用 `git diff --shortstat 6da03f0..HEAD`（58 文件，+6304 / −4618；版本号 15 文件 +15 / −15 与版本记录另计）。 `v2.24.0` 用 `git diff --shortstat 96acd1b..HEAD`（55 文件，+1876 / −301；版本号 15 文件 +15 / −15 与版本记录另计）。 `v2.25.0` 用 `git diff --shortstat 29efb91..HEAD`（24 文件，+520 / −153；版本号 15 文件 +15 / −15 与版本记录另计）。 `v2.26.0` 源码改动 14 文件，+165 / −87（版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.27.0` 源码改动 31 文件，+765 / −164（含新增 PerformanceProbe 127 行；版本号与文档同步另计）。 `v2.28.0` 源码改动 18 文件，+509 / −13（版本号与文档同步另计）。 `v2.29.0` 源码改动 19 文件，+864 / −297（含新增 `ScreenGeometry.cs` 194 行；版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.30.0` 源码改动 18 文件，+552 / −41（两套主题与 docs/UI 文档另计；版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.31.0` 源码改动 13 文件，+720 / −57（docs/UI 文档另计；版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.32.0` 源码改动 15 文件，+1,546 / −83（含新增 `src/Ui/Contour/*` 7 个文件；版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.33.0` 源码改动约 34 文件，+1,469 / −330（含新增 `src/Ui/Contour/ContourGeometryBuilder.cs` 323 行；版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.34.0` 约 152 文件，+41,985 / −43,367（绝大多数是 namespace / 缩进重排；含 `.editorconfig` / `Directory.Build.props` / `.gitattributes` 3 个新增治理文件，版本号 15 文件另计）。 `v2.35.0` 41 文件，+1,556 / −506（含 5 个新增 UiKit 原语与 1 篇 M2–M8 实现记录；版本号 15 文件另计）。 `v2.36.0` 47 文件，+1,351 / −291（含 4 个新增源文件 `EndfieldStyleSettings` / `EndfieldVisuals` / `StationDisplayMode` / `SettingsWindow.Endfield`；版本号 15 文件与文档同步另计）。
 
 ## 0. 总览
 
@@ -88,6 +88,7 @@
 | v2.33.0 | 2026-11-11 | UX 收口 + 等高线性能 | 删除卡片铭牌；补齐设置上下文显隐；等高线 30fps + 基础网格缓存 + 后台几何；状态色预览；系统亚克力禁圆角；拖拽以被抓卡为对齐基准并修错位；中转站留白；文字左/中/右修复 + 跟随卡片对齐 | 约 34 文件，+1,469 / −330（版本号与文档另计） |
 | v2.34.0 | 2026-11-11 | 现代 C# 治理 + 机械语法 | 固定 LangVersion 12 / Directory.Build.props / editorconfig / gitattributes；manifest 版本断言；全仓 file-scoped namespace、表达式体、target `new()`、`out var`、`is null`、安全插值；保留 DTO 字段、P/Invoke、catch、XAML 名 | 约 152 文件，+41,985 / −43,367（绝大部分为缩进/namespace 重排） |
 | v2.35.0 | 2026-11-11 | 终末地 M2–M8 | 零偏移阴影；左缘选中条；按钮实心/4px 微圆角；分段进度；编号/面包屑/页脚；角括号；切角角标与主行动 | 41 文件，+1,556 / −506（含 5 个新 UiKit 原语与实现记录） |
+| v2.36.0 | 2026-11-11 | 选项化与卡片收口 | M2–M8 七个独立开关；信息/文本卡去页头页脚；页脚模板；媒体对齐对话卡并放松间距；中转站搜索对齐 + 大/中/小图标/列表四视图；退出软件不弹未保存 | 47 文件，+1,351 / −291（含 4 个新源文件） |
 
 ---
 
@@ -3244,16 +3245,72 @@ M7 / M8 只有调研没有实现。本轮一起收口。
 
 ---
 
-## 70. 不在版本里的东西
+## 70. v2.36.0（M2–M8 选项化与卡片收口，未合并 main）
+
+### 背景
+
+2.35.0 把终末地 M2–M8 直接写成默认视觉语言，没有退路；同时上一轮留下几处实际使用问题：
+信息 / 文本卡被套上了页头页脚、媒体卡和对话卡骨架不一致且内部偏挤、中转站搜索占位符与输入文字错位、
+中转站只有一种列表、页脚内容写死、退出整个软件时还会弹出设置窗的未保存提示。
+
+### 改动
+
+1. **M2–M8 独立开关**：新增 [`EndfieldStyleSettings`](../src/Contracts/Core/EndfieldStyleSettings.cs)
+   （`Style.Endfield`），七个布尔 + 页脚模板；默认全开 = 2.35.0 观感。新增
+   [`EndfieldVisuals`](../src/UiKit/EndfieldVisuals.cs) 作为唯一读取入口，旧配置缺字段时回落到全开。
+2. **M2 / M3 / M4 / M5 / M7 / M8 回落分支**：阴影回到 `Depth=4 / Opacity=0.55`；列表 / 表格 / 树 /
+   时间线回到 16% 强调底且不空出竖条；按钮回到 2.34 的细描边模板；进度回到 3px 半圆端头；
+   角括号关闭；切角关闭后按钮与角标回到圆角矩形。
+3. **M6 排除信息 / 文本卡**：`CardMeta.Enabled` 对 `infotext` 始终返回 false；`CardFooter` 两段都为空时
+   整块折叠，避免富内容卡底部留下空白条。
+4. **页脚模板**：`EndfieldStyleSettings.FooterText` 支持 `{version}` / `{monitor}` / `{code}` / `{name}`；
+   空模板走 `v{version} · MON {monitor}`。设置页「外观 → 终末地视觉」提供输入框，关闭 M6 时该行收起。
+5. **媒体卡对齐对话卡**：`CardMediaView` 改为 `CardHeader` + 分隔线 + 画面 + `CardStatus` +
+   `CardFooter`；播放时间 / 倍速 / 音频备注改走底部状态行，进度复用分段条（M5 关闭时自动回旧条）；
+   标题、画面、状态、页脚之间统一增大间距；正常画面不再常驻四角括号，只保留加载失败 / 空状态。
+6. **中转站搜索对齐**：`CardInput` 占位符去掉额外的 top margin，并与输入框同字号、同 8px + 1px 基线；
+   空 / 非空切换时不再上下跳。
+7. **中转站四视图**：`StationSettings.View` 支持 `LargeIcon` / `MediumIcon` / `SmallIcon` / `List`；
+   `StationDisplayMode` 集中尺寸与归一化，`StationRow` 生成网格块或单行，`CardList.SetViewMode`
+   切换 WrapPanel / 虚拟化列表；编辑器加「显示方式」下拉框。
+8. **退出软件不弹未保存**：`OverlayController.Exit` 先调用 `SettingsWindow.CloseForShutdown()`
+   无提示关闭设置窗，再 `Application.Shutdown()`；用户单独关闭设置窗仍保留保存 / 放弃 / 取消提示。
+9. **截图验收**：新增 `--screenshot-station` 四视图样张；`CaptureCards` 支持
+   `MIRRORPOND_ENDFIELD_OFF=1` 验证全关分支；中转站截图样张不写 `items.json`。
+10. **版本**：宿主 / Contracts / UiKit / 6 个插件工程与 manifest 统一 2.36.0；
+    Schema 仍 7，插件 API 仍 2，主题 schema 仍 1。
+
+### 验证
+
+- `dotnet build -c Release`：**0 警告 0 错误**；
+- `--selftest`：**退出码 0、失败项 0**（新增 M2–M8 开关 / 页脚模板 / 按钮旧模板 / 进度旧分支 /
+  中转站视图归一化断言）；
+- `--screenshot-settings`：外观页七个开关、页脚输入框、M6 关闭时收起均可见；
+- `--screenshot-cards`：信息 / 文本卡无页头页脚；CLI / 中转站 / 媒体显示 `v2.36.0 · MON 01`；
+  媒体状态行显示播放状态与时间；
+- `--screenshot-cards` + `MIRRORPOND_ENDFIELD_OFF=1`：旧按钮 / 旧进度 / 无页脚，卡片底部无空条；
+- `--screenshot-station`：大图标 / 中图标 / 小图标 / 列表四种排布均出图；
+- `dotnet format style/whitespace --verify-no-changes`：0 / 0。
+
+### 风险 / 未验证
+
+- 中转站大 / 中图标用 `WrapPanel`，不再虚拟化；`MaxEntries` 上限 500，超长列表建议用列表 / 小图标；
+- 媒体卡正常播放时不再显示四角角括号，只有异常 / 空状态显示；这是和对话卡统一后的取舍；
+- 切角按钮点击区域仍是矩形，4K 抗锯齿未逐屏目视；
+- 未做 ARM64 实机与外部插件二进制回归。
+
+---
+
+## 71. 不在版本里的东西
 
 - 验收脚本、样张与测量脚本都在仓库外维护，**没有提交**。
 - 发布：`main` 与标签已推送到 [github.com/CRITTIof/MirrorpondHUD](https://github.com/CRITTIof/MirrorpondHUD)；
   [v2.9.2 Release](https://github.com/CRITTIof/MirrorpondHUD/releases/tag/v2.9.2) 只有两个附件
   （`MirrorpondHUD-x64-requires-dotnet.exe`、`MirrorpondHUD-arm64-requires-dotnet.exe`，均需 .NET 8 桌面运行时，已自签名）；
   更早的 Release 正文与附件保留原样，v2.4.0 的 Release 已删除（tag `v2.4.0` 保留，历史仍可检出）。
-- 仓库追踪的文件共 224 个（v2.21.0 时 174 个；2.23.0 结构性拆分 +20，2.24.0 +7，2.25.0 新增 CardMotion +1，2.27.0 新增 PerformanceProbe / 性能基线 +2，2.29.0 新增 ScreenGeometry +1、删除 CardDefaults / InfoTextDefaults −2，2.30.0 新增两套终末地主题 +2、docs/UI 三篇 +3，2.31.0 新增 M7/M8 实现记录 +1，2.32.0 新增等高线核心 +7，2.33.0 新增等高线几何构建器 +1，2.34.0 新增构建治理三件 +3，2.35.0 新增 M2–M8 实现记录 +1），`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
+- 仓库追踪的文件共 228 个（v2.21.0 时 174 个；2.23.0 结构性拆分 +20，2.24.0 +7，2.25.0 新增 CardMotion +1，2.27.0 新增 PerformanceProbe / 性能基线 +2，2.29.0 新增 ScreenGeometry +1、删除 CardDefaults / InfoTextDefaults −2，2.30.0 新增两套终末地主题 +2、docs/UI 三篇 +3，2.31.0 新增 M7/M8 实现记录 +1，2.32.0 新增等高线核心 +7，2.33.0 新增等高线几何构建器 +1，2.34.0 新增构建治理三件 +3，2.35.0 新增 M2–M8 实现记录 +1，2.36.0 新增 `EndfieldStyleSettings` / `EndfieldVisuals` / `StationDisplayMode` / `SettingsWindow.Endfield` +4），`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
 
-## 71. 已知代价（跨版本）
+## 72. 已知代价（跨版本）
 
 - 桌面亚克力为了不拍到自己，会把卡片排除在截屏之外 —— 这个模式下截图 / 录屏里**看不到卡片**，观感只能靠肉眼与离屏渲染验证。
 - 兼容实现每帧对身后窗口做 `PrintWindow`，拖动时最多 ~21 帧/秒；要更高只能走桌面亚克力（DXGI）。

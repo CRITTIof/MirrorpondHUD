@@ -68,6 +68,13 @@ internal static class CommandLineMode
             return true;
         }
 
+        string shotStation = GetOption(args, "--screenshot-station");
+        if (shotStation is not null)
+        {
+            Screenshots.CaptureStationViews(shotStation);
+            return true;
+        }
+
         if (args.Contains("--selftest"))
         {
             // SelfTest 自己负责收集失败并返回失败数，不在这里包 finally：

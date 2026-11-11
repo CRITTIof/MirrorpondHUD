@@ -155,6 +155,7 @@ public partial class SettingsWindow : Window
         CursorStyleCombo.SelectionChanged += (s, e) => UiChanged();
         CursorBlinkCheck.Checked += (s, e) => UiChanged();
         CursorBlinkCheck.Unchecked += (s, e) => UiChanged();
+        HookEndfieldEvents();
     }
 
     public bool Reload(Settings live)
@@ -335,6 +336,12 @@ public partial class SettingsWindow : Window
         ReleaseCardEditors();
         Close();
     }
+
+    /// <summary>
+    /// 应用退出时专用：先无提示关闭设置窗，再让宿主 Shutdown。
+    /// 未保存提示只属于「用户主动退出设置」，不能因为退出整个软件而弹出来。
+    /// </summary>
+    public void CloseForShutdown() => CloseForReal();
 
     /// <summary>加载当前设置是否失败（失败时窗口不打开、保存被禁用）。</summary>
     public bool LoadFailed => _loadFailed;

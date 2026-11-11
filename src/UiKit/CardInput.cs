@@ -48,7 +48,9 @@ public sealed class CardInput : Grid
         _placeholder = new TextBlock
         {
             IsHitTestVisible = false,
-            Margin = new Thickness(9, 6, 9, 0),
+            // 和 TextBox 的 8px Padding + 1px 描边对齐；不要再加 top margin，
+            // 否则占位符会比真正输入的文字低半行（中转站搜索框的“搜索文件名”错位就是这么来的）。
+            Margin = multiline ? new Thickness(9, 7, 9, 0) : new Thickness(9, 0, 9, 0),
             VerticalAlignment = multiline ? VerticalAlignment.Top : VerticalAlignment.Center,
             TextTrimming = TextTrimming.CharacterEllipsis
         };
@@ -116,7 +118,8 @@ public sealed class CardInput : Grid
 
         _box.ApplyStyle(_style, cornerRadius);
         _placeholder.FontFamily = CardPalette.ResolveFont(_style.FontFamily);
-        _placeholder.FontSize = Math.Max(10, _style.FontSize - 1);
+        // 占位符和输入内容同字号，切换空 / 非空时行高与基线才不会跳。
+        _placeholder.FontSize = _box.FontSize;
         _placeholder.Foreground = CardPalette.Brush(_foreground, 0.38);
 
         SetError(_error);

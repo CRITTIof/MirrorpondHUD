@@ -907,7 +907,8 @@ public sealed class CardTable : Grid, ICardFormControl
         _list.FontFamily = family;
         _list.FontSize = size;
         _list.Foreground = new SolidColorBrush(foreground);
-        _list.ItemContainerStyle = CardDataStyle.TableRowStyle(tokens, foreground, _cornerRadius);
+        _list.ItemContainerStyle = CardDataStyle.TableRowStyle(
+            tokens, foreground, _cornerRadius, EndfieldVisuals.SelectionBar(_style));
 
         _emptyText.FontFamily = family;
         _emptyText.FontSize = size;
@@ -1129,18 +1130,26 @@ internal static class CardDataStyle
             pixelsPerDip);
     }
 
-    public static Style TableRowStyle(ThemeTokens tokens, Color foreground, double cornerRadius)
+    public static Style TableRowStyle(ThemeTokens tokens, Color foreground, double cornerRadius,
+                                      bool selectionBar = true)
     {
-        const string template =
+        bool bar = selectionBar;
+        string contentMargin = bar ? "4,0,0,0" : "0";
+        string barSetter = bar
+            ? "<Setter TargetName=\"Bar\" Property=\"Visibility\" Value=\"Visible\"/>"
+            : "";
+        double selectedAlpha = bar ? 0.24 : 0.16;
+
+        const string templateXaml =
             "<ControlTemplate TargetType=\"ListBoxItem\" xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\">" +
             "<Border x:Name=\"ItemHost\" Background=\"{TemplateBinding Background}\" Padding=\"{TemplateBinding Padding}\" CornerRadius=\"0\">" +
             "<Grid>" +
             "<Border x:Name=\"Bar\" Width=\"3\" Height=\"16\" HorizontalAlignment=\"Left\" " +
             "VerticalAlignment=\"Center\" Background=\"%BAR%\" Visibility=\"Collapsed\"/>" +
-            "<ContentPresenter Margin=\"4,0,0,0\" HorizontalAlignment=\"{TemplateBinding HorizontalContentAlignment}\" VerticalAlignment=\"Center\"/>" +
+            "<ContentPresenter Margin=\"%CONTENTMARGIN%\" HorizontalAlignment=\"{TemplateBinding HorizontalContentAlignment}\" VerticalAlignment=\"Center\"/>" +
             "</Grid></Border>" +
             "<ControlTemplate.Triggers><Trigger Property=\"IsSelected\" Value=\"True\">" +
-            "<Setter TargetName=\"Bar\" Property=\"Visibility\" Value=\"Visible\"/>" +
+            "%BARSETTER%" +
             "</Trigger></ControlTemplate.Triggers></ControlTemplate>";
 
         var style = new Style(typeof(ListBoxItem));
@@ -1151,7 +1160,10 @@ internal static class CardDataStyle
         style.Setters.Add(new Setter(Control.HorizontalContentAlignmentProperty, HorizontalAlignment.Stretch));
         style.Setters.Add(new Setter(Control.ForegroundProperty, new SolidColorBrush(foreground)));
         style.Setters.Add(new Setter(Control.FocusVisualStyleProperty, null));
-        string finalTemplate = template.Replace("%BAR%", ThemeResolver.WithAlpha(tokens.Accent, 0.9).ToString());
+        string finalTemplate = templateXaml
+            .Replace("%BAR%", ThemeResolver.WithAlpha(tokens.Accent, 0.9).ToString())
+            .Replace("%CONTENTMARGIN%", contentMargin)
+            .Replace("%BARSETTER%", barSetter);
         style.Setters.Add(new Setter(Control.TemplateProperty, (ControlTemplate)XamlReader.Parse(finalTemplate)));
 
         var hover = new Trigger { Property = UIElement.IsMouseOverProperty, Value = true };
@@ -1159,7 +1171,7 @@ internal static class CardDataStyle
         style.Triggers.Add(hover);
 
         var selected = new Trigger { Property = ListBoxItem.IsSelectedProperty, Value = true };
-        selected.Setters.Add(new Setter(Control.BackgroundProperty, CardPalette.Brush(tokens.Accent, 0.24)));
+        selected.Setters.Add(new Setter(Control.BackgroundProperty, CardPalette.Brush(tokens.Accent, selectedAlpha)));
         style.Triggers.Add(selected);
 
         return style;

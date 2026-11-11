@@ -20,9 +20,9 @@ public enum CardButtonTone
 /// <summary>
 /// 卡片里的按钮：颜色、字体、圆角都跟着卡片本身走，不依赖设置窗口那套浅色资源字典。
 ///
-/// 视觉语言和卡片一致：默认透明底 + 1 px 细描边 + 低对比文字，悬停 / 按下才叠一层
-/// 淡淡的色调；主操作 / 危险操作只把描边和文字染成强调色 / 拒绝色，不再用高饱和
-/// 实心块。这样放在标题行里不会比标题还抢眼，深色卡片和浅色卡片也都成立。
+/// 2.36.0 起受「终末地视觉 → 工业按钮 / 切角」两个开关控制：
+/// - 开启（默认）：主行动实心强调色 + 右上切角，次级行动深色块，全部 4px 微圆角；
+/// - 关闭：回到 2.34 的细描边按钮，主 / 危险只染描边与文字，圆角跟随卡片。
 ///
 /// 用法（富内容卡片里）：
 /// <code>
@@ -33,6 +33,8 @@ public enum CardButtonTone
 /// </summary>
 public class CardButton : Button
 {
+    const double ModernRadius = 4;
+
     public CardButton(string text, CardButtonTone tone)
     {
         Tone = tone;
@@ -51,7 +53,7 @@ public class CardButton : Button
         Focusable = true;
         FocusVisualStyle = null;
         SnapsToDevicePixels = true;
-        // 模板不再有 disabled 触发器；保留旧版“整块一起变淡”的可用性反馈。
+        // 旧模板有 disabled 触发器；新模板没有，统一在这里保留“整块变淡”的可用性反馈。
         IsEnabledChanged += (s, e) => Opacity = IsEnabled ? 1.0 : 0.38;
     }
 
@@ -89,9 +91,22 @@ public class CardButton : Button
         FontFamily = ResolveFont(style.FontFamily);
         FontSize = Math.Max(9, style.FontSize - 1);
         FontWeight = FontWeights.Normal;
-        // M4/M8：按钮一族统一 4px 微圆角；主行动改用切角多边形（OnRender 绘制）。
-        CornerRadius = 4;
-        Template = BuildTemplate();
+
+        _modern = EndfieldVisuals.Buttons(style);
+        _cut = EndfieldVisuals.CutCorners(style);
+
+        if (_modern)
+        {
+            // M4/M8：按钮一族统一 4px 微圆角；主行动改用切角多边形（OnRender 绘制）。
+            CornerRadius = ModernRadius;
+            Template = BuildModernTemplate();
+        }
+        else
+        {
+            CornerRadius = Math.Max(0, Math.Min(7, cornerRadius));
+            Template = BuildLegacyTemplate(CornerRadius, LegacyHover(), LegacyPress(), _accent);
+        }
+
         ApplyColors();
     }
 
@@ -103,6 +118,8 @@ public class CardButton : Button
     Color _pressFill;
     Color _textColor;
     bool _active;
+    bool _modern = true;
+    bool _cut = true;
 
     /// <summary>
     /// 多选 / 已选中的按钮：换成强调色淡底 + 强调色描边 + 强调色文字。
@@ -121,6 +138,12 @@ public class CardButton : Button
     /// <summary>按语气 / 选中态算底色、描边、文字色；换肤和 SetActive 共用同一套。</summary>
     void ApplyColors()
     {
+        if (!_modern)
+        {
+            ApplyLegacyColors();
+            return;
+        }
+
         if (_active)
         {
             _baseFill = _accent;
@@ -151,12 +174,61 @@ public class CardButton : Button
             _textColor = WithAlpha(_foreground, 0.88);
         }
 
-        var textBrush = new SolidColorBrush(_textColor);
-        textBrush.Freeze();
+        ApplyTextAndSurface(_baseFill, Colors.Transparent, _textColor);
         Background = new SolidColorBrush(_baseFill);
         BorderBrush = Brushes.Transparent;
         BorderThickness = new Thickness(0);
+    }
+
+    /// <summary>2.34 旧观感：透明 / 淡色底 + 1px 描边，主 / 危险只染描边与文字。</summary>
+    void ApplyLegacyColors()
+    {
+        Color background;
+        Color border;
+        Color text;
+
+        if (_active)
+        {
+            background = WithAlpha(_accent, 0.22);
+            border = WithAlpha(_accent, 0.72);
+            text = _accent;
+        }
+        else
+        {
+            switch (Tone)
+            {
+                case CardButtonTone.Primary:
+                    background = WithAlpha(_accent, 0.10);
+                    border = WithAlpha(_accent, 0.42);
+                    text = _accent;
+                    break;
+
+                case CardButtonTone.Danger:
+                    background = Colors.Transparent;
+                    border = WithAlpha(_danger, 0.38);
+                    text = _danger;
+                    break;
+
+                default:
+                    background = Colors.Transparent;
+                    border = WithAlpha(_foreground, 0.20);
+                    text = WithAlpha(_foreground, 0.84);
+                    break;
+            }
+        }
+
+        ApplyTextAndSurface(background, border, text);
+        Background = new SolidColorBrush(background);
+        BorderBrush = new SolidColorBrush(border);
+        BorderThickness = new Thickness(1);
+    }
+
+    void ApplyTextAndSurface(Color background, Color border, Color text)
+    {
+        var textBrush = new SolidColorBrush(text);
+        textBrush.Freeze();
         Foreground = textBrush;
+        BorderBrush = new SolidColorBrush(border);
 
         // 内容是自己创建的 TextBlock：显式给字色，不依赖模板重建时的 Foreground 继承。
         var block = Content as TextBlock;
@@ -167,23 +239,26 @@ public class CardButton : Button
     /// <summary>M4：主行动实心、次行动深色块，都不再画整圈 1px 描边；只有焦点环外置。</summary>
     protected override void OnRender(DrawingContext dc)
     {
-        double w = ActualWidth;
-        double h = ActualHeight;
-        if (w > 0 && h > 0)
+        if (_modern)
         {
-            bool cut = _active || Tone == CardButtonTone.Primary;
-            Geometry shape = BuildShape(new Rect(0, 0, w, h), cut);
-            Color fill = IsPressed ? _pressFill : IsMouseOver ? _hoverFill : _baseFill;
-            var brush = new SolidColorBrush(fill);
-            brush.Freeze();
-            dc.DrawGeometry(brush, null, shape);
-
-            if (IsKeyboardFocused)
+            double w = ActualWidth;
+            double h = ActualHeight;
+            if (w > 0 && h > 0)
             {
-                Geometry ring = BuildShape(new Rect(-2, -2, w + 4, h + 4), cut);
-                var pen = new Pen(new SolidColorBrush(_accent), 2);
-                pen.Freeze();
-                dc.DrawGeometry(null, pen, ring);
+                bool cut = _cut && (_active || Tone == CardButtonTone.Primary);
+                Geometry shape = BuildShape(new Rect(0, 0, w, h), cut);
+                Color fill = IsPressed ? _pressFill : IsMouseOver ? _hoverFill : _baseFill;
+                var brush = new SolidColorBrush(fill);
+                brush.Freeze();
+                dc.DrawGeometry(brush, null, shape);
+
+                if (IsKeyboardFocused)
+                {
+                    Geometry ring = BuildShape(new Rect(-2, -2, w + 4, h + 4), cut);
+                    var pen = new Pen(new SolidColorBrush(_accent), 2);
+                    pen.Freeze();
+                    dc.DrawGeometry(null, pen, ring);
+                }
             }
         }
 
@@ -194,7 +269,7 @@ public class CardButton : Button
     {
         if (!cut)
         {
-            var rounded = new RectangleGeometry(rect, 4, 4);
+            var rounded = new RectangleGeometry(rect, ModernRadius, ModernRadius);
             rounded.Freeze();
             return rounded;
         }
@@ -211,6 +286,26 @@ public class CardButton : Button
         }
         geometry.Freeze();
         return geometry;
+    }
+
+    Color LegacyHover()
+    {
+        switch (Tone)
+        {
+            case CardButtonTone.Primary: return WithAlpha(_accent, 0.18);
+            case CardButtonTone.Danger: return WithAlpha(_danger, 0.14);
+            default: return WithAlpha(_foreground, 0.10);
+        }
+    }
+
+    Color LegacyPress()
+    {
+        switch (Tone)
+        {
+            case CardButtonTone.Primary: return WithAlpha(_accent, 0.30);
+            case CardButtonTone.Danger: return WithAlpha(_danger, 0.26);
+            default: return WithAlpha(_foreground, 0.18);
+        }
     }
 
     protected override void OnMouseEnter(MouseEventArgs e)
@@ -279,10 +374,10 @@ public class CardButton : Button
     }
 
     /// <summary>
-    /// 只保留内容呈现：底形、切角、悬停 / 按下 / 焦点全部由 OnRender 画，
+    /// 新模板只保留内容呈现：底形、切角、悬停 / 按下 / 焦点全部由 OnRender 画，
     /// 避免模板里的 Border 再围一圈描边。
     /// </summary>
-    static ControlTemplate BuildTemplate()
+    static ControlTemplate BuildModernTemplate()
     {
         const string xaml =
             "<ControlTemplate TargetType=\"Button\" " +
@@ -294,4 +389,51 @@ public class CardButton : Button
             "</ControlTemplate>";
         return (ControlTemplate)XamlReader.Parse(xaml);
     }
+
+    /// <summary>
+    /// 2.34 旧模板：细描边底 + 内容；悬停 / 按下叠淡色，焦点换强调色描边。
+    /// 只在「工业按钮」开关关闭时使用。
+    /// </summary>
+    static ControlTemplate BuildLegacyTemplate(double radius, Color hover, Color pressed, Color focus)
+    {
+        string r = radius.ToString("0.##", CultureInfo.InvariantCulture);
+        string hoverHex = ToHex(hover);
+        string pressedHex = ToHex(pressed);
+        string focusHex = ToHex(focus);
+
+        string xaml =
+            "<ControlTemplate TargetType=\"Button\" " +
+            "xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\" " +
+            "xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\">" +
+            "<Grid>" +
+            "<Border x:Name=\"Shell\" CornerRadius=\"" + r + "\" " +
+            "Background=\"{TemplateBinding Background}\" " +
+            "BorderBrush=\"{TemplateBinding BorderBrush}\" BorderThickness=\"1\"/>" +
+            "<Border x:Name=\"Hover\" CornerRadius=\"" + r + "\" Background=\"" + hoverHex + "\" Opacity=\"0\"/>" +
+            "<Border x:Name=\"Press\" CornerRadius=\"" + r + "\" Background=\"" + pressedHex + "\" Opacity=\"0\"/>" +
+            "<ContentPresenter Margin=\"{TemplateBinding Padding}\" " +
+            "HorizontalAlignment=\"Center\" VerticalAlignment=\"Center\" RecognizesAccessKey=\"True\"/>" +
+            "</Grid>" +
+            "<ControlTemplate.Triggers>" +
+            "<Trigger Property=\"IsMouseOver\" Value=\"True\">" +
+            "<Setter TargetName=\"Hover\" Property=\"Opacity\" Value=\"1\"/>" +
+            "</Trigger>" +
+            "<Trigger Property=\"IsPressed\" Value=\"True\">" +
+            "<Setter TargetName=\"Press\" Property=\"Opacity\" Value=\"1\"/>" +
+            "<Setter TargetName=\"Hover\" Property=\"Opacity\" Value=\"0\"/>" +
+            "</Trigger>" +
+            "<Trigger Property=\"IsKeyboardFocused\" Value=\"True\">" +
+            "<Setter TargetName=\"Shell\" Property=\"BorderBrush\" Value=\"" + focusHex + "\"/>" +
+            "</Trigger>" +
+            "<Trigger Property=\"IsEnabled\" Value=\"False\">" +
+            "<Setter Property=\"Opacity\" Value=\"0.38\"/>" +
+            "<Setter Property=\"Cursor\" Value=\"Arrow\"/>" +
+            "</Trigger>" +
+            "</ControlTemplate.Triggers>" +
+            "</ControlTemplate>";
+
+        return (ControlTemplate)XamlReader.Parse(xaml);
+    }
+
+    static string ToHex(Color color) => $"#{color.A:X2}{color.R:X2}{color.G:X2}{color.B:X2}";
 }

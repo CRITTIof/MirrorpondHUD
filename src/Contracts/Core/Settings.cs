@@ -124,6 +124,8 @@ public sealed class Settings
         Style.LoopDurationMs = (int)Clamp(Style.LoopDurationMs, 600, 20000);
         Style.LoopAmplitude = Clamp(Style.LoopAmplitude, 0.02, 0.8);
         Style.ThemeName = (Style.ThemeName ?? "").Trim();
+        if (Style.Endfield is null) Style.Endfield = new EndfieldStyleSettings();
+        Style.Endfield.Normalize();
 
         // 卡片列表的结构由 CardModel.Normalize 处理（需要卡片注册表里的元数据）。
     }
@@ -535,6 +537,12 @@ public sealed class StyleSettings
 
     /// <summary>当前主题名（导入 / 选中内置主题时写入；手动改外观后清空）。空 = 自定义。</summary>
     public string ThemeName = "";
+
+    /// <summary>
+    /// 终末地视觉语言（M2–M8）的开关与页脚模板。独立成对象是为了让每项都能单选，
+    /// 而不是在渲染层散落一串布尔判断；旧配置缺这一块时按默认全开来加载。
+    /// </summary>
+    public EndfieldStyleSettings Endfield = new();
 
     /// <summary>
     /// M7：动效档位。Current = 现有 160/180ms ease-out；Cut = 更短、零位移；

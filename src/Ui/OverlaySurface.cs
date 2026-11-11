@@ -148,9 +148,10 @@ public sealed class OverlaySurface : Border
 
     void UpdateMeta()
     {
-        bool textMode = !HasContent && _lastSettings is not null && _metaConfig is not null;
+        bool textMode = !HasContent && _lastSettings is not null && _metaConfig is not null
+                        && CardMeta.Enabled(_lastSettings, _metaConfig);
         string header = textMode ? CardMeta.Header(_lastSettings, _metaConfig) : "";
-        string footer = textMode ? CardMeta.Footer(_lastSettings) : "";
+        string footer = textMode ? CardMeta.Footer(_lastSettings, _metaConfig) : "";
         string title = textMode ? (_metaConfig.Name ?? "") : "";
 
         _metaTop.Text = header + title;
@@ -383,14 +384,14 @@ public sealed class OverlaySurface : Border
 
         if (overlay.Shadow)
         {
-            // 终末地规范 M2：阴影是四周均匀的环境遮蔽，不是从上方打光的投影。
-            // ShadowDepth=0 时 Direction 不再有意义，保留零偏移即可。
+            // M2：零偏移 = 四周均匀环境遮蔽；关闭后回到 2.34 的顶部投影。
+            bool ambient = EndfieldVisuals.Shadow(style);
             Effect = new DropShadowEffect
             {
                 BlurRadius = 26,
-                ShadowDepth = 0,
+                ShadowDepth = ambient ? 0 : 4,
                 Direction = 270,
-                Opacity = 0.28,
+                Opacity = ambient ? 0.28 : 0.55,
                 Color = Colors.Black
             };
             Margin = new Thickness(10);

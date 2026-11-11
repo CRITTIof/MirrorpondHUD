@@ -707,6 +707,41 @@
                         <TextBlock Style="{StaticResource Hint}" Margin="110,0,0,10"
                                    Text="循环效果会持续占用 GPU；等高线变化约 30fps 重算几何（基础地形已缓存、几何在后台生成），CPU 仍比其它效果贵。呼吸幅度 0.10 是克制档。减少动效开启时自动停。" />
 
+                        <TextBlock Text="终末地视觉（M2–M8，可分别关闭）" Style="{StaticResource SectionTitle}" Margin="0,18,0,6" />
+                        <TextBlock Style="{StaticResource Hint}" Margin="0,0,0,8"
+                                   Text="关闭某一项会回到该效果引入前的旧样式；默认全开 = 2.35.0 的观感。" />
+
+                        <WrapPanel Margin="110,0,0,8">
+                            <CheckBox x:Name="EndfieldShadowCheck" Content="环境阴影" Margin="0,0,18,8"
+                                      ToolTip="M2：零偏移的四周均匀阴影；关闭后回到从上方打光的投影。" />
+                            <CheckBox x:Name="EndfieldSelectionCheck" Content="选中左条" Margin="0,0,18,8"
+                                      ToolTip="M3：列表 / 表格 / 树选中时的 3px 左缘条；关闭后只保留强调色淡底。" />
+                            <CheckBox x:Name="EndfieldButtonCheck" Content="工业按钮" Margin="0,0,18,8"
+                                      ToolTip="M4：实心主行动、深色次行动、4px 微圆角；关闭后回到描边按钮。" />
+                            <CheckBox x:Name="EndfieldSegmentCheck" Content="分段进度" Margin="0,0,18,8"
+                                      ToolTip="M5：28 段直角进度块；关闭后回到 3px 半圆端头。" />
+                            <CheckBox x:Name="EndfieldMetaCheck" Content="编号与页脚" Margin="0,0,18,8"
+                                      ToolTip="M6：卡片编号 / 页脚；信息与文本卡始终不显示。" />
+                            <CheckBox x:Name="EndfieldBracketCheck" Content="角括号" Margin="0,0,18,8"
+                                      ToolTip="M7：错误 / 警告状态的角括号，以及媒体异常时的四角记号。" />
+                            <CheckBox x:Name="EndfieldCutCheck" Content="切角" Margin="0,0,18,8"
+                                      ToolTip="M8：主行动按钮与角标的 45° 切角；关闭后保留圆角矩形。" />
+                        </WrapPanel>
+
+                        <Grid x:Name="FooterTextBoxRow" Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="110" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="页脚内容" VerticalAlignment="Center" />
+                            <StackPanel Grid.Column="1">
+                                <TextBox x:Name="FooterTextBox" Width="360" HorizontalAlignment="Left"
+                                         ToolTip="空 = 默认 v{version} · MON {monitor}" />
+                                <TextBlock Style="{StaticResource Hint}" Margin="0,4,0,0"
+                                           Text="占位符：{version} 版本、{monitor} 显示器序号、{code} 卡片编号、{name} 卡片名。" />
+                            </StackPanel>
+                        </Grid>
+
                         <TextBlock Text="高级（实验性）" Style="{StaticResource SectionTitle}" Margin="0,18,0,6" />
 
                         <CheckBox x:Name="AcrylicCheck" Content="毛玻璃背景" Margin="0,0,0,4" />

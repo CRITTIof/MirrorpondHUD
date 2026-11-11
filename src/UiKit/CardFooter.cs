@@ -77,5 +77,9 @@ public sealed class CardFooter : Grid
         _rule.Background = CardPalette.Brush(foreground, 0.10);
         _left.Visibility = string.IsNullOrEmpty(_left.Text) ? Visibility.Collapsed : Visibility.Visible;
         _right.Visibility = string.IsNullOrEmpty(_right.Text) ? Visibility.Collapsed : Visibility.Visible;
+        // 两段都为空时连整块页脚一起收起：M6 关闭 / 信息文本卡不能让底部留一条空条。
+        Visibility = string.IsNullOrEmpty(_left.Text) && string.IsNullOrEmpty(_right.Text)
+            ? Visibility.Collapsed
+            : Visibility.Visible;
     }
 }

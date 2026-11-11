@@ -56,7 +56,7 @@ public sealed class CommandCard : RichCardModuleBase, ICardSettingsModule, ICard
         CardSettings config = context is null ? null : context.Config;
 
         var view = new CommandView(settings, CommandOf(config));
-        view.SetMeta(CardMeta.Header(settings, config), CardMeta.Footer(settings));
+        view.SetMeta(CardMeta.Header(settings, config), CardMeta.Footer(settings, config));
         return view;
     }
 
@@ -157,6 +157,9 @@ public sealed class CommandCard : RichCardModuleBase, ICardSettingsModule, ICard
         if (view is null || context is null || context.Settings is null) return;
 
         view.ApplyStyle(context.Settings);
+        // 只改页脚模板 / M6 开关时宿主不会重建内容，换肤后必须重算铭牌。
+        view.SetMeta(CardMeta.Header(context.Settings, context.Config),
+                     CardMeta.Footer(context.Settings, context.Config));
     }
 }
 
