@@ -127,5 +127,21 @@ namespace MirrorpondHUD.Ui
         [DllImport("user32.dll")]
         public static extern bool GetWindowRect(IntPtr hwnd, out Rect rect);
 
+        [StructLayout(LayoutKind.Sequential)]
+        public struct CursorPoint
+        {
+            public int X;
+            public int Y;
+        }
+
+        [DllImport("user32.dll")]
+        public static extern bool GetCursorPos(out CursorPoint point);
+
+        [DllImport("user32.dll")]
+        public static extern short GetAsyncKeyState(int virtualKey);
+
+        [DllImport("user32.dll")]
+        public static extern short GetKeyState(int virtualKey);
+
     }
 }

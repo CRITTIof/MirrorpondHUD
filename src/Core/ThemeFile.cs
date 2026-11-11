@@ -74,6 +74,18 @@ namespace MirrorpondHUD.Core
     }
 
     /// <summary>
+    /// M7：动效数据。缺省不改；档位是有界枚举，主题不能写任意曲线。
+    /// </summary>
+    public sealed class ThemeMotion
+    {
+        public string Profile;
+        public bool? Loop;
+        public string Effect;
+        public double? DurationMs;
+        public double? Amplitude;
+    }
+
+    /// <summary>
     /// M4–M6 的工业风格选项。全部可选；缺省 = 关（保持默认观感）。
     /// </summary>
     public sealed class ThemeIndustrial
@@ -103,6 +115,7 @@ namespace MirrorpondHUD.Core
         public ThemeOutline Outline = new ThemeOutline();
         public ThemeCliPanel CliPanel = new ThemeCliPanel();
         public ThemeIndustrial Industrial = new ThemeIndustrial();
+        public ThemeMotion Motion = new ThemeMotion();
 
         /// <summary>
         /// 把主题写进设置（只覆盖主题里出现过的字段）。调用方**必须**先克隆 Settings，
@@ -142,6 +155,14 @@ namespace MirrorpondHUD.Core
             if (Industrial.MonoReadouts.HasValue) style.MonoReadouts = Industrial.MonoReadouts.Value;
             if (Industrial.CardCodes.HasValue) style.IndustrialHeader = Industrial.CardCodes.Value;
             if (Industrial.Decoration != null) style.Decoration = Settings.NormalizeDecoration(Industrial.Decoration);
+
+            if (Motion.Profile != null) style.MotionProfile = Settings.NormalizeMotionProfile(Motion.Profile);
+            if (Motion.Effect != null)
+                style.LoopEffect = Settings.NormalizeLoopEffect(Motion.Effect, false);
+            else if (Motion.Loop.HasValue)
+                style.LoopEffect = Motion.Loop.Value ? "Breath" : "None";
+            if (Motion.DurationMs.HasValue) style.LoopDurationMs = (int)Motion.DurationMs.Value;
+            if (Motion.Amplitude.HasValue) style.LoopAmplitude = Motion.Amplitude.Value;
 
             if (Shape.Padding.HasValue) style.Padding = Shape.Padding.Value;
 
@@ -444,6 +465,13 @@ namespace MirrorpondHUD.Core
             industrial["cardCodes"] = style.IndustrialHeader;
             industrial["decoration"] = Settings.NormalizeDecoration(style.Decoration);
 
+            var motion = new Dictionary<string, object>();
+            motion["profile"] = Settings.NormalizeMotionProfile(style.MotionProfile);
+            motion["effect"] = Settings.NormalizeLoopEffect(style.LoopEffect, style.LoopMotion);
+            motion["loop"] = style.LoopEffect != "None";
+            motion["durationMs"] = style.LoopDurationMs;
+            motion["amplitude"] = style.LoopAmplitude;
+
             var appearance = new Dictionary<string, object>();
             appearance["colors"] = colors;
             appearance["typography"] = typography;
@@ -451,6 +479,7 @@ namespace MirrorpondHUD.Core
             appearance["outline"] = outline;
             appearance["cliPanel"] = cliPanel;
             appearance["industrial"] = industrial;
+            appearance["motion"] = motion;
 
             root["appearance"] = appearance;
 
@@ -642,6 +671,42 @@ namespace MirrorpondHUD.Core
                 }
             }
 
+            var motion = appearance.Child("motion");
+            if (motion != null)
+            {
+                string profile = motion.String("profile");
+                if (profile != null)
+                {
+                    if (!Settings.IsMotionProfile(profile))
+                    {
+                        motion.Fail("profile", "必须是 Current / Cut / Industrial / Off");
+                    }
+                    else
+                    {
+                        doc.Motion.Profile = Settings.NormalizeMotionProfile(profile);
+                    }
+                }
+                doc.Motion.Loop = motion.Bool("loop");
+
+                string effect = motion.String("effect");
+                if (effect != null)
+                {
+                    if (!Settings.IsLoopEffect(effect))
+                    {
+                        motion.Fail("effect", "必须是 None / Breath / Scanline / Pulse");
+                    }
+                    else
+                    {
+                        doc.Motion.Effect = Settings.NormalizeLoopEffect(effect, false);
+                    }
+                }
+
+                doc.Motion.DurationMs = motion.Number("durationMs");
+                motion.Range(doc.Motion.DurationMs, "durationMs", 600, 20000);
+                doc.Motion.Amplitude = motion.Number("amplitude");
+                motion.Range(doc.Motion.Amplitude, "amplitude", 0.02, 0.8);
+            }
+
             string first = root.Error
                 ?? appearance.Error
                 ?? (colors != null ? colors.Error : null)
@@ -649,7 +714,8 @@ namespace MirrorpondHUD.Core
                 ?? (shape != null ? shape.Error : null)
                 ?? (outline != null ? outline.Error : null)
                 ?? (cliPanel != null ? cliPanel.Error : null)
-                ?? (industrial != null ? industrial.Error : null);
+                ?? (industrial != null ? industrial.Error : null)
+                ?? (motion != null ? motion.Error : null);
 
             if (first != null)
             {

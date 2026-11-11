@@ -47,6 +47,10 @@
       "monoReadouts": true,
       "cardCodes": true,
       "decoration": "Grid"
+    },
+    "motion": {
+      "profile": "Industrial",
+      "loop": false
     }
   }
 }

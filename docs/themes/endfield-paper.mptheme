@@ -47,6 +47,10 @@
       "monoReadouts": true,
       "cardCodes": true,
       "decoration": "Scanline"
+    },
+    "motion": {
+      "profile": "Industrial",
+      "loop": false
     }
   }
 }

@@ -407,6 +407,18 @@ namespace MirrorpondHUD
                              && MirrorpondHUD.Ui.Controls.CardPalette.Corner(7, 3) == 7
                              && MirrorpondHUD.Ui.Controls.CardPalette.Corner(-1, 4) == 0;
 
+                // M7：四档动效参数是纯数据，Cut 必须零位移、90ms 补位。
+                var cutMotion = new Settings();
+                cutMotion.Style.MotionProfile = "Cut";
+                cutMotion.Style.LoopMotion = true;
+                CardMotion.ApplySettings(cutMotion);
+                bool motionOk = CardMotion.Profile == "Cut"
+                             && CardMotion.LayoutDurationMs == 90
+                             && CardMotion.ShowDurationMs == 80
+                             && CardMotion.ShowOffset == 0
+                             && CardMotion.HideOffset == 0;
+                CardMotion.ApplySettings(new Settings());
+
                 bool validateOk = !Settings.IsColorToken("#GGGGGG")
                                && !Settings.IsColorToken("123456")
                                && Settings.IsColorToken("")
@@ -446,7 +458,7 @@ namespace MirrorpondHUD
                                && badToken.Muted == ThemeResolver.WithAlpha(fg, 0.45)
                                && badToken.Accent == System.Windows.Media.Color.FromRgb(0x2F, 0x6F, 0xEB);
 
-                themeOk = defaultOk && mutedOk && scrollOk && statusOk && cornerOk
+                themeOk = defaultOk && mutedOk && scrollOk && statusOk && cornerOk && motionOk
                        && validateOk && normalizeOk && codeOk && fallbackOk;
             }
             catch (Exception ex)
@@ -505,7 +517,11 @@ namespace MirrorpondHUD
                 MonoFont = "Consolas",
                 MonoReadouts = true,
                 IndustrialHeader = true,
-                Decoration = "Grid"
+                Decoration = "Grid",
+                MotionProfile = "Industrial",
+                LoopEffect = "Scanline",
+                LoopDurationMs = 3200,
+                LoopAmplitude = 0.18
             };
             source.Overlay = new OverlaySettings { CornerRadius = 12, Shadow = false };
             source.Cli = new CliSettings { MaxWidth = 500, MaxHeight = 440, EntryMaxHeight = 150, MaxEntries = 8 };
@@ -597,6 +613,10 @@ namespace MirrorpondHUD
                 && applied.Style.MonoReadouts == source.Style.MonoReadouts
                 && applied.Style.IndustrialHeader == source.Style.IndustrialHeader
                 && applied.Style.Decoration == source.Style.Decoration
+                && applied.Style.MotionProfile == source.Style.MotionProfile
+                && applied.Style.LoopEffect == source.Style.LoopEffect
+                && applied.Style.LoopDurationMs == source.Style.LoopDurationMs
+                && Math.Abs(applied.Style.LoopAmplitude - source.Style.LoopAmplitude) < 1e-9
                 && applied.Style.Muted == source.Style.Muted
                 && applied.Style.Border == source.Style.Border
                 && applied.Style.Panel == source.Style.Panel
@@ -626,6 +646,9 @@ namespace MirrorpondHUD
                 bool badDecoration = !ThemeFile.TryParse(
                     "{\"schema\":1,\"appearance\":{\"industrial\":{\"decoration\":\"spiral\"}}}", out doc, out error)
                     && error != null && error.Contains("decoration");
+                bool badMotion = !ThemeFile.TryParse(
+                    "{\"schema\":1,\"appearance\":{\"motion\":{\"profile\":\"warp\"}}}", out doc, out error)
+                    && error != null && error.Contains("profile");
                 bool noAppearance = !ThemeFile.TryParse("{\"schema\":1}", out doc, out error);
                 bool malformed = !ThemeFile.TryParse("{oops", out doc, out error);
 
@@ -655,7 +678,7 @@ namespace MirrorpondHUD
                 try { File.Delete(temp); } catch { }
                 try { File.Delete(big); } catch { }
 
-                themeRejectOk = future && badColor && badRange && badDecoration && noAppearance && malformed
+                themeRejectOk = future && badColor && badRange && badDecoration && badMotion && noAppearance && malformed
                              && rejectedOk && importedOk && bigOk;
             }
             catch (Exception ex)

@@ -66,12 +66,15 @@ namespace MirrorpondHUD.Ui
         Point _dragStartScreen;
         int _dragStartPhysX;
         int _dragStartPhysY;
+        int _dragTargetPhysX;
+        int _dragTargetPhysY;
         /// <summary>拖动中已经排队了一帧背景重取样（每个合成帧最多一次）。</summary>
         bool _dragFrameQueued;
 
         // 位置动画：补位 / 自动对齐翻边 / 松手回位。每个窗口独立计时，新的目标会从
         // 当前位置重新开始，避免上一段动画把窗口拽回旧目标。
         DispatcherTimer _moveTimer;
+        DispatcherTimer _dragPollTimer;
         DateTime _moveStartUtc;
         double _moveFromLeft;
         double _moveFromTop;
@@ -119,16 +122,32 @@ namespace MirrorpondHUD.Ui
             IsVisibleChanged += (s, e) => _glassRuntime.UpdateBackdrop();
             DpiChanged += (s, e) =>
             {
-                // 缩放变了：重新取每屏 DPI，再按新缩放摆一次。位置本身是物理像素，
-                // 不随 DPI 变化跳；但卡片尺寸 / 锚点换算要用新比例。
+                // 缩放变了：重新取每屏 DPI。拖动跨屏时**不能** ApplyPosition：
+                // 那会把窗口拉回拖动前的旧锚点，表现为“到屏幕交界就跳一下 / 尺寸错”。
+                // 拖动结束后由 Moved → Layout 按新屏 DPI 重新落位。
                 ScreenGeometry.Invalidate();
-                ApplyPosition();
+                if (!_dragging)
+                {
+                    ApplyPosition();
+                }
+                else
+                {
+                    // 跨屏时 WPF 会按新的 DPI 自己挪一次窗口（用旧的 DIP 坐标算），
+                    // 这里在它之后把窗口压回拖动目标，否则锚点会从窗口矩形反算成负数。
+                    int targetX = _dragTargetPhysX;
+                    int targetY = _dragTargetPhysY;
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        if (_dragging) SetPhysicalPosition(targetX, targetY);
+                    }), DispatcherPriority.Render);
+                }
                 _glassRuntime.UpdateBackdrop();
             };
             Closed += (s, e) =>
             {
                 _closed = true;
                 StopTimers();
+                StopDragPoll();
                 StopPositionMotion();
                 CancelContentMotion();
                 _glassRuntime.Dispose();
@@ -442,7 +461,7 @@ namespace MirrorpondHUD.Ui
 
             double elapsed = (DateTime.UtcNow - _moveStartUtc).TotalMilliseconds;
             double t = _moveDurationMs <= 0 ? 1 : elapsed / _moveDurationMs;
-            double eased = CardMotion.EaseOut(t);
+            double eased = CardMotion.Ease(t);
 
             int x = (int)Math.Round(_moveFromLeft + (_moveToLeft - _moveFromLeft) * eased);
             int y = (int)Math.Round(_moveFromTop + (_moveToTop - _moveFromTop) * eased);
@@ -760,16 +779,88 @@ namespace MirrorpondHUD.Ui
             if (!TryGetPhysicalPosition(out physX, out physY)) return;
 
             _dragging = true;
-            _dragStartScreen = PointToScreen(e.GetPosition(this));
+            Native.CursorPoint startCursor;
+            if (!Native.GetCursorPos(out startCursor))
+            {
+                _dragging = false;
+                return;
+            }
+            _dragStartScreen = new Point(startCursor.X, startCursor.Y);
             _dragStartPhysX = physX;
             _dragStartPhysY = physY;
+            _dragTargetPhysX = physX;
+            _dragTargetPhysY = physY;
 
             // 先让控制器收掉所有正在跑的补位动画；否则拖动时窗口会和旧动画抢位置。
             Action started = DragStarted;
             if (started != null) started();
 
+            // 跨 DPI 时 WPF 可能停止派发 MouseMove 或丢捕获；用一个 15ms 轮询直接读物理光标，
+            // 保证拖动在屏幕交界处仍然连续。
+            StartDragPoll();
             CaptureMouse();
             e.Handled = true;
+        }
+
+        void StartDragPoll()
+        {
+            if (_dragPollTimer == null)
+            {
+                _dragPollTimer = new DispatcherTimer(DispatcherPriority.Input)
+                {
+                    Interval = TimeSpan.FromMilliseconds(15)
+                };
+                _dragPollTimer.Tick += (s, e) => PollDrag();
+            }
+            if (!_dragPollTimer.IsEnabled) _dragPollTimer.Start();
+        }
+
+        void StopDragPoll()
+        {
+            if (_dragPollTimer != null && _dragPollTimer.IsEnabled) _dragPollTimer.Stop();
+        }
+
+        void PollDrag()
+        {
+            if (!_dragging)
+            {
+                StopDragPoll();
+                return;
+            }
+
+            if ((Native.GetKeyState(0x01) & 0x8000) == 0
+                && (Native.GetAsyncKeyState(0x01) & 0x8000) == 0)
+            {
+                FinishDrag();
+                return;
+            }
+
+            UpdateDragFromCursor();
+        }
+
+        void UpdateDragFromCursor()
+        {
+            Native.CursorPoint cursor;
+            if (!Native.GetCursorPos(out cursor)) return;
+
+            int dx = cursor.X - (int)Math.Round(_dragStartScreen.X);
+            int dy = cursor.Y - (int)Math.Round(_dragStartScreen.Y);
+            _dragTargetPhysX = _dragStartPhysX + dx;
+            _dragTargetPhysY = _dragStartPhysY + dy;
+            SetPhysicalPosition(_dragTargetPhysX, _dragTargetPhysY);
+
+            Action<int, int> handler = Dragging;
+            if (handler != null) handler(dx, dy);
+
+            QueueDragFrame();
+        }
+
+        static bool IsLeftButtonDown()
+        {
+            // GetAsyncKeyState 在窗口跨屏 / 失焦的瞬间可能返回 0；GetKeyState 读本线程消息队列，
+            // 对“这次拖动还按着”更可靠。
+            return (Native.GetKeyState(0x01) & 0x8000) != 0
+                || (Native.GetAsyncKeyState(0x01) & 0x8000) != 0;
         }
 
         protected override void OnMouseMove(MouseEventArgs e)
@@ -777,22 +868,13 @@ namespace MirrorpondHUD.Ui
             base.OnMouseMove(e);
             if (!_dragging) return;
 
-            if (e.LeftButton != MouseButtonState.Pressed)
+            if (!IsLeftButtonDown())
             {
                 FinishDrag();
                 return;
             }
 
-            Point now = PointToScreen(e.GetPosition(this));
-            int dx = (int)Math.Round(now.X - _dragStartScreen.X);
-            int dy = (int)Math.Round(now.Y - _dragStartScreen.Y);
-
-            SetPhysicalPosition(_dragStartPhysX + dx, _dragStartPhysY + dy);
-
-            Action<int, int> handler = Dragging;
-            if (handler != null) handler(dx, dy);
-
-            QueueDragFrame();
+            UpdateDragFromCursor();
         }
 
         /// <summary>
@@ -825,28 +907,50 @@ namespace MirrorpondHUD.Ui
         protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
         {
             base.OnMouseLeftButtonUp(e);
-            if (_dragging) FinishDrag();
+            // WPF 在跨 DPI 时可能提前报 Up；以真实按键状态为准，避免拖动被截断。
+            if (_dragging && !IsLeftButtonDown()) FinishDrag();
         }
 
         protected override void OnLostMouseCapture(MouseEventArgs e)
         {
             base.OnLostMouseCapture(e);
-            if (_dragging) FinishDrag();
+            if (!_dragging) return;
+
+            // 跨 DPI 时窗口会被 WPF 重新摆一次，某些情况下会丢掉鼠标捕获；
+            // 左键还按着就重新抓回来继续拖，不能把“跨屏”误判成“松手”。
+            if (IsLeftButtonDown() && IsVisible)
+            {
+                try { CaptureMouse(); } catch { }
+                return;
+            }
+
+            FinishDrag();
+        }
+
+        void SyncDragTargetToCursor()
+        {
+            Native.CursorPoint cursor;
+            if (!Native.GetCursorPos(out cursor)) return;
+
+            int dx = cursor.X - (int)Math.Round(_dragStartScreen.X);
+            int dy = cursor.Y - (int)Math.Round(_dragStartScreen.Y);
+            _dragTargetPhysX = _dragStartPhysX + dx;
+            _dragTargetPhysY = _dragStartPhysY + dy;
         }
 
         void FinishDrag()
         {
             _dragging = false;
+            StopDragPoll();
             if (IsMouseCaptured) ReleaseMouseCapture();
 
-            int physX;
-            int physY;
-            if (!TryGetPhysicalPosition(out physX, out physY))
-            {
-                physX = _dragStartPhysX;
-                physY = _dragStartPhysY;
-            }
-            int monitor = DetectMonitor();
+            // 预览可能因跨 DPI 丢了最后一段 MouseMove；以松手瞬间的真实光标为准，
+            // 否则会把中途的旧 target 当成落点，表现为“到交界处大小/位置错了”。
+            SyncDragTargetToCursor();
+
+            int physX = _dragTargetPhysX;
+            int physY = _dragTargetPhysY;
+            int monitor = DetectMonitor(physX, physY);
 
             _glassRuntime.CaptureGlass();
             GlassFeed.RequestFrame(true);
@@ -877,19 +981,21 @@ namespace MirrorpondHUD.Ui
             }
         }
 
-        /// <summary>找出窗口中心所在的显示器（拖动跨屏时用）；坐标全是物理像素。</summary>
-        int DetectMonitor()
+        /// <summary>
+        /// 找出落点所在显示器。拖动结束时不能读窗口矩形：跨 DPI 的一瞬 WPF 可能
+        /// 刚把窗口挪到旧 DIP 坐标上；用拖动目标 + 目标屏缩放估算窗口中心。
+        /// </summary>
+        int DetectMonitor(int physicalX, int physicalY)
         {
             try
             {
-                IntPtr hwnd = new WindowInteropHelper(this).Handle;
-                if (hwnd == IntPtr.Zero) return _settings.Overlay.Monitor;
+                ScreenInfo screen = ScreenGeometry.ForPoint(physicalX, physicalY);
+                if (screen == null) return _settings.Overlay.Monitor;
 
-                Native.Rect rect;
-                if (!Native.GetWindowRect(hwnd, out rect)) return _settings.Overlay.Monitor;
-
-                int cx = rect.Left + (rect.Right - rect.Left) / 2;
-                int cy = rect.Top + (rect.Bottom - rect.Top) / 2;
+                double scaleX = screen.ScaleX > 0.1 ? screen.ScaleX : 1.0;
+                double scaleY = screen.ScaleY > 0.1 ? screen.ScaleY : 1.0;
+                int cx = physicalX + (int)Math.Round(ActualWidth * scaleX / 2);
+                int cy = physicalY + (int)Math.Round(ActualHeight * scaleY / 2);
                 return ScreenGeometry.IndexForPoint(cx, cy);
             }
             catch (Exception ex)

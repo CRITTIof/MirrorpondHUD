@@ -318,6 +318,18 @@ namespace MirrorpondHUD.Ui
             if (picked != null) OutlineColorBox.Text = picked;
         }
 
+        void PickSuccessColorClick(object sender, RoutedEventArgs e)
+        {
+            string picked = PickColor(SuccessColorBox.Text);
+            if (picked != null) SuccessColorBox.Text = picked;
+        }
+
+        void PickWarningColorClick(object sender, RoutedEventArgs e)
+        {
+            string picked = PickColor(WarningColorBox.Text);
+            if (picked != null) WarningColorBox.Text = picked;
+        }
+
         // ==================== 卡片内部：AI 对话 ====================
         // （历史分区注释保留：那一节的输入框加密逻辑已迁到 CardEditor.cs。）
 

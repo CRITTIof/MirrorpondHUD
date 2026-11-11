@@ -275,11 +275,27 @@ namespace MirrorpondHUD.Ui
             ScreenInfo screen = ScreenGeometry.Get(monitor);
             if (screen == null) return;
 
+            double landedX = (physicalX - screen.WorkLeft) / screen.ScaleX;
+            double landedY = (physicalY - screen.WorkTop) / screen.ScaleY;
+            double cardCenterX = landedX + (slot.Window == null ? 0 : slot.Window.CardWidth / 2);
+
             double offsetX = slot.Dialog.Overlay.X - settings.Overlay.X;
             double offsetY = slot.Dialog.Overlay.Y - settings.Overlay.Y;
 
-            settings.Overlay.X = (physicalX - screen.WorkLeft) / screen.ScaleX - offsetX;
-            settings.Overlay.Y = (physicalY - screen.WorkTop) / screen.ScaleY - offsetY;
+            settings.Overlay.X = landedX - offsetX;
+            settings.Overlay.Y = landedY - offsetY;
+
+            // 自动对齐 + 右对齐叠层：落点卡片到了目标屏左半区时，如果继续减旧偏移，
+            // 锚点会变成负数，自动对齐又把它翻成左对齐，整叠被拉回交界左侧。
+            // 这种“翻边”场景直接用卡片左边缘作为新锚点，让卡片停在落点。
+            string align = Settings.NormalizeCardAlign(settings.Style.CardAlign);
+            double workWidthDip = screen.WorkWidth / (screen.ScaleX > 0.1 ? screen.ScaleX : 1.0);
+            if (align == "Left"
+                || (align == "Auto" && offsetX > 0.5 && cardCenterX < workWidthDip / 2))
+            {
+                settings.Overlay.X = landedX;
+            }
+
             settings.Overlay.Monitor = monitor;
 
             ClampAnchorToWorkArea(slot, settings);

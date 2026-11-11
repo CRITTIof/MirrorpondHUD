@@ -463,8 +463,8 @@ CPU  42%   GPU  11%   内存 61%
 | M4 | 缺口 2：读数等宽（`MonoFont` 或 `NumeralAlignment`） | ≈ 20 行 | ✅ 2.30.0：数字 run 走 `MonoFont`，默认关闭 |
 | M5 | `CardHeader` 编号 + `Badge` 等宽大写 | ≈ 20 行（插件侧） | ✅ 2.30.0：`IndustrialHeader` 选项，文件中转站显示 `03` |
 | M6 | 45° 斜纹、半调网点、扫描线、等高线点缀装饰 | 未预测 | ✅ 2.30.0：六种纹样下拉，默认 `None`，整层 15% 透明度 |
-| M7 | 循环动效、呼出、消失动效风格化 | 未预测 | 🔍 调研完成：[endfield-m7-m8-research.md](endfield-m7-m8-research.md)，建议先做四档一次性动效 |
-| M8 | 考虑实现动效与装饰的模块化，为后续更多主题做铺垫 | 未预测 | 🔍 调研完成：[endfield-m7-m8-research.md](endfield-m7-m8-research.md)，建议数据目录，不做代码插件 |
+| M7 | 循环动效、呼出、消失动效风格化 | 未预测 | ✅ 2.31.0：四档 `MotionProfile` + Breath/Scanline/Pulse 循环效果；实现见 [endfield-m7-m8-implementation.md](endfield-m7-m8-implementation.md) |
+| M8 | 考虑实现动效与装饰的模块化，为后续更多主题做铺垫 | 未预测 | ✅ 2.31.0：`appearance.motion` + `appearance.industrial` 主题数据；不做代码插件 |
 
 落地细节与选项默认值见 [`endfield-implementation.md`](endfield-implementation.md)。
 

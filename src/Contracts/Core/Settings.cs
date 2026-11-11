@@ -112,6 +112,11 @@ namespace MirrorpondHUD.Core
             Style.ScrollbarHot = NormalizeColorToken(Style.ScrollbarHot, "");
             Style.MonoFont = (Style.MonoFont ?? "").Trim();
             Style.Decoration = NormalizeDecoration(Style.Decoration);
+            Style.MotionProfile = NormalizeMotionProfile(Style.MotionProfile);
+            Style.LoopEffect = NormalizeLoopEffect(Style.LoopEffect, Style.LoopMotion);
+            Style.LoopMotion = Style.LoopEffect != "None";
+            Style.LoopDurationMs = (int)Clamp(Style.LoopDurationMs, 600, 20000);
+            Style.LoopAmplitude = Clamp(Style.LoopAmplitude, 0.02, 0.8);
             Style.ThemeName = (Style.ThemeName ?? "").Trim();
 
             // 卡片列表的结构由 CardModel.Normalize 处理（需要卡片注册表里的元数据）。
@@ -185,6 +190,59 @@ namespace MirrorpondHUD.Core
             return text.Length == 0
                 || string.Equals(text, NormalizeDecoration(text), StringComparison.OrdinalIgnoreCase)
                 || string.Equals(text, "None", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>M7 动效档位：Current / Cut / Industrial / Off；未知值回落 Current。</summary>
+        public static string NormalizeMotionProfile(string value)
+        {
+            switch ((value ?? "").Trim().ToLowerInvariant())
+            {
+                case "cut":
+                    return "Cut";
+                case "industrial":
+                    return "Industrial";
+                case "off":
+                case "none":
+                    return "Off";
+                default:
+                    return "Current";
+            }
+        }
+
+        public static bool IsMotionProfile(string value)
+        {
+            string text = (value ?? "").Trim();
+            return text.Length == 0
+                || string.Equals(text, NormalizeMotionProfile(text), StringComparison.OrdinalIgnoreCase)
+                || string.Equals(text, "Current", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>M7 循环类型：None / Breath / Scanline / Pulse。</summary>
+        public static string NormalizeLoopEffect(string value, bool legacyLoopMotion)
+        {
+            switch ((value ?? "").Trim().ToLowerInvariant())
+            {
+                case "breath":
+                case "breathe":
+                    return "Breath";
+                case "scanline":
+                case "scan":
+                    return "Scanline";
+                case "pulse":
+                case "border":
+                    return "Pulse";
+                case "none":
+                    return "None";
+                default:
+                    return legacyLoopMotion ? "Breath" : "None";
+            }
+        }
+
+        public static bool IsLoopEffect(string value)
+        {
+            string text = (value ?? "").Trim();
+            return text.Length == 0
+                || string.Equals(text, NormalizeLoopEffect(text, false), StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>
@@ -443,6 +501,29 @@ namespace MirrorpondHUD.Core
 
         /// <summary>当前主题名（导入 / 选中内置主题时写入；手动改外观后清空）。空 = 自定义。</summary>
         public string ThemeName = "";
+
+        /// <summary>
+        /// M7：动效档位。Current = 现有 160/180ms ease-out；Cut = 更短、零位移；
+        /// Industrial = 稍短、2 DIP 位移；Off = 瞬时。
+        /// </summary>
+        public string MotionProfile = "Current";
+
+        /// <summary>
+        /// M7 循环动效类型：None / Breath（整卡呼吸） / Scanline（横线扫描） / Pulse（描边脉冲）。
+        /// 旧配置只有 LoopMotion 布尔时，true 会归一成 Breath。
+        /// </summary>
+        public string LoopEffect = "None";
+
+        /// <summary>循环一次的时长（毫秒），600–20000；默认 2600。</summary>
+        public int LoopDurationMs = 2600;
+
+        /// <summary>循环幅度（叠加层最大不透明度），0.02–0.8；默认 0.10。</summary>
+        public double LoopAmplitude = 0.10;
+
+        /// <summary>
+        /// 2.31 的旧开关，仅用于兼容旧配置；读入后由 <see cref="LoopEffect"/> 派生。
+        /// </summary>
+        public bool LoopMotion = false;
 
         // ==================== 工业风格选项（2.30.0，全部默认关闭） ====================
 

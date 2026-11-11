@@ -2,7 +2,9 @@
 
 > 对应 [`endfield.md`](endfield.md) §7 的 M1–M6。全部以**选项**形式实现：
 > 默认设置保持原有观感；只有选中「终末地 · 墨 / 纸」主题或手动打开开关时才生效。
-> 版本：2.30.0。M7 / M8 的调研见 [`endfield-m7-m8-research.md`](endfield-m7-m8-research.md)。
+> 版本：2.30.0。M7 / M8 的实现见
+> [`endfield-m7-m8-implementation.md`](endfield-m7-m8-implementation.md)，
+> 调研见 [`endfield-m7-m8-research.md`](endfield-m7-m8-research.md)。
 
 ## 0. 一张表看选项
 
@@ -106,11 +108,11 @@ public static double Corner(double radius, double minimum)
   - `Scanline` 4px 横线；
   - `Hatch` 12px 45° 斜线；
   - `Halftone` 8px 圆点；
-  - `Contour` 48px 三圈同心椭圆；
-- 整层 `Opacity = 0.15`，颜色取 `ThemeTokens.Border`（默认前景 0.10 alpha）；
+  - `Contour` 96px 波形等高线 + 两个偏心闭合环（不是同心圆，平铺接缝连续）；
+- 整层 `Opacity = 0.32`，颜色取 `ThemeTokens.Border`（默认前景 0.10 alpha）；
 - 圆角跟随卡片 `CornerRadius`；`None` 时整层折叠，不产生绘制。
 
-设计取舍：纹样是“坐标系暗示”，不是背景纹理；15% 是截图对比后压下来的值，
+设计取舍：纹样是“坐标系暗示”，不是背景纹理；32% 是截图对比后压下来的值，
 再亮就会和文字抢注意力。斜纹只建议用在危险 / 施工语义，不作为默认背景。
 
 ## 7. 验证

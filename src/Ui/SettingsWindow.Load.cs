@@ -83,6 +83,10 @@ namespace MirrorpondHUD.Ui
                 MonoReadoutsCheck.IsChecked = s.Style.MonoReadouts;
                 IndustrialHeaderCheck.IsChecked = s.Style.IndustrialHeader;
                 DecorationCombo.SelectedIndex = DecorationIndex(s.Style.Decoration);
+                MotionProfileCombo.SelectedIndex = MotionProfileIndex(s.Style.MotionProfile);
+                LoopEffectCombo.SelectedIndex = LoopEffectIndex(s.Style.LoopEffect);
+                LoopDurationSlider.Value = s.Style.LoopDurationMs;
+                LoopAmplitudeSlider.Value = s.Style.LoopAmplitude;
                 SuccessColorBox.Text = s.Style.Success ?? "";
                 WarningColorBox.Text = s.Style.Warning ?? "";
 
@@ -191,6 +195,40 @@ namespace MirrorpondHUD.Ui
             return Settings.NormalizeDecoration(item == null ? null : item.Tag as string);
         }
 
+        static int MotionProfileIndex(string value)
+        {
+            switch (Settings.NormalizeMotionProfile(value))
+            {
+                case "Cut": return 1;
+                case "Industrial": return 2;
+                case "Off": return 3;
+                default: return 0;
+            }
+        }
+
+        string MotionProfileTag()
+        {
+            var item = MotionProfileCombo == null ? null : MotionProfileCombo.SelectedItem as ComboBoxItem;
+            return Settings.NormalizeMotionProfile(item == null ? null : item.Tag as string);
+        }
+
+        static int LoopEffectIndex(string value)
+        {
+            switch (Settings.NormalizeLoopEffect(value, false))
+            {
+                case "Breath": return 1;
+                case "Scanline": return 2;
+                case "Pulse": return 3;
+                default: return 0;
+            }
+        }
+
+        string LoopEffectTag()
+        {
+            var item = LoopEffectCombo == null ? null : LoopEffectCombo.SelectedItem as ComboBoxItem;
+            return Settings.NormalizeLoopEffect(item == null ? null : item.Tag as string, false);
+        }
+
         static int StretchIndex(string value)        {
             switch (Settings.NormalizeStretch(value))
             {
@@ -264,6 +302,10 @@ namespace MirrorpondHUD.Ui
                 s.Style.MonoReadouts = MonoReadoutsCheck.IsChecked == true;
                 s.Style.IndustrialHeader = IndustrialHeaderCheck.IsChecked == true;
                 s.Style.Decoration = DecorationTag();
+                s.Style.MotionProfile = MotionProfileTag();
+                s.Style.LoopEffect = LoopEffectTag();
+                s.Style.LoopDurationMs = (int)Math.Round(LoopDurationSlider.Value);
+                s.Style.LoopAmplitude = Math.Round(LoopAmplitudeSlider.Value, 2);
                 s.Style.Success = (SuccessColorBox.Text ?? "").Trim();
                 s.Style.Warning = (WarningColorBox.Text ?? "").Trim();
 

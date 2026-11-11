@@ -39,6 +39,8 @@ namespace MirrorpondHUD.Ui
             BindNumberBox(GlassBlurValue, GlassBlurSlider, "0");
             BindNumberBox(GlassFpsValue, GlassFpsSlider, "0");
             BindNumberBox(IconScaleValue, IconScaleSlider, "0.00");
+            BindNumberBox(LoopDurationValue, LoopDurationSlider, "0");
+            BindNumberBox(LoopAmplitudeValue, LoopAmplitudeSlider, "0.00");
             BindCliBoxes();
         }
 

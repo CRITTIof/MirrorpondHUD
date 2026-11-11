@@ -90,6 +90,13 @@
       "monoReadouts": true,
       "cardCodes": true,
       "decoration": "Grid"
+    },
+    "motion": {
+      "profile": "Industrial",
+      "effect": "Scanline",
+      "loop": true,
+      "durationMs": 2600,
+      "amplitude": 0.10
     }
   }
 }
@@ -112,6 +119,11 @@
 | `appearance.industrial.monoReadouts` | `Style.MonoReadouts` | 2.30.0；读数数字串用 `monoFont`，默认 false |
 | `appearance.industrial.cardCodes` | `Style.IndustrialHeader` | 2.30.0；`CardHeader` 两位编号 + 等宽大写徽标，默认 false |
 | `appearance.industrial.decoration` | `Style.Decoration` | 2.30.0；`None` / `Grid` / `Scanline` / `Hatch` / `Halftone` / `Contour`，默认 `None` |
+| `appearance.motion.profile` | `Style.MotionProfile` | 2.31.0；`Current` / `Cut` / `Industrial` / `Off`，默认 `Current` |
+| `appearance.motion.loop` | `Style.LoopMotion` | 2.31.0；旧布尔兼容字段，由 `effect` 派生 |
+| `appearance.motion.effect` | `Style.LoopEffect` | 2.31.0；`None` / `Breath` / `Scanline` / `Pulse` |
+| `appearance.motion.durationMs` | `Style.LoopDurationMs` | 2.31.0；600–20000，默认 2600 |
+| `appearance.motion.amplitude` | `Style.LoopAmplitude` | 2.31.0；0.02–0.8，默认 0.10 |
 
 **故意不放进主题**：`Acrylic` / `GlassMode` / `GlassSource` / `BlurRadius` / `BlurFps`、卡片列表与内容、位置与显示器、
 热键、`Behavior`（刷新率 / 启动动画）、`Data`、API Key。理由见开头：这些是能力与布署参数，不是外观；混进来会让

@@ -524,9 +524,11 @@
                                     <TextBlock Text="成功" VerticalAlignment="Center" Width="36" />
                                     <TextBox x:Name="SuccessColorBox" Width="110"
                                              ToolTip="空 = 沿用强调色；支持 #RRGGBB / #AARRGGBB" />
+                                    <Button Content="选择…" Margin="8,0,0,0" Click="PickSuccessColorClick" />
                                     <TextBlock Text="警告" VerticalAlignment="Center" Margin="18,0,6,0" />
                                     <TextBox x:Name="WarningColorBox" Width="110"
                                              ToolTip="空 = 前景色 0.9；支持 #RRGGBB / #AARRGGBB" />
+                                    <Button Content="选择…" Margin="8,0,0,0" Click="PickWarningColorClick" />
                                 </StackPanel>
                                 <TextBlock Style="{StaticResource Hint}" Margin="0,3,0,0"
                                            Text="成功 / 警告只建议用在状态点与进度条上，不做大面积色块。" />
@@ -548,6 +550,62 @@
                                 <ComboBoxItem Content="等高线（工程图）" Tag="Contour" />
                             </ComboBox>
                         </Grid>
+
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="110" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="动效档位" VerticalAlignment="Center" />
+                            <ComboBox x:Name="MotionProfileCombo" Grid.Column="1" Width="300" HorizontalAlignment="Left">
+                                <ComboBoxItem Content="当前（160 / 180ms，8 DIP）" Tag="Current" />
+                                <ComboBoxItem Content="切入（80 / 90ms，无位移）" Tag="Cut" />
+                                <ComboBoxItem Content="工业（110 / 120ms，2 DIP）" Tag="Industrial" />
+                                <ComboBoxItem Content="关闭（瞬时）" Tag="Off" />
+                            </ComboBox>
+                        </Grid>
+
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="110" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="循环效果" VerticalAlignment="Center" />
+                            <ComboBox x:Name="LoopEffectCombo" Grid.Column="1" Width="300" HorizontalAlignment="Left">
+                                <ComboBoxItem Content="无" Tag="None" />
+                                <ComboBoxItem Content="呼吸（整卡明暗）" Tag="Breath" />
+                                <ComboBoxItem Content="扫描线（横线扫过）" Tag="Scanline" />
+                                <ComboBoxItem Content="脉冲（描边明暗）" Tag="Pulse" />
+                            </ComboBox>
+                        </Grid>
+
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="110" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="循环时长" VerticalAlignment="Center" />
+                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <Slider x:Name="LoopDurationSlider" Width="260" Minimum="600" Maximum="10000" />
+                                <TextBox x:Name="LoopDurationValue" Width="58" Margin="10,0,0,0" TextAlignment="Right" />
+                                <TextBlock Text="ms" VerticalAlignment="Center" Margin="6,0,0,0" />
+                            </StackPanel>
+                        </Grid>
+
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="110" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="呼吸幅度" VerticalAlignment="Center" />
+                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <Slider x:Name="LoopAmplitudeSlider" Width="260" Minimum="0.02" Maximum="0.8" />
+                                <TextBox x:Name="LoopAmplitudeValue" Width="58" Margin="10,0,0,0" TextAlignment="Right" />
+                            </StackPanel>
+                        </Grid>
+
+                        <TextBlock Style="{StaticResource Hint}" Margin="110,0,0,10"
+                                   Text="循环效果会持续占用 GPU 合成；0.10 是克制档，0.3 以上会明显压文字。减少动效开启时自动停。" />
 
                         <TextBlock Text="高级（实验性）" Style="{StaticResource SectionTitle}" Margin="0,18,0,6" />
 

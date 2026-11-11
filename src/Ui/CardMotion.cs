@@ -12,34 +12,120 @@ namespace MirrorpondHUD.Ui
     /// </summary>
     internal static class CardMotion
     {
-        public const int LayoutDurationMs = 180;
-        public const int ShowDurationMs = 160;
-        public const int HideDurationMs = 160;
-        public const double ShowOffset = 8;
-        public const double HideOffset = 8;
-
-        /// <summary>窗口位置动画的刷新间隔；60Hz 出头，和 Dispatcher Render 同量级。</summary>
         public const int FrameIntervalMs = 15;
 
         static bool _captureDisabled;
         static bool _userEnabled = true;
+        static string _profile = "Current";
+        static bool _loopMotion;
 
-        /// <summary>截图 / --selftest 等离屏模式会关闭；正常运行时由设置里的「减少动效」控制。</summary>
+        /// <summary>
+        /// 截图 / --selftest 等离屏模式会关闭；正常运行时由设置里的「减少动效」控制。
+        /// Off 档位等价于瞬时，但不会把用户的「减少动效」开关改掉。
+        /// </summary>
         public static bool Enabled
         {
-            get { return !_captureDisabled && _userEnabled; }
+            get { return !_captureDisabled && _userEnabled && _profile != "Off"; }
         }
 
-        /// <summary>离屏验收：一次关掉，之后设置加载 / 应用也不能重新打开。</summary>
+        /// <summary>循环动效只在动效可用且用户显式打开时运行。</summary>
+        public static bool LoopEnabled
+        {
+            get { return Enabled && _loopMotion; }
+        }
+
+        public static string Profile { get { return _profile; } }
+
+        /// <summary>整叠补位 / 自动对齐翻边。Current=180，Cut=90，Industrial=120，Off=0。</summary>
+        public static int LayoutDurationMs
+        {
+            get
+            {
+                switch (_profile)
+                {
+                    case "Off": return 0;
+                    case "Cut": return 90;
+                    case "Industrial": return 120;
+                    default: return 180;
+                }
+            }
+        }
+
+        public static int ShowDurationMs
+        {
+            get
+            {
+                switch (_profile)
+                {
+                    case "Off": return 0;
+                    case "Cut": return 80;
+                    case "Industrial": return 110;
+                    default: return 160;
+                }
+            }
+        }
+
+        public static int HideDurationMs
+        {
+            get
+            {
+                switch (_profile)
+                {
+                    case "Off": return 0;
+                    case "Cut": return 80;
+                    case "Industrial": return 110;
+                    default: return 160;
+                }
+            }
+        }
+
+        public static double ShowOffset
+        {
+            get
+            {
+                switch (_profile)
+                {
+                    case "Off": return 0;
+                    case "Cut": return 0;
+                    case "Industrial": return 2;
+                    default: return 8;
+                }
+            }
+        }
+
+        public static double HideOffset
+        {
+            get
+            {
+                switch (_profile)
+                {
+                    case "Off": return 0;
+                    case "Cut": return 0;
+                    case "Industrial": return 2;
+                    default: return 8;
+                }
+            }
+        }
+
+        /// <summary>截图 / 自检一次关掉，之后设置加载 / 应用也不能重新打开。</summary>
         public static void SuppressForCapture()
         {
             _captureDisabled = true;
         }
 
-        /// <summary>按当前设置决定是否播放卡片动效。</summary>
+        /// <summary>按当前设置决定动效档位与是否循环；减少动效仍然一票否决。</summary>
         public static void ApplySettings(Settings settings)
         {
             _userEnabled = settings == null || !settings.Behavior.ReduceMotion;
+            _profile = settings == null ? "Current" : Settings.NormalizeMotionProfile(settings.Style.MotionProfile);
+            _loopMotion = settings != null && settings.Style.LoopEffect != "None";
+        }
+
+        /// <summary>三档 ease-out；Cut 用线性，接近工业界面的“直接切入”。</summary>
+        public static double Ease(double t)
+        {
+            if (_profile == "Cut") return Math.Max(0.0, Math.Min(1.0, t));
+            return EaseOut(t);
         }
 
         /// <summary>三次 ease-out：起步快、收尾稳，适合卡片补位这种短距离移动。</summary>
