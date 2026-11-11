@@ -26,7 +26,7 @@
                      Text="{Binding ChatModel, UpdateSourceTrigger=PropertyChanged}"
                      ToolTip="写进请求的 model 字段，也是卡片第一行显示的名字" />
             <TextBlock Grid.Column="2" Text="显示在卡片第一行" Margin="8,0,0,0"
-                       VerticalAlignment="Center" Foreground="{StaticResource TextSecondary}"
+                       VerticalAlignment="Center" Foreground="{DynamicResource TextSecondary}"
                        FontSize="12" />
         </Grid>
 
@@ -46,7 +46,7 @@
                            Margin="9,0,6,0" VerticalAlignment="Center"
                            IsHitTestVisible="False"
                            TextTrimming="CharacterEllipsis"
-                           Foreground="{StaticResource TextSecondary}" />
+                           Foreground="{DynamicResource TextSecondary}" />
             </Grid>
             <Button Grid.Column="2" Content="清除" Margin="6,0,0,0" Padding="10,2"
                     Click="ClearChatApiKeyClick"
@@ -90,7 +90,7 @@
 
         <TextBlock Text="{Binding ChatHint}" Margin="0,0,0,2"
                    FontSize="12" TextWrapping="Wrap"
-                   Foreground="{StaticResource TextSecondary}"
+                   Foreground="{DynamicResource TextSecondary}"
                    ToolTip="{Binding ChatHint}" />
 
         <TextBlock Style="{StaticResource Hint}" Margin="0,2,0,0" TextWrapping="Wrap"

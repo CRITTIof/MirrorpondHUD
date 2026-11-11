@@ -77,6 +77,7 @@ public sealed class Settings
         Behavior.TypeSpeedMs = (int)Clamp(Behavior.TypeSpeedMs, 8, 300);
         Behavior.CursorStyle = NormalizeCursor(Behavior.CursorStyle);
         Behavior.CardSlide = NormalizeCardSlide(Behavior.CardSlide);
+        Behavior.SettingsTheme = NormalizeSettingsTheme(Behavior.SettingsTheme);
         if (Behavior.WelcomeText is null) Behavior.WelcomeText = "Welcome Back";
         if (Behavior.WelcomeText.Length > 120) Behavior.WelcomeText = Behavior.WelcomeText.Substring(0, 120);
 
@@ -124,6 +125,8 @@ public sealed class Settings
         Style.LoopMotion = Style.LoopEffect != "None";
         Style.LoopDurationMs = (int)Clamp(Style.LoopDurationMs, 600, 20000);
         Style.LoopAmplitude = Clamp(Style.LoopAmplitude, 0.02, 0.8);
+        Style.LoopPulseThickness = (int)Clamp(Style.LoopPulseThickness, 1, 8);
+        Style.LoopScanlineThickness = (int)Clamp(Style.LoopScanlineThickness, 1, 10);
         Style.ThemeName = (Style.ThemeName ?? "").Trim();
         if (Style.Endfield is null) Style.Endfield = new EndfieldStyleSettings();
         Style.Endfield.Normalize();
@@ -226,6 +229,13 @@ public sealed class Settings
     {
         switch ((value ?? "").Trim().ToLowerInvariant())
         {
+            case "elegant":
+                return "Current";
+            case "standard":
+                return "Industrial";
+            case "brief":
+            case "short":
+                return "Cut";
             case "cut":
                 return "Cut";
             case "industrial":
@@ -378,6 +388,10 @@ public sealed class Settings
         return text.Length == 0
             || string.Equals(text, NormalizeCardSlide(text), StringComparison.OrdinalIgnoreCase);
     }
+
+    /// <summary>设置窗口主题：Dark / Light；未知值回落 Dark。</summary>
+    public static string NormalizeSettingsTheme(string value) =>
+        string.Equals((value ?? "").Trim(), "Light", StringComparison.OrdinalIgnoreCase) ? "Light" : "Dark";
 
     /// <summary>命令行工具预设：cmd / powershell / pwsh / custom。</summary>
     public static string NormalizeShell(string value)
@@ -590,6 +604,12 @@ public sealed class StyleSettings
     /// <summary>循环幅度（叠加层最大不透明度），0.02–0.8；默认 0.10。</summary>
     public double LoopAmplitude = 0.10;
 
+    /// <summary>Pulse 循环的描边粗细（1–8px）；只在循环效果为 Pulse 时使用。</summary>
+    public int LoopPulseThickness = 2;
+
+    /// <summary>Scanline 循环的横线粗细（1–10px）；只在循环效果为 Scanline 时使用。</summary>
+    public int LoopScanlineThickness = 2;
+
     /// <summary>
     /// 2.31 的旧开关，仅用于兼容旧配置；读入后由 <see cref="LoopEffect"/> 派生。
     /// </summary>
@@ -714,6 +734,9 @@ public sealed class BehaviorSettings
 
     /// <summary>卡片滑入 / 滑出方向：None / Left / Right；None = 沿用原来的上下位移。</summary>
     public string CardSlide = "None";
+
+    /// <summary>设置窗口明暗主题：Dark / Light；只影响设置窗口，不影响桌面叠层。</summary>
+    public string SettingsTheme = "Dark";
     /// <summary>欢迎语，默认 Welcome Back。</summary>
     public string WelcomeText = "Welcome Back";
     /// <summary>每字符的动画间隔（毫秒），越小越快。</summary>

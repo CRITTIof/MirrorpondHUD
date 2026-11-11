@@ -52,6 +52,8 @@ public partial class SettingsWindow : Window
     string _cleanSnapshot;
     bool _reallyClose;
     bool _loadFailed;
+    /// <summary>设置窗口当前是否暗色；只影响设置窗，随设置一起保存。</summary>
+    bool _settingsDark = true;
 
     /// <summary>
     /// 第 5 个参数读「当前实际玻璃实现」（可为 null：无头截图等没有宿主窗口的场景）。
@@ -63,6 +65,10 @@ public partial class SettingsWindow : Window
                             Func<GlassRuntimeState> glassState = null)
     {
         InitializeComponent();
+
+        _settingsDark = SettingsTheme.IsDark(live is null ? null : live.Behavior.SettingsTheme);
+        SettingsTheme.Apply(_settingsDark);
+        UpdateThemeToggleText();
 
         BuildCollapsibleSections();
 
@@ -143,6 +149,8 @@ public partial class SettingsWindow : Window
         LoopEffectCombo.SelectionChanged += (s, e) => { UiChanged(); UpdateLoopUiState(); };
         LoopDurationSlider.ValueChanged += (s, e) => UiChanged();
         LoopAmplitudeSlider.ValueChanged += (s, e) => UiChanged();
+        PulseThicknessSlider.ValueChanged += (s, e) => UiChanged();
+        ScanlineThicknessSlider.ValueChanged += (s, e) => UiChanged();
         SuccessColorBox.TextChanged += (s, e) => UiChanged();
         SuccessColorBox.TextChanged += (s, e) => ValidateColorBox(SuccessColorBox, true);
         WarningColorBox.TextChanged += (s, e) => UiChanged();
@@ -286,6 +294,27 @@ public partial class SettingsWindow : Window
     void CloseClick(object sender, RoutedEventArgs e) =>
         // 走 OnClosing 的“未保存”提示；不能直接 Hide，否则修改会被静默丢弃。
         Close();
+
+    void ToggleSettingsThemeClick(object sender, RoutedEventArgs e)
+    {
+        _settingsDark = !_settingsDark;
+        SettingsTheme.Apply(_settingsDark);
+        UpdateThemeToggleText();
+        MarkDirty();
+    }
+
+    void UpdateThemeToggleText()
+    {
+        if (ThemeModeText is null) return;
+        ThemeModeText.Text = _settingsDark ? "暗" : "亮";
+    }
+
+    void UpdateSettingsTheme(Settings settings)
+    {
+        _settingsDark = SettingsTheme.IsDark(settings is null ? null : settings.Behavior.SettingsTheme);
+        SettingsTheme.Apply(_settingsDark);
+        UpdateThemeToggleText();
+    }
 
     protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
     {

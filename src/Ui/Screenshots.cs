@@ -101,7 +101,9 @@ public static class Screenshots
         {
             Settings settings = ConfigStore.Load();
             // 文档截图关掉投影、拉开间距：卡片边缘干净，不会互相压到。
-            settings.Overlay.Shadow = false;
+            // MIRRORPOND_SHADOW_DEMO=1 时保留投影，用来验收自然投影。
+            if (Environment.GetEnvironmentVariable("MIRRORPOND_SHADOW_DEMO") != "1")
+                settings.Overlay.Shadow = false;
             // 验收 M2–M8 关闭分支：全部关掉时应当回到 2.34 的观感，且不留下空白页脚。
             if (Environment.GetEnvironmentVariable("MIRRORPOND_ENDFIELD_OFF") == "1")
             {
@@ -723,6 +725,9 @@ public static class Screenshots
         try
         {
             Settings settings = ConfigStore.Load();
+            // 截图验收可强制浅色设置页；MIRRORPOND_SETTINGS_LIGHT=1。
+            if (Environment.GetEnvironmentVariable("MIRRORPOND_SETTINGS_LIGHT") == "1")
+                settings.Behavior.SettingsTheme = "Light";
             // ApplySettings 现在返回 bool（P0-2）：截图模式下用恒真 stub。
             var window = new SettingsWindow(settings, s => true, (x, y, m) => { }, () => { });
             window.WindowStartupLocation = WindowStartupLocation.Manual;

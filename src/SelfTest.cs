@@ -519,8 +519,25 @@ internal static class SelfTest
 
             bool endfieldOk = metaOk && footerOk && metaOffOk;
 
+            bool settingsThemeOk = Settings.NormalizeSettingsTheme("light") == "Light"
+                               && Settings.NormalizeSettingsTheme("DARK") == "Dark"
+                               && Settings.NormalizeSettingsTheme("whatever") == "Dark";
+            bool motionAliasOk = Settings.NormalizeMotionProfile("elegant") == "Current"
+                              && Settings.NormalizeMotionProfile("standard") == "Industrial"
+                              && Settings.NormalizeMotionProfile("brief") == "Cut"
+                              && Settings.NormalizeMotionProfile("none") == "Off";
+            var loopStyle = new StyleSettings
+            {
+                LoopPulseThickness = 99,
+                LoopScanlineThickness = -1
+            };
+            new Settings { Style = loopStyle }.Normalize();
+            bool loopThicknessOk = loopStyle.LoopPulseThickness == 8
+                               && loopStyle.LoopScanlineThickness == 1;
+
             themeOk = defaultOk && mutedOk && scrollOk && statusOk && cornerOk && contourOk && motionOk
-                   && validateOk && normalizeOk && codeOk && fallbackOk && endfieldOk;
+                   && validateOk && normalizeOk && codeOk && fallbackOk && endfieldOk
+                   && settingsThemeOk && motionAliasOk && loopThicknessOk;
         }
         catch (Exception ex)
         {

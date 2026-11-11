@@ -340,6 +340,11 @@ transition: clip-path var(--duration-base) var(--ease-standard),
 - `Contour` 循环约 30fps 重算几何（后台算、UI 线程只提交冻结结果）；`Breath` / `Pulse` 是合成器动画，无每帧托管分配；
 - `OverlayIntro` 是**打字机式**启动动画（20ms 一拍、速度由 `Behavior.TypeSpeedMs` 控制）。
 
+> **2.39.0 落地**：设置页动效档位按 **优雅 → 标准 → 简短 → 无** 排列，
+> 分别对应内部 `Current / Industrial / Cut / Off`；循环效果的 `Pulse` 新增 1–8px 描边粗细，
+> `Scanline` 新增 1–10px 横线粗细，均放在「外观 → 动效」并按当前循环效果上下文显示。
+> 设置页自身支持 Endfield 暗色 / 浅色两套调色板，与卡片叠层主题互不影响。
+
 ### 15.2 与规范的四点差异
 
 | # | 现状 | 规范 | 影响 |

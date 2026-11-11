@@ -384,17 +384,17 @@ public sealed class OverlaySurface : Border
 
         if (overlay.Shadow)
         {
-            // M2：零偏移 = 四周均匀环境遮蔽；关闭后回到 2.34 的顶部投影。
+            // M2：柔和环境遮蔽 + 1px 接触阴影，避免纯零偏移时卡片像“浮在黑影上”。
             bool ambient = EndfieldVisuals.Shadow(style);
             Effect = new DropShadowEffect
             {
-                BlurRadius = 26,
-                ShadowDepth = ambient ? 0 : 4,
+                BlurRadius = ambient ? 32 : 26,
+                ShadowDepth = ambient ? 1 : 4,
                 Direction = 270,
-                Opacity = ambient ? 0.28 : 0.55,
+                Opacity = ambient ? 0.24 : 0.55,
                 Color = Colors.Black
             };
-            Margin = new Thickness(10);
+            Margin = new Thickness(ambient ? 14 : 10);
         }
         else
         {
@@ -539,6 +539,7 @@ public sealed class OverlaySurface : Border
 
         if (effect == "Scanline")
         {
+            _loopBand.Height = Math.Max(1, Math.Min(10, style.LoopScanlineThickness));
             _loopBand.Background = brush;
             _loopBand.Opacity = amplitude;
             _loopBand.Visibility = Visibility.Visible;
@@ -558,9 +559,10 @@ public sealed class OverlaySurface : Border
         _loopLayer.Visibility = Visibility.Visible;
         if (effect == "Pulse")
         {
-            // 描边脉冲：只重绘 1px 边框，比整卡填充便宜。
+            // 描边脉冲：只重绘细边框，比整卡填充便宜；粗细由「脉冲」设置控制。
+            double thickness = Math.Max(1, Math.Min(8, style.LoopPulseThickness));
             _loopLayer.BorderBrush = brush;
-            _loopLayer.BorderThickness = new Thickness(1);
+            _loopLayer.BorderThickness = new Thickness(thickness);
         }
         else
         {

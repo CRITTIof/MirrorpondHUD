@@ -33,6 +33,7 @@ public partial class SettingsWindow
             _loadFailed = false;
             _working = working;
             CardModel.Normalize(_working);
+            UpdateSettingsTheme(_working);
             CaptureRuntimeBaseline();
 
             ThemeCombo.SelectedIndex = ThemeIndexOf(_working.Style.ThemeName);
@@ -92,6 +93,8 @@ public partial class SettingsWindow
             ContourSpeedSlider.Value = s.Style.ContourSpeed;
             LoopDurationSlider.Value = s.Style.LoopDurationMs;
             LoopAmplitudeSlider.Value = s.Style.LoopAmplitude;
+            PulseThicknessSlider.Value = s.Style.LoopPulseThickness;
+            ScanlineThicknessSlider.Value = s.Style.LoopScanlineThickness;
             SuccessColorBox.Text = s.Style.Success ?? "";
             WarningColorBox.Text = s.Style.Warning ?? "";
 
@@ -211,8 +214,8 @@ public partial class SettingsWindow
     {
         switch (Settings.NormalizeMotionProfile(value))
         {
-            case "Cut": return 1;
-            case "Industrial": return 2;
+            case "Industrial": return 1;
+            case "Cut": return 2;
             case "Off": return 3;
             default: return 0;
         }
@@ -338,6 +341,8 @@ public partial class SettingsWindow
         bool timed = effect == "Breath" || effect == "Scanline" || effect == "Pulse";
         LoopDurationRow.Visibility = timed ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
         LoopAmplitudeRow.Visibility = effect == "Breath" ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+        PulseThicknessRow.Visibility = effect == "Pulse" ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+        ScanlineThicknessRow.Visibility = effect == "Scanline" ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
         ContourSpeedRow.Visibility = effect == "Contour" ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
     }
 
@@ -426,6 +431,8 @@ public partial class SettingsWindow
             s.Style.LoopEffect = LoopEffectTag();
             s.Style.LoopDurationMs = (int)Math.Round(LoopDurationSlider.Value);
             s.Style.LoopAmplitude = Math.Round(LoopAmplitudeSlider.Value, 2);
+            s.Style.LoopPulseThickness = (int)Math.Round(PulseThicknessSlider.Value);
+            s.Style.LoopScanlineThickness = (int)Math.Round(ScanlineThicknessSlider.Value);
             s.Style.Success = (SuccessColorBox.Text ?? "").Trim();
             s.Style.Warning = (WarningColorBox.Text ?? "").Trim();
 
@@ -479,6 +486,7 @@ public partial class SettingsWindow
             s.Behavior.ReduceMotion = ReduceMotionCheck.IsChecked == true;
             s.Behavior.OverallMotion = OverallMotionCheck.IsChecked == true;
             s.Behavior.CardSlide = CardSlideTag();
+            s.Behavior.SettingsTheme = _settingsDark ? "Dark" : "Light";
             s.Behavior.WelcomeText = (WelcomeBox.Text ?? "").Trim();
             if (s.Behavior.WelcomeText.Length == 0) s.Behavior.WelcomeText = "Welcome Back";
             s.Behavior.TypeSpeedMs = Math.Max(8, ParseInt(TypeSpeedBox.Text, s.Behavior.TypeSpeedMs));

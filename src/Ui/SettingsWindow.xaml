@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="镜潭一览 · 设置" Width="1120" Height="820" MinWidth="1000" MinHeight="700"
         WindowStartupLocation="CenterScreen"
-        Background="{StaticResource WindowBg}"
+        Background="{DynamicResource WindowBg}"
         FontFamily="Microsoft YaHei UI" FontSize="13"
         UseLayoutRounding="True" SnapsToDevicePixels="True"
         Icon="/assets/logo.ico">
@@ -15,15 +15,32 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <Border Grid.Row="0" Background="{StaticResource CardBg}"
-                BorderBrush="{StaticResource BorderSoft}" BorderThickness="0,0,0,1" Padding="18,12,18,12">
-            <StackPanel Orientation="Horizontal">
-                <Image Source="/assets/logo.ico" Width="26" Height="26" RenderOptions.BitmapScalingMode="HighQuality" />
-                <TextBlock Text="镜潭一览 · 设置" FontSize="16" FontWeight="SemiBold" Margin="10,0,0,0"
-                           VerticalAlignment="Center" Foreground="{StaticResource TextPrimary}" />
-                <TextBlock x:Name="VersionText" FontSize="12" Foreground="#6B7280" Margin="12,0,0,0"
-                           VerticalAlignment="Center" />
-            </StackPanel>
+        <Border Grid.Row="0" Background="{DynamicResource CardBg}"
+                BorderBrush="{DynamicResource BorderSoft}" BorderThickness="0,0,0,1" Padding="18,10,18,10">
+            <Grid>
+                <StackPanel Orientation="Horizontal">
+                    <Image Source="/assets/logo.ico" Width="26" Height="26" RenderOptions.BitmapScalingMode="HighQuality" />
+                    <TextBlock Text="镜潭一览" FontSize="16" FontWeight="SemiBold" Margin="10,0,0,0"
+                               VerticalAlignment="Center" Foreground="{DynamicResource TextPrimary}" />
+                    <TextBlock Text="//" FontFamily="Cascadia Mono, Consolas" FontSize="14"
+                               Foreground="{DynamicResource Accent}" Margin="9,0,7,0" VerticalAlignment="Center" />
+                    <TextBlock Text="设置" FontSize="16" FontWeight="SemiBold"
+                               VerticalAlignment="Center" Foreground="{DynamicResource TextPrimary}" />
+                    <TextBlock x:Name="VersionText" FontSize="12" Foreground="{DynamicResource TextSecondary}" Margin="12,0,0,0"
+                               VerticalAlignment="Center" />
+                </StackPanel>
+
+                <Button x:Name="SettingsThemeToggle" HorizontalAlignment="Right" VerticalAlignment="Center"
+                        Style="{StaticResource IconButton}" Padding="9,4"
+                        Click="ToggleSettingsThemeClick" ToolTip="切换明暗">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE2B2;" FontFamily="{StaticResource LucideFont}" FontSize="15"
+                                   Foreground="{DynamicResource Accent}" VerticalAlignment="Center" />
+                        <TextBlock x:Name="ThemeModeText" Text="暗" FontSize="12" Margin="6,0,0,0"
+                                   Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+            </Grid>
         </Border>
 
         <TabControl x:Name="Tabs" Grid.Row="1">
@@ -42,7 +59,7 @@
                                     ToolTip="选择一种卡片添加到列表末尾">
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Text="&#xE13D;" FontFamily="{StaticResource LucideFont}" FontSize="15"
-                                               Foreground="{StaticResource Accent}" VerticalAlignment="Center" />
+                                               Foreground="{DynamicResource Accent}" VerticalAlignment="Center" />
                                     <TextBlock Text="添加卡片" Margin="7,0,0,0" VerticalAlignment="Center" />
                                 </StackPanel>
                             </Button>
@@ -50,7 +67,7 @@
 
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                             <TextBlock Text="&#xE151;" FontFamily="{StaticResource LucideFont}" FontSize="14"
-                                       Foreground="#9CA3AF" VerticalAlignment="Center" Margin="0,0,7,0" />
+                                       Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" Margin="0,0,7,0" />
                             <TextBox x:Name="SearchBox" Width="200" TextChanged="SearchBoxTextChanged"
                                      ToolTip="按卡片名称 / 类型筛选" />
                         </StackPanel>
@@ -65,35 +82,34 @@
                                           Drop="CardListDrop">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <Border Background="{StaticResource CardBg}"
-                                                BorderBrush="{StaticResource BorderSoft}"
+                                        <Border Background="{DynamicResource CardBg}"
+                                                BorderBrush="{DynamicResource BorderSoft}"
                                                 BorderThickness="1" CornerRadius="10" Margin="0,0,0,10">
                                             <StackPanel>
                                                 <!-- 标题栏：图标 + 名称 + 常驻/热键摘要；右侧移动 / 删除 / 展开 -->
-                                                <Border Background="#F8FAFC" BorderBrush="#EDF0F4" BorderThickness="0,0,0,1"
+                                                <Border Background="{DynamicResource HeaderBg}" BorderBrush="{DynamicResource HeaderBorder}" BorderThickness="0,0,0,1"
                                                         CornerRadius="{Binding HeaderCorner}" Padding="12,7"
-                                                        MouseLeftButtonDown="CardHeaderClick">
+                                                        Cursor="SizeAll"
+                                                        PreviewMouseLeftButtonDown="CardHeaderDragDown"
+                                                        PreviewMouseMove="CardHeaderDragMove"
+                                                        PreviewMouseLeftButtonUp="CardHeaderDragUp">
                                                     <Grid>
                                                         <StackPanel Orientation="Horizontal">
                                                             <TextBlock Text="&#xE0EB;"
                                                                        FontFamily="{StaticResource LucideFont}"
-                                                                       FontSize="13" Foreground="#9CA3AF"
+                                                                       FontSize="13" Foreground="{DynamicResource TextSecondary}"
                                                                        Margin="0,0,7,0" VerticalAlignment="Center"
-                                                                       Cursor="SizeNS" ToolTip="按住拖动排序"
-                                                                       Tag="{Binding}"
-                                                                       PreviewMouseLeftButtonDown="CardDragHandleDown"
-                                                                       PreviewMouseMove="CardDragHandleMove"
-                                                                       PreviewMouseLeftButtonUp="CardDragHandleUp" />
+                                                                       ToolTip="按住标题栏拖动排序" />
                                                             <TextBlock Text="{Binding Icon}"
                                                                        FontFamily="{StaticResource LucideFont}"
-                                                                       FontSize="16" Foreground="{StaticResource Accent}"
+                                                                       FontSize="16" Foreground="{DynamicResource Accent}"
                                                                        VerticalAlignment="Center" />
                                                             <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold"
                                                                        Margin="8,0,0,0" VerticalAlignment="Center" />
-                                                            <Border Background="#EEF2F7" CornerRadius="9" Padding="8,1"
+                                                            <Border Background="{DynamicResource BadgeBg}" CornerRadius="9" Padding="8,1"
                                                                     Margin="10,0,0,0" VerticalAlignment="Center">
                                                                 <TextBlock Text="{Binding Summary}" FontSize="11"
-                                                                           Foreground="{StaticResource TextSecondary}" />
+                                                                           Foreground="{DynamicResource TextSecondary}" />
                                                             </Border>
                                                         </StackPanel>
 
@@ -118,7 +134,7 @@
                                                             </Button>
                                                             <Button Style="{StaticResource IconButton}" Tag="{Binding}"
                                                                     Click="ToggleCardClick" ToolTip="展开 / 折叠">
-                                                                <Path Data="M0,0 L5,5 L10,0" Stroke="{StaticResource TextSecondary}"
+                                                                <Path Data="M0,0 L5,5 L10,0" Stroke="{DynamicResource TextSecondary}"
                                                                       StrokeThickness="1.6" VerticalAlignment="Center">
                                                                     <Path.RenderTransform>
                                                                         <RotateTransform Angle="{Binding ChevronAngle}"
@@ -230,7 +246,7 @@
 
                         <TextBlock Text="主题" Style="{StaticResource SectionTitle}" Margin="0,0,0,6" />
 
-                        <Border Background="{StaticResource CardBg}" BorderBrush="{StaticResource BorderSoft}"
+                        <Border Background="{DynamicResource CardBg}" BorderBrush="{DynamicResource BorderSoft}"
                                 BorderThickness="1" CornerRadius="8" Padding="14" Margin="0,0,0,18">
                             <Grid>
                                 <Grid.ColumnDefinitions>
@@ -240,14 +256,14 @@
 
                                 <StackPanel Margin="0,0,16,0">
                                     <TextBlock Text="选一套内置主题，或导入 .mptheme；只改当前设置副本，点“保存并应用”才生效。"
-                                               Foreground="{StaticResource TextSecondary}" TextWrapping="Wrap" />
+                                               Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" />
                                     <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
                                         <ComboBox x:Name="ThemeCombo" Width="240"
                                                   SelectionChanged="ThemeSelectionChanged" />
                                         <TextBlock x:Name="ThemeNameText" VerticalAlignment="Center"
-                                                   Margin="12,0,0,0" Foreground="{StaticResource TextSecondary}" />
+                                                   Margin="12,0,0,0" Foreground="{DynamicResource TextSecondary}" />
                                     </StackPanel>
-                                    <TextBlock x:Name="ThemeStatusText" Foreground="{StaticResource TextSecondary}"
+                                    <TextBlock x:Name="ThemeStatusText" Foreground="{DynamicResource TextSecondary}"
                                                TextWrapping="Wrap" Margin="0,8,0,0" />
                                     <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
                                         <Button Content="导入主题…" Click="ImportThemeClick" Padding="12,5" Margin="0,0,8,0" />
@@ -256,7 +272,7 @@
                                     </StackPanel>
                                 </StackPanel>
 
-                                <Border Grid.Column="1" Background="#0B1020" CornerRadius="6" Padding="8">
+                                <Border Grid.Column="1" Background="{DynamicResource PreviewBg}" CornerRadius="6" Padding="8">
                                     <Image x:Name="ThemePreviewImage" Stretch="Uniform" />
                                 </Border>
                             </Grid>
@@ -294,7 +310,7 @@
                                         </DataTemplate>
                                     </ComboBox.ItemTemplate>
                                 </ComboBox>
-                                <TextBlock Text="筛选" VerticalAlignment="Center" Margin="12,0,6,0" Foreground="#6B7280" />
+                                <TextBlock Text="筛选" VerticalAlignment="Center" Margin="12,0,6,0" Foreground="{DynamicResource TextSecondary}" />
                                 <TextBox x:Name="FontFilterBox" Width="120"
                                          ToolTip="输入关键字筛选字体，例如：雅黑 / Sim / Kai" />
                             </StackPanel>
@@ -382,7 +398,7 @@
                             <StackPanel Grid.Column="1" Orientation="Horizontal">
                                 <TextBox x:Name="OutlineColorBox" Width="110" />
                                 <Border x:Name="OutlineSwatch" Width="26" Height="26" CornerRadius="4"
-                                        BorderBrush="{StaticResource BorderSoft}" BorderThickness="1" Margin="8,0,8,0" />
+                                        BorderBrush="{DynamicResource BorderSoft}" BorderThickness="1" Margin="8,0,8,0" />
                                 <Button Content="选择…" Click="PickOutlineColorClick" />
                                 <TextBlock Text="粗细" VerticalAlignment="Center" Margin="18,0,8,0" />
                                 <Slider x:Name="OutlineSlider" Width="120" Minimum="0.4" Maximum="6" />
@@ -438,7 +454,7 @@
                             <StackPanel Grid.Column="1" Orientation="Horizontal">
                                 <TextBox x:Name="FgBox" Width="110" />
                                 <Border x:Name="FgSwatch" Width="26" Height="26" CornerRadius="4"
-                                        BorderBrush="{StaticResource BorderSoft}" BorderThickness="1" Margin="8,0,8,0" />
+                                        BorderBrush="{DynamicResource BorderSoft}" BorderThickness="1" Margin="8,0,8,0" />
                                 <Button Content="选择…" Click="PickForegroundClick" />
                             </StackPanel>
                         </Grid>
@@ -452,7 +468,7 @@
                             <StackPanel Grid.Column="1" Orientation="Horizontal">
                                 <TextBox x:Name="BgBox" Width="110" />
                                 <Border x:Name="BgSwatch" Width="26" Height="26" CornerRadius="4"
-                                        BorderBrush="{StaticResource BorderSoft}" BorderThickness="1" Margin="8,0,8,0" />
+                                        BorderBrush="{DynamicResource BorderSoft}" BorderThickness="1" Margin="8,0,8,0" />
                                 <Button Content="选择…" Click="PickBackgroundClick" />
                             </StackPanel>
                         </Grid>
@@ -530,14 +546,14 @@
                                     <TextBox x:Name="SuccessColorBox" Width="110"
                                              ToolTip="空 = 沿用强调色；支持 #RRGGBB / #AARRGGBB" />
                                     <Border x:Name="SuccessSwatch" Width="26" Height="26" CornerRadius="4"
-                                            BorderBrush="{StaticResource BorderSoft}" BorderThickness="1"
+                                            BorderBrush="{DynamicResource BorderSoft}" BorderThickness="1"
                                             Margin="8,0,8,0" ToolTip="成功色预览" />
                                     <Button Content="选择…" Click="PickSuccessColorClick" />
                                     <TextBlock Text="警告" VerticalAlignment="Center" Margin="18,0,6,0" />
                                     <TextBox x:Name="WarningColorBox" Width="110"
                                              ToolTip="空 = 前景色 0.9；支持 #RRGGBB / #AARRGGBB" />
                                     <Border x:Name="WarningSwatch" Width="26" Height="26" CornerRadius="4"
-                                            BorderBrush="{StaticResource BorderSoft}" BorderThickness="1"
+                                            BorderBrush="{DynamicResource BorderSoft}" BorderThickness="1"
                                             Margin="8,0,8,0" ToolTip="警告色预览" />
                                     <Button Content="选择…" Click="PickWarningColorClick" />
                                 </StackPanel>
@@ -666,10 +682,10 @@
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="动效档位" VerticalAlignment="Center" />
                             <ComboBox x:Name="MotionProfileCombo" Grid.Column="1" Width="300" HorizontalAlignment="Left">
-                                <ComboBoxItem Content="当前" Tag="Current" ToolTip="160 / 180ms，8 DIP" />
-                                <ComboBoxItem Content="切入" Tag="Cut" ToolTip="80 / 90ms，无位移" />
-                                <ComboBoxItem Content="工业" Tag="Industrial" ToolTip="110 / 120ms，2 DIP" />
-                                <ComboBoxItem Content="关闭" Tag="Off" ToolTip="瞬时" />
+                                <ComboBoxItem Content="优雅" Tag="Current" ToolTip="160 / 180ms，8 DIP" />
+                                <ComboBoxItem Content="标准" Tag="Industrial" ToolTip="110 / 120ms，2 DIP" />
+                                <ComboBoxItem Content="简短" Tag="Cut" ToolTip="80 / 90ms，无位移" />
+                                <ComboBoxItem Content="无" Tag="Off" ToolTip="瞬时" />
                             </ComboBox>
                         </Grid>
 
@@ -698,6 +714,34 @@
                                 <Slider x:Name="LoopDurationSlider" Width="260" Minimum="600" Maximum="10000" />
                                 <TextBox x:Name="LoopDurationValue" Width="58" Margin="10,0,0,0" TextAlignment="Right" />
                                 <TextBlock Text="ms" VerticalAlignment="Center" Margin="6,0,0,0" />
+                            </StackPanel>
+                        </Grid>
+
+                        <Grid x:Name="PulseThicknessRow" Margin="0,0,0,10" Visibility="Collapsed">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="110" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="脉冲粗细" VerticalAlignment="Center" />
+                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <Slider x:Name="PulseThicknessSlider" Width="260" Minimum="1" Maximum="8"
+                                        IsSnapToTickEnabled="True" TickFrequency="1" />
+                                <TextBox x:Name="PulseThicknessValue" Width="58" Margin="10,0,0,0" TextAlignment="Right" />
+                                <TextBlock Text="px" VerticalAlignment="Center" Margin="6,0,0,0" />
+                            </StackPanel>
+                        </Grid>
+
+                        <Grid x:Name="ScanlineThicknessRow" Margin="0,0,0,10" Visibility="Collapsed">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="110" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="扫描线粗细" VerticalAlignment="Center" />
+                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <Slider x:Name="ScanlineThicknessSlider" Width="260" Minimum="1" Maximum="10"
+                                        IsSnapToTickEnabled="True" TickFrequency="1" />
+                                <TextBox x:Name="ScanlineThicknessValue" Width="58" Margin="10,0,0,0" TextAlignment="Right" />
+                                <TextBlock Text="px" VerticalAlignment="Center" Margin="6,0,0,0" />
                             </StackPanel>
                         </Grid>
 
@@ -807,7 +851,7 @@
                             </ComboBox>
                         </Grid>
 
-                        <TextBlock x:Name="AcrylicHint" FontSize="12" Foreground="#6B7280" Margin="0,0,0,10"
+                        <TextBlock x:Name="AcrylicHint" FontSize="12" Foreground="{DynamicResource TextSecondary}" Margin="0,0,0,10"
                                    Text="由 DWM 在卡片下面画实时亚克力。模糊在 GPU 上完成，进程侧不抓屏；模糊强度与刷新帧率由系统决定。关闭系统透明效果或远程桌面时自动退回兼容实现。"
                                    TextWrapping="Wrap" />
 
@@ -977,7 +1021,7 @@
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="配置文件：" VerticalAlignment="Center" />
                             <TextBlock x:Name="PathText" VerticalAlignment="Center"
-                                       Foreground="{StaticResource TextSecondary}" />
+                                       Foreground="{DynamicResource TextSecondary}" />
                         </StackPanel>
                         <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                             <Button Content="打开配置目录" Click="OpenConfigFolderClick" Margin="0,0,8,0" />
@@ -1046,11 +1090,11 @@
         </TabControl>
 
         <!-- ==================== 底栏 ==================== -->
-        <Border Grid.Row="2" Background="{StaticResource CardBg}"
-                BorderBrush="{StaticResource BorderSoft}" BorderThickness="0,1,0,0" Padding="16,10">
+        <Border Grid.Row="2" Background="{DynamicResource CardBg}"
+                BorderBrush="{DynamicResource BorderSoft}" BorderThickness="0,1,0,0" Padding="16,10">
             <Grid>
                 <TextBlock x:Name="StatusText" VerticalAlignment="Center"
-                           Foreground="{StaticResource TextSecondary}" />
+                           Foreground="{DynamicResource TextSecondary}" />
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                     <Button Content="恢复默认" Margin="0,0,8,0" Click="ResetClick" />
                     <Button Content="关闭" Margin="0,0,8,0" Click="CloseClick" />

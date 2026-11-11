@@ -58,7 +58,7 @@
             <Slider Width="100" Minimum="0.25" Maximum="4" Margin="6,0,6,0"
                     Value="{Binding MediaSpeed}" VerticalAlignment="Center" />
             <TextBlock Text="{Binding MediaSpeedText}" VerticalAlignment="Center"
-                       Foreground="{StaticResource TextSecondary}" />
+                       Foreground="{DynamicResource TextSecondary}" />
         </WrapPanel>
         <TextBlock Text="解码器" Style="{StaticResource SectionTitle}" Margin="0,12,0,6" />
 
@@ -89,7 +89,7 @@
 
         <TextBlock Text="{Binding DecoderHint}" Margin="0,0,0,2"
                    FontSize="12" TextWrapping="Wrap"
-                   Foreground="{StaticResource TextSecondary}"
+                   Foreground="{DynamicResource TextSecondary}"
                    ToolTip="{Binding DecoderHint}" />
 
         <TextBlock Style="{StaticResource Hint}" Margin="0,2,0,0" TextWrapping="Wrap"

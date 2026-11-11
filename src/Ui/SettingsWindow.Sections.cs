@@ -66,8 +66,7 @@ public partial class SettingsWindow
                 Header = title.Text,
                 Content = body,
                 Style = sectionStyle,
-                IsExpanded = true,
-                Margin = new Thickness(0, title.Margin.Top, 0, 4)
+                IsExpanded = true
             };
 
             panel.Children.RemoveAt(index);

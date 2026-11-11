@@ -24,6 +24,8 @@ public partial class SettingsWindow
     readonly Dictionary<string, bool> _expanded = new(StringComparer.OrdinalIgnoreCase);
     CardEditor _dragEditor;
     Point _dragStart;
+    bool _headerMouseDown;
+    bool _headerDragged;
 
     // ==================== 卡片列表 ====================
 
@@ -252,35 +254,72 @@ public partial class SettingsWindow
 
     // ==================== 拖动排序 ====================
 
-    void CardDragHandleDown(object sender, MouseButtonEventArgs e)
+    /// <summary>
+    /// 标题栏拖动：整条标题栏都可以拖，按钮 / 输入框 / 下拉框等交互控件除外。
+    /// 鼠标按下时先捕获，移动超过阈值才启动 DragDrop；原地单击仍然切换展开。
+    /// </summary>
+    void CardHeaderDragDown(object sender, MouseButtonEventArgs e)
     {
-        var element = sender as FrameworkElement;
-        _dragEditor = element is null ? null : element.Tag as CardEditor;
-        _dragStart = e.GetPosition(this);
+        var header = sender as FrameworkElement;
+        if (header is null || IsInteractiveCardHeaderSource(e.OriginalSource as DependencyObject)) return;
 
-        // 捕获鼠标，否则指针离开小抓手后 PreviewMouseMove 不再进来，拖不起来。
-        if (element is not null) element.CaptureMouse();
+        _dragEditor = header.DataContext as CardEditor;
+        _dragStart = e.GetPosition(this);
+        _headerMouseDown = _dragEditor is not null;
+        _headerDragged = false;
+        if (!_headerMouseDown) return;
+
+        header.CaptureMouse();
         e.Handled = true;
     }
 
-    void CardDragHandleMove(object sender, MouseEventArgs e)
+    void CardHeaderDragMove(object sender, MouseEventArgs e)
     {
-        if (_dragEditor is null || e.LeftButton != MouseButtonState.Pressed) return;
+        if (!_headerMouseDown || _dragEditor is null || e.LeftButton != MouseButtonState.Pressed) return;
 
         Point now = e.GetPosition(this);
         if (Math.Abs(now.X - _dragStart.X) < 4 && Math.Abs(now.Y - _dragStart.Y) < 4) return;
 
-        var element = sender as FrameworkElement;
-        DragDrop.DoDragDrop((DependencyObject)sender, _dragEditor, DragDropEffects.Move);
-        if (element is not null && element.IsMouseCaptured) element.ReleaseMouseCapture();
+        _headerDragged = true;
+        _headerMouseDown = false;
+        var header = sender as FrameworkElement;
+        if (header is not null && header.IsMouseCaptured) header.ReleaseMouseCapture();
+
+        CardEditor drag = _dragEditor;
+        DragDrop.DoDragDrop((DependencyObject)sender, drag, DragDropEffects.Move);
+        // DoDragDrop 期间 CardListDragOver / CardListDrop 需要 _dragEditor 作为源；
+        // 拖放结束后再清空，避免 Drop 拿到 null。
         _dragEditor = null;
     }
 
-    void CardDragHandleUp(object sender, MouseButtonEventArgs e)
+    void CardHeaderDragUp(object sender, MouseButtonEventArgs e)
     {
-        var element = sender as FrameworkElement;
-        if (element is not null && element.IsMouseCaptured) element.ReleaseMouseCapture();
+        if (!_headerMouseDown && !_headerDragged) return;
+
+        var header = sender as FrameworkElement;
+        if (header is not null && header.IsMouseCaptured) header.ReleaseMouseCapture();
+
+        bool shouldToggle = _headerMouseDown && !_headerDragged;
+        CardEditor editor = _dragEditor;
+        _headerMouseDown = false;
+        _headerDragged = false;
         _dragEditor = null;
+
+        if (shouldToggle && editor is not null) editor.IsExpanded = !editor.IsExpanded;
+        e.Handled = true;
+    }
+
+    /// <summary>点到标题栏里的按钮 / 输入框 / 下拉框时不要启动拖拽。</summary>
+    static bool IsInteractiveCardHeaderSource(DependencyObject source)
+    {
+        while (source is not null)
+        {
+            if (source is ButtonBase || source is TextBoxBase || source is ComboBox ||
+                source is Slider || source is CheckBox)
+                return true;
+            source = VisualTreeHelper.GetParent(source);
+        }
+        return false;
     }
 
     void CardListDragOver(object sender, DragEventArgs e)
@@ -332,12 +371,6 @@ public partial class SettingsWindow
     void ToggleCardClick(object sender, RoutedEventArgs e)
     {
         CardEditor editor = (sender as FrameworkElement)?.Tag as CardEditor;
-        if (editor is not null) editor.IsExpanded = !editor.IsExpanded;
-    }
-
-    void CardHeaderClick(object sender, MouseButtonEventArgs e)
-    {
-        CardEditor editor = (sender as FrameworkElement)?.DataContext as CardEditor;
         if (editor is not null) editor.IsExpanded = !editor.IsExpanded;
     }
 
