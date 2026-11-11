@@ -3191,7 +3191,7 @@ M7 / M8 只有调研没有实现。本轮一起收口。
   新增临时目录正反例（用户插件版本不一致被忽略、builtin 错版本仍失败）。
 - **P2**：`dotnet format style/whitespace --verify-no-changes` 均为 0；统一 18 个文件的行尾/空白，
   修 `TrayIcon` 的 IDE0090；`out var` 实际转换 172 处（`Enum.TryParse` 的泛型推断点保留显式类型）。
-- **P3**：新增 `.git-blame-ignore-revs` 并写入 B 提交 `8d2b91e`；`LucideIcons.cs` 标记
+- **P3**：新增 `.git-blame-ignore-revs` 并写入 B 提交 `959af6e`；`LucideIcons.cs` 标记
   `generated_code`；插件指南示例改现代语法；`samples/ContourLine` 去掉显式 LangVersion；
   版本记录不再依赖未入库的评估文件路径。
 - 复核后：构建 0/0、自检 0、format 两项 verify 0。
