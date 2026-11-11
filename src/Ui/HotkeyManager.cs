@@ -5,296 +5,278 @@ using System.Windows.Forms;
 using System.Windows.Input;
 using MirrorpondHUD.Core;
 
-namespace MirrorpondHUD.Ui
+namespace MirrorpondHUD.Ui;
+
+/// <summary>
+/// 全局热键。用一个隐藏的 message-only 窗口接收 WM_HOTKEY，
+/// 不依赖主窗口是否可见，也不依赖 WPF 的 Dispatcher 消息过滤。
+/// 动作名是动态的（包括每张卡片的 "card:&lt;id&gt;"），同一个组合键可以挂多个动作：
+/// 两张卡片设置同一个热键时，按下会同时呼出两张卡片。
+/// </summary>
+public sealed class HotkeyManager : IDisposable
 {
-    /// <summary>
-    /// 全局热键。用一个隐藏的 message-only 窗口接收 WM_HOTKEY，
-    /// 不依赖主窗口是否可见，也不依赖 WPF 的 Dispatcher 消息过滤。
-    /// 动作名是动态的（包括每张卡片的 "card:&lt;id&gt;"），同一个组合键可以挂多个动作：
-    /// 两张卡片设置同一个热键时，按下会同时呼出两张卡片。
-    /// </summary>
-    public sealed class HotkeyManager : IDisposable
+    const int WmHotkey = 0x0312;
+
+    const uint ModAlt = 0x0001;
+    const uint ModCtrl = 0x0002;
+    const uint ModShift = 0x0004;
+    const uint ModWin = 0x0008;
+    const uint ModNoRepeat = 0x4000;
+
+    public const string ActionToggleOverlay = "toggle-overlay";
+    public const string ActionOpenSettings = "open-settings";
+    public const string ActionToggleLock = "toggle-lock";
+
+    /// <summary>卡片热键的动作名。</summary>
+    public static string CardAction(string cardId) => $"card:{(cardId ?? "")}";
+
+    [DllImport("user32.dll", SetLastError = true)]
+    static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+
+    sealed class HotkeyWindow : NativeWindow
     {
-        const int WmHotkey = 0x0312;
+        public event Action<int> Hotkey;
 
-        const uint ModAlt = 0x0001;
-        const uint ModCtrl = 0x0002;
-        const uint ModShift = 0x0004;
-        const uint ModWin = 0x0008;
-        const uint ModNoRepeat = 0x4000;
-
-        public const string ActionToggleOverlay = "toggle-overlay";
-        public const string ActionOpenSettings = "open-settings";
-        public const string ActionToggleLock = "toggle-lock";
-
-        /// <summary>卡片热键的动作名。</summary>
-        public static string CardAction(string cardId)
+        public HotkeyWindow()
         {
-            return "card:" + (cardId ?? "");
+            CreateHandle(new CreateParams
+            {
+                Caption = "MirrorpondHUD.Hotkeys",
+                Style = 0,
+                ExStyle = 0,
+                X = 0,
+                Y = 0,
+                Width = 0,
+                Height = 0
+            });
         }
 
-        [DllImport("user32.dll", SetLastError = true)]
-        static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
-
-        [DllImport("user32.dll", SetLastError = true)]
-        static extern bool UnregisterHotKey(IntPtr hWnd, int id);
-
-        sealed class HotkeyWindow : NativeWindow
+        protected override void WndProc(ref Message m)
         {
-            public event Action<int> Hotkey;
-
-            public HotkeyWindow()
+            if (m.Msg == WmHotkey)
             {
-                CreateHandle(new CreateParams
-                {
-                    Caption = "MirrorpondHUD.Hotkeys",
-                    Style = 0,
-                    ExStyle = 0,
-                    X = 0,
-                    Y = 0,
-                    Width = 0,
-                    Height = 0
-                });
+                Action<int> handler = Hotkey;
+                if (handler is not null) handler(m.WParam.ToInt32());
+            }
+            base.WndProc(ref m);
+        }
+
+        public void Destroy()
+        {
+            if (Handle != IntPtr.Zero) DestroyHandle();
+        }
+    }
+
+    readonly Dictionary<int, string> _idToKey = new();
+    readonly Dictionary<int, List<string>> _idToActions = new();
+    readonly Dictionary<string, int> _keyToId = new(StringComparer.Ordinal);
+    readonly Dictionary<string, int> _actionToId = new(StringComparer.OrdinalIgnoreCase);
+
+    int _nextId = 10;
+    HotkeyWindow _window;
+    bool _disposed;
+
+    public event Action<string> HotkeyPressed;
+
+    public HotkeyManager()
+    {
+        _window = new HotkeyWindow();
+        _window.Hotkey += OnHotkeyMessage;
+        Log.Info($"热键宿主窗口已创建 handle={_window.Handle}");
+    }
+
+    void OnHotkeyMessage(int id)
+    {
+        if (!_idToActions.TryGetValue(id, out List<string> actions) || actions.Count == 0) return;
+
+        // 复制一份：处理过程中可能有卡片被删除并重新注册热键。
+        string[] snapshot = actions.ToArray();
+        foreach (string action in snapshot)
+        {
+            Log.Info($"热键触发: {action}");
+            Action<string> handler = HotkeyPressed;
+            if (handler is not null) handler(action);
+        }
+    }
+
+    /// <summary>
+    /// 把动作绑定到组合键。空白组合键 = 解除绑定。
+    /// 返回 true 表示该动作已经能被触发（包括与其它动作共用同一个组合键）。
+    /// </summary>
+    public bool Register(string action, string combination)
+    {
+        if (_disposed || _window is null || string.IsNullOrEmpty(action)) return false;
+
+        if (string.IsNullOrWhiteSpace(combination))
+        {
+            Detach(action);
+            Log.Info($"热键未设置（已禁用）: {action}");
+            return false;
+        }
+
+        if (!TryParse(combination, out uint mods, out uint vk))
+        {
+            // P2-3：不能先 Detach 再解析。解析失败 / 新键被占用时必须保留旧绑定。
+            Log.Warn($"无法识别的热键: {combination}（{action}），保留原绑定");
+            return false;
+        }
+
+        string key = KeyOf(mods, vk);
+        _actionToId.TryGetValue(action, out int oldId);
+
+        if (_keyToId.TryGetValue(key, out int existingId))
+        {
+            if (!_idToActions.TryGetValue(existingId, out List<string> shared))
+            {
+                shared = new List<string>();
+                _idToActions[existingId] = shared;
             }
 
-            protected override void WndProc(ref Message m)
+            bool already = false;
+            for (int i = 0; i < shared.Count; i++)
             {
-                if (m.Msg == WmHotkey)
+                if (string.Equals(shared[i], action, StringComparison.OrdinalIgnoreCase))
                 {
-                    Action<int> handler = Hotkey;
-                    if (handler != null) handler(m.WParam.ToInt32());
+                    already = true;
+                    break;
                 }
-                base.WndProc(ref m);
             }
 
-            public void Destroy()
-            {
-                if (Handle != IntPtr.Zero) DestroyHandle();
-            }
-        }
+            if (!already) shared.Add(action);
+            _actionToId[action] = existingId;
 
-        readonly Dictionary<int, string> _idToKey = new Dictionary<int, string>();
-        readonly Dictionary<int, List<string>> _idToActions = new Dictionary<int, List<string>>();
-        readonly Dictionary<string, int> _keyToId = new Dictionary<string, int>(StringComparer.Ordinal);
-        readonly Dictionary<string, int> _actionToId = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            // 新组合键已经有注册项：不需要动 OS；把旧 id 上的这个动作摘掉即可。
+            if (oldId != 0 && oldId != existingId) RemoveActionFromId(action, oldId);
 
-        int _nextId = 10;
-        HotkeyWindow _window;
-        bool _disposed;
-
-        public event Action<string> HotkeyPressed;
-
-        public HotkeyManager()
-        {
-            _window = new HotkeyWindow();
-            _window.Hotkey += OnHotkeyMessage;
-            Log.Info("热键宿主窗口已创建 handle=" + _window.Handle);
-        }
-
-        void OnHotkeyMessage(int id)
-        {
-            List<string> actions;
-            if (!_idToActions.TryGetValue(id, out actions) || actions.Count == 0) return;
-
-            // 复制一份：处理过程中可能有卡片被删除并重新注册热键。
-            string[] snapshot = actions.ToArray();
-            foreach (string action in snapshot)
-            {
-                Log.Info("热键触发: " + action);
-                Action<string> handler = HotkeyPressed;
-                if (handler != null) handler(action);
-            }
-        }
-
-        /// <summary>
-        /// 把动作绑定到组合键。空白组合键 = 解除绑定。
-        /// 返回 true 表示该动作已经能被触发（包括与其它动作共用同一个组合键）。
-        /// </summary>
-        public bool Register(string action, string combination)
-        {
-            if (_disposed || _window == null || string.IsNullOrEmpty(action)) return false;
-
-            if (string.IsNullOrWhiteSpace(combination))
-            {
-                Detach(action);
-                Log.Info("热键未设置（已禁用）: " + action);
-                return false;
-            }
-
-            uint mods, vk;
-            if (!TryParse(combination, out mods, out vk))
-            {
-                // P2-3：不能先 Detach 再解析。解析失败 / 新键被占用时必须保留旧绑定。
-                Log.Warn("无法识别的热键: " + combination + "（" + action + "），保留原绑定");
-                return false;
-            }
-
-            string key = KeyOf(mods, vk);
-            int oldId;
-            _actionToId.TryGetValue(action, out oldId);
-
-            int existingId;
-            if (_keyToId.TryGetValue(key, out existingId))
-            {
-                List<string> shared;
-                if (!_idToActions.TryGetValue(existingId, out shared))
-                {
-                    shared = new List<string>();
-                    _idToActions[existingId] = shared;
-                }
-
-                bool already = false;
-                for (int i = 0; i < shared.Count; i++)
-                {
-                    if (string.Equals(shared[i], action, StringComparison.OrdinalIgnoreCase))
-                    {
-                        already = true;
-                        break;
-                    }
-                }
-
-                if (!already) shared.Add(action);
-                _actionToId[action] = existingId;
-
-                // 新组合键已经有注册项：不需要动 OS；把旧 id 上的这个动作摘掉即可。
-                if (oldId != 0 && oldId != existingId) RemoveActionFromId(action, oldId);
-
-                if (!already) Log.Info("热键 " + combination + " 已合并（同一组合键共 " + shared.Count + " 个动作）");
-                return true;
-            }
-
-            int newId = _nextId++;
-            if (!RegisterHotKey(_window.Handle, newId, mods | ModNoRepeat, vk))
-            {
-                // 注册失败：旧绑定保持原样（这是 P2-3 的核心）。
-                Log.Warn("热键注册失败（多半被其它程序占用）: " + combination +
-                         " err=" + Marshal.GetLastWin32Error() + "，保留原绑定");
-                return false;
-            }
-
-            _keyToId[key] = newId;
-            _idToKey[newId] = key;
-            _idToActions[newId] = new List<string> { action };
-
-            if (oldId != 0 && oldId != newId) RemoveActionFromId(action, oldId);
-            _actionToId[action] = newId;
+            if (!already) Log.Info($"热键 {combination} 已合并（同一组合键共 {shared.Count} 个动作）");
             return true;
         }
 
-        /// <summary>只把一个动作从指定 id 上摘掉；id 上还有别的动作时保留组合键注册（P2-3）。</summary>
-        void RemoveActionFromId(string action, int id)
+        int newId = _nextId++;
+        if (!RegisterHotKey(_window.Handle, newId, mods | ModNoRepeat, vk))
         {
-            List<string> actions;
-            if (!_idToActions.TryGetValue(id, out actions)) return;
-
-            actions.RemoveAll(a => string.Equals(a, action, StringComparison.OrdinalIgnoreCase));
-            if (actions.Count > 0) return;
-
-            _idToActions.Remove(id);
-            if (_window != null) UnregisterHotKey(_window.Handle, id);
-
-            string key;
-            if (_idToKey.TryGetValue(id, out key))
-            {
-                _idToKey.Remove(id);
-                _keyToId.Remove(key);
-            }
+            // 注册失败：旧绑定保持原样（这是 P2-3 的核心）。
+            Log.Warn($"热键注册失败（多半被其它程序占用）: {combination} err={Marshal.GetLastWin32Error()}，保留原绑定");
+            return false;
         }
 
-        /// <summary>解除一个动作的绑定；组合键上还有别的动作时保持注册。</summary>
-        public void Detach(string action)
+        _keyToId[key] = newId;
+        _idToKey[newId] = key;
+        _idToActions[newId] = new List<string> { action };
+
+        if (oldId != 0 && oldId != newId) RemoveActionFromId(action, oldId);
+        _actionToId[action] = newId;
+        return true;
+    }
+
+    /// <summary>只把一个动作从指定 id 上摘掉；id 上还有别的动作时保留组合键注册（P2-3）。</summary>
+    void RemoveActionFromId(string action, int id)
+    {
+        if (!_idToActions.TryGetValue(id, out List<string> actions)) return;
+
+        actions.RemoveAll(a => string.Equals(a, action, StringComparison.OrdinalIgnoreCase));
+        if (actions.Count > 0) return;
+
+        _idToActions.Remove(id);
+        if (_window is not null) UnregisterHotKey(_window.Handle, id);
+
+        if (_idToKey.TryGetValue(id, out string key))
         {
-            int id;
-            if (!_actionToId.TryGetValue(action, out id)) return;
-            _actionToId.Remove(action);
+            _idToKey.Remove(id);
+            _keyToId.Remove(key);
+        }
+    }
 
-            List<string> actions;
-            if (!_idToActions.TryGetValue(id, out actions)) return;
+    /// <summary>解除一个动作的绑定；组合键上还有别的动作时保持注册。</summary>
+    public void Detach(string action)
+    {
+        if (!_actionToId.TryGetValue(action, out int id)) return;
+        _actionToId.Remove(action);
 
-            actions.RemoveAll(a => string.Equals(a, action, StringComparison.OrdinalIgnoreCase));
-            if (actions.Count > 0) return;
+        if (!_idToActions.TryGetValue(id, out List<string> actions)) return;
 
-            _idToActions.Remove(id);
-            if (_window != null) UnregisterHotKey(_window.Handle, id);
+        actions.RemoveAll(a => string.Equals(a, action, StringComparison.OrdinalIgnoreCase));
+        if (actions.Count > 0) return;
 
-            string key;
-            if (_idToKey.TryGetValue(id, out key))
-            {
-                _idToKey.Remove(id);
-                _keyToId.Remove(key);
-            }
+        _idToActions.Remove(id);
+        if (_window is not null) UnregisterHotKey(_window.Handle, id);
+
+        if (_idToKey.TryGetValue(id, out string key))
+        {
+            _idToKey.Remove(id);
+            _keyToId.Remove(key);
+        }
+    }
+
+    public void UnregisterAll()
+    {
+        if (_window is null) return;
+        foreach (int id in new List<int>(_idToActions.Keys))
+        {
+            try { UnregisterHotKey(_window.Handle, id); } catch { }
+        }
+        _idToActions.Clear();
+        _idToKey.Clear();
+        _keyToId.Clear();
+        _actionToId.Clear();
+    }
+
+    public static bool TryParse(string combination, out uint modifiers, out uint vk)
+    {
+        modifiers = 0;
+        vk = 0;
+        if (string.IsNullOrWhiteSpace(combination)) return false;
+
+        string[] parts = combination.Split(new[] { '+' }, StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0) return false;
+
+        for (int i = 0; i < parts.Length; i++)
+        {
+            string part = parts[i].Trim();
+            if (part.Length == 0) continue;
+
+            string lower = part.ToLowerInvariant();
+            if (lower == "ctrl" || lower == "control") { modifiers |= ModCtrl; continue; }
+            if (lower == "alt") { modifiers |= ModAlt; continue; }
+            if (lower == "shift") { modifiers |= ModShift; continue; }
+            if (lower == "win" || lower == "windows") { modifiers |= ModWin; continue; }
+
+            if (!Enum.TryParse(part, true, out Key key)) return false;
+            vk = (uint)KeyInterop.VirtualKeyFromKey(key);
+            if (vk == 0) return false;
         }
 
-        public void UnregisterAll()
+        return vk != 0;
+    }
+
+    static string KeyOf(uint modifiers, uint vk) => $"{modifiers:X4}:{vk:X4}";
+
+    public static string Format(Key key, ModifierKeys mods)
+    {
+        var parts = new List<string>(4);
+        if ((mods & ModifierKeys.Control) != 0) parts.Add("Ctrl");
+        if ((mods & ModifierKeys.Alt) != 0) parts.Add("Alt");
+        if ((mods & ModifierKeys.Shift) != 0) parts.Add("Shift");
+        if ((mods & ModifierKeys.Windows) != 0) parts.Add("Win");
+        parts.Add(key.ToString());
+        return string.Join("+", parts);
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+
+        try { UnregisterAll(); } catch { }
+
+        if (_window is not null)
         {
-            if (_window == null) return;
-            foreach (int id in new List<int>(_idToActions.Keys))
-            {
-                try { UnregisterHotKey(_window.Handle, id); } catch { }
-            }
-            _idToActions.Clear();
-            _idToKey.Clear();
-            _keyToId.Clear();
-            _actionToId.Clear();
-        }
-
-        public static bool TryParse(string combination, out uint modifiers, out uint vk)
-        {
-            modifiers = 0;
-            vk = 0;
-            if (string.IsNullOrWhiteSpace(combination)) return false;
-
-            string[] parts = combination.Split(new[] { '+' }, StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length == 0) return false;
-
-            for (int i = 0; i < parts.Length; i++)
-            {
-                string part = parts[i].Trim();
-                if (part.Length == 0) continue;
-
-                string lower = part.ToLowerInvariant();
-                if (lower == "ctrl" || lower == "control") { modifiers |= ModCtrl; continue; }
-                if (lower == "alt") { modifiers |= ModAlt; continue; }
-                if (lower == "shift") { modifiers |= ModShift; continue; }
-                if (lower == "win" || lower == "windows") { modifiers |= ModWin; continue; }
-
-                if (!Enum.TryParse(part, true, out Key key)) return false;
-                vk = (uint)KeyInterop.VirtualKeyFromKey(key);
-                if (vk == 0) return false;
-            }
-
-            return vk != 0;
-        }
-
-        static string KeyOf(uint modifiers, uint vk)
-        {
-            return modifiers.ToString("X4") + ":" + vk.ToString("X4");
-        }
-
-        public static string Format(Key key, ModifierKeys mods)
-        {
-            var parts = new List<string>(4);
-            if ((mods & ModifierKeys.Control) != 0) parts.Add("Ctrl");
-            if ((mods & ModifierKeys.Alt) != 0) parts.Add("Alt");
-            if ((mods & ModifierKeys.Shift) != 0) parts.Add("Shift");
-            if ((mods & ModifierKeys.Windows) != 0) parts.Add("Win");
-            parts.Add(key.ToString());
-            return string.Join("+", parts);
-        }
-
-        public void Dispose()
-        {
-            if (_disposed) return;
-            _disposed = true;
-
-            try { UnregisterAll(); } catch { }
-
-            if (_window != null)
-            {
-                try { _window.Hotkey -= OnHotkeyMessage; } catch { }
-                try { _window.Destroy(); } catch { }
-                _window = null;
-            }
+            try { _window.Hotkey -= OnHotkeyMessage; } catch { }
+            try { _window.Destroy(); } catch { }
+            _window = null;
         }
     }
 }

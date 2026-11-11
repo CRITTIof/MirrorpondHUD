@@ -10,183 +10,261 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using MirrorpondHUD.Core;
 
-namespace MirrorpondHUD.Ui.Controls.Media
+namespace MirrorpondHUD.Ui.Controls.Media;
+
+/// <summary>一个视频的基本信息（ffmpeg 探测出来）。</summary>
+internal sealed class VideoInfo
 {
-    /// <summary>一个视频的基本信息（ffmpeg 探测出来）。</summary>
-    internal sealed class VideoInfo
-    {
-        public double Duration;
-        public int Width;
-        public int Height;
-        public double Fps;
-    }
+    public double Duration;
+    public int Width;
+    public int Height;
+    public double Fps;
+}
 
+/// <summary>
+/// 用外部 ffmpeg 解码视频，逐帧交给 WPF 显示。
+///
+/// 为什么需要它：卡片里的视频默认走 Windows 的 Media Foundation（MediaElement），
+/// mp4 / wmv 一般能放，mkv / webm / av1 / 部分 hevc 就放不了，而装解码包也不一定
+/// 对 Media Foundation 生效。这里改成直接问 ffmpeg 要 BGRA 原始帧：
+///
+///   ffmpeg -readrate 1 -i 文件 -map 0:v:0 -an -vf scale=W:H -r 帧率 -f rawvideo -pix_fmt bgra pipe:1
+///
+/// 自己读 stdout，每 W×H×4 字节包成一张 BitmapSource。暂停 = 不再读管道
+/// （管道写满后 ffmpeg 自己会停下），继续 = 接着读；循环 = 读完从头再来。
+///
+/// 声音走第二条 ffmpeg 进程：只取音频、转成 48 kHz 立体声 16 bit PCM，
+/// 交给 <see cref="WaveOutPlayer"/>（winmm waveOut）播放。`-readrate` 控制视频速度，
+/// `atempo` 控制音频速度，两边同时重启即可实现快进 / 快退 / 变速。
+/// </summary>
+internal sealed class FfmpegPlayer : IDisposable
+{
+    public event Action<BitmapSource> FrameReady;
+    public event Action<string> Failed;
+    public event Action Completed;
+    /// <summary>P1-6：音频启动失败（WaveOut 打不开 / 解码进程起不来）时触发，
+    /// 内容是原因描述；视频照常播，UI 可以用它在状态行如实标注「音频不可用」。</summary>
+    public event Action<string> AudioUnavailable;
+
+    readonly ManualResetEventSlim _resume = new(true);
+
+    // P2-18：_stop 原先兼作“重启代号”。RestartAt 的 Join(1500) 超时后旧读线程晚归，
+    // 会看到 _stop 已被清掉继续跑，还可能 Kill 掉新一代的进程、或对新一代报假失败。
+    // 现在每次 Start / RestartAt 都 ++_run；读线程全程用自己捕获的 run 校验，
+    // 所有进程 / 音频播放器的安装与 Kill 都在 _sync 里校验代次，旧代晚归直接作废。
+    readonly object _sync = new();
+    int _run;
+
+    Process _process;
+    Process _audioProcess;
+    Thread _reader;
+    WaveOutPlayer _audio;
+
+    string _ffmpeg = "";
+    string _path = "";
+    /// <summary>最近一次视频解码启动的实际 argv 摘要，只在失败时写日志（审阅 §7.2：失败原因要可行动）。</summary>
+    string _lastVideoArgs = "";
+    int _width;
+    int _height;
+    double _fps = 25;
+    double _duration;
+    double _speed = 1;
+    double _startSeconds;
+    int _volume = 100;
+    long _frames;
+    bool _loop;
+    bool _audioEnabled;
+    volatile bool _stop;
+    volatile bool _startPaused;
+    bool _disposed;
     /// <summary>
-    /// 用外部 ffmpeg 解码视频，逐帧交给 WPF 显示。
-    ///
-    /// 为什么需要它：卡片里的视频默认走 Windows 的 Media Foundation（MediaElement），
-    /// mp4 / wmv 一般能放，mkv / webm / av1 / 部分 hevc 就放不了，而装解码包也不一定
-    /// 对 Media Foundation 生效。这里改成直接问 ffmpeg 要 BGRA 原始帧：
-    ///
-    ///   ffmpeg -readrate 1 -i 文件 -map 0:v:0 -an -vf scale=W:H -r 帧率 -f rawvideo -pix_fmt bgra pipe:1
-    ///
-    /// 自己读 stdout，每 W×H×4 字节包成一张 BitmapSource。暂停 = 不再读管道
-    /// （管道写满后 ffmpeg 自己会停下），继续 = 接着读；循环 = 读完从头再来。
-    ///
-    /// 声音走第二条 ffmpeg 进程：只取音频、转成 48 kHz 立体声 16 bit PCM，
-    /// 交给 <see cref="WaveOutPlayer"/>（winmm waveOut）播放。`-readrate` 控制视频速度，
-    /// `atempo` 控制音频速度，两边同时重启即可实现快进 / 快退 / 变速。
+    /// ffmpeg 不认 <c>-readrate</c> 的回退标记（P1-6）：一旦某代 0 帧输出，就改用经典的
+    /// <c>-re</c>（按原生速率读包）并只以 1× 播放。这是二进制能力问题，与文件无关，
+    /// 所以一旦置位就黏住，后续换文件 / 循环重开都不再试 -readrate。
     /// </summary>
-    internal sealed class FfmpegPlayer : IDisposable
+    volatile bool _useRe;
+
+    public double Duration => _duration;
+
+    public double Position
     {
-        public event Action<BitmapSource> FrameReady;
-        public event Action<string> Failed;
-        public event Action Completed;
-        /// <summary>P1-6：音频启动失败（WaveOut 打不开 / 解码进程起不来）时触发，
-        /// 内容是原因描述；视频照常播，UI 可以用它在状态行如实标注「音频不可用」。</summary>
-        public event Action<string> AudioUnavailable;
-
-        readonly ManualResetEventSlim _resume = new ManualResetEventSlim(true);
-
-        // P2-18：_stop 原先兼作“重启代号”。RestartAt 的 Join(1500) 超时后旧读线程晚归，
-        // 会看到 _stop 已被清掉继续跑，还可能 Kill 掉新一代的进程、或对新一代报假失败。
-        // 现在每次 Start / RestartAt 都 ++_run；读线程全程用自己捕获的 run 校验，
-        // 所有进程 / 音频播放器的安装与 Kill 都在 _sync 里校验代次，旧代晚归直接作废。
-        readonly object _sync = new object();
-        int _run;
-
-        Process _process;
-        Process _audioProcess;
-        Thread _reader;
-        WaveOutPlayer _audio;
-
-        string _ffmpeg = "";
-        string _path = "";
-        /// <summary>最近一次视频解码启动的实际 argv 摘要，只在失败时写日志（审阅 §7.2：失败原因要可行动）。</summary>
-        string _lastVideoArgs = "";
-        int _width;
-        int _height;
-        double _fps = 25;
-        double _duration;
-        double _speed = 1;
-        double _startSeconds;
-        int _volume = 100;
-        long _frames;
-        bool _loop;
-        bool _audioEnabled;
-        volatile bool _stop;
-        volatile bool _startPaused;
-        bool _disposed;
-        /// <summary>
-        /// ffmpeg 不认 <c>-readrate</c> 的回退标记（P1-6）：一旦某代 0 帧输出，就改用经典的
-        /// <c>-re</c>（按原生速率读包）并只以 1× 播放。这是二进制能力问题，与文件无关，
-        /// 所以一旦置位就黏住，后续换文件 / 循环重开都不再试 -readrate。
-        /// </summary>
-        volatile bool _useRe;
-
-        public double Duration { get { return _duration; } }
-
-        public double Position
+        get
         {
-            get
-            {
-                double start;
-                long frames;
-                lock (_sync)
-                {
-                    start = _startSeconds;
-                    frames = _frames;
-                }
-
-                double position = start + (_fps > 0 ? frames / _fps : 0);
-                return _duration > 0.01 ? Math.Min(_duration, position) : position;
-            }
-        }
-
-        public bool IsRunning
-        {
-            get { lock (_sync) { return _process != null && !_stop; } }
-        }
-        public bool IsPaused { get { return !_resume.IsSet; } }
-        public double Speed { get { return _speed; } }
-
-        // ==================== 播放 ====================
-
-        /// <summary>开始（或换一个文件）播放；参数里的尺寸是解码尺寸。</summary>
-        public void Start(string ffmpeg, string path, int width, int height,
-                          double fps, bool loop, double duration, bool autoplay,
-                          double speed, double startSeconds, bool audio, int volume)
-        {
-            StopInternal();
-
-            double startAt = Math.Max(0, startSeconds);
-
-            _ffmpeg = ffmpeg;
-            _path = path;
-            _width = Math.Max(16, width - width % 2);
-            _height = Math.Max(16, height - height % 2);
-            _fps = fps >= 1 && fps <= 121 ? fps : 25;
-            _duration = duration;
-            _loop = loop;
-            _speed = ClampSpeed(speed);
-            _audioEnabled = audio;
-            _volume = Math.Max(0, Math.Min(100, volume));
-
-            // 新一轮播放：++代次并重置本代状态（旧读线程 / 旧进程由此失效）。
-            int run = BeginRun(startAt, !autoplay);
-            _stop = false;
-            _resume.Set();
-
-            try
-            {
-                LaunchAll(run, startAt);
-            }
-            catch (Exception ex)
-            {
-                Log.Warn("启动 ffmpeg 失败: " + ex.Message);
-                RaiseFailed(ex.Message);
-                return;
-            }
-
-            StartReader(run);
-        }
-
-        /// <summary>开始一代新播放：递增代次，重置本代的起始位置 / 帧计数 / 起播暂停标记。</summary>
-        int BeginRun(double startSeconds, bool paused)
-        {
+            double start;
+            long frames;
             lock (_sync)
             {
-                _run++;
-                _startSeconds = Math.Max(0, startSeconds);
-                _frames = 0;
-                _startPaused = paused;
-                return _run;
+                start = _startSeconds;
+                frames = _frames;
+            }
+
+            double position = start + (_fps > 0 ? frames / _fps : 0);
+            return _duration > 0.01 ? Math.Min(_duration, position) : position;
+        }
+    }
+
+    public bool IsRunning
+    {
+        get { lock (_sync) { return _process is not null && !_stop; } }
+    }
+    public bool IsPaused => !_resume.IsSet;
+    public double Speed => _speed;
+
+    // ==================== 播放 ====================
+
+    /// <summary>开始（或换一个文件）播放；参数里的尺寸是解码尺寸。</summary>
+    public void Start(string ffmpeg, string path, int width, int height,
+                      double fps, bool loop, double duration, bool autoplay,
+                      double speed, double startSeconds, bool audio, int volume)
+    {
+        StopInternal();
+
+        double startAt = Math.Max(0, startSeconds);
+
+        _ffmpeg = ffmpeg;
+        _path = path;
+        _width = Math.Max(16, width - width % 2);
+        _height = Math.Max(16, height - height % 2);
+        _fps = fps >= 1 && fps <= 121 ? fps : 25;
+        _duration = duration;
+        _loop = loop;
+        _speed = ClampSpeed(speed);
+        _audioEnabled = audio;
+        _volume = Math.Max(0, Math.Min(100, volume));
+
+        // 新一轮播放：++代次并重置本代状态（旧读线程 / 旧进程由此失效）。
+        int run = BeginRun(startAt, !autoplay);
+        _stop = false;
+        _resume.Set();
+
+        try
+        {
+            LaunchAll(run, startAt);
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"启动 ffmpeg 失败: {ex.Message}");
+            RaiseFailed(ex.Message);
+            return;
+        }
+
+        StartReader(run);
+    }
+
+    /// <summary>开始一代新播放：递增代次，重置本代的起始位置 / 帧计数 / 起播暂停标记。</summary>
+    int BeginRun(double startSeconds, bool paused)
+    {
+        lock (_sync)
+        {
+            _run++;
+            _startSeconds = Math.Max(0, startSeconds);
+            _frames = 0;
+            _startPaused = paused;
+            return _run;
+        }
+    }
+
+    bool IsCurrent(int run) => run == Volatile.Read(ref _run);
+
+    void StartReader(int run)
+    {
+        Thread reader = new(() => ReadLoop(run))
+        {
+            IsBackground = true,
+            Name = "MirrorpondHUD.ffmpeg"
+        };
+        _reader = reader;
+        reader.Start();
+    }
+
+    void LaunchAll(int run, double startSeconds)
+    {
+        LaunchVideo(run, startSeconds);
+        LaunchAudio(run, startSeconds);
+    }
+
+    void LaunchVideo(int run, double startSeconds)
+    {
+        var psi = new ProcessStartInfo(_ffmpeg)
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
+        };
+
+        AddInput(psi, startSeconds);
+        if (_useRe)
+        {
+            // P1-6：老版 ffmpeg 不认 -readrate，回退经典 -re（按原生速率读包）。
+            // 原生速率意味着没有倍速语义，所以 _speed 已经被固定成 1，保持音画同步。
+            psi.ArgumentList.Add("-re");
+        }
+        else
+        {
+            psi.ArgumentList.Add("-readrate");
+            psi.ArgumentList.Add(_speed.ToString("0.###", CultureInfo.InvariantCulture));
+        }
+        psi.ArgumentList.Add("-i");
+        psi.ArgumentList.Add(_path);
+        psi.ArgumentList.Add("-map");
+        psi.ArgumentList.Add("0:v:0");
+        psi.ArgumentList.Add("-an");
+        psi.ArgumentList.Add("-sn");
+        psi.ArgumentList.Add("-dn");
+        psi.ArgumentList.Add("-vf");
+        psi.ArgumentList.Add($"scale={_width}:{_height}:force_original_aspect_ratio=decrease");
+        psi.ArgumentList.Add("-r");
+        psi.ArgumentList.Add(_fps.ToString("0.###", CultureInfo.InvariantCulture));
+        psi.ArgumentList.Add("-f");
+        psi.ArgumentList.Add("rawvideo");
+        psi.ArgumentList.Add("-pix_fmt");
+        psi.ArgumentList.Add("bgra");
+        psi.ArgumentList.Add("pipe:1");
+
+        // 先记下实际参数，再启动：Process.Start / 首帧失败时日志能直接看到是 -readrate 还是 -re 分支。
+        _lastVideoArgs = DescribeArguments(psi);
+
+        Process process = Process.Start(psi);
+        if (process is null) throw new InvalidOperationException("ffmpeg 没有启动");
+
+        process.ErrorDataReceived += (s, e) =>
+        {
+            if (e is not null && !string.IsNullOrWhiteSpace(e.Data))
+                Log.Warn($"ffmpeg: {e.Data.Trim()}");
+        };
+        process.BeginErrorReadLine();
+
+        // 代次校验 + 换手都在 _sync 里：旧代的启动不能把新代进程顶掉（P2-18）。
+        Process replaced = null;
+        bool current;
+        lock (_sync)
+        {
+            current = run == _run;
+            if (current)
+            {
+                replaced = _process;
+                _process = process;
             }
         }
 
-        bool IsCurrent(int run)
+        if (!current)
         {
-            return run == Volatile.Read(ref _run);
+            // 这一代在启动过程中已经被作废：新进程直接收掉，别污染当前状态。
+            DisposeProcess(process);
+            return;
         }
 
-        void StartReader(int run)
-        {
-            Thread reader = new Thread(() => ReadLoop(run))
-            {
-                IsBackground = true,
-                Name = "MirrorpondHUD.ffmpeg"
-            };
-            _reader = reader;
-            reader.Start();
-        }
+        DisposeProcess(replaced);
+    }
 
-        void LaunchAll(int run, double startSeconds)
-        {
-            LaunchVideo(run, startSeconds);
-            LaunchAudio(run, startSeconds);
-        }
+    void LaunchAudio(int run, double startSeconds)
+    {
+        if (!_audioEnabled || _volume <= 0) return;
 
-        void LaunchVideo(int run, double startSeconds)
+        Process process = null;
+        WaveOutPlayer player = null;
+        try
         {
             var psi = new ProcessStartInfo(_ffmpeg)
             {
@@ -197,910 +275,819 @@ namespace MirrorpondHUD.Ui.Controls.Media
             };
 
             AddInput(psi, startSeconds);
-            if (_useRe)
-            {
-                // P1-6：老版 ffmpeg 不认 -readrate，回退经典 -re（按原生速率读包）。
-                // 原生速率意味着没有倍速语义，所以 _speed 已经被固定成 1，保持音画同步。
-                psi.ArgumentList.Add("-re");
-            }
-            else
-            {
-                psi.ArgumentList.Add("-readrate");
-                psi.ArgumentList.Add(_speed.ToString("0.###", CultureInfo.InvariantCulture));
-            }
             psi.ArgumentList.Add("-i");
             psi.ArgumentList.Add(_path);
-            psi.ArgumentList.Add("-map");
-            psi.ArgumentList.Add("0:v:0");
-            psi.ArgumentList.Add("-an");
+            psi.ArgumentList.Add("-vn");
             psi.ArgumentList.Add("-sn");
             psi.ArgumentList.Add("-dn");
-            psi.ArgumentList.Add("-vf");
-            psi.ArgumentList.Add("scale=" + _width + ":" + _height +
-                                 ":force_original_aspect_ratio=decrease");
-            psi.ArgumentList.Add("-r");
-            psi.ArgumentList.Add(_fps.ToString("0.###", CultureInfo.InvariantCulture));
+
+            string tempo = Atempo(_speed);
+            if (tempo is not null)
+            {
+                psi.ArgumentList.Add("-af");
+                psi.ArgumentList.Add(tempo);
+            }
+
+            psi.ArgumentList.Add("-ac");
+            psi.ArgumentList.Add("2");
+            psi.ArgumentList.Add("-ar");
+            psi.ArgumentList.Add("48000");
             psi.ArgumentList.Add("-f");
-            psi.ArgumentList.Add("rawvideo");
-            psi.ArgumentList.Add("-pix_fmt");
-            psi.ArgumentList.Add("bgra");
+            psi.ArgumentList.Add("s16le");
             psi.ArgumentList.Add("pipe:1");
 
-            // 先记下实际参数，再启动：Process.Start / 首帧失败时日志能直接看到是 -readrate 还是 -re 分支。
-            _lastVideoArgs = DescribeArguments(psi);
-
-            Process process = Process.Start(psi);
-            if (process == null) throw new InvalidOperationException("ffmpeg 没有启动");
+            process = Process.Start(psi);
+            if (process is null)
+            {
+                // P1-6：Process.Start 返回 null 属于异常情况（资源耗尽 / 拦截），不能静默跳过。
+                Log.Warn("音频解码进程没有启动（Process.Start 返回 null），继续静音播放");
+                RaiseAudioUnavailable("音频解码进程没有启动");
+                return;
+            }
 
             process.ErrorDataReceived += (s, e) =>
             {
-                if (e != null && !string.IsNullOrWhiteSpace(e.Data))
-                    Log.Warn("ffmpeg: " + e.Data.Trim());
+                if (e is not null && !string.IsNullOrWhiteSpace(e.Data))
+                    Log.Warn($"ffmpeg(音频): {e.Data.Trim()}");
             };
             process.BeginErrorReadLine();
 
-            // 代次校验 + 换手都在 _sync 里：旧代的启动不能把新代进程顶掉（P2-18）。
-            Process replaced = null;
+            // 安装音频解码进程（代次校验，P2-18）
+            Process replacedProcess = null;
             bool current;
             lock (_sync)
             {
                 current = run == _run;
                 if (current)
                 {
-                    replaced = _process;
-                    _process = process;
+                    replacedProcess = _audioProcess;
+                    _audioProcess = process;
                 }
             }
 
             if (!current)
             {
-                // 这一代在启动过程中已经被作废：新进程直接收掉，别污染当前状态。
+                DisposeProcess(process);
+                return;
+            }
+            DisposeProcess(replacedProcess);
+
+            player = new WaveOutPlayer { Volume = _volume };
+            if (!player.Start(process.StandardOutput.BaseStream))
+            {
+                // P1-6：失败原因要能给到 UI（状态行如实标注「音频不可用」），只写日志还不够。
+                Log.Warn($"音频输出启动失败，继续静音播放: {WaveOutPlayer.LastErrorName}");
+                RaiseAudioUnavailable(WaveOutPlayer.LastErrorName);
+                try { player.Dispose(); } catch { }
+                player = null;
+                StopAudio(run);
+                return;
+            }
+
+            // 安装播放器：启动期间可能又被重启 / 停止
+            WaveOutPlayer replacedAudio = null;
+            bool installed;
+            lock (_sync)
+            {
+                installed = run == _run;
+                if (installed)
+                {
+                    replacedAudio = _audio;
+                    _audio = player;
+                }
+            }
+
+            if (!installed)
+            {
+                // 这一代已被作废：刚起来的播放器自己收掉，不污染当前状态。
+                try { player.Stop(); } catch { }
+                try { player.Dispose(); } catch { }
                 DisposeProcess(process);
                 return;
             }
 
-            DisposeProcess(replaced);
+            DisposeAudio(replacedAudio);
+            Log.Info($"音频输出已启动（48 kHz 立体声，音量 {_volume}%）");
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"启动音频解码失败: {ex.Message}");
+            RaiseAudioUnavailable($"音频解码失败：{ex.Message}");
+            DisposeProcess(process);
+            DisposeAudio(player);
+            StopAudio(run);
+        }
+    }
+
+    void AddInput(ProcessStartInfo psi, double startSeconds)
+    {
+        psi.ArgumentList.Add("-hide_banner");
+        psi.ArgumentList.Add("-loglevel");
+        psi.ArgumentList.Add("error");
+        psi.ArgumentList.Add("-nostdin");
+
+        if (startSeconds > 0.01)
+        {
+            psi.ArgumentList.Add("-ss");
+            psi.ArgumentList.Add(startSeconds.ToString("0.###", CultureInfo.InvariantCulture));
+        }
+    }
+
+    /// <summary>把倍速拆成 atempo 链（单次 atempo 只支持 0.5–2.0）。</summary>
+    static string Atempo(double speed)
+    {
+        if (Math.Abs(speed - 1) < 0.001) return null;
+
+        var parts = new System.Collections.Generic.List<string>();
+        double value = speed;
+
+        while (value > 2.0001)
+        {
+            parts.Add("atempo=2.0");
+            value /= 2.0;
+        }
+        while (value < 0.4999)
+        {
+            parts.Add("atempo=0.5");
+            value /= 0.5;
         }
 
-        void LaunchAudio(int run, double startSeconds)
+        parts.Add($"atempo={value.ToString("0.###", CultureInfo.InvariantCulture)}");
+        return string.Join(",", parts);
+    }
+
+    static double ClampSpeed(double speed)
+    {
+        if (double.IsNaN(speed) || double.IsInfinity(speed) || speed <= 0) return 1;
+        return Math.Max(0.25, Math.Min(4.0, speed));
+    }
+
+    // ==================== 读帧 ====================
+
+    void ReadLoop(int run)
+    {
+        try
         {
-            if (!_audioEnabled || _volume <= 0) return;
+            // 尺寸在开播时固定；之后即使 UI 换了文件也不能用新的 _width/_height 去解释
+            // 这一代的 buffer（否则会越界 / 抛异常）。
+            int width = _width;
+            int height = _height;
+            int size = width * height * 4;
+            var buffer = new byte[size];
+            long framesSinceLaunch = 0;
 
-            Process process = null;
-            WaveOutPlayer player = null;
-            try
+            while (!_stop)
             {
-                var psi = new ProcessStartInfo(_ffmpeg)
-                {
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true
-                };
+                if (!IsCurrent(run)) break;
 
-                AddInput(psi, startSeconds);
-                psi.ArgumentList.Add("-i");
-                psi.ArgumentList.Add(_path);
-                psi.ArgumentList.Add("-vn");
-                psi.ArgumentList.Add("-sn");
-                psi.ArgumentList.Add("-dn");
+                _resume.Wait();
+                if (_stop || !IsCurrent(run)) break;
 
-                string tempo = Atempo(_speed);
-                if (tempo != null)
-                {
-                    psi.ArgumentList.Add("-af");
-                    psi.ArgumentList.Add(tempo);
-                }
-
-                psi.ArgumentList.Add("-ac");
-                psi.ArgumentList.Add("2");
-                psi.ArgumentList.Add("-ar");
-                psi.ArgumentList.Add("48000");
-                psi.ArgumentList.Add("-f");
-                psi.ArgumentList.Add("s16le");
-                psi.ArgumentList.Add("pipe:1");
-
-                process = Process.Start(psi);
-                if (process == null)
-                {
-                    // P1-6：Process.Start 返回 null 属于异常情况（资源耗尽 / 拦截），不能静默跳过。
-                    Log.Warn("音频解码进程没有启动（Process.Start 返回 null），继续静音播放");
-                    RaiseAudioUnavailable("音频解码进程没有启动");
-                    return;
-                }
-
-                process.ErrorDataReceived += (s, e) =>
-                {
-                    if (e != null && !string.IsNullOrWhiteSpace(e.Data))
-                        Log.Warn("ffmpeg(音频): " + e.Data.Trim());
-                };
-                process.BeginErrorReadLine();
-
-                // 安装音频解码进程（代次校验，P2-18）
-                Process replacedProcess = null;
-                bool current;
+                Process process;
                 lock (_sync)
                 {
-                    current = run == _run;
-                    if (current)
-                    {
-                        replacedProcess = _audioProcess;
-                        _audioProcess = process;
-                    }
+                    if (run != _run) break;
+                    process = _process;
+                }
+                if (process is null) break;
+
+                Stream stream = process.StandardOutput.BaseStream;
+                bool frameRead;
+                try
+                {
+                    frameRead = ReadFull(stream, buffer);
+                }
+                catch (Exception)
+                {
+                    // 进程被 Stop 杀掉时管道会抛 / 返回 0：老代不算错误。
+                    if (!IsCurrent(run) || _stop) break;
+                    throw;
                 }
 
-                if (!current)
+                if (!frameRead)
                 {
-                    DisposeProcess(process);
-                    return;
-                }
-                DisposeProcess(replacedProcess);
+                    // 老代晚归：直接退出，不碰新代状态、不报假失败（P2-18）。
+                    if (!IsCurrent(run) || _stop) break;
 
-                player = new WaveOutPlayer { Volume = _volume };
-                if (!player.Start(process.StandardOutput.BaseStream))
-                {
-                    // P1-6：失败原因要能给到 UI（状态行如实标注「音频不可用」），只写日志还不够。
-                    Log.Warn("音频输出启动失败，继续静音播放: " + WaveOutPlayer.LastErrorName);
-                    RaiseAudioUnavailable(WaveOutPlayer.LastErrorName);
-                    try { player.Dispose(); } catch { }
-                    player = null;
-                    StopAudio(run);
-                    return;
-                }
-
-                // 安装播放器：启动期间可能又被重启 / 停止
-                WaveOutPlayer replacedAudio = null;
-                bool installed;
-                lock (_sync)
-                {
-                    installed = run == _run;
-                    if (installed)
+                    // 一帧都没解出来：可能是老版本 ffmpeg 不认 -readrate。
+                    // P1-6：真回退 —— 置 -re 标记并把速度固定成 1×（原生速率读包，
+                    // 倍速会让音画走叉），重开本代再验证一次。
+                    bool switched = false;
+                    if (framesSinceLaunch == 0)
                     {
-                        replacedAudio = _audio;
-                        _audio = player;
-                    }
-                }
-
-                if (!installed)
-                {
-                    // 这一代已被作废：刚起来的播放器自己收掉，不污染当前状态。
-                    try { player.Stop(); } catch { }
-                    try { player.Dispose(); } catch { }
-                    DisposeProcess(process);
-                    return;
-                }
-
-                DisposeAudio(replacedAudio);
-                Log.Info("音频输出已启动（48 kHz 立体声，音量 " + _volume + "%）");
-            }
-            catch (Exception ex)
-            {
-                Log.Warn("启动音频解码失败: " + ex.Message);
-                RaiseAudioUnavailable("音频解码失败：" + ex.Message);
-                DisposeProcess(process);
-                DisposeAudio(player);
-                StopAudio(run);
-            }
-        }
-
-        void AddInput(ProcessStartInfo psi, double startSeconds)
-        {
-            psi.ArgumentList.Add("-hide_banner");
-            psi.ArgumentList.Add("-loglevel");
-            psi.ArgumentList.Add("error");
-            psi.ArgumentList.Add("-nostdin");
-
-            if (startSeconds > 0.01)
-            {
-                psi.ArgumentList.Add("-ss");
-                psi.ArgumentList.Add(startSeconds.ToString("0.###", CultureInfo.InvariantCulture));
-            }
-        }
-
-        /// <summary>把倍速拆成 atempo 链（单次 atempo 只支持 0.5–2.0）。</summary>
-        static string Atempo(double speed)
-        {
-            if (Math.Abs(speed - 1) < 0.001) return null;
-
-            var parts = new System.Collections.Generic.List<string>();
-            double value = speed;
-
-            while (value > 2.0001)
-            {
-                parts.Add("atempo=2.0");
-                value /= 2.0;
-            }
-            while (value < 0.4999)
-            {
-                parts.Add("atempo=0.5");
-                value /= 0.5;
-            }
-
-            parts.Add("atempo=" + value.ToString("0.###", CultureInfo.InvariantCulture));
-            return string.Join(",", parts);
-        }
-
-        static double ClampSpeed(double speed)
-        {
-            if (double.IsNaN(speed) || double.IsInfinity(speed) || speed <= 0) return 1;
-            return Math.Max(0.25, Math.Min(4.0, speed));
-        }
-
-        // ==================== 读帧 ====================
-
-        void ReadLoop(int run)
-        {
-            try
-            {
-                // 尺寸在开播时固定；之后即使 UI 换了文件也不能用新的 _width/_height 去解释
-                // 这一代的 buffer（否则会越界 / 抛异常）。
-                int width = _width;
-                int height = _height;
-                int size = width * height * 4;
-                var buffer = new byte[size];
-                long framesSinceLaunch = 0;
-
-                while (!_stop)
-                {
-                    if (!IsCurrent(run)) break;
-
-                    _resume.Wait();
-                    if (_stop || !IsCurrent(run)) break;
-
-                    Process process;
-                    lock (_sync)
-                    {
-                        if (run != _run) break;
-                        process = _process;
-                    }
-                    if (process == null) break;
-
-                    Stream stream = process.StandardOutput.BaseStream;
-                    bool frameRead;
-                    try
-                    {
-                        frameRead = ReadFull(stream, buffer);
-                    }
-                    catch (Exception)
-                    {
-                        // 进程被 Stop 杀掉时管道会抛 / 返回 0：老代不算错误。
-                        if (!IsCurrent(run) || _stop) break;
-                        throw;
-                    }
-
-                    if (!frameRead)
-                    {
-                        // 老代晚归：直接退出，不碰新代状态、不报假失败（P2-18）。
-                        if (!IsCurrent(run) || _stop) break;
-
-                        // 一帧都没解出来：可能是老版本 ffmpeg 不认 -readrate。
-                        // P1-6：真回退 —— 置 -re 标记并把速度固定成 1×（原生速率读包，
-                        // 倍速会让音画走叉），重开本代再验证一次。
-                        bool switched = false;
-                        if (framesSinceLaunch == 0)
+                        lock (_sync)
                         {
-                            lock (_sync)
+                            if (run != _run) break;
+                            if (!_useRe)
                             {
-                                if (run != _run) break;
-                                if (!_useRe)
-                                {
-                                    _useRe = true;
-                                    _speed = 1;
-                                    switched = true;
-                                }
-                            }
-                            if (switched)
-                            {
-                                Log.Warn("ffmpeg 不支持 -readrate（0 帧输出），已改用 -re 回退，以 1× 播放  "
-                                         + DescribeLaunch());
-                                LoopRestart(run, 0);
-                                continue;
+                                _useRe = true;
+                                _speed = 1;
+                                switched = true;
                             }
                         }
-
-                        // 一帧都没解出来 = 文件打不开 / 格式不支持，再重开也是死循环。
-                        if (framesSinceLaunch == 0)
+                        if (switched)
                         {
-                            if (IsCurrent(run)) RaiseFailed("ffmpeg 没有解出画面");
-                            break;
-                        }
-
-                        if (_loop)
-                        {
+                            Log.Warn($"ffmpeg 不支持 -readrate（0 帧输出），已改用 -re 回退，以 1× 播放  {DescribeLaunch()}");
                             LoopRestart(run, 0);
-                            framesSinceLaunch = 0;
                             continue;
                         }
+                    }
 
-                        if (IsCurrent(run))
-                        {
-                            Action completed = Completed;
-                            if (completed != null)
-                            {
-                                try { completed(); } catch { }
-                            }
-                        }
+                    // 一帧都没解出来 = 文件打不开 / 格式不支持，再重开也是死循环。
+                    if (framesSinceLaunch == 0)
+                    {
+                        if (IsCurrent(run)) RaiseFailed("ffmpeg 没有解出画面");
                         break;
                     }
 
-                    framesSinceLaunch++;
-
-                    var frame = BitmapSource.Create(width, height, 96, 96,
-                        PixelFormats.Bgra32, null, buffer, width * 4);
-                    frame.Freeze();
-
-                    // 出帧期间可能已被重启：老代的帧直接丢掉，不写进当前代的计数 / 画面。
-                    if (!IsCurrent(run)) break;
-
-                    Interlocked.Increment(ref _frames);
-
-                    Action<BitmapSource> handler = FrameReady;
-                    if (handler != null)
+                    if (_loop)
                     {
-                        try { handler(frame); }
-                        catch (Exception ex) { Log.Warn("显示视频帧失败: " + ex.Message); }
+                        LoopRestart(run, 0);
+                        framesSinceLaunch = 0;
+                        continue;
                     }
 
-                    if (_startPaused)
+                    if (IsCurrent(run))
                     {
-                        bool current;
-                        lock (_sync)
+                        Action completed = Completed;
+                        if (completed is not null)
                         {
-                            current = run == _run;
-                            if (current) _startPaused = false;
+                            try { completed(); } catch { }
                         }
-                        if (!current) break;
-                        _resume.Reset();
-                        PauseAudio();
                     }
+                    break;
                 }
-            }
-            catch (Exception ex)
-            {
-                // 只有当前代才汇报失败；老代晚归的异常静默丢弃（P2-18：不再报假失败）。
-                if (IsCurrent(run) && !_stop)
+
+                framesSinceLaunch++;
+
+                var frame = BitmapSource.Create(width, height, 96, 96,
+                    PixelFormats.Bgra32, null, buffer, width * 4);
+                frame.Freeze();
+
+                // 出帧期间可能已被重启：老代的帧直接丢掉，不写进当前代的计数 / 画面。
+                if (!IsCurrent(run)) break;
+
+                Interlocked.Increment(ref _frames);
+
+                Action<BitmapSource> handler = FrameReady;
+                if (handler is not null)
                 {
-                    Log.Warn("ffmpeg 解码线程结束: " + ex.Message);
-                    RaiseFailed(ex.Message);
+                    try { handler(frame); }
+                    catch (Exception ex) { Log.Warn($"显示视频帧失败: {ex.Message}"); }
                 }
-            }
-        }
 
-        static bool ReadFull(Stream stream, byte[] buffer)
-        {
-            int read = 0;
-            while (read < buffer.Length)
-            {
-                int n = stream.Read(buffer, read, buffer.Length - read);
-                if (n <= 0) return false;
-                read += n;
-            }
-            return true;
-        }
-
-        /// <summary>
-        /// 读线程内部的重开：不 join 自己，只换进程（同一代内）。
-        /// 每一步都做代次校验：如果 UI 在重开过程中又 Seek / Stop 了（代次变了），
-        /// 这里就必须立刻收手，不能 Kill 掉新一代刚起的进程（P2-18）。
-        /// </summary>
-        void LoopRestart(int run, double seconds)
-        {
-            if (!IsCurrent(run)) return;
-
-            double startAt = Math.Max(0, seconds);
-            lock (_sync)
-            {
-                if (run != _run) return;
-                _startSeconds = startAt;
-                _frames = 0;
-            }
-
-            StopAudio(run);
-            KillProcess(run);
-
-            if (!IsCurrent(run)) return;   // 换进程期间可能已被 UI 重启 / 停止
-
-            try
-            {
-                LaunchVideo(run, startAt);
-                LaunchAudio(run, startAt);
-            }
-            catch (Exception ex)
-            {
-                if (IsCurrent(run))
+                if (_startPaused)
                 {
-                    Log.Warn("ffmpeg 重新打开失败: " + ex.Message);
-                    RaiseFailed(ex.Message);
+                    bool current;
+                    lock (_sync)
+                    {
+                        current = run == _run;
+                        if (current) _startPaused = false;
+                    }
+                    if (!current) break;
+                    _resume.Reset();
+                    PauseAudio();
                 }
             }
         }
-
-        /// <summary>从指定秒数重新开始（快进 / 快退 / 变速用）。</summary>
-        void RestartAt(double seconds)
+        catch (Exception ex)
         {
-            bool paused = IsPaused;
-            double startAt = Math.Max(0, seconds);
-
-            StopInternal();
-
-            int run = BeginRun(startAt, paused);
-            _stop = false;
-            _resume.Set();
-
-            try
+            // 只有当前代才汇报失败；老代晚归的异常静默丢弃（P2-18：不再报假失败）。
+            if (IsCurrent(run) && !_stop)
             {
-                LaunchAll(run, startAt);
-            }
-            catch (Exception ex)
-            {
-                if (IsCurrent(run))
-                {
-                    Log.Warn("ffmpeg 重新打开失败: " + ex.Message);
-                    RaiseFailed(ex.Message);
-                }
-                return;
-            }
-
-            StartReader(run);
-        }
-
-        // ==================== 控制 ====================
-
-        public void Seek(double seconds)
-        {
-            if (_disposed || _stop) return;
-
-            double target = Math.Max(0, seconds);
-            if (_duration > 0.01) target = Math.Min(_duration - 0.05, target);
-            RestartAt(target);
-        }
-
-        /// <summary>相对当前位置快进 / 快退（负数后退）。</summary>
-        public void SeekBy(double seconds)
-        {
-            if (_disposed || _stop) return;
-            Seek(Position + seconds);
-        }
-
-        public void SetSpeed(double speed)
-        {
-            if (_disposed || _stop) return;
-
-            double next = ClampSpeed(speed);
-            if (Math.Abs(next - _speed) < 0.001) return;
-
-            // P1-6：-re 回退模式下 ffmpeg 以原生速率读包，没有倍速语义；
-            // 强行变速会让视频原速、音频 atempo 各走各的，所以保持 1×。
-            if (_useRe && Math.Abs(next - 1) > 0.001)
-            {
-                Log.Info("-re 回退模式不支持倍速，保持 1× 播放");
-                return;
-            }
-
-            double position = Position;
-            _speed = next;
-            Log.Info("ffmpeg 播放速度：" + next.ToString("0.##") + "×");
-            RestartAt(position);
-        }
-
-        /// <summary>运行期切换静音：停掉音频进程 / 播放器，恢复时从当前位置重新拉起一条。</summary>
-        public void SetMuted(bool muted)
-        {
-            if (_disposed || _stop) return;
-
-            if (muted)
-            {
-                if (!_audioEnabled && _audio == null && _audioProcess == null) return;
-                _audioEnabled = false;
-                StopAudio();
-                Log.Info("ffmpeg 已静音（音频进程已停止）");
-                return;
-            }
-
-            if (_audioEnabled && _audio != null) return;
-            _audioEnabled = true;
-
-            int run = Volatile.Read(ref _run);
-            if (run <= 0) return;
-
-            // 从当前播放位置重新起一条音频；视频进程不动，音画仍然按同一时间轴对齐。
-            LaunchAudio(run, Position);
-            Log.Info("ffmpeg 已取消静音（从当前进度重启音频输出）");
-        }
-
-        /// <summary>运行期切换循环。只影响之后读到 EOF 的行为，不重启视频。</summary>
-        public void SetLoop(bool loop)
-        {
-            _loop = loop;
-        }
-
-        public void Pause()
-        {
-            _resume.Reset();
-            PauseAudio();
-        }
-
-        public void Resume()
-        {
-            if (_disposed || _stop) return;
-            _resume.Set();
-            ResumeAudio();
-        }
-
-        void PauseAudio()
-        {
-            try { if (_audio != null) _audio.Pause(); } catch { }
-        }
-
-        void ResumeAudio()
-        {
-            try { if (_audio != null) _audio.Resume(); } catch { }
-        }
-
-        /// <summary>管理路径（StopInternal / Dispose）用：无条件收掉当前音频进程与播放器。</summary>
-        void StopAudio()
-        {
-            Process process;
-            WaveOutPlayer audio;
-            lock (_sync)
-            {
-                process = _audioProcess;
-                _audioProcess = null;
-                audio = _audio;
-                _audio = null;
-            }
-
-            DisposeProcess(process);
-            DisposeAudio(audio);
-        }
-
-        /// <summary>只有仍是当前代时才收音频；旧代晚归不能停掉新一代的声音（P2-18）。</summary>
-        void StopAudio(int run)
-        {
-            Process process;
-            WaveOutPlayer audio;
-            lock (_sync)
-            {
-                if (run != _run) return;
-                process = _audioProcess;
-                _audioProcess = null;
-                audio = _audio;
-                _audio = null;
-            }
-
-            DisposeProcess(process);
-            DisposeAudio(audio);
-        }
-
-        /// <summary>管理路径用：无条件杀掉当前视频解码进程。</summary>
-        void KillProcess()
-        {
-            Process process;
-            lock (_sync)
-            {
-                process = _process;
-                _process = null;
-            }
-            DisposeProcess(process);
-        }
-
-        /// <summary>只有仍是当前代时才杀视频解码进程，旧代晚归不会误杀新进程（P2-18）。</summary>
-        void KillProcess(int run)
-        {
-            Process process;
-            lock (_sync)
-            {
-                if (run != _run) return;
-                process = _process;
-                _process = null;
-            }
-            DisposeProcess(process);
-        }
-
-        static void DisposeProcess(Process process)
-        {
-            if (process == null) return;
-            try { if (!process.HasExited) process.Kill(); } catch { }
-            try { process.Dispose(); } catch { }
-        }
-
-        static void DisposeAudio(WaveOutPlayer audio)
-        {
-            if (audio == null) return;
-            // 审阅 §20：Dispose 内部已经会 Stop()（Join 已改成后台有界等待），
-            // 原来 Stop + Dispose 会把同一个音频线程 Join 两遍，这里只留一次。
-            try { audio.Dispose(); } catch { }
-        }
-
-        void RaiseFailed(string message)
-        {
-            // 审阅 §7.2：只报「没有解出画面」不够排障，必须带上实际 argv 与进程退出码。
-            Log.Warn("ffmpeg 失败: " + message + "  " + DescribeLaunch());
-
-            Action<string> handler = Failed;
-            if (handler != null)
-            {
-                try { handler(message); } catch { }
+                Log.Warn($"ffmpeg 解码线程结束: {ex.Message}");
+                RaiseFailed(ex.Message);
             }
         }
+    }
 
-        /// <summary>给日志用的 argv 摘要：参数本身不含密钥，仍截断到 400 字避免刷屏。</summary>
-        static string DescribeArguments(ProcessStartInfo psi)
+    static bool ReadFull(Stream stream, byte[] buffer)
+    {
+        int read = 0;
+        while (read < buffer.Length)
         {
-            var sb = new System.Text.StringBuilder();
-            sb.Append(psi.FileName);
-            foreach (string arg in psi.ArgumentList)
-            {
-                sb.Append(' ');
-                if (arg.IndexOf(' ') >= 0 || arg.IndexOf('"') >= 0)
-                {
-                    sb.Append('"').Append(arg.Replace("\"", "\\\"")).Append('"');
-                }
-                else
-                {
-                    sb.Append(arg);
-                }
-            }
-            if (sb.Length > 400) return sb.ToString(0, 400) + "…";
-            return sb.ToString();
+            int n = stream.Read(buffer, read, buffer.Length - read);
+            if (n <= 0) return false;
+            read += n;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// 读线程内部的重开：不 join 自己，只换进程（同一代内）。
+    /// 每一步都做代次校验：如果 UI 在重开过程中又 Seek / Stop 了（代次变了），
+    /// 这里就必须立刻收手，不能 Kill 掉新一代刚起的进程（P2-18）。
+    /// </summary>
+    void LoopRestart(int run, double seconds)
+    {
+        if (!IsCurrent(run)) return;
+
+        double startAt = Math.Max(0, seconds);
+        lock (_sync)
+        {
+            if (run != _run) return;
+            _startSeconds = startAt;
+            _frames = 0;
         }
 
-        /// <summary>
-        /// 失败时补一行可行动诊断：最近一次启动的 argv + 当前进程退出码。
-        /// 进程可能已经被 Stop / Dispose 回收，读退出码失败属于良性竞态，如实标注即可。
-        /// </summary>
-        string DescribeLaunch()
-        {
-            string args = _lastVideoArgs;
-            Process process;
-            lock (_sync) { process = _process; }
+        StopAudio(run);
+        KillProcess(run);
 
-            string state;
-            if (process == null)
+        if (!IsCurrent(run)) return;   // 换进程期间可能已被 UI 重启 / 停止
+
+        try
+        {
+            LaunchVideo(run, startAt);
+            LaunchAudio(run, startAt);
+        }
+        catch (Exception ex)
+        {
+            if (IsCurrent(run))
             {
-                state = "进程=null";
+                Log.Warn($"ffmpeg 重新打开失败: {ex.Message}");
+                RaiseFailed(ex.Message);
+            }
+        }
+    }
+
+    /// <summary>从指定秒数重新开始（快进 / 快退 / 变速用）。</summary>
+    void RestartAt(double seconds)
+    {
+        bool paused = IsPaused;
+        double startAt = Math.Max(0, seconds);
+
+        StopInternal();
+
+        int run = BeginRun(startAt, paused);
+        _stop = false;
+        _resume.Set();
+
+        try
+        {
+            LaunchAll(run, startAt);
+        }
+        catch (Exception ex)
+        {
+            if (IsCurrent(run))
+            {
+                Log.Warn($"ffmpeg 重新打开失败: {ex.Message}");
+                RaiseFailed(ex.Message);
+            }
+            return;
+        }
+
+        StartReader(run);
+    }
+
+    // ==================== 控制 ====================
+
+    public void Seek(double seconds)
+    {
+        if (_disposed || _stop) return;
+
+        double target = Math.Max(0, seconds);
+        if (_duration > 0.01) target = Math.Min(_duration - 0.05, target);
+        RestartAt(target);
+    }
+
+    /// <summary>相对当前位置快进 / 快退（负数后退）。</summary>
+    public void SeekBy(double seconds)
+    {
+        if (_disposed || _stop) return;
+        Seek(Position + seconds);
+    }
+
+    public void SetSpeed(double speed)
+    {
+        if (_disposed || _stop) return;
+
+        double next = ClampSpeed(speed);
+        if (Math.Abs(next - _speed) < 0.001) return;
+
+        // P1-6：-re 回退模式下 ffmpeg 以原生速率读包，没有倍速语义；
+        // 强行变速会让视频原速、音频 atempo 各走各的，所以保持 1×。
+        if (_useRe && Math.Abs(next - 1) > 0.001)
+        {
+            Log.Info("-re 回退模式不支持倍速，保持 1× 播放");
+            return;
+        }
+
+        double position = Position;
+        _speed = next;
+        Log.Info($"ffmpeg 播放速度：{next:0.##}×");
+        RestartAt(position);
+    }
+
+    /// <summary>运行期切换静音：停掉音频进程 / 播放器，恢复时从当前位置重新拉起一条。</summary>
+    public void SetMuted(bool muted)
+    {
+        if (_disposed || _stop) return;
+
+        if (muted)
+        {
+            if (!_audioEnabled && _audio is null && _audioProcess is null) return;
+            _audioEnabled = false;
+            StopAudio();
+            Log.Info("ffmpeg 已静音（音频进程已停止）");
+            return;
+        }
+
+        if (_audioEnabled && _audio is not null) return;
+        _audioEnabled = true;
+
+        int run = Volatile.Read(ref _run);
+        if (run <= 0) return;
+
+        // 从当前播放位置重新起一条音频；视频进程不动，音画仍然按同一时间轴对齐。
+        LaunchAudio(run, Position);
+        Log.Info("ffmpeg 已取消静音（从当前进度重启音频输出）");
+    }
+
+    /// <summary>运行期切换循环。只影响之后读到 EOF 的行为，不重启视频。</summary>
+    public void SetLoop(bool loop) => _loop = loop;
+
+    public void Pause()
+    {
+        _resume.Reset();
+        PauseAudio();
+    }
+
+    public void Resume()
+    {
+        if (_disposed || _stop) return;
+        _resume.Set();
+        ResumeAudio();
+    }
+
+    void PauseAudio()
+    {
+        try { if (_audio is not null) _audio.Pause(); } catch { }
+    }
+
+    void ResumeAudio()
+    {
+        try { if (_audio is not null) _audio.Resume(); } catch { }
+    }
+
+    /// <summary>管理路径（StopInternal / Dispose）用：无条件收掉当前音频进程与播放器。</summary>
+    void StopAudio()
+    {
+        Process process;
+        WaveOutPlayer audio;
+        lock (_sync)
+        {
+            process = _audioProcess;
+            _audioProcess = null;
+            audio = _audio;
+            _audio = null;
+        }
+
+        DisposeProcess(process);
+        DisposeAudio(audio);
+    }
+
+    /// <summary>只有仍是当前代时才收音频；旧代晚归不能停掉新一代的声音（P2-18）。</summary>
+    void StopAudio(int run)
+    {
+        Process process;
+        WaveOutPlayer audio;
+        lock (_sync)
+        {
+            if (run != _run) return;
+            process = _audioProcess;
+            _audioProcess = null;
+            audio = _audio;
+            _audio = null;
+        }
+
+        DisposeProcess(process);
+        DisposeAudio(audio);
+    }
+
+    /// <summary>管理路径用：无条件杀掉当前视频解码进程。</summary>
+    void KillProcess()
+    {
+        Process process;
+        lock (_sync)
+        {
+            process = _process;
+            _process = null;
+        }
+        DisposeProcess(process);
+    }
+
+    /// <summary>只有仍是当前代时才杀视频解码进程，旧代晚归不会误杀新进程（P2-18）。</summary>
+    void KillProcess(int run)
+    {
+        Process process;
+        lock (_sync)
+        {
+            if (run != _run) return;
+            process = _process;
+            _process = null;
+        }
+        DisposeProcess(process);
+    }
+
+    static void DisposeProcess(Process process)
+    {
+        if (process is null) return;
+        try { if (!process.HasExited) process.Kill(); } catch { }
+        try { process.Dispose(); } catch { }
+    }
+
+    static void DisposeAudio(WaveOutPlayer audio)
+    {
+        if (audio is null) return;
+        // 审阅 §20：Dispose 内部已经会 Stop()（Join 已改成后台有界等待），
+        // 原来 Stop + Dispose 会把同一个音频线程 Join 两遍，这里只留一次。
+        try { audio.Dispose(); } catch { }
+    }
+
+    void RaiseFailed(string message)
+    {
+        // 审阅 §7.2：只报「没有解出画面」不够排障，必须带上实际 argv 与进程退出码。
+        Log.Warn($"ffmpeg 失败: {message}  {DescribeLaunch()}");
+
+        Action<string> handler = Failed;
+        if (handler is not null)
+        {
+            try { handler(message); } catch { }
+        }
+    }
+
+    /// <summary>给日志用的 argv 摘要：参数本身不含密钥，仍截断到 400 字避免刷屏。</summary>
+    static string DescribeArguments(ProcessStartInfo psi)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.Append(psi.FileName);
+        foreach (string arg in psi.ArgumentList)
+        {
+            sb.Append(' ');
+            if (arg.IndexOf(' ') >= 0 || arg.IndexOf('"') >= 0)
+            {
+                sb.Append('"').Append(arg.Replace("\"", "\\\"")).Append('"');
             }
             else
             {
+                sb.Append(arg);
+            }
+        }
+        if (sb.Length > 400) return $"{sb.ToString(0, 400)}…";
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// 失败时补一行可行动诊断：最近一次启动的 argv + 当前进程退出码。
+    /// 进程可能已经被 Stop / Dispose 回收，读退出码失败属于良性竞态，如实标注即可。
+    /// </summary>
+    string DescribeLaunch()
+    {
+        string args = _lastVideoArgs;
+        Process process;
+        lock (_sync) { process = _process; }
+
+        string state;
+        if (process is null)
+        {
+            state = "进程=null";
+        }
+        else
+        {
+            try
+            {
+                state = process.HasExited ? $"退出码={process.ExitCode}" : "进程仍在运行";
+            }
+            catch (Exception ex)
+            {
+                // 句柄已被 Dispose / 回收：拿不到退出码，但失败本身仍要报。
+                state = $"退出码不可读({ex.GetType().Name})";
+            }
+        }
+
+        return $"argv={(string.IsNullOrEmpty(args) ? "(未记录)" : args)}  {state}";
+    }
+
+    /// <summary>P1-6：音频不可用的通知；处理器异常不影响播放线程。</summary>
+    void RaiseAudioUnavailable(string message)
+    {
+        Action<string> handler = AudioUnavailable;
+        if (handler is not null)
+        {
+            try { handler(message); } catch { }
+        }
+    }
+
+    // ==================== 探测 ====================
+
+    /// <summary>探测整体超时（从进程启动算起，到点 Kill(true)）。</summary>
+    const int ProbeTimeoutMs = 4000;
+
+    /// <summary>
+    /// 异步探测。stdout / stderr 由 AsyncProcess 并行异步读，整体超时后 Kill(true)，
+    /// 所以即使 ffmpeg 卡死（离线网络盘、损坏容器、杀软拦截）也会在 timeoutMs 内返回。
+    /// </summary>
+    public static async Task<VideoInfo> ProbeAsync(string ffmpeg, string path,
+                                                  int timeoutMs = ProbeTimeoutMs)
+    {
+        var info = new VideoInfo { Fps = 25, Width = 0, Height = 0, Duration = 0 };
+
+        try
+        {
+            AsyncProcess.Result result = await AsyncProcess.RunAsync(
+                ffmpeg, new[] { "-hide_banner", "-i", path }, timeoutMs).ConfigureAwait(false);
+
+            if (!result.Started)
+            {
+                Log.Warn($"ffmpeg 探测失败: 无法启动 {ffmpeg}");
+                return info;
+            }
+
+            if (result.TimedOut)
+                Log.Warn($"ffmpeg 探测超时（{timeoutMs}ms），已结束进程：{path}");
+
+            string error = result.StdErr;
+            string output = result.StdOutText;
+            info = Parse(error.Length > 0 ? error : output);
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"ffmpeg 探测失败: {ex.Message}");
+        }
+
+        return info;
+    }
+
+    static readonly Regex DurationRegex = new(@"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)",
+        RegexOptions.CultureInvariant);
+
+    static readonly Regex SizeRegex = new(@"(\d{2,5})x(\d{2,5})",
+        RegexOptions.CultureInvariant);
+
+    static readonly Regex FpsRegex = new(@"(\d+(?:\.\d+)?)\s*fps",
+        RegexOptions.CultureInvariant);
+
+    static VideoInfo Parse(string text)
+    {
+        var info = new VideoInfo { Fps = 25 };
+
+        if (string.IsNullOrEmpty(text)) return info;
+
+        Match duration = DurationRegex.Match(text);
+        if (duration.Success)
+        {
+            double hours = double.Parse(duration.Groups[1].Value, CultureInfo.InvariantCulture);
+            double minutes = double.Parse(duration.Groups[2].Value, CultureInfo.InvariantCulture);
+            double seconds = double.Parse(duration.Groups[3].Value, CultureInfo.InvariantCulture);
+            info.Duration = hours * 3600 + minutes * 60 + seconds;
+        }
+
+        foreach (string line in text.Split('\n'))
+        {
+            if (line.IndexOf("Video:", StringComparison.OrdinalIgnoreCase) < 0) continue;
+
+            Match size = SizeRegex.Match(line);
+            if (size.Success && info.Width == 0)
+            {
+                info.Width = int.Parse(size.Groups[1].Value, CultureInfo.InvariantCulture);
+                info.Height = int.Parse(size.Groups[2].Value, CultureInfo.InvariantCulture);
+            }
+
+            Match fps = FpsRegex.Match(line);
+            if (fps.Success)
+            {
+                if (double.TryParse(fps.Groups[1].Value, NumberStyles.Float,
+                                    CultureInfo.InvariantCulture, out double value) &&
+                    value >= 1 && value <= 121)
+                    info.Fps = value;
+            }
+
+            if (info.Width > 0) break;
+        }
+
+        return info;
+    }
+
+    /// <summary>解图整体超时（从进程启动算起，到点 Kill(true)）。</summary>
+    const int ExtractTimeoutMs = 6000;
+
+    /// <summary>
+    /// 用 ffmpeg 把一个「WPF 解不开」的图片（webp / avif / heic …）转成一张位图。
+    /// 失败返回 null，调用方照常显示「无法解码」。
+    ///
+    /// 同步版本只为保持旧签名存在：**只允许在后台线程调用**（如离屏截图）。
+    /// UI 线程请用 <see cref="ExtractImageAsync"/>（P1-8）。
+    /// </summary>
+    public static BitmapSource ExtractImage(string ffmpeg, string path, double seconds = 0) => ExtractImageAsync(ffmpeg, path, seconds).GetAwaiter().GetResult();
+
+    /// <summary>
+    /// 异步解图：PNG 数据走 stdout，错误走 stderr，两边并行异步读（不互相卡）；
+    /// 整体超时后 Kill(true)。返回值已 Freeze，可以安全地从后台线程交给 UI。
+    /// </summary>
+    public static async Task<BitmapSource> ExtractImageAsync(string ffmpeg, string path,
+                                                            double seconds = 0,
+                                                            int timeoutMs = ExtractTimeoutMs)
+    {
+        try
+        {
+            var args = new List<string> { "-hide_banner", "-loglevel", "error" };
+            if (seconds > 0.01)
+            {
+                args.Add("-ss");
+                args.Add(seconds.ToString("0.###", CultureInfo.InvariantCulture));
+            }
+            args.Add("-i");
+            args.Add(path);
+            args.Add("-frames:v");
+            args.Add("1");
+            args.Add("-f");
+            args.Add("image2pipe");
+            args.Add("-vcodec");
+            args.Add("png");
+            args.Add("pipe:1");
+
+            AsyncProcess.Result result =
+                await AsyncProcess.RunAsync(ffmpeg, args, timeoutMs).ConfigureAwait(false);
+
+            if (result.TimedOut)
+                Log.Warn($"ffmpeg 解图超时（{timeoutMs}ms），已结束进程：{path}");
+            if (result.StdOut is null || result.StdOut.Length == 0) return null;
+
+            return DecodeImageBytes(result.StdOut);
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"ffmpeg 解图失败: {ex.Message}");
+            return null;
+        }
+    }
+
+    static BitmapSource DecodeImageBytes(byte[] data)
+    {
+        using (var memory = new MemoryStream(data))
+        {
+            // ONLOAD + Freeze：解码器把像素读进内存，之后流可以关；
+            // Freeze 之后位图不再有线程亲和性，可以从后台线程交给 UI 线程。
+            var image = new BitmapImage();
+            image.BeginInit();
+            image.CacheOption = BitmapCacheOption.OnLoad;
+            image.StreamSource = memory;
+            image.EndInit();
+            image.Freeze();
+            return image;
+        }
+    }
+
+    // ==================== 释放 ====================
+
+    void StopInternal()
+    {
+        _stop = true;
+        _resume.Set();
+
+        // 作废当前代：之后旧读线程无论从 ReadFull / FrameReady / LoopRestart 哪一步回来，
+        // 都会发现代次不符并立即退出，既不会 Kill 新进程，也不会对新一代报假失败（P2-18）。
+        lock (_sync) { _run++; }
+
+        StopAudio();
+        KillProcess();
+
+        Thread reader = _reader;
+        _reader = null;
+
+        // 审阅 §20：这里原来是 reader.Join(1500)，而 ReleaseVideo 经常在 UI 线程上调用
+        // （换文件 / 删卡 / 改解码器），最坏要冻 UI 1.5s。signal + Kill 已经让老读线程
+        // 立即失效（代次校验会丢掉它晚归的帧 / 失败），Join 只是收尾确认，交给后台有界等待。
+        DetachJoin(reader);
+    }
+
+    /// <summary>把读线程的 Join 交给后台（最多等 2s，只写日志），调用线程不阻塞。</summary>
+    static void DetachJoin(Thread thread)
+    {
+        if (thread is null) return;
+
+        try
+        {
+            // 绝大多数情况进程刚被杀，读线程已经退出；先做一次零等待，避免无谓地开后台任务。
+            if (thread.Join(0)) return;
+
+            Task.Run(() =>
+            {
                 try
                 {
-                    state = process.HasExited ? "退出码=" + process.ExitCode : "进程仍在运行";
+                    if (!thread.Join(2000))
+                        Log.Warn("ffmpeg 读线程 2s 内未退出（已脱离，不阻塞 UI）");
                 }
-                catch (Exception ex)
-                {
-                    // 句柄已被 Dispose / 回收：拿不到退出码，但失败本身仍要报。
-                    state = "退出码不可读(" + ex.GetType().Name + ")";
-                }
-            }
-
-            return "argv=" + (string.IsNullOrEmpty(args) ? "(未记录)" : args) + "  " + state;
+                catch { }
+            });
         }
+        catch { }
+    }
 
-        /// <summary>P1-6：音频不可用的通知；处理器异常不影响播放线程。</summary>
-        void RaiseAudioUnavailable(string message)
-        {
-            Action<string> handler = AudioUnavailable;
-            if (handler != null)
-            {
-                try { handler(message); } catch { }
-            }
-        }
-
-        // ==================== 探测 ====================
-
-        /// <summary>探测整体超时（从进程启动算起，到点 Kill(true)）。</summary>
-        const int ProbeTimeoutMs = 4000;
-
-        /// <summary>
-        /// 异步探测。stdout / stderr 由 AsyncProcess 并行异步读，整体超时后 Kill(true)，
-        /// 所以即使 ffmpeg 卡死（离线网络盘、损坏容器、杀软拦截）也会在 timeoutMs 内返回。
-        /// </summary>
-        public static async Task<VideoInfo> ProbeAsync(string ffmpeg, string path,
-                                                      int timeoutMs = ProbeTimeoutMs)
-        {
-            var info = new VideoInfo { Fps = 25, Width = 0, Height = 0, Duration = 0 };
-
-            try
-            {
-                AsyncProcess.Result result = await AsyncProcess.RunAsync(
-                    ffmpeg, new[] { "-hide_banner", "-i", path }, timeoutMs).ConfigureAwait(false);
-
-                if (!result.Started)
-                {
-                    Log.Warn("ffmpeg 探测失败: 无法启动 " + ffmpeg);
-                    return info;
-                }
-
-                if (result.TimedOut)
-                    Log.Warn("ffmpeg 探测超时（" + timeoutMs + "ms），已结束进程：" + path);
-
-                string error = result.StdErr;
-                string output = result.StdOutText;
-                info = Parse(error.Length > 0 ? error : output);
-            }
-            catch (Exception ex)
-            {
-                Log.Warn("ffmpeg 探测失败: " + ex.Message);
-            }
-
-            return info;
-        }
-
-        static readonly Regex DurationRegex = new Regex(@"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)",
-            RegexOptions.CultureInvariant);
-
-        static readonly Regex SizeRegex = new Regex(@"(\d{2,5})x(\d{2,5})",
-            RegexOptions.CultureInvariant);
-
-        static readonly Regex FpsRegex = new Regex(@"(\d+(?:\.\d+)?)\s*fps",
-            RegexOptions.CultureInvariant);
-
-        static VideoInfo Parse(string text)
-        {
-            var info = new VideoInfo { Fps = 25 };
-
-            if (string.IsNullOrEmpty(text)) return info;
-
-            Match duration = DurationRegex.Match(text);
-            if (duration.Success)
-            {
-                double hours = double.Parse(duration.Groups[1].Value, CultureInfo.InvariantCulture);
-                double minutes = double.Parse(duration.Groups[2].Value, CultureInfo.InvariantCulture);
-                double seconds = double.Parse(duration.Groups[3].Value, CultureInfo.InvariantCulture);
-                info.Duration = hours * 3600 + minutes * 60 + seconds;
-            }
-
-            foreach (string line in text.Split('\n'))
-            {
-                if (line.IndexOf("Video:", StringComparison.OrdinalIgnoreCase) < 0) continue;
-
-                Match size = SizeRegex.Match(line);
-                if (size.Success && info.Width == 0)
-                {
-                    info.Width = int.Parse(size.Groups[1].Value, CultureInfo.InvariantCulture);
-                    info.Height = int.Parse(size.Groups[2].Value, CultureInfo.InvariantCulture);
-                }
-
-                Match fps = FpsRegex.Match(line);
-                if (fps.Success)
-                {
-                    double value;
-                    if (double.TryParse(fps.Groups[1].Value, NumberStyles.Float,
-                                        CultureInfo.InvariantCulture, out value) &&
-                        value >= 1 && value <= 121)
-                        info.Fps = value;
-                }
-
-                if (info.Width > 0) break;
-            }
-
-            return info;
-        }
-
-        /// <summary>解图整体超时（从进程启动算起，到点 Kill(true)）。</summary>
-        const int ExtractTimeoutMs = 6000;
-
-        /// <summary>
-        /// 用 ffmpeg 把一个「WPF 解不开」的图片（webp / avif / heic …）转成一张位图。
-        /// 失败返回 null，调用方照常显示「无法解码」。
-        ///
-        /// 同步版本只为保持旧签名存在：**只允许在后台线程调用**（如离屏截图）。
-        /// UI 线程请用 <see cref="ExtractImageAsync"/>（P1-8）。
-        /// </summary>
-        public static BitmapSource ExtractImage(string ffmpeg, string path, double seconds = 0)
-        {
-            return ExtractImageAsync(ffmpeg, path, seconds).GetAwaiter().GetResult();
-        }
-
-        /// <summary>
-        /// 异步解图：PNG 数据走 stdout，错误走 stderr，两边并行异步读（不互相卡）；
-        /// 整体超时后 Kill(true)。返回值已 Freeze，可以安全地从后台线程交给 UI。
-        /// </summary>
-        public static async Task<BitmapSource> ExtractImageAsync(string ffmpeg, string path,
-                                                                double seconds = 0,
-                                                                int timeoutMs = ExtractTimeoutMs)
-        {
-            try
-            {
-                var args = new List<string> { "-hide_banner", "-loglevel", "error" };
-                if (seconds > 0.01)
-                {
-                    args.Add("-ss");
-                    args.Add(seconds.ToString("0.###", CultureInfo.InvariantCulture));
-                }
-                args.Add("-i");
-                args.Add(path);
-                args.Add("-frames:v");
-                args.Add("1");
-                args.Add("-f");
-                args.Add("image2pipe");
-                args.Add("-vcodec");
-                args.Add("png");
-                args.Add("pipe:1");
-
-                AsyncProcess.Result result =
-                    await AsyncProcess.RunAsync(ffmpeg, args, timeoutMs).ConfigureAwait(false);
-
-                if (result.TimedOut)
-                    Log.Warn("ffmpeg 解图超时（" + timeoutMs + "ms），已结束进程：" + path);
-                if (result.StdOut == null || result.StdOut.Length == 0) return null;
-
-                return DecodeImageBytes(result.StdOut);
-            }
-            catch (Exception ex)
-            {
-                Log.Warn("ffmpeg 解图失败: " + ex.Message);
-                return null;
-            }
-        }
-
-        static BitmapSource DecodeImageBytes(byte[] data)
-        {
-            using (var memory = new MemoryStream(data))
-            {
-                // ONLOAD + Freeze：解码器把像素读进内存，之后流可以关；
-                // Freeze 之后位图不再有线程亲和性，可以从后台线程交给 UI 线程。
-                var image = new BitmapImage();
-                image.BeginInit();
-                image.CacheOption = BitmapCacheOption.OnLoad;
-                image.StreamSource = memory;
-                image.EndInit();
-                image.Freeze();
-                return image;
-            }
-        }
-
-        // ==================== 释放 ====================
-
-        void StopInternal()
-        {
-            _stop = true;
-            _resume.Set();
-
-            // 作废当前代：之后旧读线程无论从 ReadFull / FrameReady / LoopRestart 哪一步回来，
-            // 都会发现代次不符并立即退出，既不会 Kill 新进程，也不会对新一代报假失败（P2-18）。
-            lock (_sync) { _run++; }
-
-            StopAudio();
-            KillProcess();
-
-            Thread reader = _reader;
-            _reader = null;
-
-            // 审阅 §20：这里原来是 reader.Join(1500)，而 ReleaseVideo 经常在 UI 线程上调用
-            // （换文件 / 删卡 / 改解码器），最坏要冻 UI 1.5s。signal + Kill 已经让老读线程
-            // 立即失效（代次校验会丢掉它晚归的帧 / 失败），Join 只是收尾确认，交给后台有界等待。
-            DetachJoin(reader);
-        }
-
-        /// <summary>把读线程的 Join 交给后台（最多等 2s，只写日志），调用线程不阻塞。</summary>
-        static void DetachJoin(Thread thread)
-        {
-            if (thread == null) return;
-
-            try
-            {
-                // 绝大多数情况进程刚被杀，读线程已经退出；先做一次零等待，避免无谓地开后台任务。
-                if (thread.Join(0)) return;
-
-                Task.Run(() =>
-                {
-                    try
-                    {
-                        if (!thread.Join(2000))
-                            Log.Warn("ffmpeg 读线程 2s 内未退出（已脱离，不阻塞 UI）");
-                    }
-                    catch { }
-                });
-            }
-            catch { }
-        }
-
-        public void Dispose()
-        {
-            if (_disposed) return;
-            _disposed = true;
-            StopInternal();
-        }
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        StopInternal();
     }
 }

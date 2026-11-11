@@ -6,60 +6,50 @@ using System.Windows.Media;
 using MirrorpondHUD.Cards;
 using MirrorpondHUD.Core;
 
-namespace MirrorpondHUD.Ui
+namespace MirrorpondHUD.Ui;
+
+/// <summary>
+/// <see cref="ICardShellService"/> 的宿主实现：把已有的剪贴板 / 图标 / 拖出工具包一层，
+/// 插件只依赖 Contracts，不再直接引用宿主 Ui 命名空间。
+/// </summary>
+internal sealed class CardShellService : ICardShellService
 {
-    /// <summary>
-    /// <see cref="ICardShellService"/> 的宿主实现：把已有的剪贴板 / 图标 / 拖出工具包一层，
-    /// 插件只依赖 Contracts，不再直接引用宿主 Ui 命名空间。
-    /// </summary>
-    internal sealed class CardShellService : ICardShellService
+    public bool TryGetClipboardFiles(out string[] paths) => ClipboardService.TryGetFiles(out paths);
+
+    public bool TrySetClipboardText(string text) => ClipboardService.TrySetText(text);
+
+    public ImageSource GetFileIcon(string path, int size, bool extensionOnly) => ShellIcons.GetIcon(path, size, extensionOnly);
+
+    public DragDropEffects BeginDragFiles(FrameworkElement source, IList<string> paths, DragDropEffects allowed)
     {
-        public bool TryGetClipboardFiles(out string[] paths)
-        {
-            return ClipboardService.TryGetFiles(out paths);
-        }
+        if (source is null || paths is null || paths.Count == 0) return DragDropEffects.None;
+        return DragSource.BeginFiles(source, paths, allowed);
+    }
 
-        public bool TrySetClipboardText(string text)
+    public void OpenPath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return;
+        try
         {
-            return ClipboardService.TrySetText(text);
+            Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
         }
-
-        public ImageSource GetFileIcon(string path, int size, bool extensionOnly)
+        catch (Exception ex)
         {
-            return ShellIcons.GetIcon(path, size, extensionOnly);
+            Log.Warn($"打开路径失败: {ex.Message}");
         }
+    }
 
-        public DragDropEffects BeginDragFiles(FrameworkElement source, IList<string> paths, DragDropEffects allowed)
+    public void RevealPath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return;
+        try
         {
-            if (source == null || paths == null || paths.Count == 0) return DragDropEffects.None;
-            return DragSource.BeginFiles(source, paths, allowed);
+            if (System.IO.File.Exists(path) || System.IO.Directory.Exists(path))
+                Process.Start("explorer.exe", $"/select,\"{path}\"");
         }
-
-        public void OpenPath(string path)
+        catch (Exception ex)
         {
-            if (string.IsNullOrWhiteSpace(path)) return;
-            try
-            {
-                Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
-            }
-            catch (Exception ex)
-            {
-                Log.Warn("打开路径失败: " + ex.Message);
-            }
-        }
-
-        public void RevealPath(string path)
-        {
-            if (string.IsNullOrWhiteSpace(path)) return;
-            try
-            {
-                if (System.IO.File.Exists(path) || System.IO.Directory.Exists(path))
-                    Process.Start("explorer.exe", "/select,\"" + path + "\"");
-            }
-            catch (Exception ex)
-            {
-                Log.Warn("定位路径失败: " + ex.Message);
-            }
+            Log.Warn($"定位路径失败: {ex.Message}");
         }
     }
 }

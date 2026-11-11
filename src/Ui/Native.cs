@@ -2,146 +2,145 @@ using System;
 using System.Runtime.InteropServices;
 using System.Windows.Media;
 
-namespace MirrorpondHUD.Ui
+namespace MirrorpondHUD.Ui;
+
+internal static class Native
 {
-    internal static class Native
+    public const int GwlExStyle = -20;
+
+    public const int WsExTransparent = 0x00000020;
+    public const int WsExToolWindow = 0x00000080;
+    public const int WsExNoActivate = 0x08000000;
+    public const int WsExLayered = 0x00080000;
+
+    public static readonly IntPtr HwndTopmost = new(-1);
+
+    public const uint SwpNoMove = 0x0002;
+    public const uint SwpNoSize = 0x0001;
+    public const uint SwpNoZorder = 0x0004;
+    public const uint SwpNoActivate = 0x0010;
+    public const uint SwpNoOwnerZorder = 0x0200;
+    public const uint SwpFrameChanged = 0x0020;
+
+    [DllImport("user32.dll", SetLastError = true)]
+    static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
+
+    [DllImport("user32.dll", SetLastError = true, EntryPoint = "GetWindowLongPtrW")]
+    static extern IntPtr GetWindowLongPtr64(IntPtr hWnd, int nIndex);
+
+    [DllImport("user32.dll", SetLastError = true, EntryPoint = "SetWindowLongPtrW")]
+    static extern IntPtr SetWindowLongPtr64(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint flags);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    public static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+
+    [DllImport("user32.dll")]
+    static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool attach);
+
+    [DllImport("user32.dll")]
+    static extern IntPtr SetFocus(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    static extern IntPtr GetFocus();
+
+    [DllImport("kernel32.dll")]
+    static extern uint GetCurrentThreadId();
+
+    /// <summary>
+    /// 把窗口强行切到前台并拿到键盘焦点。热键触发的程序通常可以直接 SetForegroundWindow，
+    /// 失败时用 AttachThreadInput 挂到前台线程上再试一次。
+    /// </summary>
+    public static bool ForceForeground(IntPtr hwnd)
     {
-        public const int GwlExStyle = -20;
+        if (hwnd == IntPtr.Zero) return false;
 
-        public const int WsExTransparent = 0x00000020;
-        public const int WsExToolWindow = 0x00000080;
-        public const int WsExNoActivate = 0x08000000;
-        public const int WsExLayered = 0x00080000;
-
-        public static readonly IntPtr HwndTopmost = new IntPtr(-1);
-
-        public const uint SwpNoMove = 0x0002;
-        public const uint SwpNoSize = 0x0001;
-        public const uint SwpNoZorder = 0x0004;
-        public const uint SwpNoActivate = 0x0010;
-        public const uint SwpNoOwnerZorder = 0x0200;
-        public const uint SwpFrameChanged = 0x0020;
-
-        [DllImport("user32.dll", SetLastError = true)]
-        static extern int GetWindowLong(IntPtr hWnd, int nIndex);
-
-        [DllImport("user32.dll", SetLastError = true)]
-        static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
-
-        [DllImport("user32.dll", SetLastError = true, EntryPoint = "GetWindowLongPtrW")]
-        static extern IntPtr GetWindowLongPtr64(IntPtr hWnd, int nIndex);
-
-        [DllImport("user32.dll", SetLastError = true, EntryPoint = "SetWindowLongPtrW")]
-        static extern IntPtr SetWindowLongPtr64(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
-
-        [DllImport("user32.dll", SetLastError = true)]
-        public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint flags);
-
-        [DllImport("user32.dll")]
-        public static extern IntPtr GetForegroundWindow();
-
-        [DllImport("user32.dll")]
-        public static extern bool SetForegroundWindow(IntPtr hWnd);
-
-        [DllImport("user32.dll")]
-        static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
-
-        [DllImport("user32.dll")]
-        static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool attach);
-
-        [DllImport("user32.dll")]
-        static extern IntPtr SetFocus(IntPtr hWnd);
-
-        [DllImport("user32.dll")]
-        static extern IntPtr GetFocus();
-
-        [DllImport("kernel32.dll")]
-        static extern uint GetCurrentThreadId();
-
-        /// <summary>
-        /// 把窗口强行切到前台并拿到键盘焦点。热键触发的程序通常可以直接 SetForegroundWindow，
-        /// 失败时用 AttachThreadInput 挂到前台线程上再试一次。
-        /// </summary>
-        public static bool ForceForeground(IntPtr hwnd)
+        try
         {
-            if (hwnd == IntPtr.Zero) return false;
+            if (GetForegroundWindow() == hwnd) return true;
+
+            uint foregroundThread = GetWindowThreadProcessId(GetForegroundWindow(), out uint _);
+            uint ourThread = GetCurrentThreadId();
+            bool attached = false;
+
+            if (foregroundThread != 0 && foregroundThread != ourThread)
+                attached = AttachThreadInput(ourThread, foregroundThread, true);
 
             try
             {
-                if (GetForegroundWindow() == hwnd) return true;
-
-                uint foregroundThread = GetWindowThreadProcessId(GetForegroundWindow(), out uint _);
-                uint ourThread = GetCurrentThreadId();
-                bool attached = false;
-
-                if (foregroundThread != 0 && foregroundThread != ourThread)
-                    attached = AttachThreadInput(ourThread, foregroundThread, true);
-
-                try
-                {
-                    SetForegroundWindow(hwnd);
-                    SetFocus(hwnd);
-                }
-                finally
-                {
-                    if (attached) AttachThreadInput(ourThread, foregroundThread, false);
-                }
-
-                return GetForegroundWindow() == hwnd;
+                SetForegroundWindow(hwnd);
+                SetFocus(hwnd);
             }
-            catch
+            finally
             {
-                return false;
+                if (attached) AttachThreadInput(ourThread, foregroundThread, false);
             }
-        }
 
-        public static int GetExStyle(IntPtr hwnd)
+            return GetForegroundWindow() == hwnd;
+        }
+        catch
         {
-            if (IntPtr.Size == 8)
-            {
-                IntPtr value = GetWindowLongPtr64(hwnd, GwlExStyle);
-                return unchecked((int)value.ToInt64());
-            }
-            return GetWindowLong(hwnd, GwlExStyle);
+            return false;
         }
-
-        public static void SetExStyle(IntPtr hwnd, int value)
-        {
-            if (IntPtr.Size == 8)
-            {
-                SetWindowLongPtr64(hwnd, GwlExStyle, new IntPtr(value));
-                return;
-            }
-            SetWindowLong(hwnd, GwlExStyle, value);
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        public struct Rect
-        {
-            public int Left;
-            public int Top;
-            public int Right;
-            public int Bottom;
-        }
-
-        [DllImport("user32.dll")]
-        public static extern bool GetWindowRect(IntPtr hwnd, out Rect rect);
-
-        [StructLayout(LayoutKind.Sequential)]
-        public struct CursorPoint
-        {
-            public int X;
-            public int Y;
-        }
-
-        [DllImport("user32.dll")]
-        public static extern bool GetCursorPos(out CursorPoint point);
-
-        [DllImport("user32.dll")]
-        public static extern short GetAsyncKeyState(int virtualKey);
-
-        [DllImport("user32.dll")]
-        public static extern short GetKeyState(int virtualKey);
-
     }
+
+    public static int GetExStyle(IntPtr hwnd)
+    {
+        if (IntPtr.Size == 8)
+        {
+            IntPtr value = GetWindowLongPtr64(hwnd, GwlExStyle);
+            return unchecked((int)value.ToInt64());
+        }
+        return GetWindowLong(hwnd, GwlExStyle);
+    }
+
+    public static void SetExStyle(IntPtr hwnd, int value)
+    {
+        if (IntPtr.Size == 8)
+        {
+            SetWindowLongPtr64(hwnd, GwlExStyle, new IntPtr(value));
+            return;
+        }
+        SetWindowLong(hwnd, GwlExStyle, value);
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct Rect
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
+
+    [DllImport("user32.dll")]
+    public static extern bool GetWindowRect(IntPtr hwnd, out Rect rect);
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct CursorPoint
+    {
+        public int X;
+        public int Y;
+    }
+
+    [DllImport("user32.dll")]
+    public static extern bool GetCursorPos(out CursorPoint point);
+
+    [DllImport("user32.dll")]
+    public static extern short GetAsyncKeyState(int virtualKey);
+
+    [DllImport("user32.dll")]
+    public static extern short GetKeyState(int virtualKey);
+
 }

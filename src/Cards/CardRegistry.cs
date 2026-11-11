@@ -3,227 +3,217 @@ using System.Collections.Generic;
 using System.Reflection;
 using MirrorpondHUD.Core;
 
-namespace MirrorpondHUD.Cards
+namespace MirrorpondHUD.Cards;
+
+/// <summary>
+/// 卡片注册表：反射扫描本程序集里所有 <see cref="ICardModule"/> 实现，
+/// 按 Order 排好。设置页的「添加卡片」菜单、默认内容、渲染都从这里取，
+/// 宿主里不再出现 switch(kind)。
+///
+/// 运行时插件：<see cref="Initialize"/> 在启动早期把插件模块合成一份只读快照；
+/// 替换 / 更新插件后重启宿主生效，运行期不提供热插拔。
+/// 未知 Kind 由 <see cref="Get"/> 返回「插件不可用」占位模块，不会把配置改写成默认卡。
+/// </summary>
+public static class CardRegistry
 {
-    /// <summary>
-    /// 卡片注册表：反射扫描本程序集里所有 <see cref="ICardModule"/> 实现，
-    /// 按 Order 排好。设置页的「添加卡片」菜单、默认内容、渲染都从这里取，
-    /// 宿主里不再出现 switch(kind)。
-    ///
-    /// 运行时插件：<see cref="Initialize"/> 在启动早期把插件模块合成一份只读快照；
-    /// 替换 / 更新插件后重启宿主生效，运行期不提供热插拔。
-    /// 未知 Kind 由 <see cref="Get"/> 返回「插件不可用」占位模块，不会把配置改写成默认卡。
-    /// </summary>
-    public static class CardRegistry
+    static readonly object Sync = new();
+    static List<ICardModule> _modules;
+    static Dictionary<string, ICardModule> _lookup;
+    static List<ICardModule> _builtins;
+    static readonly Dictionary<string, ICardModule> _placeholders =
+        new(StringComparer.OrdinalIgnoreCase);
+    static bool _initialized;
+
+    /// <summary>全部已注册的卡片模块（按添加菜单顺序；初始化后为只读快照）。</summary>
+    public static IList<ICardModule> Modules
     {
-        static readonly object Sync = new object();
-        static List<ICardModule> _modules;
-        static Dictionary<string, ICardModule> _lookup;
-        static List<ICardModule> _builtins;
-        static readonly Dictionary<string, ICardModule> _placeholders =
-            new Dictionary<string, ICardModule>(StringComparer.OrdinalIgnoreCase);
-        static bool _initialized;
-
-        /// <summary>全部已注册的卡片模块（按添加菜单顺序；初始化后为只读快照）。</summary>
-        public static IList<ICardModule> Modules
-        {
-            get
-            {
-                EnsureInitialized();
-                return _modules.AsReadOnly();
-            }
-        }
-
-        /// <summary>
-        /// 启动早期调用一次：内置模块 + 外部插件模块。
-        /// 必须在任何 <see cref="Modules"/> / <see cref="Get"/> / 配置归一化之前调用，否则只能拿到内置模块。
-        /// </summary>
-        public static void Initialize(IEnumerable<ICardModule> external)
-        {
-            lock (Sync)
-            {
-                if (_initialized)
-                {
-                    Log.Warn("卡片注册表已初始化，忽略运行时插件追加（插件必须在启动早期加载）");
-                    return;
-                }
-
-                List<ICardModule> builtins = Discover();
-                int added;
-                List<ICardModule> modules = Merge(builtins, external, out added);
-                Sort(modules);
-
-                _builtins = new List<ICardModule>(builtins);
-                _modules = modules;
-                _lookup = BuildLookup(modules);
-                _initialized = true;
-
-                Log.Info("已注册卡片模块 " + modules.Count + " 个（内置 " + (modules.Count - added) +
-                         "，运行时插件 " + added + "）: " +
-                         string.Join("、", modules.ConvertAll(m => m.Kind).ToArray()));
-            }
-        }
-
-        /// <summary>
-        /// 退出时静默摘掉插件模块引用（不写「外部 0」这种日志）；只保留启动时发现的内置模块。
-        /// </summary>
-        public static void ClearExternal()
-        {
-            lock (Sync)
-            {
-                EnsureInitializedCore();
-                _modules = new List<ICardModule>(_builtins);
-                _lookup = BuildLookup(_modules);
-                _placeholders.Clear();
-            }
-        }
-
-        public static ICardModule Get(string kind)
+        get
         {
             EnsureInitialized();
+            return _modules.AsReadOnly();
+        }
+    }
 
-            ICardModule module;
-            if (TryGet(kind, out module)) return module;
-
-            string key = (kind ?? "").Trim();
-            if (key.Length == 0)
-                return _modules.Count == 0 ? new UnavailableCardModule("infotext") : _modules[0];
-
-            lock (Sync)
+    /// <summary>
+    /// 启动早期调用一次：内置模块 + 外部插件模块。
+    /// 必须在任何 <see cref="Modules"/> / <see cref="Get"/> / 配置归一化之前调用，否则只能拿到内置模块。
+    /// </summary>
+    public static void Initialize(IEnumerable<ICardModule> external)
+    {
+        lock (Sync)
+        {
+            if (_initialized)
             {
-                if (!_placeholders.TryGetValue(key, out module))
-                {
-                    module = new UnavailableCardModule(key);
-                    _placeholders[key] = module;
-                }
-                return module;
+                Log.Warn("卡片注册表已初始化，忽略运行时插件追加（插件必须在启动早期加载）");
+                return;
             }
-        }
-
-        public static bool TryGet(string kind, out ICardModule module)
-        {
-            EnsureInitialized();
-            module = null;
-            string key = (kind ?? "").Trim().ToLowerInvariant();
-            return key.Length > 0 && _lookup.TryGetValue(key, out module);
-        }
-
-        /// <summary>
-        /// 未知 / 空的 Kind：空的回退默认卡片；非空但未知的保留原值。
-        /// 不能把插件卡片改写成默认 Kind，否则插件卸载后配置会被静默破坏。
-        /// </summary>
-        public static string ResolveKind(string kind)
-        {
-            EnsureInitialized();
-            string trimmed = (kind ?? "").Trim();
-            ICardModule module;
-            if (TryGet(trimmed, out module)) return module.Kind;
-            if (trimmed.Length > 0) return trimmed;
-            return _modules.Count == 0 ? "infotext" : _modules[0].Kind;
-        }
-
-        static void EnsureInitialized()
-        {
-            if (_initialized) return;
-            lock (Sync)
-            {
-                EnsureInitializedCore();
-            }
-        }
-
-        static void EnsureInitializedCore()
-        {
-            if (_initialized) return;
 
             List<ICardModule> builtins = Discover();
-            Sort(builtins);
+            List<ICardModule> modules = Merge(builtins, external, out int added);
+            Sort(modules);
+
             _builtins = new List<ICardModule>(builtins);
-            _modules = builtins;
-            _lookup = BuildLookup(builtins);
+            _modules = modules;
+            _lookup = BuildLookup(modules);
             _initialized = true;
 
-            Log.Info("已注册内置卡片模块 " + builtins.Count + " 个: " +
-                     string.Join("、", builtins.ConvertAll(m => m.Kind).ToArray()));
+            Log.Info($"已注册卡片模块 {modules.Count} 个（内置 {(modules.Count - added)}，运行时插件 {added}）: {string.Join("、", modules.ConvertAll(m => m.Kind).ToArray())}");
         }
+    }
 
-        static List<ICardModule> Merge(List<ICardModule> builtins, IEnumerable<ICardModule> external, out int added)
+    /// <summary>
+    /// 退出时静默摘掉插件模块引用（不写「外部 0」这种日志）；只保留启动时发现的内置模块。
+    /// </summary>
+    public static void ClearExternal()
+    {
+        lock (Sync)
         {
-            var modules = new List<ICardModule>(builtins);
-            var kinds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (ICardModule module in builtins)
-                if (module != null) kinds.Add(module.Kind);
+            EnsureInitializedCore();
+            _modules = new List<ICardModule>(_builtins);
+            _lookup = BuildLookup(_modules);
+            _placeholders.Clear();
+        }
+    }
 
-            added = 0;
-            if (external == null) return modules;
+    public static ICardModule Get(string kind)
+    {
+        EnsureInitialized();
 
-            foreach (ICardModule module in external)
+        if (TryGet(kind, out ICardModule module)) return module;
+
+        string key = (kind ?? "").Trim();
+        if (key.Length == 0)
+            return _modules.Count == 0 ? new UnavailableCardModule("infotext") : _modules[0];
+
+        lock (Sync)
+        {
+            if (!_placeholders.TryGetValue(key, out module))
             {
-                if (module == null) continue;
+                module = new UnavailableCardModule(key);
+                _placeholders[key] = module;
+            }
+            return module;
+        }
+    }
 
-                string kind = (module.Kind ?? "").Trim();
-                if (kind.Length == 0)
-                {
-                    Log.Warn("运行时插件模块 Kind 为空，已拒绝: " + module.GetType().FullName);
-                    continue;
-                }
+    public static bool TryGet(string kind, out ICardModule module)
+    {
+        EnsureInitialized();
+        module = null;
+        string key = (kind ?? "").Trim().ToLowerInvariant();
+        return key.Length > 0 && _lookup.TryGetValue(key, out module);
+    }
 
-                if (!kinds.Add(kind))
-                {
-                    Log.Warn("运行时插件卡片 Kind 与已有模块冲突，已拒绝: " + kind);
-                    continue;
-                }
+    /// <summary>
+    /// 未知 / 空的 Kind：空的回退默认卡片；非空但未知的保留原值。
+    /// 不能把插件卡片改写成默认 Kind，否则插件卸载后配置会被静默破坏。
+    /// </summary>
+    public static string ResolveKind(string kind)
+    {
+        EnsureInitialized();
+        string trimmed = (kind ?? "").Trim();
+        if (TryGet(trimmed, out ICardModule module)) return module.Kind;
+        if (trimmed.Length > 0) return trimmed;
+        return _modules.Count == 0 ? "infotext" : _modules[0].Kind;
+    }
 
-                modules.Add(module);
-                added++;
+    static void EnsureInitialized()
+    {
+        if (_initialized) return;
+        lock (Sync)
+        {
+            EnsureInitializedCore();
+        }
+    }
+
+    static void EnsureInitializedCore()
+    {
+        if (_initialized) return;
+
+        List<ICardModule> builtins = Discover();
+        Sort(builtins);
+        _builtins = new List<ICardModule>(builtins);
+        _modules = builtins;
+        _lookup = BuildLookup(builtins);
+        _initialized = true;
+
+        Log.Info($"已注册内置卡片模块 {builtins.Count} 个: {string.Join("、", builtins.ConvertAll(m => m.Kind).ToArray())}");
+    }
+
+    static List<ICardModule> Merge(List<ICardModule> builtins, IEnumerable<ICardModule> external, out int added)
+    {
+        var modules = new List<ICardModule>(builtins);
+        var kinds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (ICardModule module in builtins)
+            if (module is not null) kinds.Add(module.Kind);
+
+        added = 0;
+        if (external is null) return modules;
+
+        foreach (ICardModule module in external)
+        {
+            if (module is null) continue;
+
+            string kind = (module.Kind ?? "").Trim();
+            if (kind.Length == 0)
+            {
+                Log.Warn($"运行时插件模块 Kind 为空，已拒绝: {module.GetType().FullName}");
+                continue;
             }
 
-            return modules;
-        }
-
-        static Dictionary<string, ICardModule> BuildLookup(List<ICardModule> modules)
-        {
-            var map = new Dictionary<string, ICardModule>(StringComparer.OrdinalIgnoreCase);
-            foreach (ICardModule module in modules)
+            if (!kinds.Add(kind))
             {
-                if (module == null) continue;
-                map[module.Kind] = module;
-            }
-            return map;
-        }
-
-        static void Sort(List<ICardModule> modules)
-        {
-            modules.Sort((a, b) =>
-            {
-                int order = a.Order.CompareTo(b.Order);
-                return order != 0 ? order : string.Compare(a.DisplayName, b.DisplayName, StringComparison.CurrentCulture);
-            });
-        }
-
-        static List<ICardModule> Discover()
-        {
-            var found = new List<ICardModule>();
-            Assembly assembly = typeof(CardRegistry).Assembly;
-
-            foreach (Type type in assembly.GetTypes())
-            {
-                try
-                {
-                    if (type.IsAbstract || type.IsInterface) continue;
-                    if (!typeof(ICardModule).IsAssignableFrom(type)) continue;
-                    if (type.GetConstructor(Type.EmptyTypes) == null) continue;
-
-                    var module = (ICardModule)Activator.CreateInstance(type);
-                    if (module != null) found.Add(module);
-                }
-                catch (Exception ex)
-                {
-                    Log.Warn("卡片模块加载失败 " + type.FullName + ": " + ex.Message);
-                }
+                Log.Warn($"运行时插件卡片 Kind 与已有模块冲突，已拒绝: {kind}");
+                continue;
             }
 
-            Sort(found);
-            return found;
+            modules.Add(module);
+            added++;
         }
+
+        return modules;
+    }
+
+    static Dictionary<string, ICardModule> BuildLookup(List<ICardModule> modules)
+    {
+        var map = new Dictionary<string, ICardModule>(StringComparer.OrdinalIgnoreCase);
+        foreach (ICardModule module in modules)
+        {
+            if (module is null) continue;
+            map[module.Kind] = module;
+        }
+        return map;
+    }
+
+    static void Sort(List<ICardModule> modules) => modules.Sort((a, b) =>
+                                                        {
+                                                            int order = a.Order.CompareTo(b.Order);
+                                                            return order != 0 ? order : string.Compare(a.DisplayName, b.DisplayName, StringComparison.CurrentCulture);
+                                                        });
+
+    static List<ICardModule> Discover()
+    {
+        var found = new List<ICardModule>();
+        Assembly assembly = typeof(CardRegistry).Assembly;
+
+        foreach (Type type in assembly.GetTypes())
+        {
+            try
+            {
+                if (type.IsAbstract || type.IsInterface) continue;
+                if (!typeof(ICardModule).IsAssignableFrom(type)) continue;
+                if (type.GetConstructor(Type.EmptyTypes) is null) continue;
+
+                var module = (ICardModule)Activator.CreateInstance(type);
+                if (module is not null) found.Add(module);
+            }
+            catch (Exception ex)
+            {
+                Log.Warn($"卡片模块加载失败 {type.FullName}: {ex.Message}");
+            }
+        }
+
+        Sort(found);
+        return found;
     }
 }

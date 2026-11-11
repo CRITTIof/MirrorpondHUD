@@ -4,442 +4,439 @@ using System.Windows;
 using MirrorpondHUD.Cards;
 using MirrorpondHUD.Core;
 
-namespace MirrorpondHUD.Ui
-{
-    /// <summary>设置应用 / 卡片同步需要宿主提供的状态与动作。</summary>
-    internal interface ISettingsHost
-    {
-        Settings Settings { get; set; }
-        IList<CardSlot> Cards { get; }
-        bool OverlayVisible { get; set; }
+namespace MirrorpondHUD.Ui;
 
-        CardSlot CreateSlot(CardSettings config);
-        void RebindSlot(CardSlot slot, CardSettings config, bool summoned);
-        void CloseSlot(CardSlot slot);
-        void ShowCard(CardSlot slot, string text, bool animate);
-        void HideCard(CardSlot slot, bool animate);
-        void BeginCardDrag(CardSlot slot);
-        void OnCardDragging(CardSlot slot, int dx, int dy);
-        void ToggleCommandCard(CardSlot slot);
-        void ExitCommandLine();
-        void FinishIntro();
-        void RefreshVisibility();
-        void UpdateCommandInfo();
-        void RebuildHotkeys();
-        void UpdateEngine();
-        void RefreshTray();
-        void SyncSettingsWindowAnchor(double x, double y, int monitor);
+/// <summary>设置应用 / 卡片同步需要宿主提供的状态与动作。</summary>
+internal interface ISettingsHost
+{
+    Settings Settings { get; set; }
+    IList<CardSlot> Cards { get; }
+    bool OverlayVisible { get; set; }
+
+    CardSlot CreateSlot(CardSettings config);
+    void RebindSlot(CardSlot slot, CardSettings config, bool summoned);
+    void CloseSlot(CardSlot slot);
+    void ShowCard(CardSlot slot, string text, bool animate);
+    void HideCard(CardSlot slot, bool animate);
+    void BeginCardDrag(CardSlot slot);
+    void OnCardDragging(CardSlot slot, int dx, int dy);
+    void ToggleCommandCard(CardSlot slot);
+    void ExitCommandLine();
+    void FinishIntro();
+    void RefreshVisibility();
+    void UpdateCommandInfo();
+    void RebuildHotkeys();
+    void UpdateEngine();
+    void RefreshTray();
+    void SyncSettingsWindowAnchor(double x, double y, int monitor);
+}
+
+/// <summary>
+/// 设置应用与卡片同步：应用设置窗里的新配置、增删 / 重排卡片窗口、拖拽后的锚点落盘、
+/// 开机自启与非常驻卡片的呼出 / 收起。
+///
+/// 从 <see cref="OverlayController"/> 抽出来（2026-11 审阅第三批第 12 项）：
+/// 控制器只保留“公开 API + 协调”，设置树仍只有 <see cref="ISettingsHost.Settings"/> 这一份，
+/// 这里不另存配置引用，避免拆出双真相。
+/// </summary>
+internal sealed class SettingsApplier
+{
+    readonly ISettingsHost _host;
+    readonly RenderScheduler _render;
+    readonly CardLayoutCoordinator _layout;
+    readonly KeyHistory _keys;
+
+    // 拖动期间只做「其他卡片按增量跟随」：锚点等到松手才更新，避免每帧落盘与重排。
+    CardSlot _dragSlot;
+    int _dragLastDx;
+    int _dragLastDy;
+
+    public SettingsApplier(ISettingsHost host, RenderScheduler render,
+                           CardLayoutCoordinator layout, KeyHistory keys)
+    {
+        _host = host ?? throw new ArgumentNullException(nameof(host));
+        _render = render ?? throw new ArgumentNullException(nameof(render));
+        _layout = layout ?? throw new ArgumentNullException(nameof(layout));
+        _keys = keys ?? throw new ArgumentNullException(nameof(keys));
     }
 
     /// <summary>
-    /// 设置应用与卡片同步：应用设置窗里的新配置、增删 / 重排卡片窗口、拖拽后的锚点落盘、
-    /// 开机自启与非常驻卡片的呼出 / 收起。
+    /// 每张卡片的窗口需要「外观 + 本卡位置」。这里浅拷贝一份 <see cref="Settings"/>：
+    /// 外观 / CLI / 热键这些大对象共享同一个实例，只有 <see cref="OverlaySettings"/> 单独复制
+    /// （窗口会改自己的 X / Y / 锁定状态，不能互相踩）。
     ///
-    /// 从 <see cref="OverlayController"/> 抽出来（2026-11 审阅第三批第 12 项）：
-    /// 控制器只保留“公开 API + 协调”，设置树仍只有 <see cref="ISettingsHost.Settings"/> 这一份，
-    /// 这里不另存配置引用，避免拆出双真相。
+    /// 不做整份 JSON 深拷贝：卡片越多副本越多；而且克隆绕过 Normalize，两份配置容易再次漂移。
     /// </summary>
-    internal sealed class SettingsApplier
+    public Settings BuildDialog()
     {
-        readonly ISettingsHost _host;
-        readonly RenderScheduler _render;
-        readonly CardLayoutCoordinator _layout;
-        readonly KeyHistory _keys;
-
-        // 拖动期间只做「其他卡片按增量跟随」：锚点等到松手才更新，避免每帧落盘与重排。
-        CardSlot _dragSlot;
-        int _dragLastDx;
-        int _dragLastDy;
-
-        public SettingsApplier(ISettingsHost host, RenderScheduler render,
-                               CardLayoutCoordinator layout, KeyHistory keys)
+        Settings settings = _host.Settings;
+        return new Settings
         {
-            _host = host ?? throw new ArgumentNullException(nameof(host));
-            _render = render ?? throw new ArgumentNullException(nameof(render));
-            _layout = layout ?? throw new ArgumentNullException(nameof(layout));
-            _keys = keys ?? throw new ArgumentNullException(nameof(keys));
+            SchemaVersion = settings.SchemaVersion,
+            Overlay = CopyOverlay(settings.Overlay),
+            Style = settings.Style,
+            Cli = settings.Cli,
+            Data = settings.Data,
+            Behavior = settings.Behavior,
+            Hotkeys = settings.Hotkeys,
+            Cards = settings.Cards
+        };
+    }
+
+    static OverlaySettings CopyOverlay(OverlaySettings source)
+    {
+        if (source is null) return new OverlaySettings();
+        return new OverlaySettings
+        {
+            X = source.X,
+            Y = source.Y,
+            Monitor = source.Monitor,
+            Locked = source.Locked,
+            Topmost = source.Topmost,
+            CornerRadius = source.CornerRadius,
+            Shadow = source.Shadow
+        };
+    }
+
+    public bool Apply(Settings settings)
+    {
+        _host.ExitCommandLine();
+
+        // 位置与锁定是运行时状态：只由拖动、F8 和托盘菜单改变。
+        // 设置窗口里的坐标是打开窗口那一刻的快照，这里必须以实时值为准。
+        Settings current = _host.Settings;
+        settings.Overlay.X = current.Overlay.X;
+        settings.Overlay.Y = current.Overlay.Y;
+        settings.Overlay.Monitor = current.Overlay.Monitor;
+        settings.Overlay.Locked = current.Overlay.Locked;
+
+        _host.FinishIntro();
+
+        var summoned = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        foreach (CardSlot slot in _host.Cards) summoned[slot.Config.Id] = slot.Summoned;
+
+        _host.Settings = settings;
+        try
+        {
+            settings.Normalize();
+            CardModel.Normalize(settings);
+
+            SyncCards(summoned);
         }
-
-        /// <summary>
-        /// 每张卡片的窗口需要「外观 + 本卡位置」。这里浅拷贝一份 <see cref="Settings"/>：
-        /// 外观 / CLI / 热键这些大对象共享同一个实例，只有 <see cref="OverlaySettings"/> 单独复制
-        /// （窗口会改自己的 X / Y / 锁定状态，不能互相踩）。
-        ///
-        /// 不做整份 JSON 深拷贝：卡片越多副本越多；而且克隆绕过 Normalize，两份配置容易再次漂移。
-        /// </summary>
-        public Settings BuildDialog()
+        catch (Exception ex)
         {
-            Settings settings = _host.Settings;
-            return new Settings
-            {
-                SchemaVersion = settings.SchemaVersion,
-                Overlay = CopyOverlay(settings.Overlay),
-                Style = settings.Style,
-                Cli = settings.Cli,
-                Data = settings.Data,
-                Behavior = settings.Behavior,
-                Hotkeys = settings.Hotkeys,
-                Cards = settings.Cards
-            };
-        }
-
-        static OverlaySettings CopyOverlay(OverlaySettings source)
-        {
-            if (source == null) return new OverlaySettings();
-            return new OverlaySettings
-            {
-                X = source.X,
-                Y = source.Y,
-                Monitor = source.Monitor,
-                Locked = source.Locked,
-                Topmost = source.Topmost,
-                CornerRadius = source.CornerRadius,
-                Shadow = source.Shadow
-            };
-        }
-
-        public bool Apply(Settings settings)
-        {
-            _host.ExitCommandLine();
-
-            // 位置与锁定是运行时状态：只由拖动、F8 和托盘菜单改变。
-            // 设置窗口里的坐标是打开窗口那一刻的快照，这里必须以实时值为准。
-            Settings current = _host.Settings;
-            settings.Overlay.X = current.Overlay.X;
-            settings.Overlay.Y = current.Overlay.Y;
-            settings.Overlay.Monitor = current.Overlay.Monitor;
-            settings.Overlay.Locked = current.Overlay.Locked;
-
-            _host.FinishIntro();
-
-            var summoned = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
-            foreach (CardSlot slot in _host.Cards) summoned[slot.Config.Id] = slot.Summoned;
-
-            _host.Settings = settings;
+            // SyncCards 可能已经改了一部分槽位（RebindSlot 先于 cards.Clear）。
+            // 这里恢复旧 Settings，再用旧树重建一次卡片视图，避免“运行用旧树、内存是新树”。
+            Log.Error("应用设置失败，回滚到旧设置", ex);
+            _host.Settings = current;
             try
             {
-                settings.Normalize();
-                CardModel.Normalize(settings);
-
                 SyncCards(summoned);
+                _host.RefreshVisibility();
             }
-            catch (Exception ex)
+            catch (Exception rollback)
             {
-                // SyncCards 可能已经改了一部分槽位（RebindSlot 先于 cards.Clear）。
-                // 这里恢复旧 Settings，再用旧树重建一次卡片视图，避免“运行用旧树、内存是新树”。
-                Log.Error("应用设置失败，回滚到旧设置", ex);
-                _host.Settings = current;
-                try
-                {
-                    SyncCards(summoned);
-                    _host.RefreshVisibility();
-                }
-                catch (Exception rollback)
-                {
-                    Log.Error("应用设置回滚失败（界面可能处于新旧混合状态）", rollback);
-                }
-                throw;
+                Log.Error("应用设置回滚失败（界面可能处于新旧混合状态）", rollback);
             }
+            throw;
+        }
 
-            _keys.Configure(settings.Data.KeyHistoryCount, settings.Data.RepeatThreshold,
-                            settings.Data.MaxKeyChars);
-            CardMotion.ApplySettings(settings);
+        _keys.Configure(settings.Data.KeyHistoryCount, settings.Data.RepeatThreshold,
+                        settings.Data.MaxKeyChars);
+        CardMotion.ApplySettings(settings);
 
-            // 内存里的设置已经生效；落盘失败时必须如实告诉窗口，不能谎报成功（P0-2）。
-            bool saved = SaveSettings();
+        // 内存里的设置已经生效；落盘失败时必须如实告诉窗口，不能谎报成功（P0-2）。
+        bool saved = SaveSettings();
 
-            _host.UpdateEngine();
-            _host.RebuildHotkeys();
-            ApplyAutoStart();
-            _host.RefreshTray();
-            _host.UpdateCommandInfo();
+        _host.UpdateEngine();
+        _host.RebuildHotkeys();
+        ApplyAutoStart();
+        _host.RefreshTray();
+        _host.UpdateCommandInfo();
+        _host.RefreshVisibility();
+        _render.RenderNow();
+
+        Log.Info($"设置已应用（卡片 {_host.Cards.Count} 张{(saved ? "" : "，未写入磁盘")}）");
+        return saved;
+    }
+
+    /// <summary>按新设置增删 / 重排卡片窗口，保留仍在列表里的窗口和它们的呼出状态。</summary>
+    void SyncCards(Dictionary<string, bool> summoned)
+    {
+        IList<CardSlot> cards = _host.Cards;
+
+        var existing = new Dictionary<string, CardSlot>(StringComparer.OrdinalIgnoreCase);
+        foreach (CardSlot slot in cards) existing[slot.Config.Id] = slot;
+
+        var next = new List<CardSlot>();
+
+        foreach (CardSettings config in _host.Settings.Cards)
+        {
+            if (existing.TryGetValue(config.Id, out CardSlot slot))
+            {
+                existing.Remove(config.Id);
+
+                // 呼出状态跨设置应用保留：没在这次快照里出现的卡片沿用当前值。
+                if (!summoned.TryGetValue(config.Id, out bool summonedNow)) summonedNow = slot.Summoned;
+
+                _host.RebindSlot(slot, config, summonedNow);
+                _render.RefreshSlot(slot, config);
+                next.Add(slot);
+            }
+            else
+            {
+                next.Add(_host.CreateSlot(config));
+            }
+        }
+
+        foreach (CardSlot removed in existing.Values) _host.CloseSlot(removed);
+
+        cards.Clear();
+        foreach (CardSlot slot in next) cards.Add(slot);
+    }
+
+    public void ApplyAnchor(double x, double y, int monitor)
+    {
+        Settings settings = _host.Settings;
+        settings.Overlay.X = x;
+        settings.Overlay.Y = y;
+        settings.Overlay.Monitor = monitor;
+
+        if (!_host.OverlayVisible)
+        {
+            _host.OverlayVisible = true;
             _host.RefreshVisibility();
-            _render.RenderNow();
-
-            Log.Info("设置已应用（卡片 " + _host.Cards.Count + " 张" + (saved ? "" : "，未写入磁盘") + "）");
-            return saved;
         }
-
-        /// <summary>按新设置增删 / 重排卡片窗口，保留仍在列表里的窗口和它们的呼出状态。</summary>
-        void SyncCards(Dictionary<string, bool> summoned)
+        else
         {
-            IList<CardSlot> cards = _host.Cards;
-
-            var existing = new Dictionary<string, CardSlot>(StringComparer.OrdinalIgnoreCase);
-            foreach (CardSlot slot in cards) existing[slot.Config.Id] = slot;
-
-            var next = new List<CardSlot>();
-
-            foreach (CardSettings config in _host.Settings.Cards)
-            {
-                CardSlot slot;
-                if (existing.TryGetValue(config.Id, out slot))
-                {
-                    existing.Remove(config.Id);
-
-                    // 呼出状态跨设置应用保留：没在这次快照里出现的卡片沿用当前值。
-                    bool summonedNow;
-                    if (!summoned.TryGetValue(config.Id, out summonedNow)) summonedNow = slot.Summoned;
-
-                    _host.RebindSlot(slot, config, summonedNow);
-                    _render.RefreshSlot(slot, config);
-                    next.Add(slot);
-                }
-                else
-                {
-                    next.Add(_host.CreateSlot(config));
-                }
-            }
-
-            foreach (CardSlot removed in existing.Values) _host.CloseSlot(removed);
-
-            cards.Clear();
-            foreach (CardSlot slot in next) cards.Add(slot);
+            _layout.Layout();
         }
 
-        public void ApplyAnchor(double x, double y, int monitor)
+        SaveSettings();
+
+        _host.SyncSettingsWindowAnchor(x, y, monitor);
+    }
+
+    /// <summary>
+    /// 开始拖动：取消所有卡片正在跑的补位动画。拖动中的位置由
+    /// <see cref="OnCardDragging"/> 直接按增量平移，不能和旧动画抢窗口。
+    /// </summary>
+    public void BeginCardDrag(CardSlot slot)
+    {
+        _dragSlot = slot;
+        _dragLastDx = 0;
+        _dragLastDy = 0;
+
+        foreach (CardSlot card in _host.Cards)
         {
-            Settings settings = _host.Settings;
-            settings.Overlay.X = x;
-            settings.Overlay.Y = y;
-            settings.Overlay.Monitor = monitor;
-
-            if (!_host.OverlayVisible)
-            {
-                _host.OverlayVisible = true;
-                _host.RefreshVisibility();
-            }
-            else
-            {
-                _layout.Layout();
-            }
-
-            SaveSettings();
-
-            _host.SyncSettingsWindowAnchor(x, y, monitor);
+            if (card.Window is not null) card.Window.StopPositionMotion();
         }
 
-        /// <summary>
-        /// 开始拖动：取消所有卡片正在跑的补位动画。拖动中的位置由
-        /// <see cref="OnCardDragging"/> 直接按增量平移，不能和旧动画抢窗口。
-        /// </summary>
-        public void BeginCardDrag(CardSlot slot)
+        // 停掉动画后先让整叠落到目标位并挂起布局，再读取拖动起点（OverlayWindow 已调整顺序）。
+        // 否则残余动画中途的坐标会被当成起点，松手时锚点算错几像素。
+        _layout.BeginDrag(slot);
+    }
+
+    /// <summary>
+    /// 拖动中：被拖窗口已经由 OverlayWindow 自己移动，这里把其余已显示窗口按总位移的
+    /// 增量平移，形成「整叠跟着走」；锚点保持不动，松手后才落盘并做补位/对齐动画。
+    /// </summary>
+    public void OnCardDragging(CardSlot slot, int dx, int dy)
+    {
+        if (slot is null || !ReferenceEquals(slot, _dragSlot)) return;
+
+        int stepX = dx - _dragLastDx;
+        int stepY = dy - _dragLastDy;
+        _dragLastDx = dx;
+        _dragLastDy = dy;
+
+        if (stepX == 0 && stepY == 0) return;
+
+        // 拖动事件给的是物理像素增量：其余卡片也按物理像素平移，
+        // 跨到不同缩放的显示器时不会因为 DIP 换算而错位。
+        foreach (CardSlot card in _host.Cards)
         {
-            _dragSlot = slot;
-            _dragLastDx = 0;
-            _dragLastDy = 0;
-
-            foreach (CardSlot card in _host.Cards)
-            {
-                if (card.Window != null) card.Window.StopPositionMotion();
-            }
-
-            // 停掉动画后先让整叠落到目标位并挂起布局，再读取拖动起点（OverlayWindow 已调整顺序）。
-            // 否则残余动画中途的坐标会被当成起点，松手时锚点算错几像素。
-            _layout.BeginDrag(slot);
+            if (ReferenceEquals(card, slot) || !card.Shown || card.Window is null) continue;
+            card.Window.OffsetPhysical(stepX, stepY);
         }
+    }
 
-        /// <summary>
-        /// 拖动中：被拖窗口已经由 OverlayWindow 自己移动，这里把其余已显示窗口按总位移的
-        /// 增量平移，形成「整叠跟着走」；锚点保持不动，松手后才落盘并做补位/对齐动画。
-        /// </summary>
-        public void OnCardDragging(CardSlot slot, int dx, int dy)
+    /// <summary>拖拽整叠卡片后的新锚点：动画重排、落盘，并同步设置窗里的位置显示。</summary>
+    public void OnCardMoved(CardSlot slot, int physicalX, int physicalY, int monitor)
+    {
+        if (slot is null) return;
+
+        _dragSlot = null;
+        _dragLastDx = 0;
+        _dragLastDy = 0;
+
+        Settings settings = _host.Settings;
+
+        // 落点是物理像素；锚点是「目标工作区左上角起的 DIP」，按目标屏 DPI 反算。
+        // 被拖的不一定是第一张卡，先扣掉它在叠层里的对齐 / 间距偏移。
+        ScreenInfo screen = ScreenGeometry.Get(monitor);
+        if (screen is null)
         {
-            if (slot == null || !ReferenceEquals(slot, _dragSlot)) return;
-
-            int stepX = dx - _dragLastDx;
-            int stepY = dy - _dragLastDy;
-            _dragLastDx = dx;
-            _dragLastDy = dy;
-
-            if (stepX == 0 && stepY == 0) return;
-
-            // 拖动事件给的是物理像素增量：其余卡片也按物理像素平移，
-            // 跨到不同缩放的显示器时不会因为 DIP 换算而错位。
-            foreach (CardSlot card in _host.Cards)
-            {
-                if (ReferenceEquals(card, slot) || !card.Shown || card.Window == null) continue;
-                card.Window.OffsetPhysical(stepX, stepY);
-            }
+            // 目标屏信息拿不到时也必须恢复布局，否则整叠会一直停在“拖动挂起”状态。
+            _layout.EndDrag(slot, null);
+            return;
         }
 
-        /// <summary>拖拽整叠卡片后的新锚点：动画重排、落盘，并同步设置窗里的位置显示。</summary>
-        public void OnCardMoved(CardSlot slot, int physicalX, int physicalY, int monitor)
+        double landedX = (physicalX - screen.WorkLeft) / screen.ScaleX;
+        double landedY = (physicalY - screen.WorkTop) / screen.ScaleY;
+        double cardWidth = slot.Window is null ? 0 : slot.Window.CardWidth;
+        double cardCenterX = landedX + cardWidth / 2;
+
+        // 先量整叠宽度：右对齐时锚点 = 被抓卡左边缘 - (整叠宽 - 被抓卡宽)。
+        double stackWidth = 0;
+        foreach (CardSlot card in _host.Cards)
         {
-            if (slot == null) return;
-
-            _dragSlot = null;
-            _dragLastDx = 0;
-            _dragLastDy = 0;
-
-            Settings settings = _host.Settings;
-
-            // 落点是物理像素；锚点是「目标工作区左上角起的 DIP」，按目标屏 DPI 反算。
-            // 被拖的不一定是第一张卡，先扣掉它在叠层里的对齐 / 间距偏移。
-            ScreenInfo screen = ScreenGeometry.Get(monitor);
-            if (screen == null)
-            {
-                // 目标屏信息拿不到时也必须恢复布局，否则整叠会一直停在“拖动挂起”状态。
-                _layout.EndDrag(slot, null);
-                return;
-            }
-
-            double landedX = (physicalX - screen.WorkLeft) / screen.ScaleX;
-            double landedY = (physicalY - screen.WorkTop) / screen.ScaleY;
-            double cardWidth = slot.Window == null ? 0 : slot.Window.CardWidth;
-            double cardCenterX = landedX + cardWidth / 2;
-
-            // 先量整叠宽度：右对齐时锚点 = 被抓卡左边缘 - (整叠宽 - 被抓卡宽)。
-            double stackWidth = 0;
-            foreach (CardSlot card in _host.Cards)
-            {
-                if (card.Shown && card.Window != null)
-                    stackWidth = Math.Max(stackWidth, card.Window.CardWidth);
-            }
-
-            double offsetY = slot.Dialog.Overlay.Y - settings.Overlay.Y;
-            settings.Overlay.Y = landedY - offsetY;
-
-            // 自动对齐以“被抓住的卡片”为基准：它在屏幕左半边就整叠左对齐，
-            // 在右半边就整叠右对齐；显式左 / 右对齐也统一用同一个公式，
-            // 保证松手时被抓卡正好停在落点，其余卡片向它看齐。
-            string align = Settings.NormalizeCardAlign(settings.Style.CardAlign);
-            double workWidthDip = screen.WorkWidth / (screen.ScaleX > 0.1 ? screen.ScaleX : 1.0);
-            if (align == "Auto")
-                align = cardCenterX < workWidthDip / 2 ? "Left" : "Right";
-
-            settings.Overlay.X = align == "Right"
-                ? landedX + cardWidth - stackWidth
-                : landedX;
-
-            settings.Overlay.Monitor = monitor;
-
-            ClampAnchorToWorkArea(slot, settings);
-
-            // 松手后才重排：把本次解析出的左 / 右对齐交给协调器，其余卡片用 180ms ease-out
-            // 跟过去；被拖卡按公式已经落在落点。CardMotion.Enabled=false 时直接落位。
-            _layout.EndDrag(slot, align);
-            SaveSettings();
-
-            _host.SyncSettingsWindowAnchor(settings.Overlay.X, settings.Overlay.Y, settings.Overlay.Monitor);
-
-            Log.Info("叠层移动，锚点=" + settings.Overlay.X + "," + settings.Overlay.Y + " 显示器=" + monitor);
+            if (card.Shown && card.Window is not null)
+                stackWidth = Math.Max(stackWidth, card.Window.CardWidth);
         }
 
-        /// <summary>
-        /// 拖动松手后把锚点钳在目标显示器工作区内：至少保留一部分卡片可见，
-        /// 并在离边缘 16px 内吸附。只影响锚点，不改变卡片顺序 / 间距。
-        /// </summary>
-        void ClampAnchorToWorkArea(CardSlot slot, Settings settings)
+        double offsetY = slot.Dialog.Overlay.Y - settings.Overlay.Y;
+        settings.Overlay.Y = landedY - offsetY;
+
+        // 自动对齐以“被抓住的卡片”为基准：它在屏幕左半边就整叠左对齐，
+        // 在右半边就整叠右对齐；显式左 / 右对齐也统一用同一个公式，
+        // 保证松手时被抓卡正好停在落点，其余卡片向它看齐。
+        string align = Settings.NormalizeCardAlign(settings.Style.CardAlign);
+        double workWidthDip = screen.WorkWidth / (screen.ScaleX > 0.1 ? screen.ScaleX : 1.0);
+        if (align == "Auto")
+            align = cardCenterX < workWidthDip / 2 ? "Left" : "Right";
+
+        settings.Overlay.X = align == "Right"
+            ? landedX + cardWidth - stackWidth
+            : landedX;
+
+        settings.Overlay.Monitor = monitor;
+
+        ClampAnchorToWorkArea(slot, settings);
+
+        // 松手后才重排：把本次解析出的左 / 右对齐交给协调器，其余卡片用 180ms ease-out
+        // 跟过去；被拖卡按公式已经落在落点。CardMotion.Enabled=false 时直接落位。
+        _layout.EndDrag(slot, align);
+        SaveSettings();
+
+        _host.SyncSettingsWindowAnchor(settings.Overlay.X, settings.Overlay.Y, settings.Overlay.Monitor);
+
+        Log.Info($"叠层移动，锚点={settings.Overlay.X},{settings.Overlay.Y} 显示器={monitor}");
+    }
+
+    /// <summary>
+    /// 拖动松手后把锚点钳在目标显示器工作区内：至少保留一部分卡片可见，
+    /// 并在离边缘 16px 内吸附。只影响锚点，不改变卡片顺序 / 间距。
+    /// </summary>
+    void ClampAnchorToWorkArea(CardSlot slot, Settings settings)
+    {
+        if (slot is null || slot.Window is null) return;
+
+        try
         {
-            if (slot == null || slot.Window == null) return;
+            System.Windows.Forms.Screen[] screens = System.Windows.Forms.Screen.AllScreens;
+            if (screens.Length == 0) return;
 
-            try
+            int index = Math.Max(0, Math.Min(settings.Overlay.Monitor, screens.Length - 1));
+            System.Drawing.Rectangle work = screens[index].WorkingArea;
+
+            ScreenInfo screen = ScreenGeometry.Get(index);
+            if (screen is null) return;
+
+            double scaleX = screen.ScaleX > 0.1 ? screen.ScaleX : 1.0;
+            double scaleY = screen.ScaleY > 0.1 ? screen.ScaleY : 1.0;
+
+            double workWidth = work.Width / scaleX;
+            double workHeight = work.Height / scaleY;
+            if (workWidth < 40 || workHeight < 40) return;
+
+            double cardWidth = Math.Max(80, slot.Window.CardWidth);
+            double visible = Math.Min(80, workWidth / 3.0);
+            double minX = visible - cardWidth;
+            double maxX = workWidth - visible;
+            double minY = 0;
+            double maxY = Math.Max(0, workHeight - 40);
+
+            double x = settings.Overlay.X;
+            double y = settings.Overlay.Y;
+
+            if (x < minX + 16) x = minX;
+            else if (x > maxX - 16) x = maxX;
+
+            if (y < minY + 16) y = minY;
+            else if (y > maxY - 16) y = maxY;
+
+            if (Math.Abs(x - settings.Overlay.X) > 0.5 || Math.Abs(y - settings.Overlay.Y) > 0.5)
             {
-                System.Windows.Forms.Screen[] screens = System.Windows.Forms.Screen.AllScreens;
-                if (screens.Length == 0) return;
-
-                int index = Math.Max(0, Math.Min(settings.Overlay.Monitor, screens.Length - 1));
-                System.Drawing.Rectangle work = screens[index].WorkingArea;
-
-                ScreenInfo screen = ScreenGeometry.Get(index);
-                if (screen == null) return;
-
-                double scaleX = screen.ScaleX > 0.1 ? screen.ScaleX : 1.0;
-                double scaleY = screen.ScaleY > 0.1 ? screen.ScaleY : 1.0;
-
-                double workWidth = work.Width / scaleX;
-                double workHeight = work.Height / scaleY;
-                if (workWidth < 40 || workHeight < 40) return;
-
-                double cardWidth = Math.Max(80, slot.Window.CardWidth);
-                double visible = Math.Min(80, workWidth / 3.0);
-                double minX = visible - cardWidth;
-                double maxX = workWidth - visible;
-                double minY = 0;
-                double maxY = Math.Max(0, workHeight - 40);
-
-                double x = settings.Overlay.X;
-                double y = settings.Overlay.Y;
-
-                if (x < minX + 16) x = minX;
-                else if (x > maxX - 16) x = maxX;
-
-                if (y < minY + 16) y = minY;
-                else if (y > maxY - 16) y = maxY;
-
-                if (Math.Abs(x - settings.Overlay.X) > 0.5 || Math.Abs(y - settings.Overlay.Y) > 0.5)
-                {
-                    settings.Overlay.X = x;
-                    settings.Overlay.Y = y;
-                    Log.Info("叠层位置贴边吸附，锚点=" + Math.Round(x) + "," + Math.Round(y));
-                }
-            }
-            catch (Exception ex)
-            {
-                Log.Warn("叠层边缘吸附失败，保留原锚点: " + ex.Message);
+                settings.Overlay.X = x;
+                settings.Overlay.Y = y;
+                Log.Info($"叠层位置贴边吸附，锚点={Math.Round(x)},{Math.Round(y)}");
             }
         }
-
-        /// <summary>写设置文件并如实记录失败；调用方（设置窗 / 卡片宿主）按返回值提示（P0-2）。</summary>
-        public bool SaveSettings()
+        catch (Exception ex)
         {
-            bool saved = ConfigStore.Save(_host.Settings);
-            if (!saved)
-                Log.Warn("设置仅内存生效，写入磁盘失败: " + (ConfigStore.LastSaveError ?? "原因未知"));
-            return saved;
+            Log.Warn($"叠层边缘吸附失败，保留原锚点: {ex.Message}");
         }
+    }
 
-        public void ApplyAutoStart()
+    /// <summary>写设置文件并如实记录失败；调用方（设置窗 / 卡片宿主）按返回值提示（P0-2）。</summary>
+    public bool SaveSettings()
+    {
+        bool saved = ConfigStore.Save(_host.Settings);
+        if (!saved)
+            Log.Warn($"设置仅内存生效，写入磁盘失败: {(ConfigStore.LastSaveError ?? "原因未知")}");
+        return saved;
+    }
+
+    public void ApplyAutoStart()
+    {
+        AutoStart.CleanLegacy();
+
+        bool enabled = _host.Settings.Behavior.AutoStart;
+        if (AutoStart.IsEnabled() != enabled)
+            AutoStart.Set(enabled, _host.Settings.Behavior.StartMinimized);
+        else if (enabled)
+            AutoStart.Set(true, _host.Settings.Behavior.StartMinimized);
+    }
+
+    public void ToggleAutoStart()
+    {
+        _host.Settings.Behavior.AutoStart = !_host.Settings.Behavior.AutoStart;
+        ApplyAutoStart();
+        SaveSettings();
+        _host.RefreshTray();
+    }
+
+    /// <summary>非常驻卡片的呼出 / 收起。</summary>
+    public void ToggleCard(CardSlot slot)
+    {
+        if (slot is null) return;
+
+        if (slot.Module.IsInteractive)
         {
-            AutoStart.CleanLegacy();
-
-            bool enabled = _host.Settings.Behavior.AutoStart;
-            if (AutoStart.IsEnabled() != enabled)
-                AutoStart.Set(enabled, _host.Settings.Behavior.StartMinimized);
-            else if (enabled)
-                AutoStart.Set(true, _host.Settings.Behavior.StartMinimized);
+            _host.ToggleCommandCard(slot);
+            return;
         }
 
-        public void ToggleAutoStart()
+        if (!_host.OverlayVisible)
         {
-            _host.Settings.Behavior.AutoStart = !_host.Settings.Behavior.AutoStart;
-            ApplyAutoStart();
-            SaveSettings();
-            _host.RefreshTray();
+            _host.OverlayVisible = true;
+            _host.RefreshVisibility();
         }
 
-        /// <summary>非常驻卡片的呼出 / 收起。</summary>
-        public void ToggleCard(CardSlot slot)
+        slot.Summoned = !slot.Summoned;
+
+        if (slot.Summoned)
         {
-            if (slot == null) return;
-
-            if (slot.Module.IsInteractive)
-            {
-                _host.ToggleCommandCard(slot);
-                return;
-            }
-
-            if (!_host.OverlayVisible)
-            {
-                _host.OverlayVisible = true;
-                _host.RefreshVisibility();
-            }
-
-            slot.Summoned = !slot.Summoned;
-
-            if (slot.Summoned)
-            {
-                _host.ShowCard(slot, _render.RenderCardText(slot), true);
-                slot.Window.EnsureTopmost();
-            }
-            else
-            {
-                _host.HideCard(slot, true);
-            }
-
-            Log.Info("卡片「" + slot.Config.Name + "」" + (slot.Summoned ? "已呼出" : "已收起"));
-            _host.RefreshTray();
+            _host.ShowCard(slot, _render.RenderCardText(slot), true);
+            slot.Window.EnsureTopmost();
         }
+        else
+        {
+            _host.HideCard(slot, true);
+        }
+
+        Log.Info($"卡片「{slot.Config.Name}」{(slot.Summoned ? "已呼出" : "已收起")}");
+        _host.RefreshTray();
     }
 }
