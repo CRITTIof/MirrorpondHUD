@@ -51,6 +51,8 @@ public class CardButton : Button
         Focusable = true;
         FocusVisualStyle = null;
         SnapsToDevicePixels = true;
+        // 模板不再有 disabled 触发器；保留旧版“整块一起变淡”的可用性反馈。
+        IsEnabledChanged += (s, e) => Opacity = IsEnabled ? 1.0 : 0.38;
     }
 
     public CardButton(string text) : this(text, CardButtonTone.Normal)
