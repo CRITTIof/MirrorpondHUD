@@ -10,7 +10,7 @@
 | 项 | 规范 | 2.35.0 实现 | 2.36.0 开关 |
 |---|---|---|---|
 | M2 零偏移阴影 | `0 0 26px` 黑约 28% | `OverlaySurface`：`ShadowDepth=0, Opacity=0.28` | `Style.Endfield.Shadow` |
-| M3 选中态 | 左缘 3–4px 黄条 + 实心底 | `CardList` / `CardTable` / `CardTree` / `CardTimeline`：3px 强调条 + `Accent` 24% 底 | `Style.Endfield.SelectionBar` |
+| M3 选中态 | 左缘 2px 黄条 + 实心底 | `CardList` / `CardTable` / `CardTree` / `CardTimeline`：2px 强调条 + `Accent` 24% 底；大/中图标改 3px 下缘条 | `Style.Endfield.SelectionBar` |
 | M4 按钮 | 4px 微圆角、主行动实心、不围整圈 | `CardButton` 自绘底形；Primary 实心 + 对比字色，Normal 深色块，Danger 软红块 | `Style.Endfield.Buttons` |
 | M5 进度 | 直角分段块 | `CardSegmentBar`（28 段 / 2px 间隔），`CardStatus` 使用 | `Style.Endfield.SegmentProgress` |
 | M6 铭牌 | 编号 + 面包屑 + 系统页脚 | `CardMeta` + `CardHeader.Code` + `CardFooter` | `Style.Endfield.Meta` + `FooterText` |
@@ -20,7 +20,7 @@
 关闭某一项时回落到 **2.34.0 的旧实现**，不是“关掉就没样式”：
 
 - M2 关闭：`ShadowDepth=4`、`Opacity=0.55` 的顶部投影；
-- M3 关闭：只保留 `Accent` 16% 选中底，不画左缘条，内容也不再空出 4px；
+- M3 关闭：只保留 `Accent` 16% 选中底，不画左缘条 / 下缘条，内容也不再空出竖条位置；
 - M4 关闭：`CardButton` 回到细描边 + 悬停淡色模板，圆角跟随卡片（最大 7px）；
 - M5 关闭：`CardStatus` 回到 3px 半圆端头进度；
 - M6 关闭：所有卡片不显示编号 / 页脚，`CardFooter` 整块折叠，不留下空白条；

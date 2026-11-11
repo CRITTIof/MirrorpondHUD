@@ -142,9 +142,8 @@ public sealed class TrayIcon : IDisposable
     readonly TrayHostWindow _window;
     readonly ContextMenu _menu;
     readonly MenuItem _visibilityItem;
-    readonly MenuItem _commandItem;
+    readonly MenuItem _settingsItem;
     readonly MenuItem _lockItem;
-    readonly MenuItem _autoStartItem;
     readonly Icon _icon;
 
     bool _added;
@@ -154,8 +153,6 @@ public sealed class TrayIcon : IDisposable
     public event Action ToggleVisibility;
     public event Action OpenSettings;
     public event Action ToggleLock;
-    public event Action ToggleAutoStart;
-    public event Action CommandLine;
     public event Action Exit;
 
     public TrayIcon()
@@ -168,30 +165,19 @@ public sealed class TrayIcon : IDisposable
             Placement = PlacementMode.MousePoint,
             StaysOpen = false
         };
+        HudMenuStyle.Apply(_menu);
 
         _visibilityItem = new MenuItem { Header = "隐藏叠层" };
         _visibilityItem.Click += (s, e) => { ToggleVisibility?.Invoke(); };
         _menu.Items.Add(_visibilityItem);
 
-        _commandItem = new MenuItem { Header = "快捷命令行" };
-        _commandItem.Click += (s, e) => { CommandLine?.Invoke(); };
-        _menu.Items.Add(_commandItem);
+        _settingsItem = new MenuItem { Header = "打开设置" };
+        _settingsItem.Click += (s, e) => { OpenSettings?.Invoke(); };
+        _menu.Items.Add(_settingsItem);
 
-        var settings = new MenuItem { Header = "打开设置…", FontWeight = FontWeights.Bold };
-        settings.Click += (s, e) => { OpenSettings?.Invoke(); };
-        _menu.Items.Add(settings);
-
-        _lockItem = new MenuItem { Header = "锁定叠层" };
+        _lockItem = new MenuItem { Header = "解锁" };
         _lockItem.Click += (s, e) => { ToggleLock?.Invoke(); };
         _menu.Items.Add(_lockItem);
-
-        _menu.Items.Add(new Separator());
-
-        _autoStartItem = new MenuItem { Header = "开机自动启动", IsCheckable = true, StaysOpenOnClick = true };
-        _autoStartItem.Click += (s, e) => { ToggleAutoStart?.Invoke(); };
-        _menu.Items.Add(_autoStartItem);
-
-        _menu.Items.Add(new Separator());
 
         var exit = new MenuItem { Header = "退出" };
         exit.Click += (s, e) => { Exit?.Invoke(); };
@@ -332,16 +318,17 @@ public sealed class TrayIcon : IDisposable
         AddIcon();
     }
 
-    public void Update(bool overlayVisible, bool locked, bool autoStart)
+    public void Update(bool overlayVisible, bool locked,
+                       string toggleHotkey, string settingsHotkey, string lockHotkey)
     {
         _visibilityItem.Header = overlayVisible ? "隐藏叠层" : "显示叠层";
-        _lockItem.Header = locked ? "解锁（可拖动）" : "锁定（鼠标穿透）";
-        _autoStartItem.IsChecked = autoStart;
-    }
+        _visibilityItem.InputGestureText = toggleHotkey ?? "";
 
-    public void SetCommandHotkey(string hotkey) => _commandItem.Header = string.IsNullOrWhiteSpace(hotkey)
-            ? "快捷命令行"
-            : $"快捷命令行 ({hotkey})";
+        _settingsItem.InputGestureText = settingsHotkey ?? "";
+
+        _lockItem.Header = locked ? "解锁" : "锁定";
+        _lockItem.InputGestureText = lockHotkey ?? "";
+    }
 
     public void ShowBalloon(string title, string text)
     {

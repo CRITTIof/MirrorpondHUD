@@ -88,10 +88,7 @@ public partial class OverlayWindow : Window
 
     MenuItem _menuSettings;
     MenuItem _menuToggle;
-    MenuItem _menuCommand;
     MenuItem _menuLock;
-    bool _commandAvailable;
-    string _commandHotkey = "";
 
     public event Action SettingsRequested;
     public event Action HideRequested;
@@ -103,7 +100,6 @@ public partial class OverlayWindow : Window
     public event Action<int, int> Dragging;
     /// <summary>拖动结束：参数是窗口落点的物理左上角与所在显示器序号。</summary>
     public event Action<int, int, int> Moved;
-    public event Action CommandLineRequested;
     /// <summary>窗口重新置顶后触发，富内容（视频子窗口）需要据此重新摆正 z 序。</summary>
     public event Action RaisedTopmost;
 
@@ -1001,24 +997,19 @@ public partial class OverlayWindow : Window
     void BuildContextMenu()
     {
         var menu = new ContextMenu();
-
-        _menuSettings = new MenuItem();
-        _menuSettings.Click += (s, e) => { Action h = SettingsRequested; if (h is not null) h(); };
-        menu.Items.Add(_menuSettings);
-
-        _menuCommand = new MenuItem();
-        _menuCommand.Click += (s, e) => { Action h = CommandLineRequested; if (h is not null) h(); };
-        menu.Items.Add(_menuCommand);
+        HudMenuStyle.Apply(menu);
 
         _menuToggle = new MenuItem();
         _menuToggle.Click += (s, e) => { Action h = HideRequested; if (h is not null) h(); };
         menu.Items.Add(_menuToggle);
 
+        _menuSettings = new MenuItem();
+        _menuSettings.Click += (s, e) => { Action h = SettingsRequested; if (h is not null) h(); };
+        menu.Items.Add(_menuSettings);
+
         _menuLock = new MenuItem();
         _menuLock.Click += (s, e) => { Action h = LockToggleRequested; if (h is not null) h(); };
         menu.Items.Add(_menuLock);
-
-        menu.Items.Add(new Separator());
 
         var exit = new MenuItem { Header = "退出" };
         exit.Click += (s, e) => { Action h = ExitRequested; if (h is not null) h(); };
@@ -1028,24 +1019,20 @@ public partial class OverlayWindow : Window
         UpdateMenuHeaders();
     }
 
-    static string WithHotkey(string text, string hotkey) => string.IsNullOrWhiteSpace(hotkey) ? text : $"{text} ({hotkey})";
-
     /// <summary>由控制器告诉每张卡片：当前有没有命令行卡片、它的热键是什么。</summary>
     public void SetCommandInfo(bool available, string hotkey)
     {
-        _commandAvailable = available;
-        _commandHotkey = hotkey ?? "";
-        if (_menuCommand is not null)
-            _menuCommand.Visibility = available ? Visibility.Visible : Visibility.Collapsed;
-        UpdateMenuHeaders();
+        // 右键菜单已裁成四个入口，不再展示快捷命令行；保留方法让旧调用点不用感知菜单变化。
     }
 
     void UpdateMenuHeaders()
     {
         if (_menuSettings is null) return;
-        _menuSettings.Header = WithHotkey("打开设置", _settings.Hotkeys.OpenSettings);
-        _menuCommand.Header = WithHotkey("快捷命令行", _commandHotkey);
-        _menuToggle.Header = WithHotkey("显示 / 隐藏叠层", _settings.Hotkeys.ToggleOverlay);
-        _menuLock.Header = WithHotkey("锁定叠层", _settings.Hotkeys.ToggleLock);
+        _menuSettings.Header = "打开设置";
+        _menuSettings.InputGestureText = _settings.Hotkeys.OpenSettings;
+        _menuToggle.Header = "隐藏叠层";
+        _menuToggle.InputGestureText = _settings.Hotkeys.ToggleOverlay;
+        _menuLock.Header = _settings.Overlay.Locked ? "解锁" : "锁定";
+        _menuLock.InputGestureText = _settings.Hotkeys.ToggleLock;
     }
 }

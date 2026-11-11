@@ -1134,7 +1134,7 @@ internal static class CardDataStyle
                                       bool selectionBar = true)
     {
         bool bar = selectionBar;
-        string contentMargin = bar ? "6,0,0,0" : "0";
+        string contentMargin = bar ? "4,0,0,0" : "0";
         string barSetter = bar
             ? "<Setter TargetName=\"Bar\" Property=\"Visibility\" Value=\"Visible\"/>"
             : "";
@@ -1145,7 +1145,7 @@ internal static class CardDataStyle
             "<Border x:Name=\"ItemHost\" Background=\"{TemplateBinding Background}\" Padding=\"{TemplateBinding Padding}\" CornerRadius=\"0\">" +
             "<Grid>" +
             "<ContentPresenter Margin=\"%CONTENTMARGIN%\" HorizontalAlignment=\"{TemplateBinding HorizontalContentAlignment}\" VerticalAlignment=\"Center\"/>" +
-            "<Border x:Name=\"Bar\" Width=\"4\" HorizontalAlignment=\"Left\" " +
+            "<Border x:Name=\"Bar\" Width=\"2\" HorizontalAlignment=\"Left\" " +
             "VerticalAlignment=\"Stretch\" Background=\"%BAR%\" Visibility=\"Collapsed\"/>" +
             "</Grid></Border>" +
             "<ControlTemplate.Triggers><Trigger Property=\"IsSelected\" Value=\"True\">" +

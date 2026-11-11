@@ -208,10 +208,14 @@ public sealed class CardList : Grid
     static Style BuildItemStyle(ThemeTokens tokens, Color foreground, bool selectionBar, bool tiles)
     {
         bool bar = selectionBar;
-        string contentMargin = bar ? "6,0,0,0" : "0";
-        string barSetter = bar
-            ? "<Setter TargetName=\"Bar\" Property=\"Visibility\" Value=\"Visible\"/>"
-            : "";
+        string contentMargin = bar && !tiles ? "4,0,0,0" : "0";
+        string barSetter = "";
+        if (bar)
+        {
+            barSetter = tiles
+                ? "<Setter TargetName=\"BottomBar\" Property=\"Visibility\" Value=\"Visible\"/>"
+                : "<Setter TargetName=\"Bar\" Property=\"Visibility\" Value=\"Visible\"/>";
+        }
         double selectedAlpha = selectionBar ? 0.24 : 0.16;
 
         const string templateXaml =
@@ -221,8 +225,10 @@ public sealed class CardList : Grid
             "<Grid>" +
             "<ContentPresenter Margin=\"%CONTENTMARGIN%\" HorizontalAlignment=\"{TemplateBinding HorizontalContentAlignment}\" " +
             "VerticalAlignment=\"{TemplateBinding VerticalContentAlignment}\"/>" +
-            "<Border x:Name=\"Bar\" Width=\"4\" HorizontalAlignment=\"Left\" " +
+            "<Border x:Name=\"Bar\" Width=\"2\" HorizontalAlignment=\"Left\" " +
             "VerticalAlignment=\"Stretch\" Background=\"%BAR%\" Visibility=\"Collapsed\"/>" +
+            "<Border x:Name=\"BottomBar\" Height=\"3\" HorizontalAlignment=\"Stretch\" " +
+            "VerticalAlignment=\"Bottom\" Background=\"%BAR%\" Visibility=\"Collapsed\"/>" +
             "</Grid></Border>" +
             "<ControlTemplate.Triggers>" +
             "<Trigger Property=\"IsSelected\" Value=\"True\">" +

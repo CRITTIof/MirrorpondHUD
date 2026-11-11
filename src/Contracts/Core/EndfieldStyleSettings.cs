@@ -14,7 +14,7 @@ public sealed class EndfieldStyleSettings
     /// <summary>M2：零偏移环境阴影。关闭后回到从上方打光的旧投影。</summary>
     public bool Shadow = true;
 
-    /// <summary>M3：列表 / 表格 / 树的选中左缘条。关闭后只保留旧版强调色淡底。</summary>
+    /// <summary>M3：列表 / 表格 / 树选中左缘条；大/中图标网格改用下缘条。关闭后只保留旧版强调色淡底。</summary>
     public bool SelectionBar = true;
 
     /// <summary>M4：工业按钮（实心主行动、深色次行动、4px 微圆角）。关闭后回到描边按钮。</summary>

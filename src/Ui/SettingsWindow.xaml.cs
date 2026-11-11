@@ -64,6 +64,8 @@ public partial class SettingsWindow : Window
     {
         InitializeComponent();
 
+        BuildCollapsibleSections();
+
         _onApply = onApply;
         _onPosition = onPosition;
         _onClearKeys = onClearKeys;

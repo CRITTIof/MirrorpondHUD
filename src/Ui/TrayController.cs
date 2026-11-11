@@ -10,12 +10,9 @@ internal interface ITrayHost
 {
     Settings Settings { get; }
     bool OverlayVisible { get; }
-    string CommandHotkey { get; }
     void ToggleVisibility();
     void ShowSettings();
     void ToggleLock();
-    void ToggleAutoStart();
-    void ToggleCommandLine();
     void Exit();
 }
 
@@ -46,8 +43,6 @@ internal sealed class TrayController : IDisposable
         _tray.ToggleVisibility += _host.ToggleVisibility;
         _tray.OpenSettings += _host.ShowSettings;
         _tray.ToggleLock += _host.ToggleLock;
-        _tray.ToggleAutoStart += _host.ToggleAutoStart;
-        _tray.CommandLine += _host.ToggleCommandLine;
         _tray.Exit += _host.Exit;
 
         Update();
@@ -81,8 +76,8 @@ internal sealed class TrayController : IDisposable
 
         Settings settings = _host.Settings;
         _tray.Visible = settings.Behavior.TrayEnabled;
-        _tray.SetCommandHotkey(_host.CommandHotkey);
-        _tray.Update(_host.OverlayVisible, settings.Overlay.Locked, settings.Behavior.AutoStart);
+        _tray.Update(_host.OverlayVisible, settings.Overlay.Locked,
+                     settings.Hotkeys.ToggleOverlay, settings.Hotkeys.OpenSettings, settings.Hotkeys.ToggleLock);
 
         // 运行期重新勾选托盘失败：不能只写 WARN，用户会以为图标已经打开。
         if (!settings.Behavior.TrayEnabled)

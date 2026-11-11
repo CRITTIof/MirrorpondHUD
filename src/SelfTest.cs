@@ -872,7 +872,23 @@ internal static class SelfTest
                          && legacyButton.Template is not null
                          && legacyStatus.Kind == CardStatusKind.Normal;
 
-            widgetsOk = emptyOk && countOk && selectOk && busyOk && errorOk && legacyOk;
+            // 2.37.0：托盘 / 卡片右键菜单共用样式；只保留四个可见入口。
+            var menu = new ContextMenu();
+            HudMenuStyle.Apply(menu);
+            menu.Items.Add(new MenuItem { Header = "隐藏叠层", InputGestureText = "F9" });
+            menu.Items.Add(new MenuItem { Header = "打开设置", InputGestureText = "F10" });
+            menu.Items.Add(new MenuItem { Header = "解锁", InputGestureText = "F8" });
+            menu.Items.Add(new MenuItem { Header = "退出" });
+            menu.ApplyTemplate();
+            foreach (object entry in menu.Items)
+                if (entry is MenuItem item) item.ApplyTemplate();
+            menu.Measure(new Size(320, 220));
+            menu.Arrange(new Rect(0, 0, 320, 220));
+            bool menuOk = menu.Items.Count == 4
+                       && menu.Style is not null
+                       && menu.ItemContainerStyle is not null;
+
+            widgetsOk = emptyOk && countOk && selectOk && busyOk && errorOk && legacyOk && menuOk;
         }
         catch (Exception ex)
         {

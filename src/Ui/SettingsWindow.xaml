@@ -314,6 +314,10 @@
 
                         <CheckBox x:Name="BoldCheck" Content="加粗" Margin="110,0,0,12" />
 
+                        <CheckBox x:Name="MonoReadoutsCheck" Margin="110,0,0,12"
+                                  Content="读数使用等宽数字"
+                                  ToolTip="指标数字刷新时不横跳；只改 0–9 的数字串。" />
+
                         <Grid Margin="0,0,0,10">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="110" />
@@ -421,7 +425,7 @@
                         </Grid>
 
                         <TextBlock x:Name="CliHint" Style="{StaticResource Hint}" Margin="110,0,0,10"
-                                   Text="两个面板共用这套尺寸：AI 对话每一轮问答、命令行每一条命令都是一块内部小面板，各自超出「小面板最大高度」后用自己的滑块滚动；整块超过「最大高度」后再用外层滑块。" />
+                                   Text="每轮问答、每条命令都是一块小面板，各自滚动；整块超过最大高度再用外层滑块。" />
 
                         <TextBlock Text="背景" Style="{StaticResource SectionTitle}" Margin="0,18,0,6" />
 
@@ -510,13 +514,9 @@
 
                         <CheckBox x:Name="ShadowCheck" Content="显示投影" Margin="110,4,0,0" />
 
-                        <TextBlock Text="工业风格" Style="{StaticResource SectionTitle}" Margin="0,18,0,6" />
+                        <TextBlock Text="装饰" Style="{StaticResource SectionTitle}" Margin="0,18,0,6" />
                         <TextBlock Style="{StaticResource Hint}" Margin="0,0,0,8"
                                    Text="可选，默认关闭。" />
-
-                        <CheckBox x:Name="MonoReadoutsCheck" Margin="0,0,0,4"
-                                  Content="读数使用等宽数字"
-                                  ToolTip="指标数字刷新时不横跳；只改 0–9 的数字串。" />
 
                         <Grid Margin="0,0,0,10">
                             <Grid.ColumnDefinitions>
@@ -640,6 +640,25 @@
                         </Grid>
                         </StackPanel>
 
+                        <TextBlock Text="动效" Style="{StaticResource SectionTitle}" Margin="0,18,0,6" />
+                        <CheckBox x:Name="IntroCheck" Content="启动时播放打字动画" Margin="0,0,0,8" />
+                        <CheckBox x:Name="ReduceMotionCheck" Content="减少动效" Margin="0,0,0,8" />
+                        <CheckBox x:Name="OverallMotionCheck" Content="显示和隐藏全部时播放整体动效" Margin="0,0,0,8" />
+                        <Grid Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="110" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="卡片滑入方向" VerticalAlignment="Center" />
+                            <ComboBox x:Name="CardSlideCombo" Grid.Column="1" Width="160" HorizontalAlignment="Left">
+                                <ComboBoxItem Content="无" Tag="None" />
+                                <ComboBoxItem Content="从左侧" Tag="Left" />
+                                <ComboBoxItem Content="从右侧" Tag="Right" />
+                            </ComboBox>
+                        </Grid>
+                        <TextBlock Style="{StaticResource Hint}" Margin="110,0,0,8" TextWrapping="Wrap"
+                                   Text="整体动效与滑入方向都受减少动效控制。" />
+
                         <Grid Margin="0,0,0,10">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="110" />
@@ -710,7 +729,30 @@
                         </Grid>
 
                         <TextBlock Style="{StaticResource Hint}" Margin="110,0,0,10"
-                                   Text="循环效果会持续占用 GPU。等高线变化约 30fps 重算几何；基础地形已缓存、几何在后台生成，CPU 仍比其它效果贵。呼吸幅度 0.10 是克制档。减少动效开启时自动停。" />
+                                   Text="循环效果持续占用 GPU；等高线约 30fps 重算几何。减少动效开启时自动停。" />
+
+                        <StackPanel x:Name="IntroOptionsPanel" Visibility="Collapsed">
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                <TextBlock Text="欢迎语" VerticalAlignment="Center" />
+                                <TextBox x:Name="WelcomeBox" Width="220" Margin="8,0,16,0" />
+                                <TextBlock Text="速度" VerticalAlignment="Center" />
+                                <TextBox x:Name="TypeSpeedBox" Width="64" Margin="8,0,0,0" />
+                                <TextBlock Text="毫秒 / 字" VerticalAlignment="Center" Margin="8,0,0,0" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                <TextBlock Text="光标样式" VerticalAlignment="Center" />
+                                <ComboBox x:Name="CursorStyleCombo" Width="140" Margin="8,0,20,0">
+                                    <ComboBoxItem Content="不显示" Tag="None" />
+                                    <ComboBoxItem Content="方块" Tag="Block" />
+                                    <ComboBoxItem Content="竖线" Tag="Bar" />
+                                    <ComboBoxItem Content="下划线" Tag="Underline" />
+                                    <ComboBoxItem Content="空心框" Tag="Outline" />
+                                </ComboBox>
+                                <CheckBox x:Name="CursorBlinkCheck" Content="光标闪烁" />
+                            </StackPanel>
+                            <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,2,0,0"
+                                       Text="打字时显示模拟光标，启动动画只播放第一张可见卡片。" />
+                        </StackPanel>
 
                         <TextBlock Text="终末地视觉" Style="{StaticResource SectionTitle}" Margin="0,18,0,6" />
                         <TextBlock Style="{StaticResource Hint}" Margin="0,0,0,8"
@@ -720,7 +762,7 @@
                             <CheckBox x:Name="EndfieldShadowCheck" Content="环境阴影" Margin="0,0,18,8"
                                       ToolTip="M2：零偏移的四周均匀阴影；关闭后回到从上方打光的投影。" />
                             <CheckBox x:Name="EndfieldSelectionCheck" Content="选中左条" Margin="0,0,18,8"
-                                      ToolTip="M3：列表 / 表格 / 树选中时的 3px 左缘条；关闭后只保留强调色淡底。" />
+                                      ToolTip="M3：列表左缘 2px；大/中图标下缘 3px；关闭后只保留强调色淡底。" />
                             <CheckBox x:Name="EndfieldButtonCheck" Content="工业按钮" Margin="0,0,18,8"
                                       ToolTip="M4：实心主行动、深色次行动、4px 微圆角；关闭后回到描边按钮。" />
                             <CheckBox x:Name="EndfieldSegmentCheck" Content="分段进度" Margin="0,0,18,8"
@@ -795,7 +837,7 @@
                             </StackPanel>
                         </Grid>
                         <TextBlock x:Name="GlassFpsHint" Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="110,0,0,12"
-                                   Text="每秒重新取一次屏幕并模糊：15 帧几乎看不出延迟，桌面静止时可调到 5 帧省电。" />
+                                   Text="每秒取屏并模糊；桌面静止时可降到 5 帧省电。" />
 
                         <Grid x:Name="GlassSourceRow" Margin="0,12,0,10">
                             <Grid.ColumnDefinitions>
@@ -822,7 +864,15 @@
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="18,16,18,24">
 
-                        <TextBlock Text="设备数据" Style="{StaticResource SectionTitle}" Margin="0,0,0,6" />
+                        <TextBlock Text="刷新" Style="{StaticResource SectionTitle}" Margin="0,0,0,6" />
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="采样间隔" VerticalAlignment="Center" />
+                            <ComboBox x:Name="RefreshCombo" Width="140" Margin="8,0,0,0" />
+                            <TextBlock Text="间隔越短越流畅，CPU 占用略高" Style="{StaticResource Hint}"
+                                       VerticalAlignment="Center" Margin="12,0,0,0" />
+                        </StackPanel>
+
+                        <TextBlock Text="设备数据" Style="{StaticResource SectionTitle}" Margin="0,16,0,6" />
                         <WrapPanel Margin="0,0,0,4">
                             <CheckBox x:Name="CpuCheck" Content="CPU" Margin="0,0,24,10" />
                             <CheckBox x:Name="GpuCheck" Content="GPU" Margin="0,0,24,10" />
@@ -887,15 +937,7 @@
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="18,16,18,24">
 
-                        <TextBlock Text="刷新" Style="{StaticResource SectionTitle}" Margin="0,0,0,6" />
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="采样间隔" VerticalAlignment="Center" />
-                            <ComboBox x:Name="RefreshCombo" Width="140" Margin="8,0,0,0" />
-                            <TextBlock Text="间隔越短越流畅，CPU 占用略高" Style="{StaticResource Hint}"
-                                       VerticalAlignment="Center" Margin="12,0,0,0" />
-                        </StackPanel>
-
-                        <TextBlock Text="窗口" Style="{StaticResource SectionTitle}" Margin="0,16,0,6" />
+                        <TextBlock Text="窗口" Style="{StaticResource SectionTitle}" Margin="0,0,0,6" />
                         <CheckBox x:Name="TopmostCheck" Content="始终置顶" Margin="0,0,0,8" />
                         <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,0,0,8"
                                    Text="叠层拖动只由 F8 或托盘菜单的锁定切换，开关本窗口不会自动锁定。" />
@@ -931,47 +973,6 @@
                         <CheckBox x:Name="StartMinCheck" Content="启动后最小化到托盘" Margin="0,0,0,8" />
                         <CheckBox x:Name="TrayCheck" Content="显示托盘图标" Margin="0,0,0,8" />
 
-                        <TextBlock Text="动效" Style="{StaticResource SectionTitle}" Margin="0,16,0,6" />
-                        <CheckBox x:Name="IntroCheck" Content="启动时播放打字动画" Margin="0,0,0,8" />
-                        <CheckBox x:Name="ReduceMotionCheck" Content="减少动效" Margin="0,0,0,8" />
-                        <CheckBox x:Name="OverallMotionCheck" Content="显示和隐藏全部时播放整体动效" Margin="0,0,0,8" />
-                        <Grid Margin="0,0,0,8">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="110" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="卡片滑入方向" VerticalAlignment="Center" />
-                            <ComboBox x:Name="CardSlideCombo" Grid.Column="1" Width="160" HorizontalAlignment="Left">
-                                <ComboBoxItem Content="无" Tag="None" />
-                                <ComboBoxItem Content="从左侧" Tag="Left" />
-                                <ComboBoxItem Content="从右侧" Tag="Right" />
-                            </ComboBox>
-                        </Grid>
-                        <TextBlock Style="{StaticResource Hint}" Margin="110,0,0,8" TextWrapping="Wrap"
-                                   Text="整体动效与滑入方向都受减少动效控制。" />
-                        <StackPanel x:Name="IntroOptionsPanel" Visibility="Collapsed">
-                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                                <TextBlock Text="欢迎语" VerticalAlignment="Center" />
-                                <TextBox x:Name="WelcomeBox" Width="220" Margin="8,0,16,0" />
-                                <TextBlock Text="速度" VerticalAlignment="Center" />
-                                <TextBox x:Name="TypeSpeedBox" Width="64" Margin="8,0,0,0" />
-                                <TextBlock Text="毫秒 / 字" VerticalAlignment="Center" Margin="8,0,0,0" />
-                            </StackPanel>
-                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                                <TextBlock Text="光标样式" VerticalAlignment="Center" />
-                                <ComboBox x:Name="CursorStyleCombo" Width="140" Margin="8,0,20,0">
-                                    <ComboBoxItem Content="不显示" Tag="None" />
-                                    <ComboBoxItem Content="方块" Tag="Block" />
-                                    <ComboBoxItem Content="竖线" Tag="Bar" />
-                                    <ComboBoxItem Content="下划线" Tag="Underline" />
-                                    <ComboBoxItem Content="空心框" Tag="Outline" />
-                                </ComboBox>
-                                <CheckBox x:Name="CursorBlinkCheck" Content="光标闪烁" />
-                            </StackPanel>
-                            <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,2,0,0"
-                                       Text="打字时显示模拟光标，启动动画只播放第一张可见卡片。" />
-                        </StackPanel>
-
                         <TextBlock Text="文件" Style="{StaticResource SectionTitle}" Margin="0,16,0,6" />
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="配置文件：" VerticalAlignment="Center" />
@@ -992,7 +993,7 @@
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel Margin="18,16,18,24">
                     <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap"
-                               Text="点击输入框后直接按下组合键即可修改；Esc 或右侧「清空」按钮清除，留空表示不启用。每张卡片自己的「呼出热键」在「内容」页设置；两张卡片可以设成同一个组合键，按下时会同时呼出。" />
+                               Text="点击输入框后按组合键；Esc 或清空可取消。卡片呼出热键在内容页设置。" />
 
                     <TextBlock Text="全局" Style="{StaticResource SectionTitle}" Margin="0,18,0,8" />
 

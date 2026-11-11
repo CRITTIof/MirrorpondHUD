@@ -83,20 +83,9 @@ public sealed class OverlayController : IDisposable
         public Settings Settings => _owner._settings;
         public bool OverlayVisible => _owner._overlayVisible;
 
-        public string CommandHotkey
-        {
-            get
-            {
-                CardSlot command = _owner.FindCommandCard();
-                return command is null || command.Config is null ? "" : command.Config.Hotkey;
-            }
-        }
-
         public void ToggleVisibility() => _owner.ToggleVisibility();
         public void ShowSettings() => _owner.ShowSettings();
         public void ToggleLock() => _owner.ToggleLock();
-        public void ToggleAutoStart() => _owner.ToggleAutoStart();
-        public void ToggleCommandLine() => _owner.ToggleCommandLine();
         public void Exit() => _owner.Exit();
     }
 
@@ -317,7 +306,6 @@ public sealed class OverlayController : IDisposable
         window.DragStarted += () => _settingsApplier.BeginCardDrag(slot);
         window.Dragging += (dx, dy) => _settingsApplier.OnCardDragging(slot, dx, dy);
         window.Moved += (dx, dy, monitor) => _settingsApplier.OnCardMoved(slot, dx, dy, monitor);
-        window.CommandLineRequested += () => ToggleCommandLine();
         window.SizeChanged += (s, e) => _layout.Schedule();
         window.RaisedTopmost += () =>
         {
