@@ -34,10 +34,13 @@ public sealed class CardMediaView : Grid, IDisposable
     readonly TextBlock _name;
     readonly TextBlock _statusText;
     readonly Border _statusHost;
+    readonly Grid _hostFrame;
     readonly Grid _host;
+    readonly CornerBrackets _brackets;
     readonly Image _image;
     readonly TextBlock _message;
     readonly Grid _footer;
+    readonly CardFooter _metaFooter;
     readonly Border _track;
     readonly Border _fill;
 
@@ -67,6 +70,7 @@ public sealed class CardMediaView : Grid, IDisposable
     double _clipWidth;
     double _clipHeight;
     double _clipRadius = -1;
+    string _metaCode = "";
     bool _disposed;
 
     public CardMediaView()
@@ -133,6 +137,18 @@ public sealed class CardMediaView : Grid, IDisposable
         _host.Children.Add(_image);
         _host.Children.Add(_message);
 
+        _brackets = new CornerBrackets
+        {
+            Margin = new Thickness(-4),
+            ArmLength = 13,
+            Thickness = 2,
+            IsHitTestVisible = false,
+            Visibility = Visibility.Collapsed
+        };
+        _hostFrame = new Grid();
+        _hostFrame.Children.Add(_host);
+        _hostFrame.Children.Add(_brackets);
+
         _track = new Border
         {
             Height = 3,
@@ -157,15 +173,20 @@ public sealed class CardMediaView : Grid, IDisposable
         _footer = new Grid { Visibility = Visibility.Collapsed };
         _footer.Children.Add(trackHost);
 
+        _metaFooter = new CardFooter { Visibility = Visibility.Collapsed };
+
+        RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         Children.Add(_header);
-        Children.Add(_host);
+        Children.Add(_hostFrame);
         Children.Add(_footer);
+        Children.Add(_metaFooter);
         SetRow(_header, 0);
-        SetRow(_host, 1);
+        SetRow(_hostFrame, 1);
         SetRow(_footer, 2);
+        SetRow(_metaFooter, 3);
 
         ApplyChrome();
 
@@ -246,8 +267,12 @@ public sealed class CardMediaView : Grid, IDisposable
         _statusText.FontSize = Math.Max(10, _titleSize * 0.9);
         _statusText.Foreground = Solid(_foreground, 0.95);
 
-        _host.Margin = new Thickness(_padX, 0, _padX, 0);
-        _footer.Margin = new Thickness(_padX, 5, _padX, Math.Max(7, _padY * 0.85));
+        _hostFrame.Margin = new Thickness(_padX, 0, _padX, 0);
+        _host.Margin = new Thickness(0);
+        _footer.Margin = new Thickness(_padX, 5, _padX, 0);
+        _metaFooter.Margin = new Thickness(_padX, 4, _padX, Math.Max(7, _padY * 0.85));
+        _metaFooter.ApplyStyle(style);
+        _brackets.ApplyStyle(Solid(_foreground, 0.62).Color);
 
         _track.Background = Solid(_foreground, 0.20);
         _fill.Background = Solid(_foreground, 0.85);
@@ -269,6 +294,24 @@ public sealed class CardMediaView : Grid, IDisposable
         return ColorCode.TryParse(text, out var a, out var r, out var g, out var b)
             ? Color.FromArgb(a, r, g, b)
             : fallback;
+    }
+
+    /// <summary>M6：卡片模块注入面包屑与系统页脚；文件名前加 “// 03 / ”。</summary>
+    public void SetMeta(string code, string footer)
+    {
+        _metaCode = code ?? "";
+        _metaFooter.Left = footer ?? "";
+        _metaFooter.ApplyStyle(_style);
+        if (!string.IsNullOrEmpty(_loadedPath)) RefreshName(_loadedPath);
+        _metaFooter.Visibility = _header.Visibility == Visibility.Visible
+                                 && !string.IsNullOrEmpty(_metaFooter.Left)
+            ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    void RefreshName(string path)
+    {
+        string name = FileName(path);
+        _name.Text = _metaCode.Length == 0 ? name : _metaCode + name;
     }
 
     // ==================== 绑定 ====================
@@ -294,15 +337,19 @@ public sealed class CardMediaView : Grid, IDisposable
             _name.Text = "";
             _header.Visibility = Visibility.Collapsed;
             _footer.Visibility = Visibility.Collapsed;
+            _metaFooter.Visibility = Visibility.Collapsed;
+            _brackets.Visibility = Visibility.Collapsed;
             _statusHost.Visibility = Visibility.Collapsed;
             _loadedPath = "";
             ApplySize();
             return;
         }
 
-        _name.Text = FileName(path);
+        RefreshName(path);
         _name.ToolTip = path;
         _header.Visibility = Visibility.Visible;
+        _brackets.Visibility = Visibility.Visible;
+        _metaFooter.Visibility = string.IsNullOrEmpty(_metaFooter.Left) ? Visibility.Collapsed : Visibility.Visible;
 
         if (!File.Exists(path))
         {

@@ -73,9 +73,12 @@ public sealed class ChatCard : RichCardModuleBase, ICardHotkeySource, ICardHotke
     public override FrameworkElement CreateContent(CardRenderContext context)
     {
         ChatSettings config = ChatOf(context is null ? null : context.Config);
+        CardSettings card = context is null ? null : context.Config;
+        Settings settings = context is null ? null : context.Settings;
 
-        return new ChatView(context is null ? null : context.Settings, config,
-                            context is null ? null : context.Host);
+        var view = new ChatView(settings, config, context is null ? null : context.Host);
+        view.SetMeta(CardMeta.Header(settings, card), CardMeta.Footer(settings));
+        return view;
     }
 
     /// <summary>
@@ -90,9 +93,9 @@ public sealed class ChatCard : RichCardModuleBase, ICardHotkeySource, ICardHotke
         var view = content as ChatView;
         if (view is null || context is null) return;
 
-        view.Refresh(context.Settings,
-                     context.Config ?? (context.Host is null ? null : context.Host.Config),
-                     context.Host);
+        CardSettings card = context.Config ?? (context.Host is null ? null : context.Host.Config);
+        view.Refresh(context.Settings, card, context.Host);
+        view.SetMeta(CardMeta.Header(context.Settings, card), CardMeta.Footer(context.Settings));
     }
 
     // ==================== 模块自己的设置 ====================

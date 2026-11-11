@@ -11,6 +11,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using MirrorpondHUD.Core;
 using MirrorpondHUD.Ui.Contour;
+using MirrorpondHUD.Ui.Controls;
 
 namespace MirrorpondHUD.Ui;
 
@@ -31,6 +32,10 @@ public sealed class OverlaySurface : Border
     readonly TextCanvas _canvas;
     readonly ContourDecoration _contourLayer;
     readonly Border _contourHost;
+    readonly TextBlock _metaTop;
+    readonly TextBlock _metaBottom;
+    CardSettings _metaConfig;
+    Thickness _textMargin;
     DispatcherTimer _contourTimer;
     readonly Stopwatch _contourWatch = new();
     double _contourPhase;
@@ -94,6 +99,21 @@ public sealed class OverlaySurface : Border
             IsHitTestVisible = false,
             ClipToBounds = true
         };
+        _metaTop = new TextBlock
+        {
+            Visibility = Visibility.Collapsed,
+            IsHitTestVisible = false,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top,
+            TextTrimming = TextTrimming.CharacterEllipsis
+        };
+        _metaBottom = new TextBlock
+        {
+            Visibility = Visibility.Collapsed,
+            IsHitTestVisible = false,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Bottom
+        };
 
         _root = new Grid();
         _root.Children.Add(_glassLayer);
@@ -105,6 +125,8 @@ public sealed class OverlaySurface : Border
         _root.Children.Add(_loopBand);
         _root.Children.Add(_canvas);
         _root.Children.Add(_contentLayer);
+        _root.Children.Add(_metaTop);
+        _root.Children.Add(_metaBottom);
         Unloaded += (s, e) => StopContourLoop();
 
 
@@ -116,6 +138,39 @@ public sealed class OverlaySurface : Border
     }
 
     public TextCanvas Canvas => _canvas;
+
+    /// <summary>纯文字卡的 M6 编号 / 页脚；富内容卡由各自控件画，传 null 即隐藏。</summary>
+    public void SetCardMeta(CardSettings config)
+    {
+        _metaConfig = config;
+        UpdateMeta();
+    }
+
+    void UpdateMeta()
+    {
+        bool textMode = !HasContent && _lastSettings is not null && _metaConfig is not null;
+        string header = textMode ? CardMeta.Header(_lastSettings, _metaConfig) : "";
+        string footer = textMode ? CardMeta.Footer(_lastSettings) : "";
+        string title = textMode ? (_metaConfig.Name ?? "") : "";
+
+        _metaTop.Text = header + title;
+        _metaBottom.Text = footer;
+        _metaTop.Visibility = string.IsNullOrWhiteSpace(_metaTop.Text) ? Visibility.Collapsed : Visibility.Visible;
+        _metaBottom.Visibility = string.IsNullOrWhiteSpace(footer) ? Visibility.Collapsed : Visibility.Visible;
+
+        if (textMode)
+        {
+            _canvas.Margin = new Thickness(
+                _textMargin.Left,
+                _textMargin.Top + 20,
+                _textMargin.Right,
+                _textMargin.Bottom + 20);
+        }
+        else
+        {
+            _canvas.Margin = _textMargin;
+        }
+    }
 
     /// <summary>装饰层是否为等高线且首帧几何已就绪；截图等离屏路径用。</summary>
     public bool ContourReady => _contourHost.Visibility != Visibility.Visible || _contourLayer.IsReady;
@@ -220,6 +275,7 @@ public sealed class OverlaySurface : Border
         _contentLayer.Child = content;
         _contentLayer.Visibility = Visibility.Visible;
         _canvas.Visibility = Visibility.Collapsed;
+        UpdateMeta();
     }
 
     public void ClearContent()
@@ -227,6 +283,7 @@ public sealed class OverlaySurface : Border
         _contentLayer.Child = null;
         _contentLayer.Visibility = Visibility.Collapsed;
         _canvas.Visibility = Visibility.Visible;
+        UpdateMeta();
     }
 
     public bool HasContent => _contentLayer.Child is not null;
@@ -306,7 +363,16 @@ public sealed class OverlaySurface : Border
 
         double pad = Math.Max(0, style.Padding);
         // 富内容（图片 / 视频）铺满卡片，文字按内边距缩进。
-        _canvas.Margin = new Thickness(pad * 1.15, pad * 0.7, pad * 1.15, pad * 0.7);
+        _textMargin = new Thickness(pad * 1.15, pad * 0.7, pad * 1.15, pad * 0.7);
+        _canvas.Margin = _textMargin;
+        _metaTop.FontFamily = new FontFamily(tokens.MonoFont);
+        _metaTop.FontSize = Math.Max(8, style.FontSize - 3);
+        _metaTop.Foreground = GetBrush(style.Foreground, 0.46);
+        _metaTop.Margin = new Thickness(pad * 1.15, Math.Max(9, pad * 0.8), 0, 0);
+        _metaBottom.FontFamily = _metaTop.FontFamily;
+        _metaBottom.FontSize = Math.Max(8, style.FontSize - 4);
+        _metaBottom.Foreground = GetBrush(style.Foreground, 0.34);
+        _metaBottom.Margin = new Thickness(0, 0, pad * 1.15, Math.Max(9, pad * 0.8));
         _contentLayer.Margin = new Thickness(0);
         _contentLayer.CornerRadius = CornerRadius;
 
@@ -317,12 +383,14 @@ public sealed class OverlaySurface : Border
 
         if (overlay.Shadow)
         {
+            // 终末地规范 M2：阴影是四周均匀的环境遮蔽，不是从上方打光的投影。
+            // ShadowDepth=0 时 Direction 不再有意义，保留零偏移即可。
             Effect = new DropShadowEffect
             {
                 BlurRadius = 26,
-                ShadowDepth = 4,
+                ShadowDepth = 0,
                 Direction = 270,
-                Opacity = 0.55,
+                Opacity = 0.28,
                 Color = Colors.Black
             };
             Margin = new Thickness(10);
@@ -332,6 +400,8 @@ public sealed class OverlaySurface : Border
             Effect = null;
             Margin = new Thickness(0);
         }
+
+        UpdateMeta();
     }
 
     // ==================== 背景图片 ====================

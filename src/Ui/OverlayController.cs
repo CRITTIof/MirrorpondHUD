@@ -475,7 +475,7 @@ public sealed class OverlayController : IDisposable
         }
         else
         {
-            slot.Window.Apply(slot.Dialog, text ?? "");
+            slot.Window.Apply(slot.Dialog, text ?? "", slot.Config);
         }
 
         bool motion = animate && CardMotion.Enabled;

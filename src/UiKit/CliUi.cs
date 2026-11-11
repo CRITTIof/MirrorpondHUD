@@ -281,10 +281,12 @@ public abstract class CliPanelView : Grid, ICliFocusTarget
 
     readonly StackPanel _records;
     readonly ScrollViewer _recordView;
+    readonly TextBlock _code;
     readonly TextBlock _title;
     readonly TextBlock _badge;
     readonly TextBlock _prompt;
     readonly TextBlock _status;
+    readonly CardFooter _footer;
     readonly Border _headerHost;
     readonly Border _rule;
     readonly Border _recordHost;
@@ -316,11 +318,22 @@ public abstract class CliPanelView : Grid, ICliFocusTarget
         RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // 记录
         RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // 输入
         RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // 状态
+        RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // 系统页脚
 
         // ---------- 标题行 ----------
         var header = new Grid();
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        _code = new TextBlock
+        {
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 6, 0),
+            Foreground = CardPalette.Brush(Tokens.Muted),
+            FontSize = Math.Max(8, FontSize - 2),
+            FontFamily = MonoFamily,
+            Visibility = Visibility.Collapsed
+        };
 
         _title = new TextBlock
         {
@@ -341,8 +354,11 @@ public abstract class CliPanelView : Grid, ICliFocusTarget
             FontFamily = MonoFamily
         };
 
+        var headerLeft = new StackPanel { Orientation = Orientation.Horizontal };
+        headerLeft.Children.Add(_code);
+        headerLeft.Children.Add(_title);
         Grid.SetColumn(_badge, 1);
-        header.Children.Add(_title);
+        header.Children.Add(headerLeft);
         header.Children.Add(_badge);
 
         _headerHost = new Border
@@ -454,6 +470,11 @@ public abstract class CliPanelView : Grid, ICliFocusTarget
         };
         Children.Add(_status);
         SetRow(_status, 4);
+
+        // M6：系统页脚（版本 / 显示器），与卡片底部留白一起收尾。
+        _footer = new CardFooter { Margin = new Thickness(Pad, 2, Pad, 0) };
+        Children.Add(_footer);
+        SetRow(_footer, 5);
     }
 
     // ==================== 就地换肤 ====================
@@ -492,6 +513,10 @@ public abstract class CliPanelView : Grid, ICliFocusTarget
 
     void ApplyChrome()
     {
+        _code.Foreground = CardPalette.Brush(Tokens.Muted);
+        _code.FontSize = Math.Max(8, FontSize - 2);
+        _code.FontFamily = MonoFamily;
+
         _title.Foreground = CardPalette.Brush(Foreground, 0.95);
         _title.FontSize = FontSize + 1;
         _title.FontFamily = MonoFamily;
@@ -525,9 +550,11 @@ public abstract class CliPanelView : Grid, ICliFocusTarget
         _status.Foreground = CardPalette.Brush(
             _statusError ? Color.FromRgb(0xE5, 0x7B, 0x6E) : Foreground, _statusError ? 1.0 : 0.5);
         _status.Margin = new Thickness(Pad, 1, Pad, Math.Max(5, Pad * 0.55));
+        _footer.Margin = new Thickness(Pad, 2, Pad, Math.Max(16, Pad * 0.9));
+        _footer.ApplyStyle(StyleSet);
 
-        // 记录区高度上限跟着字号 / 内边距重算
-        double chrome = Pad * 2.4 + FontSize * 5.2;
+        // 记录区高度上限跟着字号 / 内边距重算；页脚占一行，也要扣掉。
+        double chrome = Pad * 2.4 + FontSize * 5.2 + 16;
         _recordView.MaxHeight = Math.Max(60, Cli.MaxHeight - chrome);
     }
 
@@ -546,6 +573,15 @@ public abstract class CliPanelView : Grid, ICliFocusTarget
     // ==================== 给子类用的零件 ====================
 
     protected void SetTitle(string text) => _title.Text = text ?? "";
+
+    /// <summary>M6：面包屑前缀与系统页脚由卡片模块注入，不在这里猜卡片顺序。</summary>
+    public void SetMeta(string code, string footer)
+    {
+        _code.Text = code ?? "";
+        _code.Visibility = string.IsNullOrEmpty(_code.Text) ? Visibility.Collapsed : Visibility.Visible;
+        _footer.Left = footer ?? "";
+        _footer.ApplyStyle(StyleSet);
+    }
 
     protected void SetBadge(string text, string tooltip)
     {

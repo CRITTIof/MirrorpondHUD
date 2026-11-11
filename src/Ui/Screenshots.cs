@@ -164,6 +164,7 @@ public static class Screenshots
                 }
                 else
                 {
+                    surface.SetCardMeta(card);
                     surface.Apply(settings, module.Render(
                         new CardRenderContext(settings, snap, keys, card)));
                 }
@@ -411,6 +412,21 @@ public static class Screenshots
             error.SetText("复制失败：磁盘空间不足", CardStatusKind.Error);
             error.SetProgress(null);
             stack.Children.Add(error);
+
+            // M4/M8 回归样张：三种语气并排，主行动应有实心切角，另两种是深色块。
+            var buttons = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0) };
+            foreach (var item in new[]
+                     {
+                         new { Text = "确认出发", Tone = CardButtonTone.Primary },
+                         new { Text = "稍后", Tone = CardButtonTone.Normal },
+                         new { Text = "移除", Tone = CardButtonTone.Danger }
+                     })
+            {
+                var button = new CardButton(item.Text, item.Tone) { Margin = new Thickness(0, 0, 8, 0) };
+                button.ApplyStyle(style, settings.Overlay.CornerRadius);
+                buttons.Children.Add(button);
+            }
+            stack.Children.Add(buttons);
 
             var card = new Border
             {

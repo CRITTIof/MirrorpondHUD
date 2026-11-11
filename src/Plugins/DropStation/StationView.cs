@@ -40,6 +40,7 @@ internal sealed class StationView : Grid, IDisposable, IStationCopySink
     readonly CardInput _search;
     readonly CardList _list;
     readonly CardStatus _status;
+    readonly CardFooter _footer;
     readonly CardDropOverlay _dropOverlay;
     readonly StationSelection _selection;
     readonly List<StationItem> _items = new();
@@ -66,6 +67,7 @@ internal sealed class StationView : Grid, IDisposable, IStationCopySink
         _files = new StationFileActions(_host, _station, SetStatus, PersistAndRebuild);
 
         _content = new Grid();
+        _content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         _content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         _content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         _content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -135,6 +137,10 @@ internal sealed class StationView : Grid, IDisposable, IStationCopySink
         SetRow(statusRow, 3);
         _content.Children.Add(statusRow);
 
+        _footer = new CardFooter { Margin = new Thickness(0, 8, 0, 0) };
+        SetRow(_footer, 4);
+        _content.Children.Add(_footer);
+
         ApplyStyle(_settings);
         LoadItems();
         Rebuild();
@@ -185,7 +191,10 @@ internal sealed class StationView : Grid, IDisposable, IStationCopySink
         CliSettings cli = _settings.Cli ?? new CliSettings();
         Width = Math.Max(240, cli.MaxWidth);
 
+        _header.Code = CardMeta.Header(_settings, _config);
         _header.ApplyStyle(_settings.Style, _settings.Overlay.CornerRadius);
+        _footer.Left = CardMeta.Footer(_settings);
+        _footer.ApplyStyle(_settings.Style);
         _search.ApplyStyle(_settings.Style, _settings.Overlay.CornerRadius);
         _list.ApplyStyle(_settings.Style, cli);
         _status.ApplyStyle(_settings.Style, _settings.Overlay.CornerRadius);

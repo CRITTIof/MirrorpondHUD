@@ -318,11 +318,11 @@ internal sealed class RenderScheduler : IDisposable
                 if (slot.Shown)
                 {
                     if (slot.Rich is not null) _host.ShowCard(slot, "");
-                    else slot.Window.Apply(slot.Dialog, RenderCardText(slot));
+                    else slot.Window.Apply(slot.Dialog, RenderCardText(slot), slot.Config);
                 }
                 else
                 {
-                    slot.Window.Apply(slot.Dialog, "");
+                    slot.Window.Apply(slot.Dialog, "", slot.Config);
                 }
             }
         }
@@ -334,11 +334,11 @@ internal sealed class RenderScheduler : IDisposable
             if (slot.Shown)
             {
                 if (slot.Rich is not null) _host.ShowCard(slot, "");
-                else slot.Window.Apply(slot.Dialog, RenderCardText(slot));
+                else slot.Window.Apply(slot.Dialog, RenderCardText(slot), slot.Config);
             }
             else
             {
-                slot.Window.Apply(slot.Dialog, "");
+                slot.Window.Apply(slot.Dialog, "", slot.Config);
             }
         }
     }

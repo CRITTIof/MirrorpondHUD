@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Windows;
 using MirrorpondHUD.Core;
+using MirrorpondHUD.Ui.Controls;
 using MirrorpondHUD.Ui.Controls.Media;
 
 namespace MirrorpondHUD.Cards;
@@ -74,13 +75,20 @@ public sealed class MediaCard : RichCardModuleBase, ICardHotkeySource, ICardHotk
             .WithStyle(context is null ? null : context.Settings.Style);
 
         view.Bind(Media(context));
+        view.SetMeta(CardMeta.Header(context is null ? null : context.Settings,
+                                     context is null ? null : context.Config),
+                     CardMeta.Footer(context is null ? null : context.Settings));
         return view;
     }
 
     public override void UpdateContent(FrameworkElement content, CardRenderContext context)
     {
         var view = content as CardMediaView;
-        if (view is not null) view.Bind(Media(context));
+        if (view is null) return;
+        view.Bind(Media(context));
+        view.SetMeta(CardMeta.Header(context is null ? null : context.Settings,
+                                     context is null ? null : context.Config),
+                     CardMeta.Footer(context is null ? null : context.Settings));
     }
 
     public override void OnVisibilityChanged(FrameworkElement content, bool visible)

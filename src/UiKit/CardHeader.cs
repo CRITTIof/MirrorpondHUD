@@ -13,8 +13,10 @@ namespace MirrorpondHUD.Ui.Controls;
 /// </summary>
 public sealed class CardHeader : Grid
 {
+    readonly TextBlock _code;
     readonly TextBlock _title;
     readonly TextBlock _badge;
+    readonly CutCornerBorder _badgeHost;
     string _badgeValue = "";
 
     public CardHeader(string title = null)
@@ -22,6 +24,12 @@ public sealed class CardHeader : Grid
         ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
+        _code = new TextBlock
+        {
+            Margin = new Thickness(0, 0, 6, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            Visibility = Visibility.Collapsed
+        };
         _title = new TextBlock
         {
             Text = title ?? "",
@@ -36,9 +44,22 @@ public sealed class CardHeader : Grid
             Visibility = Visibility.Collapsed
         };
 
+        // M8：角标是切角小牌，不再是一段裸文字；切角尺寸 6px 对应 ≤28px 的小标签。
+        _badgeHost = new CutCornerBorder
+        {
+            Margin = new Thickness(8, 0, 0, 0),
+            Padding = new Thickness(6, 1, 8, 1),
+            CutSize = 6,
+            Corner = CutCorner.TopRight,
+            VerticalAlignment = VerticalAlignment.Center,
+            Visibility = Visibility.Collapsed,
+            Child = _badge
+        };
+
         var left = new StackPanel { Orientation = Orientation.Horizontal };
+        left.Children.Add(_code);
         left.Children.Add(_title);
-        left.Children.Add(_badge);
+        left.Children.Add(_badgeHost);
 
         Actions = new CardToolbar
         {
@@ -58,6 +79,17 @@ public sealed class CardHeader : Grid
         get => _title.Text ?? ""; set => _title.Text = value ?? "";
     }
 
+    /// <summary>M6 的面包屑前缀，例如 “// 03 / ”；空 = 不显示。</summary>
+    public string Code
+    {
+        get => _code.Text ?? "";
+        set
+        {
+            _code.Text = value ?? "";
+            _code.Visibility = string.IsNullOrEmpty(_code.Text) ? Visibility.Collapsed : Visibility.Visible;
+        }
+    }
+
     /// <summary>标题右侧的小字（“12 个文件”“只读”）；null / 空串隐藏。</summary>
     public string Badge
     {
@@ -73,6 +105,7 @@ public sealed class CardHeader : Grid
     {
         _badge.Text = _badgeValue;
         _badge.Visibility = string.IsNullOrEmpty(_badge.Text) ? Visibility.Collapsed : Visibility.Visible;
+        _badgeHost.Visibility = string.IsNullOrEmpty(_badge.Text) ? Visibility.Collapsed : Visibility.Visible;
     }
 
     public void ApplyStyle(StyleSettings style, double cornerRadius)
@@ -81,13 +114,21 @@ public sealed class CardHeader : Grid
         ThemeTokens tokens = ThemeResolver.Resolve(s);
         Color foreground = CardPalette.TryColor(s.Foreground, Color.FromRgb(0xE6, 0xED, 0xF3));
 
+        FontFamily mono = new FontFamily(tokens.MonoFont);
+        _code.FontFamily = mono;
+        _code.FontSize = Math.Max(8, s.FontSize - 2);
+        _code.Foreground = CardPalette.Brush(tokens.Muted);
+
         _title.FontFamily = CardPalette.ResolveFont(s.FontFamily);
         _title.FontSize = Math.Max(11, s.FontSize + 1);
         _title.Foreground = CardPalette.Brush(foreground, 0.95);
 
-        _badge.FontFamily = _title.FontFamily;
+        _badge.FontFamily = mono;
         _badge.FontSize = Math.Max(9, s.FontSize - 1);
-        _badge.Foreground = CardPalette.Brush(tokens.Muted);
+        _badge.Foreground = CardPalette.Brush(tokens.Accent);
+        _badgeHost.Background = CardPalette.Brush(tokens.Accent, 0.12);
+        _badgeHost.BorderBrush = CardPalette.Brush(tokens.Accent, 0.42);
+        _badgeHost.BorderThickness = new Thickness(1);
         UpdateBadgeText();
         // 徽标里常见计数（2/5），数字列对齐可以避免刷新时左右跳。
         Typography.SetNumeralAlignment(_badge, FontNumeralAlignment.Tabular);

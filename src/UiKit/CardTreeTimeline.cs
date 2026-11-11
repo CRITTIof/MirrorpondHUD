@@ -411,14 +411,15 @@ public sealed class CardTree : Grid
     static Style BuildItemStyle(ThemeTokens tokens, Color foreground, double fontSize, double radius)
     {
         string template =
-            $"<ControlTemplate TargetType=\"TreeViewItem\" xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\"><Grid><Grid.RowDefinitions><RowDefinition Height=\"Auto\"/><RowDefinition Height=\"Auto\"/></Grid.RowDefinitions><Border x:Name=\"ItemHost\" Background=\"Transparent\" CornerRadius=\"%RADIUS%\" Padding=\"3,2,6,2\" Margin=\"0,0,0,1\"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width=\"15\"/><ColumnDefinition Width=\"*\"/></Grid.ColumnDefinitions><TextBlock x:Name=\"Glyph\" Text=\"▸\" FontSize=\"%GLYPH%\" Foreground=\"%MUTED%\" VerticalAlignment=\"Center\" HorizontalAlignment=\"Left\" Visibility=\"Collapsed\"/><ContentPresenter Grid.Column=\"1\" ContentSource=\"Header\" HorizontalAlignment=\"Stretch\" VerticalAlignment=\"Center\"/></Grid></Border><ItemsPresenter x:Name=\"ItemsHost\" Grid.Row=\"1\" Margin=\"15,0,0,0\" Visibility=\"Collapsed\"/></Grid><ControlTemplate.Triggers><MultiTrigger><MultiTrigger.Conditions><Condition Property=\"HasItems\" Value=\"True\"/><Condition Property=\"IsExpanded\" Value=\"False\"/></MultiTrigger.Conditions><Setter TargetName=\"Glyph\" Property=\"Visibility\" Value=\"Visible\"/></MultiTrigger><MultiTrigger><MultiTrigger.Conditions><Condition Property=\"HasItems\" Value=\"True\"/><Condition Property=\"IsExpanded\" Value=\"True\"/></MultiTrigger.Conditions><Setter TargetName=\"Glyph\" Property=\"Visibility\" Value=\"Visible\"/><Setter TargetName=\"Glyph\" Property=\"Text\" Value=\"▾\"/><Setter TargetName=\"ItemsHost\" Property=\"Visibility\" Value=\"Visible\"/></MultiTrigger><Trigger SourceName=\"ItemHost\" Property=\"IsMouseOver\" Value=\"True\"><Setter TargetName=\"ItemHost\" Property=\"Background\" Value=\"%HOVER%\"/></Trigger><Trigger Property=\"IsSelected\" Value=\"True\"><Setter TargetName=\"ItemHost\" Property=\"Background\" Value=\"%SELECTED%\"/></Trigger></ControlTemplate.Triggers></ControlTemplate>";
+            $"<ControlTemplate TargetType=\"TreeViewItem\" xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\"><Grid><Grid.RowDefinitions><RowDefinition Height=\"Auto\"/><RowDefinition Height=\"Auto\"/></Grid.RowDefinitions><Border x:Name=\"ItemHost\" Background=\"Transparent\" CornerRadius=\"%RADIUS%\" Padding=\"3,2,6,2\" Margin=\"0,0,0,1\"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width=\"15\"/><ColumnDefinition Width=\"*\"/></Grid.ColumnDefinitions><Border x:Name=\"Bar\" Width=\"3\" Height=\"16\" HorizontalAlignment=\"Left\" VerticalAlignment=\"Center\" Background=\"%BAR%\" Visibility=\"Collapsed\"/><TextBlock x:Name=\"Glyph\" Text=\"▸\" FontSize=\"%GLYPH%\" Foreground=\"%MUTED%\" VerticalAlignment=\"Center\" HorizontalAlignment=\"Left\" Visibility=\"Collapsed\"/><ContentPresenter Grid.Column=\"1\" ContentSource=\"Header\" HorizontalAlignment=\"Stretch\" VerticalAlignment=\"Center\"/></Grid></Border><ItemsPresenter x:Name=\"ItemsHost\" Grid.Row=\"1\" Margin=\"15,0,0,0\" Visibility=\"Collapsed\"/></Grid><ControlTemplate.Triggers><MultiTrigger><MultiTrigger.Conditions><Condition Property=\"HasItems\" Value=\"True\"/><Condition Property=\"IsExpanded\" Value=\"False\"/></MultiTrigger.Conditions><Setter TargetName=\"Glyph\" Property=\"Visibility\" Value=\"Visible\"/></MultiTrigger><MultiTrigger><MultiTrigger.Conditions><Condition Property=\"HasItems\" Value=\"True\"/><Condition Property=\"IsExpanded\" Value=\"True\"/></MultiTrigger.Conditions><Setter TargetName=\"Glyph\" Property=\"Visibility\" Value=\"Visible\"/><Setter TargetName=\"Glyph\" Property=\"Text\" Value=\"▾\"/><Setter TargetName=\"ItemsHost\" Property=\"Visibility\" Value=\"Visible\"/></MultiTrigger><Trigger SourceName=\"ItemHost\" Property=\"IsMouseOver\" Value=\"True\"><Setter TargetName=\"ItemHost\" Property=\"Background\" Value=\"%HOVER%\"/></Trigger><Trigger Property=\"IsSelected\" Value=\"True\"><Setter TargetName=\"ItemHost\" Property=\"Background\" Value=\"%SELECTED%\"/><Setter TargetName=\"Bar\" Property=\"Visibility\" Value=\"Visible\"/></Trigger></ControlTemplate.Triggers></ControlTemplate>";
 
         template = template
             .Replace("%RADIUS%", radius.ToString("0.##", CultureInfo.InvariantCulture))
             .Replace("%GLYPH%", Math.Max(7, fontSize - 3).ToString("0.##", CultureInfo.InvariantCulture))
             .Replace("%MUTED%", tokens.Muted.ToString())
             .Replace("%HOVER%", ThemeResolver.WithAlpha(foreground, 0.06).ToString())
-            .Replace("%SELECTED%", ThemeResolver.WithAlpha(tokens.Accent, 0.16).ToString());
+            .Replace("%BAR%", ThemeResolver.WithAlpha(tokens.Accent, 0.9).ToString())
+            .Replace("%SELECTED%", ThemeResolver.WithAlpha(tokens.Accent, 0.24).ToString());
 
         var style = new Style(typeof(TreeViewItem));
         style.Setters.Add(new Setter(Control.TemplateProperty, (ControlTemplate)XamlReader.Parse(template)));
@@ -795,21 +796,26 @@ public sealed class CardTimeline : Grid
             "xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\">" +
             "<Border x:Name=\"ItemHost\" Background=\"Transparent\" CornerRadius=\"%RADIUS%\" " +
             "Padding=\"4,3,6,3\" Margin=\"0,0,0,1\">" +
-            "<ContentPresenter HorizontalAlignment=\"{TemplateBinding HorizontalContentAlignment}\" " +
+            "<Grid>" +
+            "<Border x:Name=\"Bar\" Width=\"3\" Height=\"16\" HorizontalAlignment=\"Left\" " +
+            "VerticalAlignment=\"Center\" Background=\"%BAR%\" Visibility=\"Collapsed\"/>" +
+            "<ContentPresenter Margin=\"4,0,0,0\" HorizontalAlignment=\"{TemplateBinding HorizontalContentAlignment}\" " +
             "VerticalAlignment=\"{TemplateBinding VerticalContentAlignment}\"/>" +
-            "</Border>" +
+            "</Grid></Border>" +
             "<ControlTemplate.Triggers>" +
             "<Trigger SourceName=\"ItemHost\" Property=\"IsMouseOver\" Value=\"True\">" +
             "<Setter TargetName=\"ItemHost\" Property=\"Background\" Value=\"%HOVER%\"/></Trigger>" +
             "<Trigger Property=\"IsSelected\" Value=\"True\">" +
-            "<Setter TargetName=\"ItemHost\" Property=\"Background\" Value=\"%SELECTED%\"/></Trigger>" +
+            "<Setter TargetName=\"ItemHost\" Property=\"Background\" Value=\"%SELECTED%\"/>" +
+            "<Setter TargetName=\"Bar\" Property=\"Visibility\" Value=\"Visible\"/></Trigger>" +
             "</ControlTemplate.Triggers>" +
             "</ControlTemplate>";
 
         template = template
             .Replace("%RADIUS%", radius.ToString("0.##", CultureInfo.InvariantCulture))
             .Replace("%HOVER%", ThemeResolver.WithAlpha(foreground, 0.06).ToString())
-            .Replace("%SELECTED%", ThemeResolver.WithAlpha(tokens.Accent, 0.16).ToString());
+            .Replace("%BAR%", ThemeResolver.WithAlpha(tokens.Accent, 0.9).ToString())
+            .Replace("%SELECTED%", ThemeResolver.WithAlpha(tokens.Accent, 0.24).ToString());
 
         var style = new Style(typeof(ListBoxItem));
         style.Setters.Add(new Setter(Control.TemplateProperty, (ControlTemplate)XamlReader.Parse(template)));

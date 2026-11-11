@@ -30,8 +30,8 @@ public sealed class CardStatus : Grid
     readonly TextBlock _icon;
     readonly TextBlock _text;
     readonly Grid _progressHost;
-    readonly Border _track;
-    readonly Border _fill;
+    readonly CardSegmentBar _segment;
+    readonly CornerBrackets _brackets;
     readonly DispatcherTimer _timer;
 
     StyleSettings _style;
@@ -65,21 +65,28 @@ public sealed class CardStatus : Grid
         line.Children.Add(_text);
         Children.Add(line);
 
-        _track = new Border { Height = 3, CornerRadius = new CornerRadius(1.5) };
-        _fill = new Border
+        _segment = new CardSegmentBar
         {
-            Height = 3,
-            CornerRadius = new CornerRadius(1.5),
-            HorizontalAlignment = HorizontalAlignment.Left,
-            Width = 0
+            Height = 4,
+            Value = 0,
+            Segments = 28,
+            Gap = 2
         };
-        _track.SizeChanged += (s, e) => UpdateProgress();
 
-        _progressHost = new Grid { Margin = new Thickness(19, 2, 0, 0), Visibility = Visibility.Collapsed };
-        _progressHost.Children.Add(_track);
-        _progressHost.Children.Add(_fill);
+        _progressHost = new Grid { Margin = new Thickness(19, 3, 0, 0), Visibility = Visibility.Collapsed };
+        _progressHost.Children.Add(_segment);
         SetRow(_progressHost, 1);
         Children.Add(_progressHost);
+
+        _brackets = new CornerBrackets
+        {
+            Margin = new Thickness(-4),
+            ArmLength = 12,
+            Thickness = 2,
+            IsHitTestVisible = false
+        };
+        SetRowSpan(_brackets, 2);
+        Children.Add(_brackets);
 
         _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(90) };
         _timer.Tick += (s, e) =>
@@ -135,6 +142,7 @@ public sealed class CardStatus : Grid
     {
         _progress = value;
         _progressHost.Visibility = value.HasValue ? Visibility.Visible : Visibility.Collapsed;
+        _segment.Value = value ?? 0;
         UpdateProgress();
     }
 
@@ -152,22 +160,22 @@ public sealed class CardStatus : Grid
         _text.FontFamily = family;
         _text.FontSize = size;
 
-        // M2：直角主题下 3px 进度条也去圆头，变成分段方块；圆角主题保持原来的半圆端头。
-        double radius = cornerRadius >= 0 && cornerRadius <= 0.01 ? 0.0 : 1.5;
-        _track.CornerRadius = new CornerRadius(radius);
-        _fill.CornerRadius = new CornerRadius(radius);
-
-        _track.Background = CardPalette.Brush(_foreground, 0.12);
+        // M5：进度统一为直角分段块，不再按卡片圆角决定半圆端头。
+        _segment.TrackBrush = CardPalette.Brush(_foreground, 0.12);
+        _brackets.ApplyStyle(CardPalette.TryColor(_style.Foreground, _foreground));
         UpdateVisual();
     }
 
     void UpdateVisual()
     {
         _text.Foreground = CardPalette.Brush(_foreground, 0.72);
-        _fill.Background = CardPalette.Brush(
+        _segment.FillBrush = CardPalette.Brush(
             _kind == CardStatusKind.Error ? _tokens.Danger
             : _kind == CardStatusKind.Success ? _tokens.Success
             : _tokens.Accent);
+        _brackets.Visibility = _kind == CardStatusKind.Error || _kind == CardStatusKind.Warning
+            ? Visibility.Visible
+            : Visibility.Collapsed;
 
         switch (_kind)
         {
@@ -216,9 +224,6 @@ public sealed class CardStatus : Grid
 
     void UpdateProgress()
     {
-        if (!_progress.HasValue) return;
-
-        double value = Math.Max(0.0, Math.Min(1.0, _progress.Value));
-        _fill.Width = Math.Max(0, _track.ActualWidth * value);
+        if (_progress.HasValue) _segment.Value = Math.Max(0.0, Math.Min(1.0, _progress.Value));
     }
 }

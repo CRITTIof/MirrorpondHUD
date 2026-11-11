@@ -184,12 +184,13 @@ public partial class OverlayWindow : Window
         _topmostTimer.Start();
     }
 
-    public void Apply(Settings settings, string text)
+    public void Apply(Settings settings, string text, CardSettings config = null)
     {
         _settings = settings;
         // 设置变了就再给两块底板一次机会（底板对象保留，不重建）
         _glassRuntime.ResetAvailability();
         Surface.ClearContent();
+        Surface.SetCardMeta(config);
         Surface.Apply(settings, text, false);
         if (_handleReady) _glassRuntime.UpdateGlassCapture();
         Topmost = settings.Overlay.Topmost;
@@ -202,6 +203,7 @@ public partial class OverlayWindow : Window
     {
         _settings = settings;
         _glassRuntime.ResetAvailability();
+        Surface.SetCardMeta(null);
         Surface.Apply(settings, "");
         Surface.SetContent(content);
         if (_handleReady) _glassRuntime.UpdateGlassCapture();

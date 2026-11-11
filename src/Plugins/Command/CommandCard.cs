@@ -55,7 +55,9 @@ public sealed class CommandCard : RichCardModuleBase, ICardSettingsModule, ICard
         Settings settings = context is null ? null : context.Settings;
         CardSettings config = context is null ? null : context.Config;
 
-        return new CommandView(settings, CommandOf(config));
+        var view = new CommandView(settings, CommandOf(config));
+        view.SetMeta(CardMeta.Header(settings, config), CardMeta.Footer(settings));
+        return view;
     }
 
     // ==================== 模块自己的设置 ====================

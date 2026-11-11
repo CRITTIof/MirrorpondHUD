@@ -165,11 +165,20 @@ public sealed class CardList : Grid
     static Style BuildItemStyle(ThemeTokens tokens, Color foreground)
     {
         const string templateXaml =
-            "<ControlTemplate TargetType=\"ListBoxItem\" xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\">" +
-            "<Border Background=\"{TemplateBinding Background}\" Padding=\"{TemplateBinding Padding}\" CornerRadius=\"4\">" +
-            "<ContentPresenter HorizontalAlignment=\"{TemplateBinding HorizontalContentAlignment}\" " +
+            "<ControlTemplate TargetType=\"ListBoxItem\" xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\">" +
+            "<Border x:Name=\"ItemHost\" Background=\"{TemplateBinding Background}\" Padding=\"{TemplateBinding Padding}\" CornerRadius=\"0\">" +
+            "<Grid>" +
+            "<Border x:Name=\"Bar\" Width=\"3\" Height=\"18\" HorizontalAlignment=\"Left\" " +
+            "VerticalAlignment=\"Center\" Background=\"%BAR%\" Visibility=\"Collapsed\"/>" +
+            "<ContentPresenter Margin=\"4,0,0,0\" HorizontalAlignment=\"{TemplateBinding HorizontalContentAlignment}\" " +
             "VerticalAlignment=\"{TemplateBinding VerticalContentAlignment}\"/>" +
-            "</Border></ControlTemplate>";
+            "</Grid></Border>" +
+            "<ControlTemplate.Triggers>" +
+            "<Trigger Property=\"IsSelected\" Value=\"True\">" +
+            "<Setter TargetName=\"Bar\" Property=\"Visibility\" Value=\"Visible\"/>" +
+            "</Trigger>" +
+            "</ControlTemplate.Triggers>" +
+            "</ControlTemplate>";
 
         var style = new Style(typeof(ListBoxItem));
         style.Setters.Add(new Setter(Control.BackgroundProperty, Brushes.Transparent));
@@ -179,14 +188,16 @@ public sealed class CardList : Grid
         style.Setters.Add(new Setter(Control.HorizontalContentAlignmentProperty, HorizontalAlignment.Stretch));
         style.Setters.Add(new Setter(Control.ForegroundProperty, new SolidColorBrush(foreground)));
         style.Setters.Add(new Setter(Control.FocusVisualStyleProperty, null));
-        style.Setters.Add(new Setter(Control.TemplateProperty, (ControlTemplate)XamlReader.Parse(templateXaml)));
+        string template = templateXaml.Replace(
+            "%BAR%", ThemeResolver.WithAlpha(tokens.Accent, 0.9).ToString());
+        style.Setters.Add(new Setter(Control.TemplateProperty, (ControlTemplate)XamlReader.Parse(template)));
 
         var hover = new Trigger { Property = IsMouseOverProperty, Value = true };
         hover.Setters.Add(new Setter(Control.BackgroundProperty, CardPalette.Brush(foreground, 0.06)));
         style.Triggers.Add(hover);
 
         var selected = new Trigger { Property = ListBoxItem.IsSelectedProperty, Value = true };
-        selected.Setters.Add(new Setter(Control.BackgroundProperty, CardPalette.Brush(tokens.Accent, 0.16)));
+        selected.Setters.Add(new Setter(Control.BackgroundProperty, CardPalette.Brush(tokens.Accent, 0.24)));
         style.Triggers.Add(selected);
 
         return style;
