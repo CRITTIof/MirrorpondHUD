@@ -1,4 +1,4 @@
-# 版本修改记录（2.4.1 → 2.29.0）
+# 版本修改记录（2.4.1 → 2.30.0）
 
 > 范围：本文只记录**这一轮接手后我做的版本**（v2.4.1 起）。v2.4.0 及更早是既有历史，不在本文档里。
 > 数据全部取自仓库真实提交（`git diff --shortstat <上一版>..<本版>`），文件行的 `+ / -` 就是实际增删行数。
@@ -10,10 +10,10 @@
 > `f67a255` / `5f8933c` / `ef70cea`，**未发布、未合并**）；`v2.14.5`（`a0fe549`）/ `v2.14.6`（`3e6abc6`）
 > 已推送到 `origin/feature/runtime-card-loading`；
 > `v2.14.7`（`abcbcec`）/ `v2.14.8`（`633e9d6`）已随文档同步提交 `d73d2ec` 推送到同一分支（未发布、未合并）；
-> `v2.14.9`（`aba873a`）已推送；`v2.15.0`（`78d3381`）已推送（文档同步提交 `2eba9b4`）；`v2.16.0`（代码 `6406d96`，文档同步 `d1fd414`）**已推送并快进合并到 `main`**；`v2.17.0`（`27b8bbd`）/ `v2.18.0`（`1e1c6ac`）/ `v2.19.0`（`d21773c`）**已推送并快进合并到 `main`**；`v2.20.0`（代码 `d8f36ab`，文档 `de64021`）**已推送并快进合并到 `main`**；`v2.21.0`（代码 `0d687e9`，文档 `4911e1b`）**已推送并快进合并到 `main`**，未打 tag、未发布 Release；`v2.22.0`（代码为 `73837aa`–`2907be0` 的 12 个提交，文档同步本次提交）**已合并 `main`**，未打 tag、未发布 Release。 `v2.23.0`（本轮 6 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.24.0`（本轮 4 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.25.0`（本轮 2 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.26.0`（本轮 2 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.27.0`（本轮按审阅复核顺序修复 + 性能采样，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.28.0`（UX 批次，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.29.0`（性能 + M-1/M-4 + L-13 混合 DPI 实测，未合并 main）**已完成**，未打 tag、未发布 Release。
+> `v2.14.9`（`aba873a`）已推送；`v2.15.0`（`78d3381`）已推送（文档同步提交 `2eba9b4`）；`v2.16.0`（代码 `6406d96`，文档同步 `d1fd414`）**已推送并快进合并到 `main`**；`v2.17.0`（`27b8bbd`）/ `v2.18.0`（`1e1c6ac`）/ `v2.19.0`（`d21773c`）**已推送并快进合并到 `main`**；`v2.20.0`（代码 `d8f36ab`，文档 `de64021`）**已推送并快进合并到 `main`**；`v2.21.0`（代码 `0d687e9`，文档 `4911e1b`）**已推送并快进合并到 `main`**，未打 tag、未发布 Release；`v2.22.0`（代码为 `73837aa`–`2907be0` 的 12 个提交，文档同步本次提交）**已合并 `main`**，未打 tag、未发布 Release。 `v2.23.0`（本轮 6 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.24.0`（本轮 4 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.25.0`（本轮 2 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.26.0`（本轮 2 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.27.0`（本轮按审阅复核顺序修复 + 性能采样，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.28.0`（UX 批次，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.29.0`（性能 + M-1/M-4 + L-13 混合 DPI 实测，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.30.0`（终末地 M1–M6 选项 + M7/M8 调研，未合并 main）**已完成**，未打 tag、未发布 Release。
 > `v2.14.1` / `v2.14.2` / `v2.14.4` 的规模用对应提交的 `git show --shortstat`；`v2.14.3` / `v2.14.5` / `v2.14.6`
 > 按当时提交前工作区的 `git diff --shortstat` 计算；`v2.14.7` / `v2.14.8` 用对应提交的 `git show --shortstat`；
-> `v2.14.9` 用提交前工作区的 `git diff --shortstat -- MirrorpondHUD.csproj src`；`v2.15.0` 用 `git show --shortstat 78d3381`；`v2.16.0` 用 `git show --shortstat 6406d96`；`v2.17.0` 用 `git show --shortstat 27b8bbd`；`v2.18.0` 用 `git show --shortstat 1e1c6ac`；`v2.19.0` 用 `git show --shortstat d21773c`；`v2.20.0` 用 `git show --shortstat d8f36ab`；`v2.21.0` 用 `git show --shortstat 0d687e9`（文档同步另计；评审指出的 `d6e1af3` 是未合并的游离提交，实际合并进 main 的是 `0d687e9`）；`v2.22.0` 用 `git diff --shortstat b366e32..4899f3f`（30 文件，+1116 / −246；版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.23.0` 用 `git diff --shortstat 6da03f0..HEAD`（58 文件，+6304 / −4618；版本号 15 文件 +15 / −15 与版本记录另计）。 `v2.24.0` 用 `git diff --shortstat 96acd1b..HEAD`（55 文件，+1876 / −301；版本号 15 文件 +15 / −15 与版本记录另计）。 `v2.25.0` 用 `git diff --shortstat 29efb91..HEAD`（24 文件，+520 / −153；版本号 15 文件 +15 / −15 与版本记录另计）。 `v2.26.0` 源码改动 14 文件，+165 / −87（版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.27.0` 源码改动 31 文件，+765 / −164（含新增 PerformanceProbe 127 行；版本号与文档同步另计）。 `v2.28.0` 源码改动 18 文件，+509 / −13（版本号与文档同步另计）。 `v2.29.0` 源码改动 19 文件，+864 / −297（含新增 `ScreenGeometry.cs` 194 行；版本号 15 文件 +15 / −15 与文档同步另计）。
+> `v2.14.9` 用提交前工作区的 `git diff --shortstat -- MirrorpondHUD.csproj src`；`v2.15.0` 用 `git show --shortstat 78d3381`；`v2.16.0` 用 `git show --shortstat 6406d96`；`v2.17.0` 用 `git show --shortstat 27b8bbd`；`v2.18.0` 用 `git show --shortstat 1e1c6ac`；`v2.19.0` 用 `git show --shortstat d21773c`；`v2.20.0` 用 `git show --shortstat d8f36ab`；`v2.21.0` 用 `git show --shortstat 0d687e9`（文档同步另计；评审指出的 `d6e1af3` 是未合并的游离提交，实际合并进 main 的是 `0d687e9`）；`v2.22.0` 用 `git diff --shortstat b366e32..4899f3f`（30 文件，+1116 / −246；版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.23.0` 用 `git diff --shortstat 6da03f0..HEAD`（58 文件，+6304 / −4618；版本号 15 文件 +15 / −15 与版本记录另计）。 `v2.24.0` 用 `git diff --shortstat 96acd1b..HEAD`（55 文件，+1876 / −301；版本号 15 文件 +15 / −15 与版本记录另计）。 `v2.25.0` 用 `git diff --shortstat 29efb91..HEAD`（24 文件，+520 / −153；版本号 15 文件 +15 / −15 与版本记录另计）。 `v2.26.0` 源码改动 14 文件，+165 / −87（版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.27.0` 源码改动 31 文件，+765 / −164（含新增 PerformanceProbe 127 行；版本号与文档同步另计）。 `v2.28.0` 源码改动 18 文件，+509 / −13（版本号与文档同步另计）。 `v2.29.0` 源码改动 19 文件，+864 / −297（含新增 `ScreenGeometry.cs` 194 行；版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.30.0` 源码改动 18 文件，+552 / −41（两套主题与 docs/UI 文档另计；版本号 15 文件 +15 / −15 与文档同步另计）。
 
 ## 0. 总览
 
@@ -82,6 +82,7 @@
 | v2.27.0 | 2026-11-10 | 本轮修复+采样 | 审阅复核修复：中转站根路径/列表只读、主题名、ConfigStore I/O 三态、保存回滚、复制任务出 UI 线程、ffmpeg 热更新、玻璃边界、唤醒重试、CTS/模板/Chat 签名；新增 `--perf` 基线 | 31 文件，+765 / −164（版本号与版本记录另计） |
 | v2.28.0 | 2026-11-10 | UX 批次 | 未保存提示、托盘/设置区块失败反馈、减少动效、边缘吸附、GIF 预算、卡片复制/拖动排序、命令历史、颜色/热键内联校验 | 18 文件，+509 / −13（版本号与版本记录另计） |
 | v2.29.0 | 2026-11-11 | 性能 + 模块化 + 混合 DPI | TextCanvas 排版缓存、GlassFeed 缓冲复用、`ICardDefaultProvider` 默认卡注册表化、删除 `ICardHostAware`、L-13 物理像素定位 / 4K@300% 实测 | 19 文件，+864 / −297（版本号与版本记录另计） |
+| v2.30.0 | 2026-11-11 | 终末地 M1–M6 | 两套终末地主题、圆角跟随配置、Success/Warning 令牌、等宽读数、CardHeader 铭牌、六种装饰纹样；M7/M8 可行性调研 | 18 文件，+552 / −41（主题与 UI 文档另计） |
 
 ---
 
@@ -2920,16 +2921,64 @@ JSON 绑定错误静默置空等。2.22.0 按「失败必须可见」铁律完�
 
 ---
 
-## 64. 不在版本里的东西
+## 64. v2.30.0（终末地 M1–M6 选项 + M7/M8 调研，未合并 main）
+
+### 背景
+
+`docs/UI/endfield.md` 把终末地工业界面拆成 M1–M8 八个阶段。本轮按“作为选项”落地
+M1–M6：默认观感不变，只有选中主题或手动打开开关时生效；M7/M8 只做可行性调研，
+成果在 `docs/UI/endfield-m7-m8-research.md`。
+
+### 改动
+
+1. **M1 两套主题**：新增 `docs/themes/endfield-ink.mptheme`（墨）与
+   `endfield-paper.mptheme`（纸），随 `EmbeddedResource` 内嵌；主题目录至少 5 份。
+2. **M2 圆角跟随**：新增 `CardPalette.Corner(radius, minimum)`，`cornerRadius=0` 时
+   浮层 / 列表 / 输入框 / 进度条不再被 2–8px 的最小值抬回；替换 12 处调用点。
+3. **M3 状态色令牌**：`Style.Success` / `Warning`（空 = 旧派生值），`ThemeTokens` 与
+   `ThemeFile` 支持，`CardStatus` 的 Success / Warning / 进度条改读；设置页两个颜色框。
+4. **M4 等宽读数**：`Style.MonoReadouts`；`TextCanvas` 把 0–9 拆成 `RunKind.Number`
+   并走 `MonoFont`，仍共用正文基线；默认关闭。
+5. **M5 卡片铭牌**：`Style.IndustrialHeader`；`CardHeader.Code` 显示两位编号，徽标
+   转大写并可用 `MonoFont` + `NumeralAlignment.Tabular`；文件中转站按卡片顺序填 `01` 起。
+6. **M6 装饰纹样**：`Style.Decoration` 六档（None / Grid / Scanline / Hatch / Halftone /
+   Contour），`OverlaySurface` 用冻结 `DrawingBrush` 平铺，整层 15% 透明度、不参与命中测试。
+7. **M7/M8 调研**：新增 `docs/UI/endfield-m7-m8-research.md` 与
+   `docs/UI/endfield-implementation.md`；结论是 M7 可先做四档一次性动效，M8 先做
+   主题数据 + 固定目录，不做携带可执行代码的主题插件。
+8. **版本**：宿主 / Contracts / UiKit / 6 个插件工程与 manifest 统一 2.30.0；
+   Schema 仍为 7，插件 API 仍为 2。
+
+### 验证
+
+- `dotnet build -c Release`：**0 警告 0 错误**；
+- `--selftest`：**退出码 0、失败项 0**；新增/更新状态色派生、0 圆角、非法装饰归一化、
+  主题往返字段、非法 decoration 拒绝、内置主题 ≥5 份；
+- `--screenshot-cards` / `--screenshot-settings` / `--screenshot-widgets`：退出码 0；
+  墨版截图确认圆角 0、网格装饰、等宽数字、`03 文件中转站` 铭牌、黄色进度条；
+- 设置页显示 v2.30.0，工业风格组三项开关与状态色输入可见。
+
+### 风险 / 未验证
+
+- M2 只修控件自己的最小圆角；媒体控件的 1.5px 小圆角、视频窗 GDI region 仍按各自设计；
+- M4 只覆盖 TextCanvas 的 0–9，数字中的 `.%/` 与单位仍走正文字体；
+- M5 只在使用 `CardHeader` 的卡片（文件中转站）可见；
+- M6 纹样是静态平铺，4K 下 1px 线随 DPI 缩放，未做逐 DPI 视觉微调；
+- 两套主题的 success / warning 未做完整 WCAG 全组合复算；
+- 动效（M7）与装饰模块化（M8）仅调研，未实现。
+
+---
+
+## 65. 不在版本里的东西
 
 - 验收脚本、样张与测量脚本都在仓库外维护，**没有提交**。
 - 发布：`main` 与标签已推送到 [github.com/CRITTIof/MirrorpondHUD](https://github.com/CRITTIof/MirrorpondHUD)；
   [v2.9.2 Release](https://github.com/CRITTIof/MirrorpondHUD/releases/tag/v2.9.2) 只有两个附件
   （`MirrorpondHUD-x64-requires-dotnet.exe`、`MirrorpondHUD-arm64-requires-dotnet.exe`，均需 .NET 8 桌面运行时，已自签名）；
   更早的 Release 正文与附件保留原样，v2.4.0 的 Release 已删除（tag `v2.4.0` 保留，历史仍可检出）。
-- 仓库追踪的文件共 206 个（v2.21.0 时 174 个；2.23.0 结构性拆分 +20，2.24.0 +7，2.25.0 新增 CardMotion +1，2.27.0 新增 PerformanceProbe / 性能基线 +2，2.29.0 新增 ScreenGeometry +1、删除 CardDefaults / InfoTextDefaults −2），`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
+- 仓库追踪的文件共 211 个（v2.21.0 时 174 个；2.23.0 结构性拆分 +20，2.24.0 +7，2.25.0 新增 CardMotion +1，2.27.0 新增 PerformanceProbe / 性能基线 +2，2.29.0 新增 ScreenGeometry +1、删除 CardDefaults / InfoTextDefaults −2，2.30.0 新增两套终末地主题 +2、docs/UI 三篇 +3），`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
 
-## 65. 已知代价（跨版本）
+## 66. 已知代价（跨版本）
 
 - 桌面亚克力为了不拍到自己，会把卡片排除在截屏之外 —— 这个模式下截图 / 录屏里**看不到卡片**，观感只能靠肉眼与离屏渲染验证。
 - 兼容实现每帧对身后窗口做 `PrintWindow`，拖动时最多 ~21 帧/秒；要更高只能走桌面亚克力（DXGI）。

@@ -389,6 +389,24 @@ namespace MirrorpondHUD
                 bool scrollOk = defaults.Scrollbar.A == (byte)Math.Round(0.18 * 255)
                              && defaults.ScrollbarHot.A == (byte)Math.Round(0.40 * 255);
 
+                // M3：状态色令牌为空时必须精确等于旧行为（Success=Accent，Warning=前景 0.9）。
+                bool statusOk = defaults.Success == defaults.Accent
+                             && defaults.Warning == ThemeResolver.WithAlpha(fg, 0.9);
+                ThemeTokens customStatus = ThemeResolver.Resolve(new StyleSettings
+                {
+                    Success = "#112233",
+                    Warning = "#445566"
+                });
+                statusOk = statusOk
+                        && customStatus.Success == System.Windows.Media.Color.FromRgb(0x11, 0x22, 0x33)
+                        && customStatus.Warning == System.Windows.Media.Color.FromRgb(0x44, 0x55, 0x66);
+
+                // M2：0 圆角必须真的是 0，不能被控件的最小值抬回去。
+                bool cornerOk = MirrorpondHUD.Ui.Controls.CardPalette.Corner(0, 6) == 0
+                             && MirrorpondHUD.Ui.Controls.CardPalette.Corner(0.005, 4) == 0
+                             && MirrorpondHUD.Ui.Controls.CardPalette.Corner(7, 3) == 7
+                             && MirrorpondHUD.Ui.Controls.CardPalette.Corner(-1, 4) == 0;
+
                 bool validateOk = !Settings.IsColorToken("#GGGGGG")
                                && !Settings.IsColorToken("123456")
                                && Settings.IsColorToken("")
@@ -400,9 +418,21 @@ namespace MirrorpondHUD
                                && !Settings.IsHexColor("#GGGGGG")
                                && !Settings.IsHexColor("");
 
-                var bad = new Settings { Style = { Accent = "nope", Muted = "#12" } };
+                var bad = new Settings
+                {
+                    Style =
+                    {
+                        Accent = "nope",
+                        Muted = "#12",
+                        Success = "nope",
+                        Warning = "#12",
+                        Decoration = "spiral"
+                    }
+                };
                 bad.Normalize();
-                bool normalizeOk = bad.Style.Accent == "#2F6FEB" && bad.Style.Muted == "";
+                bool normalizeOk = bad.Style.Accent == "#2F6FEB" && bad.Style.Muted == ""
+                                && bad.Style.Success == "" && bad.Style.Warning == ""
+                                && bad.Style.Decoration == "None";
 
                 byte ca, cr, cg, cb;
                 bool codeOk = ColorCode.TryParse("#80E6EDF3", out ca, out cr, out cg, out cb)
@@ -416,7 +446,8 @@ namespace MirrorpondHUD
                                && badToken.Muted == ThemeResolver.WithAlpha(fg, 0.45)
                                && badToken.Accent == System.Windows.Media.Color.FromRgb(0x2F, 0x6F, 0xEB);
 
-                themeOk = defaultOk && mutedOk && scrollOk && validateOk && normalizeOk && codeOk && fallbackOk;
+                themeOk = defaultOk && mutedOk && scrollOk && statusOk && cornerOk
+                       && validateOk && normalizeOk && codeOk && fallbackOk;
             }
             catch (Exception ex)
             {
@@ -464,12 +495,17 @@ namespace MirrorpondHUD
                 IconScale = 1.3,
                 Accent = "#4C8DFF",
                 Danger = "#E57B6E",
+                Success = "#3FA34D",
+                Warning = "#D9A400",
                 Muted = "#73E6EDF3",
                 Border = "#1A101820",
                 Panel = "#0B101820",
                 Scrollbar = "#2E101820",
                 ScrollbarHot = "#66101820",
-                MonoFont = "Consolas"
+                MonoFont = "Consolas",
+                MonoReadouts = true,
+                IndustrialHeader = true,
+                Decoration = "Grid"
             };
             source.Overlay = new OverlaySettings { CornerRadius = 12, Shadow = false };
             source.Cli = new CliSettings { MaxWidth = 500, MaxHeight = 440, EntryMaxHeight = 150, MaxEntries = 8 };
@@ -556,6 +592,11 @@ namespace MirrorpondHUD
                 && Math.Abs(applied.Style.IconScale - source.Style.IconScale) < 1e-9
                 && applied.Style.Accent == source.Style.Accent
                 && applied.Style.Danger == source.Style.Danger
+                && applied.Style.Success == source.Style.Success
+                && applied.Style.Warning == source.Style.Warning
+                && applied.Style.MonoReadouts == source.Style.MonoReadouts
+                && applied.Style.IndustrialHeader == source.Style.IndustrialHeader
+                && applied.Style.Decoration == source.Style.Decoration
                 && applied.Style.Muted == source.Style.Muted
                 && applied.Style.Border == source.Style.Border
                 && applied.Style.Panel == source.Style.Panel
@@ -582,6 +623,9 @@ namespace MirrorpondHUD
                            && error != null && error.Contains("版本");
                 bool badColor = !ThemeFile.TryParse("{\"schema\":1,\"appearance\":{\"colors\":{\"accent\":\"nope\"}}}", out doc, out error);
                 bool badRange = !ThemeFile.TryParse("{\"schema\":1,\"appearance\":{\"typography\":{\"fontSize\":200}}}", out doc, out error);
+                bool badDecoration = !ThemeFile.TryParse(
+                    "{\"schema\":1,\"appearance\":{\"industrial\":{\"decoration\":\"spiral\"}}}", out doc, out error)
+                    && error != null && error.Contains("decoration");
                 bool noAppearance = !ThemeFile.TryParse("{\"schema\":1}", out doc, out error);
                 bool malformed = !ThemeFile.TryParse("{oops", out doc, out error);
 
@@ -611,7 +655,7 @@ namespace MirrorpondHUD
                 try { File.Delete(temp); } catch { }
                 try { File.Delete(big); } catch { }
 
-                themeRejectOk = future && badColor && badRange && noAppearance && malformed
+                themeRejectOk = future && badColor && badRange && badDecoration && noAppearance && malformed
                              && rejectedOk && importedOk && bigOk;
             }
             catch (Exception ex)
@@ -627,9 +671,10 @@ namespace MirrorpondHUD
             bool themeCatalogOk = false;
             try
             {
-                // P4：三份示例主题以 EmbeddedResource 编进程序集，发布版不再依赖 docs 目录。
+                // P4：示例主题以 EmbeddedResource 编进程序集，发布版不再依赖 docs 目录。
+                // 2.30.0 新增终末地墨 / 纸两套，至少 5 份。
                 var catalog = ThemeCatalog.Load();
-                themeCatalogOk = catalog.Count >= 3
+                themeCatalogOk = catalog.Count >= 5
                               && catalog.TrueForAll(p => p.Document != null && !string.IsNullOrWhiteSpace(p.Name));
                 if (!themeCatalogOk)
                     Log.Warn("内置主题数量不足或解析失败: " + catalog.Count);

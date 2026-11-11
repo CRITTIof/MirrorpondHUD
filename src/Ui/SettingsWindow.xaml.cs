@@ -109,6 +109,15 @@ namespace MirrorpondHUD.Ui
             CornerSlider.ValueChanged += (s, e) => UiChanged();
             ShadowCheck.Checked += (s, e) => UiChanged();
             ShadowCheck.Unchecked += (s, e) => UiChanged();
+            MonoReadoutsCheck.Checked += (s, e) => UiChanged();
+            MonoReadoutsCheck.Unchecked += (s, e) => UiChanged();
+            IndustrialHeaderCheck.Checked += (s, e) => UiChanged();
+            IndustrialHeaderCheck.Unchecked += (s, e) => UiChanged();
+            DecorationCombo.SelectionChanged += (s, e) => UiChanged();
+            SuccessColorBox.TextChanged += (s, e) => UiChanged();
+            SuccessColorBox.TextChanged += (s, e) => ValidateColorBox(SuccessColorBox, true);
+            WarningColorBox.TextChanged += (s, e) => UiChanged();
+            WarningColorBox.TextChanged += (s, e) => ValidateColorBox(WarningColorBox, true);
 
             OutlineCheck.Checked += (s, e) => UiChanged();
             OutlineCheck.Unchecked += (s, e) => UiChanged();

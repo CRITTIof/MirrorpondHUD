@@ -103,12 +103,15 @@ namespace MirrorpondHUD.Core
             // 外观令牌：非法值回落到默认 / 派生，避免主题文件写坏后整块外观失效。
             Style.Accent = NormalizeColorToken(Style.Accent, "#2F6FEB");
             Style.Danger = NormalizeColorToken(Style.Danger, "#D14343");
+            Style.Success = NormalizeColorToken(Style.Success, "");
+            Style.Warning = NormalizeColorToken(Style.Warning, "");
             Style.Muted = NormalizeColorToken(Style.Muted, "");
             Style.Border = NormalizeColorToken(Style.Border, "");
             Style.Panel = NormalizeColorToken(Style.Panel, "");
             Style.Scrollbar = NormalizeColorToken(Style.Scrollbar, "");
             Style.ScrollbarHot = NormalizeColorToken(Style.ScrollbarHot, "");
             Style.MonoFont = (Style.MonoFont ?? "").Trim();
+            Style.Decoration = NormalizeDecoration(Style.Decoration);
             Style.ThemeName = (Style.ThemeName ?? "").Trim();
 
             // 卡片列表的结构由 CardModel.Normalize 处理（需要卡片注册表里的元数据）。
@@ -148,6 +151,40 @@ namespace MirrorpondHUD.Core
                 default:
                     return "Auto";
             }
+        }
+
+        /// <summary>
+        /// M6 装饰纹样：None / Grid（网格） / Scanline（扫描线） / Hatch（45° 斜纹） /
+        /// Halftone（半调网点） / Contour（等高线）。未知值回落 None，绝不因为主题写错而画不出来。
+        /// </summary>
+        public static string NormalizeDecoration(string value)
+        {
+            switch ((value ?? "").Trim().ToLowerInvariant())
+            {
+                case "grid":
+                    return "Grid";
+                case "scanline":
+                case "scanlines":
+                    return "Scanline";
+                case "hatch":
+                case "diagonal":
+                    return "Hatch";
+                case "halftone":
+                    return "Halftone";
+                case "contour":
+                    return "Contour";
+                default:
+                    return "None";
+            }
+        }
+
+        /// <summary>主题文件 / 设置页校验用：只接受归一化后的六个值。</summary>
+        public static bool IsDecoration(string value)
+        {
+            string text = (value ?? "").Trim();
+            return text.Length == 0
+                || string.Equals(text, NormalizeDecoration(text), StringComparison.OrdinalIgnoreCase)
+                || string.Equals(text, "None", StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>
@@ -375,6 +412,17 @@ namespace MirrorpondHUD.Core
         /// <summary>危险色：危险按钮 / 错误文字。</summary>
         public string Danger = "#D14343";
 
+        /// <summary>
+        /// 成功色（M3）：CardStatus.Success / 进度条。空 = 沿用强调色（默认观感不变）。
+        /// 只建议用在「一个点 / 一条线」上，不做大面积色块。
+        /// </summary>
+        public string Success = "";
+
+        /// <summary>
+        /// 警告色（M3）：CardStatus.Warning。空 = 前景色 0.9（默认观感不变）。
+        /// </summary>
+        public string Warning = "";
+
         /// <summary>次要文字（时间戳 / 提示）。空 = 前景 0.45。</summary>
         public string Muted = "";
 
@@ -395,6 +443,26 @@ namespace MirrorpondHUD.Core
 
         /// <summary>当前主题名（导入 / 选中内置主题时写入；手动改外观后清空）。空 = 自定义。</summary>
         public string ThemeName = "";
+
+        // ==================== 工业风格选项（2.30.0，全部默认关闭） ====================
+
+        /// <summary>
+        /// M4：读数使用等宽数字。true 时 TextCanvas 把数字串单独用 MonoFont 排版，
+        /// 指标刷新时小数点 / 数字宽度不横跳。默认 false = 维持原来的正文字体。
+        /// </summary>
+        public bool MonoReadouts = false;
+
+        /// <summary>
+        /// M5：卡片铭牌。true 时 CardHeader 显示两位编号，徽标改用等宽大写；
+        /// 目前只有使用 CardHeader 的卡片（文件中转站）有可见效果。
+        /// </summary>
+        public bool IndustrialHeader = false;
+
+        /// <summary>
+        /// M6：卡片装饰纹样。None / Grid / Scanline / Hatch / Halftone / Contour。
+        /// 默认 None；只作为低透明度点缀，不参与命中测试，也不改变排版。
+        /// </summary>
+        public string Decoration = "None";
 
     }
 

@@ -36,7 +36,7 @@ namespace MirrorpondHUD.Ui.Controls
             FontSize = Math.Max(9, style.FontSize);
 
             // TextBox 没有 CornerRadius，套一个圆角外框当背景：模板里用同色的 Border 画。
-            Template = BuildTemplate(Math.Max(2, Math.Min(cornerRadius, 16)));
+            Template = BuildTemplate(CardPalette.Corner(Math.Min(cornerRadius, 16), 2));
         }
 
         static ControlTemplate BuildTemplate(double radius)

@@ -182,7 +182,7 @@ namespace MirrorpondHUD.Ui.Controls
             // 面板保持不透明：浮层上的字不能和底下的卡片内容叠在一起。
             _panel.Background = CardPalette.Brush(background, 1.0);
             _panel.BorderBrush = CardPalette.Brush(tokens.Border);
-            _panel.CornerRadius = new CornerRadius(Math.Max(6, cornerRadius));
+            _panel.CornerRadius = new CornerRadius(CardPalette.Corner(cornerRadius, 6));
             _panel.Padding = new Thickness(Math.Max(14, s.Padding));
             _panel.MaxWidth = 560;
 
@@ -540,7 +540,7 @@ namespace MirrorpondHUD.Ui.Controls
             _border.Background = CardPalette.Brush(background, 1.0);
             _border.BorderBrush = CardPalette.Brush(_tokens.Border);
             _border.BorderThickness = new Thickness(1);
-            _border.CornerRadius = new CornerRadius(Math.Max(6, cornerRadius));
+            _border.CornerRadius = new CornerRadius(CardPalette.Corner(cornerRadius, 6));
             _border.Padding = new Thickness(12, 8, 12, 8);
             _border.MaxWidth = 520;
 
@@ -1097,7 +1097,7 @@ namespace MirrorpondHUD.Ui.Controls
             Background = CardPalette.Brush(fill, 0.98);
             BorderBrush = CardPalette.Brush(tint, 0.55);
             BorderThickness = new Thickness(1);
-            CornerRadius = new CornerRadius(Math.Max(8, cornerRadius));
+            CornerRadius = new CornerRadius(CardPalette.Corner(cornerRadius, 8));
             Padding = new Thickness(14, 10, 14, 10);
 
             TextElement.SetFontFamily(this, CardPalette.ResolveFont(_style.FontFamily));

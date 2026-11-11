@@ -310,6 +310,7 @@ namespace MirrorpondHUD.Ui
                 var stack = new StackPanel { Width = 520 };
 
                 var header = new CardHeader("文件中转站") { Badge = "12 个文件", Margin = new Thickness(0, 0, 0, 10) };
+                if (style.IndustrialHeader) header.Code = "03";
                 header.Actions.Add("打开目录", null, CardButtonTone.Normal, "在资源管理器中打开接收目录");
                 header.Actions.Add("粘贴", null, CardButtonTone.Normal, "从剪贴板添加文件");
                 header.Actions.Add("清空", null, CardButtonTone.Normal, "清空列表（不删除文件）");
@@ -317,7 +318,7 @@ namespace MirrorpondHUD.Ui
                 stack.Children.Add(header);
 
                 var status = new CardStatus { Margin = new Thickness(0, 0, 0, 10) };
-                status.ApplyStyle(style);
+                status.ApplyStyle(style, settings.Overlay.CornerRadius);
                 status.SetText("正在收纳 2/5 · a.zip 42% · 18.4 MB/s", CardStatusKind.Busy);
                 status.SetProgress(0.42);
                 stack.Children.Add(status);
@@ -350,7 +351,7 @@ namespace MirrorpondHUD.Ui
                 stack.Children.Add(dropHost);
 
                 var error = new CardStatus { Margin = new Thickness(0, 0, 0, 6) };
-                error.ApplyStyle(style);
+                error.ApplyStyle(style, settings.Overlay.CornerRadius);
                 error.SetText("复制失败：磁盘空间不足", CardStatusKind.Error);
                 error.SetProgress(null);
                 stack.Children.Add(error);

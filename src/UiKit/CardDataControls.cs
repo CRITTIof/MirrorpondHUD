@@ -95,7 +95,7 @@ namespace MirrorpondHUD.Ui.Controls
             Color foreground = CardPalette.TryColor(_style.Foreground, Color.FromRgb(0xE6, 0xED, 0xF3));
             Color tone = CardDataStyle.ToneColor(tokens, foreground, _tone);
 
-            CornerRadius = new CornerRadius(Math.Max(2, Math.Min(6, cornerRadius * 0.55)));
+            CornerRadius = new CornerRadius(CardPalette.Corner(Math.Min(6, cornerRadius * 0.55), 2));
             Background = CardPalette.Brush(tone, 0.12);
             BorderBrush = CardPalette.Brush(tone, 0.28);
             _text.FontFamily = CardPalette.ResolveFont(_style.FontFamily);
@@ -182,7 +182,7 @@ namespace MirrorpondHUD.Ui.Controls
             Color foreground = CardPalette.TryColor(_style.Foreground, Color.FromRgb(0xE6, 0xED, 0xF3));
             Color tone = CardDataStyle.ToneColor(tokens, foreground, _tone);
 
-            CornerRadius = new CornerRadius(Math.Max(6, Math.Min(14, cornerRadius + 4)));
+            CornerRadius = new CornerRadius(CardPalette.Corner(Math.Min(14, cornerRadius + 4), 6));
             Background = CardPalette.Brush(tone, 0.10);
             BorderBrush = CardPalette.Brush(tone, 0.24);
 
@@ -315,7 +315,7 @@ namespace MirrorpondHUD.Ui.Controls
             Color foreground = CardPalette.TryColor(_style.Foreground, Color.FromRgb(0xE6, 0xED, 0xF3));
             Color tone = CardDataStyle.ToneColor(tokens, foreground, _tone);
 
-            CornerRadius = new CornerRadius(Math.Max(4, Math.Min(14, cornerRadius)));
+            CornerRadius = new CornerRadius(CardPalette.Corner(Math.Min(14, cornerRadius), 4));
             Background = CardPalette.Brush(tokens.Panel);
             BorderBrush = CardPalette.Brush(tokens.Border);
 

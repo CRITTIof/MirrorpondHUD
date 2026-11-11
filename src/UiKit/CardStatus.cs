@@ -139,7 +139,7 @@ namespace MirrorpondHUD.Ui.Controls
             UpdateProgress();
         }
 
-        public void ApplyStyle(StyleSettings style)
+        public void ApplyStyle(StyleSettings style, double cornerRadius = -1)
         {
             _style = style ?? new StyleSettings();
             _tokens = ThemeResolver.Resolve(_style);
@@ -153,6 +153,11 @@ namespace MirrorpondHUD.Ui.Controls
             _text.FontFamily = family;
             _text.FontSize = size;
 
+            // M2：直角主题下 3px 进度条也去圆头，变成分段方块；圆角主题保持原来的半圆端头。
+            double radius = cornerRadius >= 0 && cornerRadius <= 0.01 ? 0.0 : 1.5;
+            _track.CornerRadius = new CornerRadius(radius);
+            _fill.CornerRadius = new CornerRadius(radius);
+
             _track.Background = CardPalette.Brush(_foreground, 0.12);
             UpdateVisual();
         }
@@ -161,7 +166,9 @@ namespace MirrorpondHUD.Ui.Controls
         {
             _text.Foreground = CardPalette.Brush(_foreground, 0.72);
             _fill.Background = CardPalette.Brush(
-                _kind == CardStatusKind.Error ? _tokens.Danger : _tokens.Accent);
+                _kind == CardStatusKind.Error ? _tokens.Danger
+                : _kind == CardStatusKind.Success ? _tokens.Success
+                : _tokens.Accent);
 
             switch (_kind)
             {
@@ -172,11 +179,11 @@ namespace MirrorpondHUD.Ui.Controls
                     break;
                 case CardStatusKind.Warning:
                     _icon.Text = "!";
-                    _icon.Foreground = CardPalette.Brush(_foreground, 0.9);
+                    _icon.Foreground = CardPalette.Brush(_tokens.Warning);
                     break;
                 case CardStatusKind.Success:
                     _icon.Text = "✓";
-                    _icon.Foreground = CardPalette.Brush(_tokens.Accent);
+                    _icon.Foreground = CardPalette.Brush(_tokens.Success);
                     break;
                 case CardStatusKind.Info:
                     _icon.Text = "i";

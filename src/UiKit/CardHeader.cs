@@ -1,6 +1,7 @@
 using System;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Media;
 using MirrorpondHUD.Core;
 
@@ -13,13 +14,22 @@ namespace MirrorpondHUD.Ui.Controls
     public sealed class CardHeader : Grid
     {
         readonly TextBlock _title;
+        readonly TextBlock _code;
         readonly TextBlock _badge;
+        string _badgeValue = "";
+        bool _badgeUpper;
 
         public CardHeader(string title = null)
         {
             ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
+            _code = new TextBlock
+            {
+                Margin = new Thickness(0, 0, 8, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                Visibility = Visibility.Collapsed
+            };
             _title = new TextBlock
             {
                 Text = title ?? "",
@@ -35,6 +45,7 @@ namespace MirrorpondHUD.Ui.Controls
             };
 
             var left = new StackPanel { Orientation = Orientation.Horizontal };
+            left.Children.Add(_code);
             left.Children.Add(_title);
             left.Children.Add(_badge);
 
@@ -57,15 +68,36 @@ namespace MirrorpondHUD.Ui.Controls
             set { _title.Text = value ?? ""; }
         }
 
+        /// <summary>
+        /// M5 铭牌编号（两位，例如 "03"）。空 = 不显示；由调用方在启用
+        /// <see cref="StyleSettings.IndustrialHeader"/> 时按卡片顺序填入。
+        /// </summary>
+        public string Code
+        {
+            get { return _code.Text ?? ""; }
+            set
+            {
+                _code.Text = value ?? "";
+                _code.Visibility = string.IsNullOrEmpty(_code.Text) ? Visibility.Collapsed : Visibility.Visible;
+            }
+        }
+
         /// <summary>标题右侧的小字（“12 个文件”“只读”）；null / 空串隐藏。</summary>
         public string Badge
         {
-            get { return _badge.Text ?? ""; }
+            get { return _badgeValue; }
             set
             {
-                _badge.Text = value ?? "";
-                _badge.Visibility = string.IsNullOrEmpty(_badge.Text) ? Visibility.Collapsed : Visibility.Visible;
+                _badgeValue = value ?? "";
+                UpdateBadgeText();
             }
+        }
+
+        /// <summary>M5：只有启用铭牌时才把徽标转大写，默认保持原样。</summary>
+        void UpdateBadgeText()
+        {
+            _badge.Text = _badgeUpper ? _badgeValue.ToUpperInvariant() : _badgeValue;
+            _badge.Visibility = string.IsNullOrEmpty(_badge.Text) ? Visibility.Collapsed : Visibility.Visible;
         }
 
         public void ApplyStyle(StyleSettings style, double cornerRadius)
@@ -78,9 +110,20 @@ namespace MirrorpondHUD.Ui.Controls
             _title.FontSize = Math.Max(11, s.FontSize + 1);
             _title.Foreground = CardPalette.Brush(foreground, 0.95);
 
-            _badge.FontFamily = _title.FontFamily;
+            FontFamily mono = new FontFamily(tokens.MonoFont);
+            _code.FontFamily = mono;
+            _code.FontSize = Math.Max(10, s.FontSize);
+            _code.FontWeight = FontWeights.SemiBold;
+            _code.Foreground = CardPalette.Brush(tokens.Muted);
+            _code.Visibility = string.IsNullOrEmpty(_code.Text) ? Visibility.Collapsed : Visibility.Visible;
+
+            _badge.FontFamily = s.IndustrialHeader ? mono : _title.FontFamily;
             _badge.FontSize = Math.Max(9, s.FontSize - 1);
             _badge.Foreground = CardPalette.Brush(tokens.Muted);
+            _badgeUpper = s.IndustrialHeader;
+            UpdateBadgeText();
+            // M4/M5：徽标里常见计数（2/5），数字列对齐可以避免刷新时左右跳。
+            Typography.SetNumeralAlignment(_badge, FontNumeralAlignment.Tabular);
 
             Actions.ApplyStyle(s, cornerRadius);
         }

@@ -29,6 +29,10 @@ namespace MirrorpondHUD.Core
         public double? BackgroundOpacity;
         public string Accent;
         public string Danger;
+        /// <summary>M3：空 / 缺省 = 沿用 Accent。</summary>
+        public string Success;
+        /// <summary>M3：空 / 缺省 = 前景 0.9。</summary>
+        public string Warning;
         public ThemeSoftColor Muted;
         public ThemeSoftColor Border;
         public ThemeSoftColor Panel;
@@ -70,6 +74,19 @@ namespace MirrorpondHUD.Core
     }
 
     /// <summary>
+    /// M4–M6 的工业风格选项。全部可选；缺省 = 关（保持默认观感）。
+    /// </summary>
+    public sealed class ThemeIndustrial
+    {
+        /// <summary>M4：读数使用等宽数字。</summary>
+        public bool? MonoReadouts;
+        /// <summary>M5：CardHeader 显示编号 + 等宽大写徽标。</summary>
+        public bool? CardCodes;
+        /// <summary>M6：None / Grid / Scanline / Hatch / Halftone / Contour。</summary>
+        public string Decoration;
+    }
+
+    /// <summary>
     /// 一份 `.mptheme` 的内容。字段为 null = 文件里没写，套用时保留当前值（增量套用）；
     /// 只有 <see cref="ThemeFile.Export(MirrorpondHUD.Core.Settings, string)"/> 会写出全部已知字段。
     /// </summary>
@@ -85,6 +102,7 @@ namespace MirrorpondHUD.Core
         public ThemeShape Shape = new ThemeShape();
         public ThemeOutline Outline = new ThemeOutline();
         public ThemeCliPanel CliPanel = new ThemeCliPanel();
+        public ThemeIndustrial Industrial = new ThemeIndustrial();
 
         /// <summary>
         /// 把主题写进设置（只覆盖主题里出现过的字段）。调用方**必须**先克隆 Settings，
@@ -102,6 +120,8 @@ namespace MirrorpondHUD.Core
             if (Colors.BackgroundOpacity.HasValue) style.BackgroundOpacity = Colors.BackgroundOpacity.Value;
             if (Colors.Accent != null) style.Accent = Colors.Accent;
             if (Colors.Danger != null) style.Danger = Colors.Danger;
+            if (Colors.Success != null) style.Success = Colors.Success;
+            if (Colors.Warning != null) style.Warning = Colors.Warning;
 
             byte a, r, g, b;
             bool hasForeground = ColorCode.TryParse(style.Foreground, out a, out r, out g, out b);
@@ -118,6 +138,10 @@ namespace MirrorpondHUD.Core
             if (Typography.IconScale.HasValue) style.IconScale = Typography.IconScale.Value;
             if (Typography.LineHeight.HasValue) style.LineHeight = Typography.LineHeight.Value;
             if (Typography.TextAlign != null) style.TextAlignment = Typography.TextAlign;
+
+            if (Industrial.MonoReadouts.HasValue) style.MonoReadouts = Industrial.MonoReadouts.Value;
+            if (Industrial.CardCodes.HasValue) style.IndustrialHeader = Industrial.CardCodes.Value;
+            if (Industrial.Decoration != null) style.Decoration = Settings.NormalizeDecoration(Industrial.Decoration);
 
             if (Shape.Padding.HasValue) style.Padding = Shape.Padding.Value;
 
@@ -381,6 +405,9 @@ namespace MirrorpondHUD.Core
             colors["backgroundOpacity"] = style.BackgroundOpacity;
             colors["accent"] = style.Accent;
             colors["danger"] = style.Danger;
+            // M3：空串是合法配置（= 沿用派生值），但主题文件里不写空颜色，避免解析器把它当非法。
+            if (!string.IsNullOrWhiteSpace(style.Success)) colors["success"] = style.Success;
+            if (!string.IsNullOrWhiteSpace(style.Warning)) colors["warning"] = style.Warning;
             AddSoft(colors, "muted", style.Muted);
             AddSoft(colors, "border", style.Border);
             AddSoft(colors, "panel", style.Panel);
@@ -412,12 +439,18 @@ namespace MirrorpondHUD.Core
             cliPanel["entryMaxHeight"] = cli.EntryMaxHeight;
             cliPanel["maxEntries"] = cli.MaxEntries;
 
+            var industrial = new Dictionary<string, object>();
+            industrial["monoReadouts"] = style.MonoReadouts;
+            industrial["cardCodes"] = style.IndustrialHeader;
+            industrial["decoration"] = Settings.NormalizeDecoration(style.Decoration);
+
             var appearance = new Dictionary<string, object>();
             appearance["colors"] = colors;
             appearance["typography"] = typography;
             appearance["shape"] = shape;
             appearance["outline"] = outline;
             appearance["cliPanel"] = cliPanel;
+            appearance["industrial"] = industrial;
 
             root["appearance"] = appearance;
 
@@ -518,6 +551,8 @@ namespace MirrorpondHUD.Core
                 colors.Range(doc.Colors.BackgroundOpacity, "backgroundOpacity", 0, 1);
                 doc.Colors.Accent = colors.Color("accent");
                 doc.Colors.Danger = colors.Color("danger");
+                doc.Colors.Success = colors.Color("success");
+                doc.Colors.Warning = colors.Color("warning");
 
                 ThemeSoftColor? soft = colors.Soft("muted");
                 if (soft.HasValue) doc.Colors.Muted = soft.Value;
@@ -586,13 +621,35 @@ namespace MirrorpondHUD.Core
                     cliPanel.Range(doc.CliPanel.MaxEntries.Value, "maxEntries", 1, 100);
             }
 
+            var industrial = appearance.Child("industrial");
+            if (industrial != null)
+            {
+                doc.Industrial.MonoReadouts = industrial.Bool("monoReadouts");
+                doc.Industrial.CardCodes = industrial.Bool("cardCodes");
+
+                string decoration = industrial.String("decoration");
+                if (decoration != null)
+                {
+                    if (!Settings.IsDecoration(decoration))
+                    {
+                        industrial.Fail("decoration",
+                            "必须是 None / Grid / Scanline / Hatch / Halftone / Contour");
+                    }
+                    else
+                    {
+                        doc.Industrial.Decoration = Settings.NormalizeDecoration(decoration);
+                    }
+                }
+            }
+
             string first = root.Error
                 ?? appearance.Error
                 ?? (colors != null ? colors.Error : null)
                 ?? (typography != null ? typography.Error : null)
                 ?? (shape != null ? shape.Error : null)
                 ?? (outline != null ? outline.Error : null)
-                ?? (cliPanel != null ? cliPanel.Error : null);
+                ?? (cliPanel != null ? cliPanel.Error : null)
+                ?? (industrial != null ? industrial.Error : null);
 
             if (first != null)
             {

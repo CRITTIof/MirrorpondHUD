@@ -51,6 +51,17 @@ namespace MirrorpondHUD.Ui.Controls
             try { return new FontFamily(name); }
             catch { return new FontFamily("Microsoft YaHei UI"); }
         }
+
+        /// <summary>
+        /// M2：圆角下限只在「用户确实要圆角」时生效。cornerRadius = 0 必须真的得到 0，
+        /// 不能被各控件自己的 Math.Max(6, …) 之类悄悄抬回 6px。
+        /// 调用方传自己的最小值（例如内嵌小面板 3、浮层 6、徽标 2）。
+        /// </summary>
+        public static double Corner(double radius, double minimum)
+        {
+            if (radius <= 0.01) return 0.0;
+            return Math.Max(minimum, radius);
+        }
     }
 
     /// <summary>
@@ -183,7 +194,7 @@ namespace MirrorpondHUD.Ui.Controls
             Background = CardPalette.Brush(tokens.Panel);
             BorderBrush = CardPalette.Brush(tokens.Border);
             BorderThickness = new Thickness(1);
-            CornerRadius = new CornerRadius(Math.Max(3, corner - 3));
+            CornerRadius = new CornerRadius(CardPalette.Corner(corner - 3, 3));
             Padding = new Thickness(8, 6, 4, 6);
             Margin = new Thickness(0, 0, 0, 6);
         }
@@ -218,7 +229,7 @@ namespace MirrorpondHUD.Ui.Controls
             _mono = new FontFamily(tokens.MonoFont);
             Background = CardPalette.Brush(tokens.Panel);
             BorderBrush = CardPalette.Brush(tokens.Border);
-            CornerRadius = new CornerRadius(Math.Max(3, corner - 3));
+            CornerRadius = new CornerRadius(CardPalette.Corner(corner - 3, 3));
             CliScrollBars.Apply(_scroller, tokens.Scrollbar, tokens.ScrollbarHot);
 
             foreach (UIElement child in _body.Children)

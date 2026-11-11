@@ -53,6 +53,8 @@
       "backgroundOpacity": 0.86,
       "accent": "#4C8DFF",
       "danger": "#E57B6E",
+      "success": "#3FA34D",
+      "warning": "#D9A400",
       "muted": 0.45,
       "border": 0.12,
       "panel": 0.045,
@@ -83,6 +85,11 @@
       "maxHeight": 420,
       "entryMaxHeight": 140,
       "maxEntries": 12
+    },
+    "industrial": {
+      "monoReadouts": true,
+      "cardCodes": true,
+      "decoration": "Grid"
     }
   }
 }
@@ -94,6 +101,7 @@
 |---|---|---|
 | `colors.foreground` / `background` / `backgroundOpacity` | `Style.Foreground` / `Background` / `BackgroundOpacity` | 现有字段 |
 | `colors.accent` / `danger` | **新增** `Style.Accent` / `Style.Danger` | 现在 `#2F6FEB` 只在设置页、`#E57B6E` 硬编码在状态行 |
+| `colors.success` / `warning` | `Style.Success` / `Style.Warning` | 2.30.0 新增；空 / 不写 = 旧派生值（成功=强调色，警告=前景 0.9） |
 | `colors.muted` / `border` / `panel` / `scrollbar` / `scrollbarHot` | **新增** `Style.Muted` / `Border` / `Panel` / `Scrollbar` / `ScrollbarHot` | 把 `CliUi.cs`、`CardTextBox.cs`、`ChatCard.cs` 里的 0.45 / 0.10 / 0.045 / 0.18 / 0.40 变成可配；不填则按默认透明度推导 |
 | `typography.fontFamily` / `fontSize` / `bold` / `iconScale` / `lineHeight` / `textAlign` | `Style.*` | 现有字段；`iconScale` 的语义在 2.4.5 改为「1.0 = 图标与文字等高」 |
 | `typography.monoFont` | **新增** `Style.MonoFont` | 现在是 `CliPanelView` 里的常量 |
@@ -101,6 +109,9 @@
 | `shape.padding` | `Style.Padding` | 现有字段 |
 | `outline.*` | `Style.TextOutline` / `OutlineColor` / `OutlineThickness` | 现有字段 |
 | `cliPanel.*` | `Cli.*` | 2.4.5 新增的四个字段 |
+| `appearance.industrial.monoReadouts` | `Style.MonoReadouts` | 2.30.0；读数数字串用 `monoFont`，默认 false |
+| `appearance.industrial.cardCodes` | `Style.IndustrialHeader` | 2.30.0；`CardHeader` 两位编号 + 等宽大写徽标，默认 false |
+| `appearance.industrial.decoration` | `Style.Decoration` | 2.30.0；`None` / `Grid` / `Scanline` / `Hatch` / `Halftone` / `Contour`，默认 `None` |
 
 **故意不放进主题**：`Acrylic` / `GlassMode` / `GlassSource` / `BlurRadius` / `BlurFps`、卡片列表与内容、位置与显示器、
 热键、`Behavior`（刷新率 / 启动动画）、`Data`、API Key。理由见开头：这些是能力与布署参数，不是外观；混进来会让
@@ -113,8 +124,8 @@
 ```
 选择 .mptheme ──► 读取 + 解析 JSON ──► schema 校验（只认 1，更高版本直接拒绝）
                 ──► 逐字段校验（`foreground` / `background` 严格 7 位 `#RRGGBB`，
-                透明度必须用 `backgroundOpacity` 表达；`accent` / `danger` 与软色仍接受
-                `#RRGGBB` / `#AARRGGBB`；数值范围与 Settings.Normalize 一致）
+                透明度必须用 `backgroundOpacity` 表达；`accent` / `danger` / `success` / `warning`
+                与软色仍接受 `#RRGGBB` / `#AARRGGBB`；数值范围与 Settings.Normalize 一致）
                 ──► Clone 当前 Settings → 只覆盖 appearance 映射到的字段 → Normalize()
                 ──► 应用到所有卡片窗口（与「保存并应用」同一条路径）
                 ──► 失败：不改任何内存 / 磁盘状态，弹一行原因

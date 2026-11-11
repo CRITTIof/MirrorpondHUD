@@ -80,6 +80,11 @@ namespace MirrorpondHUD.Ui
                 LineHeightSlider.Value = s.Style.LineHeight;
                 CornerSlider.Value = s.Overlay.CornerRadius;
                 ShadowCheck.IsChecked = s.Overlay.Shadow;
+                MonoReadoutsCheck.IsChecked = s.Style.MonoReadouts;
+                IndustrialHeaderCheck.IsChecked = s.Style.IndustrialHeader;
+                DecorationCombo.SelectedIndex = DecorationIndex(s.Style.Decoration);
+                SuccessColorBox.Text = s.Style.Success ?? "";
+                WarningColorBox.Text = s.Style.Warning ?? "";
 
                 OutlineCheck.IsChecked = s.Style.TextOutline;
                 OutlineColorBox.Text = s.Style.OutlineColor;
@@ -128,6 +133,8 @@ namespace MirrorpondHUD.Ui
                 ValidateColorBox(FgBox, false);
                 ValidateColorBox(BgBox, false);
                 ValidateColorBox(OutlineColorBox, true);
+                ValidateColorBox(SuccessColorBox, true);
+                ValidateColorBox(WarningColorBox, true);
                 ValidateHotkeyBox(HotkeyToggleBox);
                 ValidateHotkeyBox(HotkeySettingsBox);
                 ValidateHotkeyBox(HotkeyLockBox);
@@ -165,8 +172,26 @@ namespace MirrorpondHUD.Ui
             return item == null ? "Left" : (item.Tag as string ?? "Left");
         }
 
-        static int StretchIndex(string value)
+        static int DecorationIndex(string value)
         {
+            switch (Settings.NormalizeDecoration(value))
+            {
+                case "Grid": return 1;
+                case "Scanline": return 2;
+                case "Hatch": return 3;
+                case "Halftone": return 4;
+                case "Contour": return 5;
+                default: return 0;
+            }
+        }
+
+        string DecorationTag()
+        {
+            var item = DecorationCombo == null ? null : DecorationCombo.SelectedItem as ComboBoxItem;
+            return Settings.NormalizeDecoration(item == null ? null : item.Tag as string);
+        }
+
+        static int StretchIndex(string value)        {
             switch (Settings.NormalizeStretch(value))
             {
                 case "Uniform": return 1;
@@ -236,6 +261,11 @@ namespace MirrorpondHUD.Ui
                 s.Style.LineHeight = Math.Round(LineHeightSlider.Value);
                 s.Overlay.CornerRadius = Math.Round(CornerSlider.Value);
                 s.Overlay.Shadow = ShadowCheck.IsChecked == true;
+                s.Style.MonoReadouts = MonoReadoutsCheck.IsChecked == true;
+                s.Style.IndustrialHeader = IndustrialHeaderCheck.IsChecked == true;
+                s.Style.Decoration = DecorationTag();
+                s.Style.Success = (SuccessColorBox.Text ?? "").Trim();
+                s.Style.Warning = (WarningColorBox.Text ?? "").Trim();
 
                 s.Style.TextOutline = OutlineCheck.IsChecked == true;
                 s.Style.OutlineColor = (OutlineColorBox.Text ?? "").Trim();

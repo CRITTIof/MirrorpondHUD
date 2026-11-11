@@ -20,6 +20,7 @@ namespace MirrorpondHUD.Ui
         readonly Border _tintLayer;
         readonly Border _glassLayer;
         readonly Border _imageLayer;
+        readonly Border _decorLayer;
         readonly Border _contentLayer;
         readonly TextCanvas _canvas;
 
@@ -40,6 +41,12 @@ namespace MirrorpondHUD.Ui
                 Visibility = Visibility.Collapsed,
                 IsHitTestVisible = false
             };
+            // M6：装饰纹样画在底色 / 背景图之上、文字与富内容之下；不参与命中测试。
+            _decorLayer = new Border
+            {
+                Visibility = Visibility.Collapsed,
+                IsHitTestVisible = false
+            };
             _contentLayer = new Border
             {
                 Visibility = Visibility.Collapsed,
@@ -51,6 +58,7 @@ namespace MirrorpondHUD.Ui
             _root.Children.Add(_glassLayer);
             _root.Children.Add(_tintLayer);
             _root.Children.Add(_imageLayer);
+            _root.Children.Add(_decorLayer);
             _root.Children.Add(_canvas);
             _root.Children.Add(_contentLayer);
 
@@ -140,6 +148,9 @@ namespace MirrorpondHUD.Ui
             _canvas.FontFamily = new FontFamily(string.IsNullOrWhiteSpace(style.FontFamily)
                 ? "Microsoft YaHei UI"
                 : style.FontFamily);
+            ThemeTokens tokens = ThemeResolver.Resolve(style);
+            _canvas.MonoFont = new FontFamily(tokens.MonoFont);
+            _canvas.MonoNumbers = style.MonoReadouts;
             _canvas.FontSize = Math.Max(4, style.FontSize);
             _canvas.IconScale = style.IconScale > 0 ? style.IconScale : 1.0;
             _canvas.FontWeight = style.Bold ? FontWeights.SemiBold : FontWeights.Normal;
@@ -175,6 +186,7 @@ namespace MirrorpondHUD.Ui
 
             _imageLayer.CornerRadius = CornerRadius;
             ApplyImage(style);
+            ApplyDecoration(style, tokens);
 
             if (overlay.Shadow)
             {
@@ -234,6 +246,107 @@ namespace MirrorpondHUD.Ui
             _imageLayer.Background = brush;
             _imageLayer.Opacity = Math.Max(0, Math.Min(1, style.ImageOpacity));
             _imageLayer.Visibility = Visibility.Visible;
+        }
+
+        // ==================== M6 装饰纹样 ====================
+
+        /// <summary>
+        /// 低透明度纹样只作点缀：网格 / 扫描线 / 45° 斜纹 / 半调网点 / 等高线。
+        /// 用冻结的 DrawingBrush 平铺，不建可视树、不参与命中测试；None 时整层折叠。
+        /// </summary>
+        void ApplyDecoration(StyleSettings style, ThemeTokens tokens)
+        {
+            string kind = Settings.NormalizeDecoration(style.Decoration);
+            if (string.Equals(kind, "None", StringComparison.Ordinal))
+            {
+                _decorLayer.Background = null;
+                _decorLayer.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            DrawingBrush brush = BuildDecorationBrush(kind, tokens.Border);
+            if (brush == null)
+            {
+                _decorLayer.Background = null;
+                _decorLayer.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            _decorLayer.CornerRadius = CornerRadius;
+            _decorLayer.Background = brush;
+            // 纹样只做“坐标系”暗示：整层再压到 15%，避免 1px 线在深色底上喧宾夺主。
+            _decorLayer.Opacity = 0.15;
+            _decorLayer.Visibility = Visibility.Visible;
+        }
+
+        static DrawingBrush BuildDecorationBrush(string kind, Color color)
+        {
+            double size;
+            Drawing drawing;
+
+            switch (kind)
+            {
+                case "Grid":
+                    size = 24;
+                    drawing = Stroked(new GeometryGroup
+                    {
+                        Children =
+                        {
+                            new LineGeometry(new Point(0, 0), new Point(size, 0)),
+                            new LineGeometry(new Point(0, 0), new Point(0, size))
+                        }
+                    }, color);
+                    break;
+
+                case "Scanline":
+                    size = 4;
+                    drawing = Stroked(new LineGeometry(new Point(0, 0), new Point(size, 0)), color);
+                    break;
+
+                case "Hatch":
+                    size = 12;
+                    drawing = Stroked(new LineGeometry(new Point(0, size), new Point(size, 0)), color);
+                    break;
+
+                case "Halftone":
+                    size = 8;
+                    var dot = new SolidColorBrush(color);
+                    dot.Freeze();
+                    drawing = new GeometryDrawing(dot, null,
+                        new EllipseGeometry(new Point(size / 2, size / 2), 1.1, 1.1));
+                    break;
+
+                case "Contour":
+                    size = 48;
+                    var rings = new GeometryGroup();
+                    rings.Children.Add(new EllipseGeometry(new Point(size / 2, size / 2), size * 0.18, size * 0.18));
+                    rings.Children.Add(new EllipseGeometry(new Point(size / 2, size / 2), size * 0.32, size * 0.32));
+                    rings.Children.Add(new EllipseGeometry(new Point(size / 2, size / 2), size * 0.46, size * 0.46));
+                    drawing = Stroked(rings, color);
+                    break;
+
+                default:
+                    return null;
+            }
+
+            var brush = new DrawingBrush(drawing)
+            {
+                TileMode = TileMode.Tile,
+                Viewport = new Rect(0, 0, size, size),
+                ViewportUnits = BrushMappingMode.Absolute,
+                Stretch = Stretch.None
+            };
+            brush.Freeze();
+            return brush;
+        }
+
+        static Drawing Stroked(Geometry geometry, Color color)
+        {
+            var pen = new Pen(new SolidColorBrush(color), 1);
+            pen.Freeze();
+            var drawing = new GeometryDrawing(null, pen, geometry);
+            drawing.Freeze();
+            return drawing;
         }
 
         static BitmapImage LoadImage(string path)

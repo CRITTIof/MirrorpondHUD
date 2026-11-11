@@ -29,6 +29,8 @@ namespace MirrorpondHUD.Ui
         string _layoutText;
 
         FontFamily _fontFamily = new FontFamily("Microsoft YaHei UI");
+        FontFamily _monoFamily;
+        bool _monoNumbers;
         double _fontSize = 15;
         double _iconScale = 1.15;
         FontWeight _fontWeight = FontWeights.Normal;
@@ -180,6 +182,37 @@ namespace MirrorpondHUD.Ui
                 if (value == null || value.Equals(_fontFamily)) return;
                 _fontFamily = value;
                 InvalidateMetrics();
+                InvalidateMeasure();
+                InvalidateVisual();
+            }
+        }
+
+        /// <summary>
+        /// M4：数字串使用的等宽字体。null = 不启用（数字仍用 FontFamily）。
+        /// 只影响 0–9 组成的 run，标点 / 单位 / 中文仍走正文；缓存会随属性变化整表作废。
+        /// </summary>
+        public FontFamily MonoFont
+        {
+            get { return _monoFamily; }
+            set
+            {
+                if (value == null || value.Equals(_monoFamily)) return;
+                _monoFamily = value;
+                InvalidateLayoutCache();
+                InvalidateMeasure();
+                InvalidateVisual();
+            }
+        }
+
+        /// <summary>M4：是否把数字串单独用 <see cref="MonoFont"/> 排版（默认 false）。</summary>
+        public bool MonoNumbers
+        {
+            get { return _monoNumbers; }
+            set
+            {
+                if (value == _monoNumbers) return;
+                _monoNumbers = value;
+                InvalidateLayoutCache();
                 InvalidateMeasure();
                 InvalidateVisual();
             }
@@ -441,7 +474,9 @@ namespace MirrorpondHUD.Ui
         {
             Text,
             Keycap,
-            Icon
+            Icon,
+            /// <summary>M4：仅 0–9，启用 MonoNumbers 时单独走 MonoFont。</summary>
+            Number
         }
 
         sealed class TextRun
@@ -506,6 +541,8 @@ namespace MirrorpondHUD.Ui
         /// ② 以后新增影响排版的样式字段却忘了置脏——宁可重建，也不要把旧排版画出去。
         /// </summary>
         FontFamily _layoutCacheFamily;
+        FontFamily _layoutCacheMonoFamily;
+        bool _layoutCacheMonoNumbers;
         double _layoutCacheFontSize;
         double _layoutCacheIconScale;
         FontWeight _layoutCacheWeight;
@@ -536,10 +573,15 @@ namespace MirrorpondHUD.Ui
         {
             PerformanceProbe.TextRun();
             bool icon = kind == RunKind.Icon;
-            FontFamily family = icon
-                ? LucideIcons.FontFamily
-                : (kind == RunKind.Keycap ? KeycapFamily : _fontFamily);
-            FontWeight weight = kind == RunKind.Text ? _fontWeight : FontWeights.Normal;
+            FontFamily family;
+            if (icon) family = LucideIcons.FontFamily;
+            else if (kind == RunKind.Keycap) family = KeycapFamily;
+            else if (kind == RunKind.Number && _monoFamily != null) family = _monoFamily;
+            else family = _fontFamily;
+
+            // 数字只是换字体，仍跟正文同字重；键帽 / 图标保持自己的绘制语汇。
+            FontWeight weight = kind == RunKind.Text || kind == RunKind.Number
+                ? _fontWeight : FontWeights.Normal;
             double size = icon ? _fontSize * _iconScale : _fontSize;
 
             var ft = new FormattedText(
@@ -564,7 +606,7 @@ namespace MirrorpondHUD.Ui
                 Source = text ?? ""
             };
 
-            if (kind != RunKind.Text)
+            if (kind == RunKind.Keycap || kind == RunKind.Icon)
             {
                 EnsureMetrics();
                 Rect ink = InkBoundsOf(ft, InkKey(family, size, weight, run.Source));
@@ -627,10 +669,11 @@ namespace MirrorpondHUD.Ui
             InvalidateLayoutCache();
         }
 
-        static RunKind KindOf(char c)
+        RunKind KindOf(char c)
         {
             if (IsKeycapChar(c)) return RunKind.Keycap;
             if (IsIconChar(c)) return RunKind.Icon;
+            if (_monoNumbers && _monoFamily != null && c >= '0' && c <= '9') return RunKind.Number;
             return RunKind.Text;
         }
 
@@ -703,6 +746,8 @@ namespace MirrorpondHUD.Ui
                 && _layoutCacheWeight == _fontWeight
                 && _layoutCachePixelsPerDip == pixelsPerDip
                 && object.ReferenceEquals(_layoutCacheFamily, _fontFamily)
+                && object.ReferenceEquals(_layoutCacheMonoFamily, _monoFamily)
+                && _layoutCacheMonoNumbers == _monoNumbers
                 && object.ReferenceEquals(_layoutCacheForeground, _foreground))
             {
                 return;
@@ -710,6 +755,8 @@ namespace MirrorpondHUD.Ui
 
             _layoutCache.Clear();
             _layoutCacheFamily = _fontFamily;
+            _layoutCacheMonoFamily = _monoFamily;
+            _layoutCacheMonoNumbers = _monoNumbers;
             _layoutCacheFontSize = _fontSize;
             _layoutCacheIconScale = _iconScale;
             _layoutCacheWeight = _fontWeight;

@@ -182,10 +182,36 @@ namespace MirrorpondHUD.Cards
             CliSettings cli = _settings.Cli ?? new CliSettings();
             Width = Math.Max(240, cli.MaxWidth);
 
+            // M5：铭牌编号只在选项打开时显示，编号取卡片在整叠里的位置（01 起）。
+            if (_settings.Style.IndustrialHeader)
+            {
+                int index = -1;
+                if (_settings.Cards != null)
+                {
+                    for (int i = 0; i < _settings.Cards.Count; i++)
+                    {
+                        CardSettings item = _settings.Cards[i];
+                        if (item == null) continue;
+                        if (ReferenceEquals(item, _config)
+                            || (!string.IsNullOrEmpty(item.Id)
+                                && string.Equals(item.Id, _config.Id, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            index = i;
+                            break;
+                        }
+                    }
+                }
+                _header.Code = index >= 0 ? (index + 1).ToString("00") : "";
+            }
+            else
+            {
+                _header.Code = "";
+            }
+
             _header.ApplyStyle(_settings.Style, _settings.Overlay.CornerRadius);
             _search.ApplyStyle(_settings.Style, _settings.Overlay.CornerRadius);
             _list.ApplyStyle(_settings.Style, cli);
-            _status.ApplyStyle(_settings.Style);
+            _status.ApplyStyle(_settings.Style, _settings.Overlay.CornerRadius);
             _cancelCopy.ApplyStyle(_settings.Style, _settings.Overlay.CornerRadius);
             _dropOverlay.ApplyStyle(_settings.Style, _settings.Overlay.CornerRadius);
             _list.SetEmptyText(EmptyText());

@@ -72,7 +72,7 @@ namespace MirrorpondHUD.Ui.Controls
 
             _text.FontFamily = CardPalette.ResolveFont(s.FontFamily);
             _text.FontSize = Math.Max(11, s.FontSize);
-            CornerRadius = new CornerRadius(Math.Max(6, cornerRadius));
+            CornerRadius = new CornerRadius(CardPalette.Corner(cornerRadius, 6));
             UpdateColors();
         }
 

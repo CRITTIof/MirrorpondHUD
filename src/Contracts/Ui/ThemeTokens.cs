@@ -12,6 +12,10 @@ namespace MirrorpondHUD.Ui
     {
         public Color Accent;
         public Color Danger;
+        /// <summary>M3 成功色；空配置时等于 Accent（默认观感不变）。</summary>
+        public Color Success;
+        /// <summary>M3 警告色；空配置时等于前景 0.9（默认观感不变）。</summary>
+        public Color Warning;
         public Color Muted;
         public Color Border;
         public Color Panel;
@@ -35,11 +39,15 @@ namespace MirrorpondHUD.Ui
         {
             StyleSettings s = style ?? new StyleSettings();
             Color foreground = ParseColor(s.Foreground, Color.FromRgb(0xE6, 0xED, 0xF3));
+            Color accent = ParseColor(s.Accent, Color.FromRgb(0x2F, 0x6F, 0xEB));
 
             return new ThemeTokens
             {
-                Accent = ParseColor(s.Accent, Color.FromRgb(0x2F, 0x6F, 0xEB)),
+                Accent = accent,
                 Danger = ParseColor(s.Danger, Color.FromRgb(0xD1, 0x43, 0x43)),
+                // 空串 = 旧行为：Success 跟着 Accent，Warning 是前景 0.9。
+                Success = ParseColor(s.Success, accent),
+                Warning = ParseColor(s.Warning, WithAlpha(foreground, 0.9)),
                 Muted = ParseColor(s.Muted, WithAlpha(foreground, 0.45)),
                 Border = ParseColor(s.Border, WithAlpha(foreground, 0.10)),
                 Panel = ParseColor(s.Panel, WithAlpha(foreground, 0.045)),
