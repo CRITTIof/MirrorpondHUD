@@ -16,6 +16,8 @@ internal static class MediaNative
     public const int WsExNoActivate = 0x08000000;
     /// <summary>K-10：分层窗口样式（配合 SetLayeredWindowAttributes 做整窗不透明度）。</summary>
     public const int WsExLayered = 0x00080000;
+    /// <summary>K-20：置顶样式。用来判断卡片 / 锚点所在 z-order 带，决定视频窗怎么插。</summary>
+    public const int WsExTopmost = 0x00000008;
 
     /// <summary>SetLayeredWindowAttributes 的 LWA_ALPHA：用源 alpha 混合整个窗口。</summary>
     public const int LwaAlpha = 0x00000002;
@@ -32,24 +34,47 @@ internal static class MediaNative
     [DllImport("user32.dll", SetLastError = true, EntryPoint = "SetWindowLongPtrW")]
     static extern IntPtr SetWindowLongPtr64(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
 
-    public static int GetExStyle(IntPtr hwnd)
+    /// <summary>
+    /// K-19：读取扩展样式并报告是否真的读到。旧实现直接返回 int，读失败（句柄失效）时
+    /// 返回 0，调用方会把"0"当成真实样式再取反写回，等于清掉窗口上其它扩展样式。
+    /// </summary>
+    public static bool TryGetExStyle(IntPtr hwnd, out int value)
     {
+        value = 0;
+        if (hwnd == IntPtr.Zero) return false;
+
+        Marshal.SetLastPInvokeError(0);
+        IntPtr result;
         if (IntPtr.Size == 8)
         {
-            IntPtr value = GetWindowLongPtr64(hwnd, GwlExStyle);
-            return unchecked((int)value.ToInt64());
+            result = GetWindowLongPtr64(hwnd, GwlExStyle);
         }
-        return GetWindowLong(hwnd, GwlExStyle);
+        else
+        {
+            result = new IntPtr(GetWindowLong(hwnd, GwlExStyle));
+        }
+
+        // 旧样式本来就是 0 也是合法的，只有"返回 0 且 LastError 非 0"才算读取失败。
+        if (result == IntPtr.Zero && Marshal.GetLastPInvokeError() != 0) return false;
+
+        value = unchecked((int)result.ToInt64());
+        return true;
     }
 
-    public static void SetExStyle(IntPtr hwnd, int value)
+    /// <summary>
+    /// K-19：设置扩展样式并返回是否成功。SetWindowLong 的返回值是"旧值"，可能本来就是 0，
+    /// 所以同样用 LastError 判失败，而不是把 old == 0 当成错误。
+    /// </summary>
+    public static bool SetExStyle(IntPtr hwnd, int value)
     {
-        if (IntPtr.Size == 8)
-        {
-            SetWindowLongPtr64(hwnd, GwlExStyle, new IntPtr(value));
-            return;
-        }
-        SetWindowLong(hwnd, GwlExStyle, value);
+        if (hwnd == IntPtr.Zero) return false;
+
+        Marshal.SetLastPInvokeError(0);
+        IntPtr result = IntPtr.Size == 8
+            ? SetWindowLongPtr64(hwnd, GwlExStyle, new IntPtr(value))
+            : new IntPtr(SetWindowLong(hwnd, GwlExStyle, value));
+
+        return result != IntPtr.Zero || Marshal.GetLastPInvokeError() == 0;
     }
 
     /// <summary>

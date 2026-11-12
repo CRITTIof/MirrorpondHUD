@@ -49,6 +49,13 @@ public sealed class CardMediaView : Grid, IDisposable
     /// <summary>P1-6：音频启动失败的如实备注（null = 音频正常）；追加在右上角状态行。</summary>
     string _audioNote;
 
+    // K-17：本卡自己的警告（如"动图过大"）。以前的跳过原因是 GifAnimator 的 static 字段，
+    // 两张媒体卡会互相覆盖；现在按实例保存，且状态行里 Warning 优先于普通播放提示。
+    string _warningNote;
+    // K-22：倍速回退说明（ffmpeg 的 -re 回退只支持 1×）。与 _warningNote 分开：它只追加在
+    // 普通状态行末尾，不遮住播放进度，也不跨文件残留。
+    string _speedNote;
+
     MediaSettings _settings = new();
     StyleSettings _style;
     string _loadedPath;
@@ -405,6 +412,10 @@ public sealed class CardMediaView : Grid, IDisposable
         _playing = _settings.Autoplay;
         _loadedPath = path;
         _message.Visibility = Visibility.Collapsed;
+        // K-17/K-22：换文件后上一份媒体的警告与倍速备注都失效，不能带到新文件上。
+        _warningNote = null;
+        _speedNote = null;
+        _status.ToolTip = null;
 
         // K-11：新一轮媒体直接按当前设置起播，所以快照就是当前值。
         _appliedDecoder = MediaSettings.NormalizeDecoder(_settings.Decoder);
@@ -461,7 +472,15 @@ public sealed class CardMediaView : Grid, IDisposable
         {
             // K-12：GIF 只解一次。旧实现先用 BitmapDecoder 解首帧、再让 GifAnimator 用
             // GDI+ 解全部帧，等于两遍全尺寸解码；现在直接交给 GifAnimator。
-            GifAnimator gif = await Task.Run(() => GifAnimator.TryLoad(path, true));
+            // K-17：跳过原因通过 out 参数回到本次调用的局部变量（每次加载各自独立），
+            // 不再用 static 字段，双卡同时加载动图时不会串提示。
+            string skipReason = "";
+            GifAnimator gif = await Task.Run(() =>
+            {
+                GifAnimator loaded = GifAnimator.TryLoad(path, true, out string reason);
+                skipReason = reason;
+                return loaded;
+            });
             if (!IsCurrentImage(path, run))
             {
                 if (gif is not null) gif.Dispose();
@@ -474,17 +493,20 @@ public sealed class CardMediaView : Grid, IDisposable
                 gif.AttachTarget(_image);
                 _image.Stretch = ParseStretch(_settings.Fit);
                 _gif = gif;
-                _gif.Play();
+                // K-18：新解出来的动图本来就在第一帧，显式 restart 只为表达"从头开始"。
+                _gif.Play(restart: true);
                 ApplySize();
                 return;
             }
 
-            // 超预算 / 读取失败：GifAnimator 已把原因写进 LastSkipReason，退回静态首帧。
-            if (!string.IsNullOrEmpty(GifAnimator.LastSkipReason))
+            // 超预算 / 读取失败：跳过原因属于这张卡片，超出预算时退回静态首帧。
+            if (!string.IsNullOrEmpty(skipReason))
             {
+                _warningNote = "动图过大，已仅显示首帧";
                 _status.Visibility = Visibility.Visible;
-                _status.SetText("动图过大，已仅显示首帧", CardStatusKind.Warning);
-                _status.ToolTip = GifAnimator.LastSkipReason;
+                _status.ToolTip = skipReason;
+                // K-17：走 UpdateStatus 让 Warning 立刻生效；后续换肤 / 刷新也会重显同一条。
+                UpdateStatus();
             }
         }
 
@@ -773,6 +795,22 @@ public sealed class CardMediaView : Grid, IDisposable
                     UpdateStatus();
                 }));
             };
+            // K-22：ffmpeg 只能按原生速率读包（-readrate 回退到 -re）时，把显示倍速回滚成
+            // 实际生效的 1×，并在状态行说明原因——否则界面写 2×、画面走 1×。
+            // 事件可能来自读帧线程，统一切回 UI；并用捕获的实例核对，旧播放器的晚归通知作废。
+            FfmpegPlayer speedPlayer = _player;
+            speedPlayer.SpeedForced += actual =>
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    if (_disposed || !ReferenceEquals(_player, speedPlayer)) return;
+                    double applied = actual > 0 ? actual : 1;
+                    _speed = applied;
+                    _speedNote = $"ffmpeg 不支持倍速，已按 {applied.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}× 播放";
+                    Log.Warn($"ffmpeg 倍速回退到 {applied:0.##}×，状态行已如实标注");
+                    UpdateStatus();
+                }));
+            };
             // K-7：非循环视频自然播完：播放器状态机已收尾，卡片按钮 / 状态行也要跟上。
             _player.Completed += () =>
             {
@@ -788,6 +826,7 @@ public sealed class CardMediaView : Grid, IDisposable
             };
 
             _audioNote = null;   // 新一轮播放重置上一轮的音频备注
+            _speedNote = null;   // K-22：倍速备注同样按"这一代"重置，避免旧回退说明留在新文件上
             _mediaEnded = false;
             _frameBitmap = null; // 换播放器/换文件：帧缓冲必须重建（尺寸可能不同）
 
@@ -1007,7 +1046,18 @@ public sealed class CardMediaView : Grid, IDisposable
                     if (speedChanged)
                     {
                         _speed = speed;
-                        _player.SetSpeed(speed);
+                        // K-22：SetSpeed 返回 false = 这次变速没生效（-re 回退只支持 1×）。
+                        // 必须把显示值回滚成实际倍速并说明原因，不能"界面写 2×、画面走 1×"。
+                        if (!_player.SetSpeed(speed))
+                        {
+                            _speed = _player.Speed;
+                            _speedNote = $"ffmpeg 不支持倍速，已按 {_speed.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}× 播放";
+                            Log.Warn($"ffmpeg 不支持 {speed:0.##}×，已回滚显示为 {_speed:0.##}×");
+                        }
+                        else
+                        {
+                            _speedNote = null;
+                        }
                     }
 
                     if (mutedChanged) _player.SetMuted(_settings.Muted);
@@ -1068,13 +1118,20 @@ public sealed class CardMediaView : Grid, IDisposable
 
         try
         {
+            // K-21：视频子窗的 Left/Top/Width/Height 是 DIP，而 PointToScreen 给的是物理像素。
+            // 跨不同缩放的屏幕时，用"卡片 DPI"把像素除回 DIP 会算错（子窗可能还在另一块屏幕
+            // 的 DPI 上），位置和圆角就会偏。这里统一交给 VideoWindow：它保存物理像素目标，
+            // 再按自己所在屏幕的 TransformFromDevice 换算；尺寸用 TransformToDevice 得到像素。
             Point origin = _host.PointToScreen(new Point(0, 0));
-            DpiScale dpi = VisualTreeHelper.GetDpi(this);
-            double sx = dpi.DpiScaleX > 0.1 ? dpi.DpiScaleX : 1;
-            double sy = dpi.DpiScaleY > 0.1 ? dpi.DpiScaleY : 1;
+
+            PresentationSource source = PresentationSource.FromVisual(this);
+            Matrix toDevice = source?.CompositionTarget is not null
+                ? source.CompositionTarget.TransformToDevice
+                : Matrix.Identity;
+            Vector sizePx = toDevice.Transform(new Vector(_host.ActualWidth, _host.ActualHeight));
 
             double radius = _settings is not null && _settings.Rounded ? _cornerRadius : 0;
-            _videoWindow.Place(origin.X / sx, origin.Y / sy, _host.ActualWidth, _host.ActualHeight, radius);
+            _videoWindow.Place(origin.X, origin.Y, sizePx.X, sizePx.Y, radius);
         }
         catch (Exception ex)
         {
@@ -1316,6 +1373,7 @@ public sealed class CardMediaView : Grid, IDisposable
         if (_disposed) return;
         try
         {
+            // K-18：默认续播——暂停后按播放从暂停点继续，而不是回到第一帧重放。
             if (_gif is not null) _gif.Play();
 
             if (_player is not null)
@@ -1449,6 +1507,7 @@ public sealed class CardMediaView : Grid, IDisposable
             }
             else if (_gif is not null)
             {
+                // K-18：暂停→继续的按钮语义：Stop 只停表，Play 不带 restart 就从当前帧接着播。
                 if (_playing) _gif.Stop();
                 else _gif.Play();
                 _playing = !_playing;
@@ -1519,8 +1578,25 @@ public sealed class CardMediaView : Grid, IDisposable
 
         try
         {
-            if (_player is not null) _player.SetSpeed(next);
-            else if (_videoWindow is not null) _videoWindow.Video.SpeedRatio = next;
+            if (_player is not null)
+            {
+                // K-22：-re 回退模式只支持 1×；请求被拒时把显示值回滚成实际倍速并说明原因。
+                if (!_player.SetSpeed(next))
+                {
+                    _speed = _player.Speed;
+                    _speedNote = $"ffmpeg 不支持倍速，已按 {_speed.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}× 播放";
+                    Log.Warn($"ffmpeg 不支持 {next:0.##}×，已回滚显示为 {_speed:0.##}×");
+                }
+                else
+                {
+                    _speedNote = null;
+                }
+            }
+            else if (_videoWindow is not null)
+            {
+                _videoWindow.Video.SpeedRatio = next;
+                _speedNote = null;
+            }
         }
         catch (Exception ex)
         {
@@ -1536,6 +1612,14 @@ public sealed class CardMediaView : Grid, IDisposable
     void UpdateStatus()
     {
         if (_status.Visibility != Visibility.Visible) return;
+
+        // K-17：警告优先。换肤 / 布局刷新 / 进度计时器都会走到这里，如果先渲染普通播放文本，
+        // "动图过大"这类必须被用户看到的提示就会被覆盖掉；因此有未清除的警告时直接显示它。
+        if (!string.IsNullOrEmpty(_warningNote))
+        {
+            _status.SetText(_warningNote, CardStatusKind.Warning);
+            return;
+        }
 
         double position = 0;
         double duration = 0;
@@ -1572,6 +1656,8 @@ public sealed class CardMediaView : Grid, IDisposable
 
         // P1-6：音频不可用的备注（ffmpeg 解码、WaveOut 起不来时）。
         if (_audioNote is not null) text += $" · {_audioNote}";
+        // K-22：倍速回退说明（例如 ffmpeg 的 -re 回退只支持 1×）。
+        if (_speedNote is not null) text += $" · {_speedNote}";
 
         _status.SetText(text, CardStatusKind.Normal);
     }
@@ -1603,8 +1689,13 @@ public sealed class CardMediaView : Grid, IDisposable
         _mediaEnded = false;
         _waitingForFfmpeg = false;
 
-        // 释放路径：GifAnimator.Dispose 只停表 / 清帧，异常没有可补救动作。
-        try { if (_gif is not null) _gif.Dispose(); } catch { }
+        // K-17：换文件 / 卸载后本卡的警告与倍速备注都要失效，避免把旧提示带到新内容上。
+        _warningNote = null;
+        _speedNote = null;
+        _status.ToolTip = null;
+
+        // 释放路径统一走 SafeRelease（X-9）：停表 / 清帧的失败记为 Debug/Warn，不再空 catch。
+        SafeRelease.Run(() => _gif?.Dispose(), "动图播放器");
         _gif = null;
 
         ReleaseVideo();
@@ -1617,6 +1708,7 @@ public sealed class CardMediaView : Grid, IDisposable
     {
         _pendingVideo = null;
         _audioNote = null;
+        _speedNote = null;   // K-22：倍速回退说明属于这一代播放
         _mediaEnded = false;
         _waitingForFfmpeg = false;
         _ffmpegRetryTask = null;
@@ -1631,9 +1723,10 @@ public sealed class CardMediaView : Grid, IDisposable
 
         if (_player is not null)
         {
-            // 释放路径：播放器 Dispose 内部已做有界收尾，异常无处上报；
-            // 下面把引用置 null，保证不会继续用半损坏的实例。
-            try { _player.Dispose(); } catch { }
+            // 释放路径：播放器 Dispose 内部已做有界收尾；失败交给 SafeRelease 记录，
+            // 引用随后置 null，保证不会继续用半损坏的实例。
+            FfmpegPlayer player = _player;
+            SafeRelease.Run(() => player.Dispose(), "ffmpeg 播放器");
             _player = null;
         }
 

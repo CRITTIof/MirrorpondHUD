@@ -684,18 +684,17 @@ internal sealed class WaveOutPlayer : IDisposable
                     }
 
                     _headers[i] = IntPtr.Zero;
-                    // 释放路径的空 catch 是合法的：FreeHGlobal 对已释放/空指针不会抛异常，
-                    // 且此处的失败已由上面的 Unprepare 日志覆盖（X-9 保留并注明）。
-                    if (release) { try { Marshal.FreeHGlobal(header); } catch { } }
+                    // 释放路径统一走 SafeRelease（X-9）：FreeHGlobal 正常不抛，真抛了也要有记录，
+                    // 且此处的 Unprepare 失败已由上面的 Warn 覆盖。
+                    if (release) SafeRelease.Run(() => Marshal.FreeHGlobal(header), "音频 header");
                 }
 
                 IntPtr buffer = _buffers[i];
                 if (buffer != IntPtr.Zero)
                 {
                     _buffers[i] = IntPtr.Zero;
-                    // 与 header 同步：header 没回收时数据缓冲也不能释放。
-                    // 释放路径的空 catch 同上：失败原因已由 Unprepare 的 Warn 记录。
-                    if (release) { try { Marshal.FreeHGlobal(buffer); } catch { } }
+                    // 与 header 同步：header 没回收时数据缓冲也不能释放；失败交给 SafeRelease 记录。
+                    if (release) SafeRelease.Run(() => Marshal.FreeHGlobal(buffer), "音频缓冲");
                 }
 
                 _queued[i] = false;

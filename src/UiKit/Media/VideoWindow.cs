@@ -26,13 +26,28 @@ internal sealed class VideoWindow : IDisposable
     Window _window;
     bool _disposed;
     bool _placing;
-    Rect _lastRect = Rect.Empty;
+
+    // K-21：目标位置按**物理像素**保存。窗口的 Left/Top/Width/Height 是 DIP，跨不同缩放屏幕时
+    // 必须用窗口自己所在屏幕的 DPI 换算；先存像素，才能在 WM_DPICHANGED 之后用同一目标重算。
+    Rect _targetPx = Rect.Empty;
+    double _targetRadiusDips;
+    bool _dpiWarned;
 
     // K-9：region 只依赖"尺寸 + 圆角"，与窗口位置无关。历史 P-9 把 X/Y 也算进等价判断，
     // 于是拖动卡片时每帧都 CreateRoundRectRgn + SetWindowRgn(bRedraw=true)，整窗重绘 → 闪。
+    // K-21 起这三个值都是物理像素（之前是 DIP），region 本身也只跟像素有关。
     double _lastRegionWidth = -1;
     double _lastRegionHeight = -1;
     double _lastRegionRadius = -1;
+
+    // K-19：扩展样式 / z-order 的失败要可见，但不能每帧刷屏：用状态转移 + 最小间隔节流。
+    static readonly LogThrottle StyleThrottle = new("设置视频窗扩展样式", 60000);
+    static readonly LogThrottle ZOrderThrottle = new("调整视频窗 z-order", 60000);
+    bool _zOrderFallbackLogged;
+
+    static readonly IntPtr HwndTopmost = new(-1);
+    const uint GwHwndPrev = 3;
+    const uint GwOwner = 4;
 
     // K-10：卡片不透明度。视频在独立 HWND 里，不继承卡片窗口的 WPF Opacity，
     // 必须自己用分层窗口的整窗 alpha 同步，否则"图片半透明、视频全不透明"。
@@ -101,7 +116,9 @@ internal sealed class VideoWindow : IDisposable
                 Background = Brushes.Black,
                 ShowInTaskbar = false,
                 ShowActivated = false,
-                Topmost = true,
+                // K-20：不再默认置顶。视频窗的层级由 RaiseAboveOwner 以卡片为锚点决定，
+                // 默认 Topmost=true 会把它抬到所有置顶窗口之上。
+                Topmost = false,
                 ResizeMode = ResizeMode.NoResize,
                 WindowStartupLocation = WindowStartupLocation.Manual,
                 SizeToContent = SizeToContent.Manual,
@@ -115,17 +132,36 @@ internal sealed class VideoWindow : IDisposable
 
             if (_owner is not null && _owner.IsLoaded) _window.Owner = _owner;
 
+            // K-21：跨不同缩放屏幕时窗口 DPI 会变（WM_DPICHANGED）。WPF 会按系统建议矩形缩放窗口，
+            // 必须用保存的物理像素目标重新落位，并按新 DPI 重建圆角 region。
+            _window.DpiChanged += (s, e) => ApplyPlacement();
+
             _window.SourceInitialized += (s, e) =>
             {
                 IntPtr hwnd = new WindowInteropHelper(_window).Handle;
                 if (hwnd == IntPtr.Zero) return;
 
-                int ex = MediaNative.GetExStyle(hwnd);
-                ex |= MediaNative.WsExTransparent | MediaNative.WsExNoActivate | MediaNative.WsExToolWindow;
-                MediaNative.SetExStyle(hwnd, ex);
+                // K-19：鼠标穿透 / 不抢焦点 / 不进 Alt+Tab 全靠这三项样式，
+                // 读或写失败都会让视频窗变成"抢焦点、挡鼠标"的窗口，必须留痕。
+                if (!MediaNative.TryGetExStyle(hwnd, out int ex))
+                {
+                    StyleThrottle.Failure("读取视频窗扩展样式失败，鼠标穿透 / 不抢焦点可能失效");
+                }
+                else if (!MediaNative.SetExStyle(hwnd, ex | MediaNative.WsExTransparent |
+                                                       MediaNative.WsExNoActivate | MediaNative.WsExToolWindow))
+                {
+                    StyleThrottle.Failure("设置视频窗扩展样式失败，鼠标穿透 / 不抢焦点可能失效");
+                }
+                else
+                {
+                    StyleThrottle.Success();
+                }
 
                 // K-10：窗口句柄就绪后再套一次透明度（Place 可能在窗口建好前就调用过）。
                 if (_opacity < 0.999) ApplyOpacity();
+
+                // K-21：句柄就绪后按当前 DPI 补一次落位 / region（Place 可能早于句柄创建）。
+                ApplyPlacement();
             };
 
             _window.Show();
@@ -138,46 +174,48 @@ internal sealed class VideoWindow : IDisposable
         }
     }
 
-    /// <summary>跟随卡片位置 / 大小；参数是屏幕 DIP 坐标与卡片圆角。</summary>
-    public void Place(double left, double top, double width, double height, double radius)
+    /// <summary>
+    /// 跟随卡片位置 / 大小。参数是**物理像素**的屏幕坐标与卡片圆角（DIP）。
+    /// K-21：跨不同缩放屏幕时，DIP 换算必须用视频窗自己所在屏幕的 DPI，
+    /// 所以先把像素目标存下来，再由 <see cref="ApplyPlacement"/> 统一换算与落位。
+    /// </summary>
+    public void Place(double leftPx, double topPx, double widthPx, double heightPx, double radiusDips)
     {
         if (_window is null || _disposed) return;
-        if (width < 8 || height < 8) return;
+        if (widthPx < 8 || heightPx < 8) return;
 
-        var rect = new Rect(Math.Round(left, 1), Math.Round(top, 1),
-                            Math.Round(width, 1), Math.Round(height, 1));
-        if (_lastRect == rect) return;
+        var target = new Rect(Math.Round(leftPx, 1), Math.Round(topPx, 1),
+                              Math.Round(widthPx, 1), Math.Round(heightPx, 1));
+        if (_targetPx == target && Math.Abs(_targetRadiusDips - radiusDips) < 0.01) return;
 
-        // K-9：分开判断"移动"与"改尺寸"。region 与位置无关，只有尺寸 / 圆角变化才重建。
-        Rect previous = _lastRect;
-        bool sizeChanged = previous.IsEmpty ||
-                           Math.Abs(previous.Width - rect.Width) > 0.05 ||
-                           Math.Abs(previous.Height - rect.Height) > 0.05;
-        bool moved = previous.IsEmpty ||
-                     Math.Abs(previous.X - rect.X) > 0.05 ||
-                     Math.Abs(previous.Y - rect.Y) > 0.05;
+        _targetPx = target;
+        _targetRadiusDips = Math.Max(0, radiusDips);
+        ApplyPlacement();
+    }
 
-        _lastRect = rect;
+    /// <summary>
+    /// K-21：按保存的像素目标 + 窗口当前 DPI 落位并重建 region。
+    /// 首次放置、SourceInitialized、WM_DPICHANGED 都走这里，保证"换算用哪套 DPI"只有一处。
+    /// </summary>
+    void ApplyPlacement()
+    {
+        if (_window is null || _disposed || _targetPx.IsEmpty) return;
+
+        Matrix fromDevice = FromDevice();
+        Point topLeft = fromDevice.Transform(new Point(_targetPx.X, _targetPx.Y));
+        Vector size = fromDevice.Transform(new Vector(_targetPx.Width, _targetPx.Height));
+        double radiusPx = fromDevice.M11 > 0.01 ? _targetRadiusDips / fromDevice.M11 : _targetRadiusDips;
+
         _placing = true;
         try
         {
-            // 只赋值真正变化的维度：WPF 里重复设置 Left/Top 也会走一次窗口移动 + 布局。
-            if (moved)
-            {
-                _window.Left = rect.X;
-                _window.Top = rect.Y;
-            }
+            // 只赋值真正变化的维度：重复设置 Left/Top 也会多走一次窗口移动 + 布局。
+            if (Math.Abs(_window.Left - topLeft.X) > 0.05) _window.Left = topLeft.X;
+            if (Math.Abs(_window.Top - topLeft.Y) > 0.05) _window.Top = topLeft.Y;
+            if (Math.Abs(_window.Width - size.X) > 0.05) _window.Width = size.X;
+            if (Math.Abs(_window.Height - size.Y) > 0.05) _window.Height = size.Y;
 
-            if (sizeChanged)
-            {
-                _window.Width = rect.Width;
-                _window.Height = rect.Height;
-            }
-
-            if (sizeChanged || Math.Abs(_lastRegionRadius - radius) > 0.01 ||
-                Math.Abs(_lastRegionWidth - rect.Width) > 0.05 ||
-                Math.Abs(_lastRegionHeight - rect.Height) > 0.05)
-                ApplyRegion(rect.Width, rect.Height, radius);
+            ApplyRegion(_targetPx.Width, _targetPx.Height, radiusPx);
         }
         catch (Exception ex)
         {
@@ -186,6 +224,80 @@ internal sealed class VideoWindow : IDisposable
         finally
         {
             _placing = false;
+        }
+    }
+
+    /// <summary>
+    /// 屏幕像素 → 窗口 DIP 的换算矩阵。窗口还没接上合成树时按自身 DPI 兜底，
+    /// 等 SourceInitialized / DpiChanged 后会再用真实矩阵重算一次（K-21）。
+    /// </summary>
+    Matrix FromDevice()
+    {
+        PresentationSource source = PresentationSource.FromVisual(_window);
+        if (source?.CompositionTarget is not null) return source.CompositionTarget.TransformFromDevice;
+
+        double sx = 1, sy = 1;
+        try
+        {
+            DpiScale dpi = VisualTreeHelper.GetDpi(_window);
+            if (dpi.DpiScaleX > 0.1) sx = dpi.DpiScaleX;
+            if (dpi.DpiScaleY > 0.1) sy = dpi.DpiScaleY;
+        }
+        catch (Exception ex)
+        {
+            // 只在第一次失败时记录：后面每次布局都会重试，刷屏没有意义。
+            if (!_dpiWarned)
+            {
+                _dpiWarned = true;
+                Log.Warn($"读取视频窗 DPI 失败，先按 100% 处理（随后 DpiChanged 会再校正）: {ex.Message}");
+            }
+        }
+        return new Matrix(1.0 / sx, 0, 0, 1.0 / sy, 0, 0);
+    }
+
+    /// <summary>按物理像素尺寸与圆角重建 region；尺寸 / 圆角没变就不碰窗口（K-9）。</summary>
+    void ApplyRegion(double widthPx, double heightPx, double radiusPx)
+    {
+        try
+        {
+            IntPtr hwnd = new WindowInteropHelper(_window).Handle;
+            if (hwnd == IntPtr.Zero) return;
+
+            int w = Math.Max(1, (int)Math.Round(widthPx));
+            int h = Math.Max(1, (int)Math.Round(heightPx));
+            int r = Math.Max(0, (int)Math.Round(radiusPx));
+
+            if (Math.Abs(_lastRegionWidth - w) < 0.5 &&
+                Math.Abs(_lastRegionHeight - h) < 0.5 &&
+                Math.Abs(_lastRegionRadius - r) < 0.5)
+                return;
+
+            IntPtr region = CreateRoundRectRgn(0, 0, w + 1, h + 1, r * 2, r * 2);
+            if (region == IntPtr.Zero)
+            {
+                Log.Warn("创建视频窗圆角 region 失败，保持窗口方形");
+                return;
+            }
+
+            // K-9：bRedraw=false —— 尺寸变化本身会触发 WM_SIZE 重绘；强制整窗重绘
+            // 只会让拖动/贴边时视频画面闪一下。
+            // SetWindowRgn 成功后 region 归系统所有，不能再删。
+            if (SetWindowRgn(hwnd, region, false) == 0)
+            {
+                // K-19：SetWindowRgn 失败后 region 还归我们所有，删掉才不会漏 GDI 句柄；
+                // 连删除都失败说明句柄状态异常，必须留痕（长时间拖窗口可能累积泄漏）。
+                if (!DeleteObject(region)) Log.Warn("删除视频窗 region 失败，GDI 资源可能泄漏");
+                Log.Warn("设置视频窗圆角 region 失败，保持窗口方形");
+                return;
+            }
+
+            _lastRegionWidth = w;
+            _lastRegionHeight = h;
+            _lastRegionRadius = r;
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"视频窗圆角失败: {ex.Message}");
         }
     }
 
@@ -213,17 +325,40 @@ internal sealed class VideoWindow : IDisposable
                 // 不透明时移除分层样式：分层窗口会让 MediaElement 走更慢的合成路径。
                 if (_layered)
                 {
-                    int ex = MediaNative.GetExStyle(hwnd);
-                    MediaNative.SetExStyle(hwnd, ex & ~MediaNative.WsExLayered);
-                    _layered = false;
+                    // K-19：读 / 写失败都要可见；写失败就保留 _layered，下次再试。
+                    if (MediaNative.TryGetExStyle(hwnd, out int ex) &&
+                        MediaNative.SetExStyle(hwnd, ex & ~MediaNative.WsExLayered))
+                    {
+                        StyleThrottle.Success();
+                        _layered = false;
+                    }
+                    else
+                    {
+                        StyleThrottle.Failure("移除视频窗分层样式失败，视频窗会继续走较慢的合成路径");
+                    }
                 }
                 return true;
             }
 
             if (!_layered)
             {
-                int ex = MediaNative.GetExStyle(hwnd);
-                MediaNative.SetExStyle(hwnd, ex | MediaNative.WsExLayered);
+                // K-19：启用分层合成失败（远程桌面 / 老驱动 / 句柄失效）时返回 false，
+                // 让调用方走 K-10 的 WPF 合成降级，而不是假称透明度已生效。
+                if (!MediaNative.TryGetExStyle(hwnd, out int ex))
+                {
+                    StyleThrottle.Failure("读取视频窗扩展样式失败，无法启用分层合成");
+                    Log.Warn("视频窗不透明度设置失败：读不到扩展样式，按不支持分层合成处理");
+                    return false;
+                }
+
+                if (!MediaNative.SetExStyle(hwnd, ex | MediaNative.WsExLayered))
+                {
+                    StyleThrottle.Failure("启用视频窗分层样式失败，按不支持分层合成处理");
+                    Log.Warn("视频窗不透明度设置失败：无法启用分层合成");
+                    return false;
+                }
+
+                StyleThrottle.Success();
                 _layered = true;
             }
 
@@ -238,56 +373,6 @@ internal sealed class VideoWindow : IDisposable
         {
             Log.Warn($"视频窗不透明度设置异常: {ex.Message}");
             return false;
-        }
-    }
-
-    void ApplyRegion(double width, double height, double radius)
-    {
-        try
-        {
-            IntPtr hwnd = new WindowInteropHelper(_window).Handle;
-            if (hwnd == IntPtr.Zero) return;
-
-            double scale = 1.0;
-            try
-            {
-                DpiScale dpi = VisualTreeHelper.GetDpi(_window);
-                if (dpi.DpiScaleX > 0.1) scale = dpi.DpiScaleX;
-            }
-            catch (Exception ex)
-            {
-                // 取 DPI 失败按 100% 处理即可（位置/尺寸仍可用），只记录一次原因。
-                Log.Warn($"读取视频窗 DPI 失败，按 100% 处理: {ex.Message}");
-            }
-
-            int w = Math.Max(1, (int)Math.Round(width * scale));
-            int h = Math.Max(1, (int)Math.Round(height * scale));
-            int r = Math.Max(0, (int)Math.Round(radius * scale));
-
-            IntPtr region = CreateRoundRectRgn(0, 0, w + 1, h + 1, r * 2, r * 2);
-            if (region == IntPtr.Zero)
-            {
-                Log.Warn("创建视频窗圆角 region 失败，保持窗口方形");
-                return;
-            }
-
-            // K-9：bRedraw=false —— 尺寸变化本身会触发 WM_SIZE 重绘；强制整窗重绘
-            // 只会让拖动/贴边时视频画面闪一下。
-            // SetWindowRgn 成功后 region 归系统所有，不能再删。
-            if (SetWindowRgn(hwnd, region, false) == 0)
-            {
-                DeleteObject(region);
-                Log.Warn("设置视频窗圆角 region 失败，保持窗口方形");
-                return;
-            }
-
-            _lastRegionWidth = width;
-            _lastRegionHeight = height;
-            _lastRegionRadius = radius;
-        }
-        catch (Exception ex)
-        {
-            Log.Warn($"视频窗圆角失败: {ex.Message}");
         }
     }
 
@@ -308,8 +393,10 @@ internal sealed class VideoWindow : IDisposable
     }
 
     /// <summary>
-    /// 把视频窗插到卡片窗口的正上方。卡片每次 SetWindowPos(HWND_TOPMOST) 之后
-    /// 都会跑到自己的"从属窗口"上面去，必须重新摆一次，否则视频会被卡片背景盖住。
+    /// K-20：把视频窗摆到卡片窗口的**正上方**，而不是抬到 HWND_TOPMOST ——
+    /// 后者会压过所有置顶窗口，连鼠标穿透的卡片都会遮住别人的置顶窗。
+    /// 现在的锚点是"卡片上方紧邻的那个窗口"：视频窗插在锚点与卡片之间，
+    /// 卡片的置顶状态决定视频窗所在的 z-order 带，层级跟着卡片走。
     /// </summary>
     public void RaiseAboveOwner()
     {
@@ -320,12 +407,80 @@ internal sealed class VideoWindow : IDisposable
             IntPtr handle = new WindowInteropHelper(_window).Handle;
             if (handle == IntPtr.Zero) return;
 
-            // hWndInsertAfter 是"排在它前面（更靠后）"的窗口，所以这里直接抬到置顶带最前面，
-            // 才能保证视频压在卡片上面。卡片每次置顶后都要重新调用。
-            IntPtr topmost = new(-1);
+            IntPtr owner = GetWindow(handle, GwOwner);
+            if (owner == IntPtr.Zero && _owner is not null && _owner.IsLoaded)
+            {
+                // 视频窗创建时卡片可能还没 Loaded，owner 关系没建立；这里补一次，
+                // 补上之后才能以卡片为锚点（否则视频只能退回置顶，层级不跟卡片）。
+                _window.Owner = _owner;
+                owner = GetWindow(handle, GwOwner);
+            }
+
+            if (owner == IntPtr.Zero)
+            {
+                // 没有 owner 关系就没有锚点，无法跟随卡片。退回置顶至少保证视频可见，
+                // 但必须留痕：这正是"视频压过其它置顶窗口"的已知退化路径（K-20）。
+                const uint NoMoveNoSizeNoActivate = 0x0002 | 0x0001 | 0x0010;
+                if (!SetWindowPos(handle, HwndTopmost, 0, 0, 0, 0, NoMoveNoSizeNoActivate))
+                {
+                    ZOrderThrottle.Failure("视频窗没有 owner 句柄，且退回置顶也失败，视频可能被卡片盖住");
+                }
+                else if (!_zOrderFallbackLogged)
+                {
+                    // 退化本身要留一条原因：否则只能从"视频压过别的置顶窗"猜出这里走了退路。
+                    _zOrderFallbackLogged = true;
+                    Log.Warn("视频窗没有 owner 句柄，退回 HWND_TOPMOST（层级不再跟随卡片，可能压过其它置顶窗口）");
+                }
+                return;
+            }
+
+            IntPtr anchor = GetWindow(owner, GwHwndPrev);
+            if (anchor == handle)
+            {
+                ZOrderThrottle.Success();   // 已经紧贴卡片上方，不用再动
+                return;
+            }
+
+            IntPtr insertAfter;
+            string fallback = null;
+            bool? ownerTopmost = TryIsTopmost(owner);
+
+            if (ownerTopmost is null)
+            {
+                // 读不到卡片的置顶状态：退回置顶至少保证视频可见（否则可能沉到卡片背后），
+                // 但原因必须留痕，真机上才能对应到"视频压过其它置顶窗口"的现象。
+                insertAfter = HwndTopmost;
+                fallback = "读取卡片扩展样式失败，退回置顶以免视频被卡片盖住";
+            }
+            else if (ownerTopmost == true)
+            {
+                // 卡片本身置顶：锚点存在时插在锚点下方（正好紧贴卡片上方）；
+                // 没有锚点说明卡片就是最前排，这时视频窗也只能排在最前面。
+                insertAfter = anchor != IntPtr.Zero ? anchor : HwndTopmost;
+                if (anchor == IntPtr.Zero) fallback = "卡片是最前排的置顶窗口，视频窗只能排在它前面";
+            }
+            else
+            {
+                // 卡片不置顶：只有锚点也不是置顶窗时才能插到它下面，否则会把视频窗也变成置顶。
+                // 此时退回 HWND_TOP（非置顶层最前面），层级仍然高于卡片。
+                bool? anchorTopmost = TryIsTopmost(anchor);
+                insertAfter = anchor != IntPtr.Zero && anchorTopmost == false ? anchor : IntPtr.Zero;
+            }
+
             const uint SwpNoMove = 0x0002, SwpNoSize = 0x0001, SwpNoActivate = 0x0010;
-            if (!SetWindowPos(handle, topmost, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpNoActivate))
-                Log.Warn("把视频窗抬到卡片之上失败（可能被卡片背景盖住）");
+            if (!SetWindowPos(handle, insertAfter, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpNoActivate))
+            {
+                ZOrderThrottle.Failure($"调整视频窗 z-order 失败（锚点 {DescribeInsertAfter(insertAfter)}），视频可能被卡片盖住");
+                return;
+            }
+
+            ZOrderThrottle.Success();
+            if (fallback is not null && !_zOrderFallbackLogged)
+            {
+                // 退化只在每个视频窗首次发生时记一条：每次卡片重排都会调用 RaiseAboveOwner。
+                _zOrderFallbackLogged = true;
+                Log.Warn($"视频窗 z-order 退化：{fallback}");
+            }
         }
         catch (Exception ex)
         {
@@ -333,8 +488,24 @@ internal sealed class VideoWindow : IDisposable
         }
     }
 
+    /// <summary>读窗口的 WS_EX_TOPMOST；null = 读不到（不拿"读不到"当真值猜）。</summary>
+    static bool? TryIsTopmost(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero) return null;
+        if (!MediaNative.TryGetExStyle(hwnd, out int ex)) return null;
+        return (ex & MediaNative.WsExTopmost) != 0;
+    }
+
+    static string DescribeInsertAfter(IntPtr insertAfter) =>
+        insertAfter == HwndTopmost ? "HWND_TOPMOST"
+        : insertAfter == IntPtr.Zero ? "HWND_TOP"
+        : $"0x{insertAfter.ToInt64():X}";
+
     [DllImport("user32.dll")]
     static extern bool SetWindowPos(IntPtr hwnd, IntPtr insertAfter, int x, int y, int cx, int cy, uint flags);
+
+    [DllImport("user32.dll")]
+    static extern IntPtr GetWindow(IntPtr hwnd, uint cmd);
 
     public void Pause()
     {
@@ -391,23 +562,18 @@ internal sealed class VideoWindow : IDisposable
         if (_disposed) return;
         _disposed = true;
 
-        // 释放路径：MediaElement.Stop/Close 在句柄已失效时会抛，但没有任何补救动作，
-        // 也不该把它当成用户可见失败（X-9：保留并注明原因）。
-        try
+        // 释放路径统一走 SafeRelease（X-9）：MediaElement 在句柄已失效时 Stop/Close 会抛，
+        // 属于预期竞态（记 Debug）；其它异常仍以 Warn 留痕，不再空 catch。
+        SafeRelease.Run(() =>
         {
             _video.Stop();
             _video.Close();
             _video.Source = null;
-        }
-        catch { }
+        }, "视频 MediaElement");
 
-        // 释放路径：窗口此时可能已经随卡片一起关闭，Close 抛异常无补救动作。
-        try
-        {
-            if (_window is not null) _window.Close();
-        }
-        catch { }
-
+        // 窗口可能已随卡片一起关闭，Close 抛异常也没有补救动作，同样交给 SafeRelease。
+        Window window = _window;
+        SafeRelease.Run(() => window?.Close(), "视频子窗");
         _window = null;
     }
 }
