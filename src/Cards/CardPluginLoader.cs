@@ -568,6 +568,17 @@ internal static class CardPluginLoader
     static void Discard(CardPluginHandle handle)
     {
         if (handle is null) return;
+        // P-8：丢弃路径也要走和 Unload 一样的模块生命周期回调，否则模块级资源
+        // （后台线程 / 临时文件 / 计时器）会无人收尾。
+        try
+        {
+            var lifetime = handle.Module as ICardModuleLifetime;
+            if (lifetime is not null) lifetime.OnPluginUnloading();
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"插件丢弃回调失败({handle.Id}): {ex.Message}");
+        }
         try
         {
             if (handle.Context is not null) handle.Context.Unload();

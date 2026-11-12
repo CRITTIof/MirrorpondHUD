@@ -13,6 +13,9 @@ namespace MirrorpondHUD.Core;
 /// </summary>
 public static class Json
 {
+    // C-8：不可序列化的类型只警告一次，避免保存设置时重复刷屏。
+    static readonly HashSet<string> SerializeEmptyWarned = new(StringComparer.Ordinal);
+
     // =============================== 序列化 ===============================
 
     public static string Serialize(object value)
@@ -82,6 +85,15 @@ public static class Json
         // 普通对象：反射公共字段
         sb.Append('{');
         var fields = value.GetType().GetFields(BindingFlags.Public | BindingFlags.Instance);
+        if (fields.Length == 0)
+        {
+            string typeName = value.GetType().FullName ?? value.GetType().Name;
+            lock (SerializeEmptyWarned)
+            {
+                if (SerializeEmptyWarned.Add(typeName))
+                    Log.Warn($"Json.Serialize: 类型 {typeName} 没有公共字段，会被序列化成空对象 {{}}");
+            }
+        }
         bool any = false;
         foreach (var f in fields)
         {

@@ -38,7 +38,9 @@ internal static class GlassFeed
     const int Downscale = 2;
 
     /// <summary>投影开启时卡片四周预留的透明边（与 OverlaySurface 的 Margin 一致）。</summary>
-    public const double ShadowInset = 10.0;
+    // G-16：与 OverlaySurface 的 ambient 投影留白保持一致（默认 14 DIP）。
+    // 采样区域按这个值向内缩，否则玻璃会把卡片外圈的投影也拍进来，出现灰边/错位。
+    public const double ShadowInset = 14.0;
 
     sealed class Target
     {
@@ -141,6 +143,7 @@ internal static class GlassFeed
     {
         if (window is null) return;
 
+        bool empty;
         lock (Live)
         {
             for (int i = Live.Count - 1; i >= 0; i--)
@@ -150,12 +153,17 @@ internal static class GlassFeed
                 Live.RemoveAt(i);
             }
 
-            if (Live.Count == 0)
+            empty = Live.Count == 0;
+            if (empty)
             {
                 if (_pump is not null) _pump.Stop();
                 ReleaseSharedSurface();
             }
         }
+
+        // G-9：最后一张卡卸下时连 DXGI 源一起释放，否则 D3D 设备与桌面复制对象
+        // 会一直活着（GPU 常醒）。ReleaseFrameSource 内部自带空值判断。
+        if (empty) ReleaseFrameSource();
 
         try { window.Surface.ClearGlass(); } catch { }
     }

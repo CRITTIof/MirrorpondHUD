@@ -14,6 +14,8 @@ namespace MirrorpondHUD.Core;
 public static class CardStateStore
 {
     static readonly object WriteSync = new();
+    // 状态文件只可能是小 JSON；超过 4MB 视为异常，避免一次读爆内存（C-12）。
+    const long MaxStateBytes = 4 * 1024 * 1024;
     /// <summary>这张卡片的状态目录（不存在时返回路径，不创建）。Id 非法时返回 null。</summary>
     public static string DirectoryFor(string cardId)
     {
@@ -35,16 +37,16 @@ public static class CardStateStore
         {
             if (File.Exists(path))
             {
-                string text = File.ReadAllText(path, Encoding.UTF8);
-                if (LooksLikeJson(text)) return text;
+                string text = ReadTextBounded(path);
+                if (text is not null && LooksLikeJson(text)) return text;
                 Log.Warn($"卡片状态主文件损坏，尝试 .bak({fileName})");
             }
 
             string backup = $"{path}.bak";
             if (File.Exists(backup))
             {
-                string text = File.ReadAllText(backup, Encoding.UTF8);
-                if (LooksLikeJson(text))
+                string text = ReadTextBounded(backup);
+                if (text is not null && LooksLikeJson(text))
                 {
                     Log.Warn($"已从卡片状态 .bak 恢复({fileName})");
                     return text;
@@ -159,7 +161,28 @@ public static class CardStateStore
         return id;
     }
 
-    /// <summary>状态文件名：单层文件名，不含目录分隔符，也不允许 ".."。</summary>
+    /// <summary>有上限地读文本；超限 / 读失败返回 null，由调用方回退 .bak。</summary>
+    static string ReadTextBounded(string path)
+    {
+        try
+        {
+            var info = new FileInfo(path);
+            if (!info.Exists) return null;
+            if (info.Length > MaxStateBytes)
+            {
+                Log.Warn($"卡片状态文件过大，拒绝读取({path}，{info.Length} 字节)");
+                return null;
+            }
+            return File.ReadAllText(path, Encoding.UTF8);
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"读取卡片状态文件失败({path}): {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>状态文件名：单层文件名，不含目录分隔符，也不允许 ".." 或 Windows 保留设备名。</summary>
     static bool IsSafeFileName(string fileName)
     {
         string name = (fileName ?? "").Trim();
@@ -168,6 +191,35 @@ public static class CardStateStore
 
         if (name.IndexOf('/') >= 0 || name.IndexOf('\\') >= 0) return false;
         if (name.IndexOf(':') >= 0) return false;
+
+        // CON / NUL / COM1 等保留设备名即使带扩展名也会被 Windows 解释成设备（C-12）。
+        string stem = name.Split('.')[0].ToUpperInvariant();
+        switch (stem)
+        {
+            case "CON":
+            case "PRN":
+            case "AUX":
+            case "NUL":
+            case "COM1":
+            case "COM2":
+            case "COM3":
+            case "COM4":
+            case "COM5":
+            case "COM6":
+            case "COM7":
+            case "COM8":
+            case "COM9":
+            case "LPT1":
+            case "LPT2":
+            case "LPT3":
+            case "LPT4":
+            case "LPT5":
+            case "LPT6":
+            case "LPT7":
+            case "LPT8":
+            case "LPT9":
+                return false;
+        }
         return true;
     }
 }

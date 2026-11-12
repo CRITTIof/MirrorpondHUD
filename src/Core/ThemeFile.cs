@@ -418,7 +418,10 @@ public static class ThemeFile
         {
             string text = Export(settings);
             stage = "写出主题文件";
-            File.WriteAllText(path, text, new UTF8Encoding(false));
+            // 与 ConfigStore 共用原子写：导出失败时不能留下半个主题文件（C-11）。
+            AtomicFile.WriteResult write = AtomicFile.Write(path, text, createBackup: false);
+            if (!write.Success)
+                throw write.Error ?? new IOException("主题文件原子写入失败");
             return true;
         }
         catch (Exception ex)

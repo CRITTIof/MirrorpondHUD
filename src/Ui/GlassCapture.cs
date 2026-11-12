@@ -72,6 +72,12 @@ internal static class GlassCapture
     [DllImport("user32.dll")]
     static extern bool IsWindowVisible(IntPtr hwnd);
 
+    // G-15：DWMWA_CLOAKED = 14；虚拟桌面 / 挂起的 UWP 窗口仍然 IsWindowVisible，
+    // 但内容不该被当成“卡片后面的窗口”采样。
+    const int DwmwaCloaked = 14;
+    [DllImport("dwmapi.dll")]
+    static extern int DwmGetWindowAttribute(IntPtr hwnd, int attribute, out int value, int size);
+
     [DllImport("user32.dll")]
     static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
 
@@ -151,6 +157,8 @@ internal static class GlassCapture
             {
                 if (hwnd == IntPtr.Zero) return true;
                 if (!IsWindowVisible(hwnd)) return true;
+                if (DwmGetWindowAttribute(hwnd, DwmwaCloaked, out int cloaked, sizeof(int)) == 0 && cloaked != 0)
+                    return true;
 
                 if (!GetWindowRect(hwnd, out var rect)) return true;
                 if (rect.Width < 16 || rect.Height < 16) return true;

@@ -341,8 +341,8 @@ internal sealed class FfmpegPlayer : IDisposable
             if (!player.Start(process.StandardOutput.BaseStream))
             {
                 // P1-6：失败原因要能给到 UI（状态行如实标注「音频不可用」），只写日志还不够。
-                Log.Warn($"音频输出启动失败，继续静音播放: {WaveOutPlayer.LastErrorName}");
-                RaiseAudioUnavailable(WaveOutPlayer.LastErrorName);
+                Log.Warn($"音频输出启动失败，继续静音播放: {player.LastErrorName}");
+                RaiseAudioUnavailable(player.LastErrorName);
                 try { player.Dispose(); } catch { }
                 player = null;
                 StopAudio(run);
@@ -705,6 +705,8 @@ internal sealed class FfmpegPlayer : IDisposable
 
         // 从当前播放位置重新起一条音频；视频进程不动，音画仍然按同一时间轴对齐。
         LaunchAudio(run, Position);
+        // K-8：暂停状态下去掉静音不应该立刻出声（视频还冻着，会音画脱节）。
+        if (IsPaused) PauseAudio();
         Log.Info("ffmpeg 已取消静音（从当前进度重启音频输出）");
     }
 

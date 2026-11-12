@@ -48,6 +48,9 @@ public sealed class CardBadge : Border, ICardFormControl
     readonly TextBlock _text;
     StyleSettings _style;
     CardBadgeTone _tone = CardBadgeTone.Neutral;
+    // K-24：保存原始圆角。Tone setter 不能用已计算的 CornerRadius.TopLeft 回灌，
+    // 否则每次换色调都会在“缩小 0.55 倍”上再叠一次，圆角逐次漂移。
+    double _corner = 4;
 
     public CardBadge(string text = null, CardBadgeTone tone = CardBadgeTone.Neutral)
     {
@@ -83,7 +86,7 @@ public sealed class CardBadge : Border, ICardFormControl
     public CardBadgeTone Tone
     {
         get => _tone;
-        set { _tone = value; ApplyStyle(_style, CornerRadius.TopLeft); }
+        set { _tone = value; ApplyStyle(_style, _corner); }
     }
 
     public bool Dot { get; set; }
@@ -91,6 +94,7 @@ public sealed class CardBadge : Border, ICardFormControl
     public void ApplyStyle(StyleSettings style, double cornerRadius)
     {
         _style = style ?? new StyleSettings();
+        _corner = cornerRadius;
         ThemeTokens tokens = ThemeResolver.Resolve(_style);
         Color foreground = CardPalette.TryColor(_style.Foreground, Color.FromRgb(0xE6, 0xED, 0xF3));
         Color tone = CardDataStyle.ToneColor(tokens, foreground, _tone);
@@ -114,6 +118,7 @@ public sealed class CardTag : Border, ICardFormControl
     readonly TextBlock _remove;
     StyleSettings _style;
     CardBadgeTone _tone = CardBadgeTone.Neutral;
+    double _corner = 10;
     bool _removable;
 
     public CardTag(string text = null, CardBadgeTone tone = CardBadgeTone.Neutral)
@@ -161,7 +166,7 @@ public sealed class CardTag : Border, ICardFormControl
     public CardBadgeTone Tone
     {
         get => _tone;
-        set { _tone = value; ApplyStyle(_style, CornerRadius.TopLeft); }
+        set { _tone = value; ApplyStyle(_style, _corner); }
     }
 
     public bool Removable
@@ -177,6 +182,7 @@ public sealed class CardTag : Border, ICardFormControl
     public void ApplyStyle(StyleSettings style, double cornerRadius)
     {
         _style = style ?? new StyleSettings();
+        _corner = cornerRadius;
         ThemeTokens tokens = ThemeResolver.Resolve(_style);
         Color foreground = CardPalette.TryColor(_style.Foreground, Color.FromRgb(0xE6, 0xED, 0xF3));
         Color tone = CardDataStyle.ToneColor(tokens, foreground, _tone);
@@ -268,7 +274,9 @@ public sealed class CardMetricTile : Border, ICardFormControl
 
     public string Delta
     {
-        get => _delta.Text ?? ""; set => _delta.Text = value ?? "";
+        get => _delta.Text ?? "";
+        // K-23：Delta 赋值后必须重算趋势标记，否则 SetValue 每帧刷新会把 ▲/▼ 吃掉。
+        set { _delta.Text = value ?? ""; UpdateTrend(); }
     }
 
     public string Icon

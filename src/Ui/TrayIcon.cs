@@ -164,6 +164,9 @@ public sealed class TrayIcon : IDisposable
     bool _added;
     bool _addFailed;
     bool _disposed;
+    // S-12：用户是否希望显示托盘。Explorer 重启后只能按“期望”重加，
+    // 不能无条件 AddIcon——否则用户关掉的托盘会在任务栏重启后自己回来。
+    bool _wanted;
 
     public event Action ToggleVisibility;
     public event Action OpenSettings;
@@ -207,6 +210,7 @@ public sealed class TrayIcon : IDisposable
         set
         {
             if (_disposed) return;
+            _wanted = value;
             if (value) AddIcon();
             else RemoveIcon();
         }
@@ -332,6 +336,11 @@ public sealed class TrayIcon : IDisposable
         Log.Info("检测到任务栏重建（Explorer 重启），重新添加托盘图标");
         _added = false;
         _addFailed = false;
+        if (!_wanted)
+        {
+            Log.Info("托盘已被用户关闭，任务栏重建后不再重新添加");
+            return;
+        }
         AddIcon();
     }
 

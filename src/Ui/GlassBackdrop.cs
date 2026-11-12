@@ -18,7 +18,7 @@ namespace MirrorpondHUD.Ui;
 /// 桌面与其它窗口（GPU 合成，进程侧没有逐帧工作）。
 ///
 /// 底板不接收鼠标、不夺焦点、不参与绘制；位置与尺寸严格等于卡片的内容区
-/// （扣除投影预留的 10 DIP），z 序由 <see cref="Follow"/> 插到卡片正下方。
+/// （扣除投影预留的留白），z 序由 <see cref="Follow"/> 插到卡片正下方。
 ///
 /// 已知限制：accent 的模糊区域固定是窗口矩形，既不跟 <c>SetWindowRgn</c>、
 /// 也不跟 DWM 圆角走，所以底板永远是直角 —— 圆角的补角由卡片自己的投影 / tint 遮住。
@@ -28,7 +28,8 @@ internal sealed class GlassBackdrop : IDisposable
     const string ClassName = "MirrorpondHUD.GlassBackdrop";
 
     /// <summary>投影开启时卡片四周预留的透明边（与 OverlaySurface 的 Margin 一致）。</summary>
-    public const double ShadowInset = 10.0;
+    // G-16：与 GlassFeed / OverlaySurface 共用同一个留白值，避免底板与采样各按一套。
+    public const double ShadowInset = GlassFeed.ShadowInset;
 
     const int WsPopup = unchecked((int)0x80000000);
     const int WsClipSiblings = 0x04000000;

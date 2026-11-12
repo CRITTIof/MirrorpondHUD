@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Windows;
 using MirrorpondHUD.Core;
@@ -243,11 +244,14 @@ internal static class StationFiles
     {
         if (size <= 0) return "";
 
+        // P-19：文件大小必须用不变文化，否则非英文区域会显示成 "1,5 MB"。
         const double unit = 1024.0;
-        if (size < unit) return $"{size} B";
-        if (size < unit * unit) return $"{size / unit:0.0} KB";
-        if (size < unit * unit * unit) return $"{size / unit / unit:0.0} MB";
-        return $"{size / unit / unit / unit:0.0} GB";
+        if (size < unit) return string.Format(CultureInfo.InvariantCulture, "{0} B", size);
+        if (size < unit * unit)
+            return string.Format(CultureInfo.InvariantCulture, "{0:0.0} KB", size / unit);
+        if (size < unit * unit * unit)
+            return string.Format(CultureInfo.InvariantCulture, "{0:0.0} MB", size / unit / unit);
+        return string.Format(CultureInfo.InvariantCulture, "{0:0.0} GB", size / unit / unit / unit);
     }
 
     /// <summary>列表显示名：文件取文件名，文件夹取末段目录名（根目录退回完整路径）。</summary>

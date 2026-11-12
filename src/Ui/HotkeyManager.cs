@@ -249,6 +249,10 @@ public sealed class HotkeyManager : IDisposable
             if (vk == 0) return false;
         }
 
+        // S-09：无修饰键时只允许功能键（VK_F1–VK_F24）。F6/F8/F9 这类是项目默认热键，
+        // 必须兼容；但单字母 / 数字 / 符号会吃掉整个系统的该按键，直接判非法。
+        if (modifiers == 0 && (vk < 0x70 || vk > 0x87)) return false;
+
         return vk != 0;
     }
 

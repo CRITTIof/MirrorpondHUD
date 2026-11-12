@@ -23,6 +23,8 @@ public static class Log
 
     static string _path;
     static int _writeFailures;
+    // 冷却窗口内被丢弃的条数：恢复后补一条汇总，避免“故障瞬间没有日志、事后也不知道丢了多少”。
+    static int _droppedDuringCooldown;
     static DateTime _nextRetryUtc = DateTime.MinValue;
 
     static bool? _debugEnabled;
@@ -151,7 +153,11 @@ public static class Log
         {
             // 写失败后的冷却窗口：期间直接丢弃，不做无意义的 IO 重试；
             // 窗口一过就再试，所以最坏情况是"短暂丢日志"，不会永久熔断。
-            if (_nextRetryUtc > DateTime.UtcNow) return;
+            if (_nextRetryUtc > DateTime.UtcNow)
+            {
+                _droppedDuringCooldown++;
+                return;
+            }
 
             try
             {
@@ -166,9 +172,15 @@ public static class Log
 
                 RotateIfNeeded(path);
 
-                File.AppendAllText(path,
-                    $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [{level}] {(msg ?? "")}{Environment.NewLine}",
-                    Encoding.UTF8);
+                int dropped = _droppedDuringCooldown;
+                string line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [{level}] {(msg ?? "")}{Environment.NewLine}";
+                if (dropped > 0)
+                {
+                    _droppedDuringCooldown = 0;
+                    line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [WARN] 日志写入恢复，冷却期间丢弃 {dropped} 条记录{Environment.NewLine}" + line;
+                }
+
+                File.AppendAllText(path, line, Encoding.UTF8);
 
                 if (_writeFailures > 0) _writeFailures = 0;
                 _nextRetryUtc = DateTime.MinValue;

@@ -208,11 +208,11 @@ internal sealed class WaveOutPlayer : IDisposable
                 }
             }
 
-            if (prepareFailures == BufferCount)
+            if (prepareFailures > 0)
             {
-                // 4 个槽全失败时继续返回 true 会骗上层「音频已启动」，状态行也不会显示
-                // 音频不可用；这里把资源收掉并返回失败（上层已有 AudioUnavailable 通道）。
-                _lastErrorName = "音频缓冲准备全部失败";
+                // K-4：只要有一个槽没准备好就返回失败。旧实现只在 4 槽全失败时才失败，
+                // 剩下 1–3 个坏槽会在首次 Feed 时终止整条音轨，且上层以为音频已启动。
+                _lastErrorName = $"音频缓冲准备失败 {prepareFailures}/{BufferCount}";
                 Log.Warn($"音频输出启动失败: {_lastErrorName}");
                 Volatile.Write(ref _resources, 1);
                 Stop();
@@ -377,11 +377,11 @@ internal sealed class WaveOutPlayer : IDisposable
 
     /// <summary>
     /// P1-6：最后一次 Start 失败的可读原因（MMSYSERR/WAVERR 错误名或状态说明），
-    /// 给上层（FfmpegPlayer）带进日志和 UI 状态行。音频启动在 LaunchAudio 里是串行的，
-    /// 用静态字段足够。
+    /// 给上层（FfmpegPlayer）带进日志和 UI 状态行。
+    /// K-5：改为实例字段——多张媒体卡并发启动时静态字段会互相覆盖错误信息。
     /// </summary>
-    static volatile string _lastErrorName = "";
-    public static string LastErrorName => _lastErrorName is null ? "" : _lastErrorName;
+    volatile string _lastErrorName = "";
+    public string LastErrorName => _lastErrorName is null ? "" : _lastErrorName;
 
     /// <summary>把 winmm 的 MMSYSERR / WAVERR 返回值翻成可读名（给日志与用户提示用）。</summary>
     public static string MmsysErrorName(int code)

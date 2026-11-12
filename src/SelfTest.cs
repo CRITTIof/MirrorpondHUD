@@ -319,11 +319,12 @@ internal static class SelfTest
     static bool RunCardStateStoreChecks()
     {
         bool stateStoreOk = false;
+        string dir = null;
         try
         {
             // 每卡状态存储（P1-12）：原子写、回读一致、拒绝路径穿越、不留 .tmp
             string id = $"selftest-{Guid.NewGuid():N}";
-            string dir = CardStateStore.DirectoryFor(id);
+            dir = CardStateStore.DirectoryFor(id);
 
             bool wrote = CardStateStore.Write(id, "state.json", "{\"n\":1}");
             bool read = CardStateStore.Read(id, "state.json") == "{\"n\":1}";
@@ -343,6 +344,16 @@ internal static class SelfTest
         catch (Exception ex)
         {
             Log.Error("卡片状态存储自检异常", ex);
+        }
+        finally
+        {
+            // C-16：自检不能在用户 cards/ 目录下留空目录。
+            try
+            {
+                if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir))
+                    Directory.Delete(dir, true);
+            }
+            catch (Exception ex) { Log.Debug($"自检清理状态目录失败: {ex.Message}"); }
         }
         return stateStoreOk;
     }

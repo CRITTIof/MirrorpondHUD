@@ -82,11 +82,10 @@ public sealed class MetricEngine : IDisposable
             any |= _pdh.TryAdd(NetRxPath);
             any |= _pdh.TryAdd(NetTxPath);
 
-            // 预热：第一次 collect 只是建立基线
+            // 预热：第一次 collect 只是建立基线；第二次移到采样线程，UI 线程不再 Sleep（P-12）。
             _pdh.Collect();
         }
-        Thread.Sleep(250);
-        lock (_pdhGate) { _pdh.Collect(); }
+        Interlocked.Exchange(ref _warmupPending, 1);
 
         // UI 线程不解析适配器：只置脏标志，交给采样线程在第一轮里做（P1-9）。
         _adapterDirty = true;
@@ -123,16 +122,24 @@ public sealed class MetricEngine : IDisposable
     {
         while (_running)
         {
+            // 首轮预热：PDH 需要两次 collect 才有速率值；放在采样线程，UI 线程不阻塞。
+            if (Interlocked.Exchange(ref _warmupPending, 0) == 1)
+            {
+                Thread.Sleep(250);
+                lock (_pdhGate) { _pdh.Collect(); }
+            }
+
             try
             {
                 MetricsSnapshot snapshot = Sample();
+                _loopFailure.Success();
                 Action<MetricsSnapshot> handler = Updated;
                 if (handler is not null) handler(snapshot);
             }
             catch (Exception ex)
             {
                 // 正常退出时 PDH 句柄可能已释放，不必当成错误刷日志。
-                if (_running) Log.Error("采样循环异常", ex);
+                if (_running) _loopFailure.Failure($"采样循环异常: {ex.Message}");
             }
 
             int interval = 500;
@@ -148,6 +155,10 @@ public sealed class MetricEngine : IDisposable
 
     // §6：PDH 采集失败的节流日志（状态转移 + 60s 最小间隔，不随采样节奏刷屏）。
     readonly LogThrottle _pdhFailure = new("PDH 采样", 60000);
+    // P-13：采样线程整体异常同样节流，避免持续坏掉时每 100–500ms 一条 Error。
+    readonly LogThrottle _loopFailure = new("采样循环", 60000);
+    // P-12：首轮预热标记（1 = 采样线程需要再做一次 collect + 等待）。
+    int _warmupPending;
 
     public MetricsSnapshot Sample()
     {

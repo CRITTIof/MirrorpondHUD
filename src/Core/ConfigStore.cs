@@ -15,7 +15,7 @@ public static class ConfigStore
     /// ConfigStore 在 Core 层，不应该为了卡片结构反过来引用 Cards；
     /// App 在启动早期（插件注册之后、第一次 Load 之前）注入这个委托。
     /// </summary>
-    public static Action<Settings> SettingsNormalizer;
+    internal static Action<Settings> SettingsNormalizer;
 
     static void NormalizeCards(Settings settings)
     {

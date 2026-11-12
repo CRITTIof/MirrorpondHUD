@@ -50,7 +50,9 @@ public partial class App : Application
                 (ex is null ? "(null)" : ex.Message) +
                 "\n\n详细信息已写入日志：\n" + Log.FilePath,
                 "镜潭一览 · 退出", MessageBoxButton.OK, MessageBoxImage.Error);
-            args.Handled = false;
+            // Handled=false 会让 CLR 继续终止进程（并可能弹 WER），Shutdown(1) 的退出码不会生效。
+            // 已记录日志并告知用户，这里接管退出，保证退出码可控（X-2）。
+            args.Handled = true;
             Shutdown(1);
         };
 
@@ -212,6 +214,9 @@ public partial class App : Application
 
         try { _controller?.Dispose(); }
         catch (Exception ex) { Log.Warn($"主控制器收尾失败: {ex.Message}"); }
+        // 插件卸载探针前必须断开 App 对控制器的强引用，否则 _cards[].Module 会
+        // 稳定把 6 个模块全判成“未回收”（P-5）。
+        finally { _controller = null; }
 
         // 先把注册表里的插件模块引用摘掉，再请求卸载 ALC；否则静态注册表会一直钉住旧程序集。
         // 第二实例在互斥检查处就会退出，此时 _plugins 还是 null，不能走这里的清理日志。
