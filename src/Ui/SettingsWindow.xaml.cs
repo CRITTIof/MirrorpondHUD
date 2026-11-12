@@ -7,6 +7,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using MirrorpondHUD.Cards;
 using MirrorpondHUD.Core;
 
@@ -75,6 +76,7 @@ public partial class SettingsWindow : Window
         _previewBg = live is null ? "#0B1020" : live.Behavior.SettingsPreviewBg;
         SettingsTheme.Apply(_settingsDark, _previewBg);
         UpdateThemeToggleText();
+        UpdateBrandLogo();
 
         BuildCollapsibleSections();
 
@@ -385,6 +387,7 @@ public partial class SettingsWindow : Window
         _settingsDark = !_settingsDark;
         SettingsTheme.Apply(_settingsDark, _previewBg);
         UpdateThemeToggleText();
+        UpdateBrandLogo();
         MarkDirty();
     }
 
@@ -423,6 +426,28 @@ public partial class SettingsWindow : Window
             _previewBg = settings.Behavior.SettingsPreviewBg;
         SettingsTheme.Apply(_settingsDark, _previewBg);
         UpdateThemeToggleText();
+        UpdateBrandLogo();
+    }
+
+    /// <summary>暗色标题栏用终末地黄，浅色用黑；白版只给深色任务栏托盘。</summary>
+    void UpdateBrandLogo()
+    {
+        if (BrandLogo is null) return;
+        string asset = _settingsDark ? "assets/logo-endfield.ico" : "assets/logo.ico";
+        try
+        {
+            var image = new BitmapImage();
+            image.BeginInit();
+            image.UriSource = new Uri("pack://application:,,,/" + asset, UriKind.Absolute);
+            image.CacheOption = BitmapCacheOption.OnLoad;
+            image.EndInit();
+            image.Freeze();
+            BrandLogo.Source = image;
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"设置标题栏 logo 加载失败({asset}): {ex.Message}");
+        }
     }
 
     protected override void OnClosing(System.ComponentModel.CancelEventArgs e)

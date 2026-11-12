@@ -41,3 +41,6 @@ blockage.md
 samples/ParticleToText/
 samples/EndfieldDesign/
 samples/ContourLine/
+
+# Affinity source files for logo drafts
+assets/*.af

@@ -35,7 +35,7 @@
                 MouseLeftButtonDown="TitleBarMouseDown">
             <Grid>
                 <StackPanel Orientation="Horizontal">
-                    <Image Source="/assets/logo.ico" Width="26" Height="26" RenderOptions.BitmapScalingMode="HighQuality" />
+                    <Image x:Name="BrandLogo" Source="/assets/logo.ico" Width="26" Height="26" RenderOptions.BitmapScalingMode="HighQuality" />
                     <TextBlock Text="镜潭一览" FontSize="16" FontWeight="SemiBold" Margin="10,0,0,0"
                                VerticalAlignment="Center" Foreground="{DynamicResource TextPrimary}" />
                     <TextBlock Text="//" FontFamily="Cascadia Mono, Consolas" FontSize="14"

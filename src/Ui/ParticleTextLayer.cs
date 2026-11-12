@@ -161,10 +161,20 @@ internal sealed class ParticleTextLayer : FrameworkElement
                 _sampling = false;
             }
 
-            EnsureParticles(targets.Count, width, height);
-            AssignTargets(targets, nearest);
-
+            bool firstPool = !_hasParticles;
             _size = size;
+            _sampleWidth = width;
+            _sampleHeight = height;
+            ApplyTargets(targets, nearest);
+
+            // 第一次建立粒子池只在目标位落点，不让粒子层盖住刚显示的文字；
+            // 下一次文字变化才有“直接前往新目标”的位移。
+            if (firstPool)
+            {
+                Log.Info($"粒子文字就位：{targets.Count} 点 / {width:0}×{height:0} DIP");
+                return;
+            }
+
             _speed = speed;
             _settleMs = Math.Max(80.0, Math.Min(1000.0, BaseSettleMs / speed));
             _settleElapsedMs = 0;
@@ -174,8 +184,6 @@ internal sealed class ParticleTextLayer : FrameworkElement
             _canvas.SizeChanged += OnCanvasSizeChanged;
             _canvas.Opacity = 0;
             _count = targets.Count;
-            _sampleWidth = width;
-            _sampleHeight = height;
             _playing = true;
             Visibility = Visibility.Visible;
             Opacity = 1;
@@ -210,60 +218,73 @@ internal sealed class ParticleTextLayer : FrameworkElement
         }
     }
 
-    void EnsureParticles(int count, double width, double height)
+    void EnsureCapacity(int count)
     {
-        if (_x.Length < count)
-        {
-            int capacity = Math.Max(count, Math.Max(64, _x.Length * 2));
-            Array.Resize(ref _x, capacity);
-            Array.Resize(ref _y, capacity);
-            Array.Resize(ref _tx, capacity);
-            Array.Resize(ref _ty, capacity);
-        }
+        if (_x.Length >= count) return;
 
-        if (!_hasParticles)
+        int capacity = Math.Max(count, Math.Max(64, _x.Length * 2));
+        Array.Resize(ref _x, capacity);
+        Array.Resize(ref _y, capacity);
+        Array.Resize(ref _tx, capacity);
+        Array.Resize(ref _ty, capacity);
+    }
+
+    /// <summary>
+    /// 配对并落位。首帧与新增粒子直接落在目标点：粒子不做从外圈聚拢，也不做散开，
+    /// 之后文字变化时旧粒子保持原位、直接朝新目标移动。
+    /// </summary>
+    void ApplyTargets(List<Point> targets, bool nearest)
+    {
+        int count = targets.Count;
+        int oldResident = _residentCount;
+        bool first = !_hasParticles;
+
+        EnsureCapacity(count);
+
+        if (first)
         {
-            _hasParticles = true;
-            _residentCount = count;
             for (int i = 0; i < count; i++)
             {
-                double angle = _random.NextDouble() * Math.PI * 2.0;
-                double radius = Math.Max(width, height) * (0.38 + _random.NextDouble() * 0.32);
-                _x[i] = width * 0.5 + Math.Cos(angle) * radius;
-                _y[i] = height * 0.5 + Math.Sin(angle) * radius;
+                _x[i] = targets[i].X;
+                _y[i] = targets[i].Y;
             }
-            return;
+            _hasParticles = true;
+        }
+        else if (count > oldResident)
+        {
+            for (int i = oldResident; i < count; i++)
+            {
+                _x[i] = targets[i].X;
+                _y[i] = targets[i].Y;
+            }
         }
 
-        if (count > _residentCount)
-        {
-            // 新增粒子从当前粒子群的质心附近起步，不从屏幕外突然出现。
-            double cx = 0, cy = 0;
-            for (int i = 0; i < _residentCount; i++)
-            {
-                cx += _x[i];
-                cy += _y[i];
-            }
-            if (_residentCount > 0)
-            {
-                cx /= _residentCount;
-                cy /= _residentCount;
-            }
-            else
-            {
-                cx = width * 0.5;
-                cy = height * 0.5;
-            }
+        AssignTargets(targets, nearest);
 
-            for (int i = _residentCount; i < count; i++)
-            {
-                _x[i] = cx + (_random.NextDouble() - 0.5) * 60;
-                _y[i] = cy + (_random.NextDouble() - 0.5) * 60;
-            }
+        int snapFrom = first ? 0 : oldResident;
+        for (int i = snapFrom; i < count; i++)
+        {
+            _x[i] = _tx[i];
+            _y[i] = _ty[i];
         }
 
         _residentCount = count;
     }
+
+    /// <summary>
+    /// 粒子方块有半径，目标中心必须留在图层内，否则末排只露出上半格。
+    /// 单独抽成静态函数，自检可以直接验证边界。
+    /// </summary>
+    internal static double ClampCenter(double value, double extent, double size)
+    {
+        if (extent <= size) return extent * 0.5;
+        double half = Math.Max(0.5, size * 0.5);
+        return Math.Max(half, Math.Min(extent - half, value));
+    }
+
+    Point ClampTarget(Point target) =>
+        new(ClampCenter(target.X, _sampleWidth, _size),
+            ClampCenter(target.Y, _sampleHeight, _size));
 
     void AssignTargets(List<Point> targets, bool nearest)
     {
@@ -283,7 +304,7 @@ internal sealed class ParticleTextLayer : FrameworkElement
             for (int rank = 0; rank < count; rank++)
             {
                 int p = particles[rank];
-                Point target = targets[order[rank]];
+                Point target = ClampTarget(targets[order[rank]]);
                 _tx[p] = target.X;
                 _ty[p] = target.Y;
             }
@@ -298,7 +319,7 @@ internal sealed class ParticleTextLayer : FrameworkElement
 
         for (int i = 0; i < count; i++)
         {
-            Point target = targets[order[i]];
+            Point target = ClampTarget(targets[order[i]]);
             _tx[i] = target.X;
             _ty[i] = target.Y;
         }
@@ -410,11 +431,10 @@ internal sealed class ParticleTextLayer : FrameworkElement
                 if (!SampleTargets(canvas, w, h, _requestedCount, _geometry, out var targets))
                     return;
 
-                EnsureParticles(targets.Count, w, h);
-                AssignTargets(targets, _nearest);
-                _count = targets.Count;
                 _sampleWidth = w;
                 _sampleHeight = h;
+                ApplyTargets(targets, _nearest);
+                _count = targets.Count;
                 _settleElapsedMs = 0;
                 InvalidateVisual();
                 Log.Info($"粒子文字重新采样：{_count} 点 / {w:0}×{h:0} DIP");
@@ -477,8 +497,8 @@ internal sealed class ParticleTextLayer : FrameworkElement
             _y[i] = _ty[i];
         }
 
-        _version++;
-        _pending = false;
+        // 只停当前这一轮；不要碰 _version / _pending：
+        // 它们可能已经属于刚排入的下一次播放，旧动画收尾不能把它取消。
         _timer.Stop();
         _clock.Stop();
         _playing = false;

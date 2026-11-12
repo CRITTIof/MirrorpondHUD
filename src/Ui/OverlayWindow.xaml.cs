@@ -590,7 +590,8 @@ public partial class OverlayWindow : Window
         int dx = string.Equals(slide, "Left", StringComparison.OrdinalIgnoreCase) ? -offset
             : string.Equals(slide, "Right", StringComparison.OrdinalIgnoreCase) ? offset
             : 0;
-        int dy = slide == "None" ? -offset : 0;
+        // 纵向退场必须向下（正 Y）；之前写成 -offset 会向上缩，和呼出方向相同。
+        int dy = slide == "None" ? offset : 0;
 
         if (dx != 0) dx = (int)Math.Round(CardMotion.HideOffset * scaleX) * Math.Sign(dx);
         AnimateTo(px + dx, py + dy, CardMotion.HideDurationMs);

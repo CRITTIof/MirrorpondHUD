@@ -5,7 +5,7 @@
     <OutputType>Library</OutputType>
     <AssemblyName>MirrorpondHUD.Contracts</AssemblyName>
     <RootNamespace>MirrorpondHUD</RootNamespace>
-    <Version>2.43.1</Version>
+    <Version>2.43.2</Version>
     <Product>镜潭一览 (MirrorpondHUD) Contracts</Product>
     <AssemblyTitle>MirrorpondHUD.Contracts</AssemblyTitle>
     <NoWarn>$(NoWarn);WFAC010</NoWarn>

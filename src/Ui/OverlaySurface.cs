@@ -45,7 +45,8 @@ public sealed class OverlaySurface : Border
     Settings _lastSettings;
     string _resolvedCardAlign;
     string _lastCardAlignSetting;
-    string _particleSkeleton;
+    string _lastParticleText;
+    DateTime _lastParticlePlayUtc = DateTime.MinValue;
     string _lastTextEffect = "None";
     string _lastParticleSettings;
     Color _particleColor = Colors.White;
@@ -161,7 +162,8 @@ public sealed class OverlaySurface : Border
             _particlePending = false;
             _particleRetries = 0;
             _particleLayer.Stop();
-            // 文本没变就保持骨架；重新呼出同一句不再空等一次粒子。
+            // 隐藏后再呼出同一句也要重新播；下次显示从当前文字重新开始。
+            _lastParticleText = null;
         }
     }
 
@@ -186,7 +188,8 @@ public sealed class OverlaySurface : Border
         _particleLayer.Margin = _canvas.Margin;
         if (_particleLayer.SchedulePlay(_canvas, _particleColor, _lastSettings.Style))
         {
-            _particleSkeleton = TextSkeleton(_canvas.Text);
+            _lastParticleText = _canvas.Text;
+            _lastParticlePlayUtc = DateTime.UtcNow;
             _particlePending = false;
             _particleRetries = 0;
             return;
@@ -212,7 +215,7 @@ public sealed class OverlaySurface : Border
         if (kindChanged)
         {
             _particleLayer.Stop();
-            _particleSkeleton = null;
+            _lastParticleText = null;
             _particlePending = false;
         }
         UpdateMeta();
@@ -425,11 +428,11 @@ public sealed class OverlaySurface : Border
     {
         if (_lastSettings is null) return;
 
-        string skeleton = TextSkeleton(text);
+        string current = text ?? "";
         if (!ParticleEnabled())
         {
             _particleLayer.Stop();
-            _particleSkeleton = skeleton;
+            _lastParticleText = current;
             _particlePending = false;
             return;
         }
@@ -439,12 +442,13 @@ public sealed class OverlaySurface : Border
         if (cursor)
         {
             _particleLayer.Stop();
-            _particleSkeleton = skeleton;
+            _lastParticleText = current;
             _particlePending = false;
             return;
         }
 
-        if (string.Equals(skeleton, _particleSkeleton, StringComparison.Ordinal)) return;
+        // 数字刷新也要重播：不再用骨架把秒数 / 指标值过滤掉。
+        if (string.Equals(current, _lastParticleText, StringComparison.Ordinal)) return;
 
         if (!IsLoaded || !IsVisible)
         {
@@ -453,10 +457,22 @@ public sealed class OverlaySurface : Border
             return;
         }
 
+        // 指标卡 120ms 刷新一次；按卡片限频，避免粒子层永远在重启动。
+        // 时钟（1000ms）与按键卡不限频，保证每次真实变化都能看到。
+        bool metrics = string.Equals(_metaConfig?.Preset, "metrics", StringComparison.OrdinalIgnoreCase);
+        if (metrics && (DateTime.UtcNow - _lastParticlePlayUtc).TotalMilliseconds < 800) return;
+
         _particleLayer.Margin = _canvas.Margin;
         if (_particleLayer.SchedulePlay(_canvas, _particleColor, _lastSettings.Style))
         {
-            _particleSkeleton = skeleton;
+            _lastParticleText = current;
+            _lastParticlePlayUtc = DateTime.UtcNow;
+        }
+        else
+        {
+            // 画布还没量好：等下一轮布局再试，不能把这次变化直接丢掉。
+            _particlePending = true;
+            _particleRetries = 0;
         }
     }
 
@@ -579,13 +595,15 @@ public sealed class OverlaySurface : Border
         {
             _lastParticleSettings = particleSettings;
             // 改大小 / 数量 / 速度 / 采样方式后，即使文字没变也重播一次，方便即时看效果。
-            _particleSkeleton = null;
+            _lastParticleText = null;
+            _lastParticlePlayUtc = DateTime.MinValue;
         }
         if (!string.Equals(textEffect, _lastTextEffect, StringComparison.Ordinal))
         {
             _lastTextEffect = textEffect;
             // 从“无”切到“粒子”时强制下一次播放，不能因为文字没变就看不到效果。
-            _particleSkeleton = null;
+            _lastParticleText = null;
+            _lastParticlePlayUtc = DateTime.MinValue;
         }
         _particleLayer.Margin = _canvas.Margin;
         MaybePlayParticle(_canvas.Text, cursor);

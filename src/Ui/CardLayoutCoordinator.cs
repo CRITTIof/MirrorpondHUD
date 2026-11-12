@@ -25,6 +25,16 @@ internal sealed class CardLayoutCoordinator
     CardSlot _focus;
     /// <summary>本次拖动选定的左 / 右对齐；null = 未拖动过，按设置重新判断。</summary>
     string _alignOverride;
+    /// <summary>
+    /// 右对齐时真正固定的是右边缘：卡片内容变宽只向左长，整叠不会横向跳动。
+    /// 锚点 / 对齐 / 卡片数量变化时才重新取一次。
+    /// </summary>
+    double _rightEdge;
+    double _lastAnchorX = double.NaN;
+    int _lastCardCount = -1;
+    string _lastAlign;
+    /// <summary>每张卡上一次的 X。显隐动画期间保留它，只更新 Y，避免整排横向移动。</summary>
+    readonly Dictionary<CardSlot, double> _knownX = new();
 
     public CardLayoutCoordinator(IList<CardSlot> cards, Func<Settings> settings,
                                  Func<bool> disposed, Dispatcher dispatcher)
@@ -85,7 +95,11 @@ internal sealed class CardLayoutCoordinator
         _alignOverride = resolvedAlign;
         _suspended = false;
         SyncHeights();
-        LayoutCore(true, null);
+        // 拖动结束后以被抓卡片的当前右边缘作为新的锚点，避免松手后再横向回跳。
+        if (slot is not null && string.Equals(resolvedAlign, "Right", StringComparison.OrdinalIgnoreCase))
+            _rightEdge = slot.Dialog.Overlay.X + slot.Window.CardWidth;
+        _lastAnchorX = _settings().Overlay.X;
+        LayoutCore(true, null, false);
     }
 
     /// <summary>
@@ -97,23 +111,56 @@ internal sealed class CardLayoutCoordinator
     {
         if (_suspended) return;
         _alignOverride = null;
-        LayoutCore(true, appearing);
+        LayoutCore(true, appearing, true);
     }
 
-    void LayoutCore(bool animate, CardSlot appearing)
+    void LayoutCore(bool animate, CardSlot appearing, bool preserveX = false)
     {
         Settings settings = _settings();
 
         // 先量出整叠卡片里最宽的一张：右对齐时每张卡片的 X = 锚点 + (最宽 - 自己宽度)，
         // 这样所有卡片的右边缘落在同一条竖线上；左对齐时所有卡片共用锚点 X。
+        // 右对齐的 X 由“整叠最宽卡片”决定。若只统计当前显示的卡片，
+        // 整体隐藏 / 显示时最宽卡片消失或回来，其余卡片会横向重排，
+        // 看起来像无论设置什么方向都在向右滑。这里把常驻卡片也算进去，
+        // 显隐期间保持同一条右边缘；非常驻的临时卡片只在显示时参与。
+        double visibleWidth = 0;
         double stackWidth = 0;
         foreach (CardSlot slot in _cards)
         {
-            if (!slot.Shown) continue;
-            stackWidth = Math.Max(stackWidth, slot.Window.CardWidth);
+            double width = slot.Window.CardWidth;
+            if (width <= 0) continue;
+
+            if (slot.Shown) visibleWidth = Math.Max(visibleWidth, width);
+            bool resident = slot.Config is not null && slot.Config.Resident;
+            if (slot.Shown || resident) stackWidth = Math.Max(stackWidth, width);
         }
 
-        string align = ResolveAlign(settings, stackWidth);
+        if (stackWidth <= 0) stackWidth = visibleWidth;
+
+        string align = ResolveAlign(settings, visibleWidth > 0 ? visibleWidth : stackWidth);
+
+        // 右对齐固定右边缘而不是“锚点 + 会变的整叠宽度”：
+        // 指标卡宽度变化、整体显隐时，卡片只向左长 / 缩，不会整排向右滑。
+        if (string.Equals(align, "Right", StringComparison.Ordinal))
+        {
+            if (_lastCardCount != _cards.Count
+                || !string.Equals(_lastAlign, align, StringComparison.Ordinal)
+                || double.IsNaN(_lastAnchorX)
+                || Math.Abs(settings.Overlay.X - _lastAnchorX) > 0.5
+                || _rightEdge <= 0)
+            {
+                _rightEdge = settings.Overlay.X + stackWidth;
+            }
+        }
+        else
+        {
+            _rightEdge = 0;
+        }
+        _lastAnchorX = settings.Overlay.X;
+        _lastCardCount = _cards.Count;
+        _lastAlign = align;
+
         double top = 0;
         bool first = true;
 
@@ -123,9 +170,21 @@ internal sealed class CardLayoutCoordinator
 
             if (!first) top += Math.Max(0, slot.Config.Spacing);
 
-            double x = settings.Overlay.X;
-            if (align == "Right")
-                x += Math.Max(0, stackWidth - slot.Window.CardWidth);
+            // 显隐动画期间连新出现的卡片也沿用它上一次的 X；只有从未落过位的
+            // 新卡片才现算。这样整排在显示 / 隐藏时不会横向移动。
+            bool keepX = preserveX && _knownX.TryGetValue(slot, out _);
+            double x;
+            if (keepX)
+            {
+                x = _knownX[slot];
+            }
+            else
+            {
+                x = settings.Overlay.X;
+                if (align == "Right")
+                    x = Math.Max(0, _rightEdge - slot.Window.CardWidth);
+                _knownX[slot] = x;
+            }
 
             slot.Dialog.Overlay.X = x;
             slot.Dialog.Overlay.Y = settings.Overlay.Y + top;

@@ -482,6 +482,8 @@ internal static class SelfTest
             };
             new Settings { Style = particleStyle }.Normalize();
             textEffectOk = textEffectOk
+                        // 2.43.2：末排目标中心按粒子半径夹取，不能越过图层边缘。
+                        && Math.Abs(ParticleTextLayer.ClampCenter(20.5, 20.0, 2.2) - 18.9) < 1e-9
                         && Math.Abs(particleStyle.TextParticleSize - 4.0) < 1e-9
                         && particleStyle.TextParticleCount == 3000
                         && Math.Abs(particleStyle.TextParticleSpeed - 0.2) < 1e-9

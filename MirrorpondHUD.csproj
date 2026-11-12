@@ -13,7 +13,7 @@
     <PlatformTarget Condition="'$(RuntimeIdentifier)' == ''">x64</PlatformTarget>
     <PlatformTarget Condition="'$(RuntimeIdentifier)' == 'win-arm64'">arm64</PlatformTarget>
     <NoWarn>$(NoWarn);WFAC010</NoWarn>
-    <Version>2.43.1</Version>
+    <Version>2.43.2</Version>
     <Product>镜潭一览 (MirrorpondHUD)</Product>
     <AssemblyTitle>MirrorpondHUD</AssemblyTitle>
     <SatelliteResourceLanguages>en;zh-Hans</SatelliteResourceLanguages>
@@ -106,6 +106,7 @@
   <ItemGroup>
     <Resource Include="assets\logo.ico" />
     <Resource Include="assets\logo-light.ico" />
+    <Resource Include="assets\logo-endfield.ico" />
     <Resource Include="assets\keycaps\ReiconFont-Regular.ttf" />
     <!-- Lucide 图标字体（ISC）；见 assets/icons/README.md。 -->
     <Resource Include="assets\icons\Lucide.ttf" />
