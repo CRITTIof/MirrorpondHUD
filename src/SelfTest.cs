@@ -1678,7 +1678,9 @@ internal static class SelfTest
             // 字符串加密：DPAPI 往返；明文不落盘（SecretStore 在契约程序集，插件与宿主共用）。
             const string secret = "sk-selftest-0123456789";
             string stored = SecretStore.Protect(secret);
-            secretOk = SecretStore.IsProtected(stored)
+            // C-14：Protect 失败返回 null，自检必须先判空再访问成员。
+            secretOk = !string.IsNullOrEmpty(stored)
+                    && SecretStore.IsProtected(stored)
                     && stored.StartsWith(SecretStore.Prefix, StringComparison.Ordinal)
                     && SecretStore.TryUnprotect(stored, out var plain)
                     && plain == secret

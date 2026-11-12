@@ -51,6 +51,8 @@ public sealed class CardMediaView : Grid, IDisposable
     MediaSettings _settings = new();
     StyleSettings _style;
     string _loadedPath;
+    // K-13：播放中源文件被删除 / 移走时，每 2 秒探测一次。
+    DateTime _lastFileCheck;
     string _pendingVideo;
     // 每次开始一次「探测 + 启动」就递增；await 回来时代号变了说明用户已经换了文件 /
     // 释放了视频，本次探测结果必须丢弃（否则会给新视频启动一个旧 player）。
@@ -843,6 +845,19 @@ public sealed class CardMediaView : Grid, IDisposable
     void UpdateProgress()
     {
         if (_disposed) return;
+
+        // K-13：文件被删除 / 移走时不能一直显示最后一帧；停止并给出可见状态。
+        if (!string.IsNullOrEmpty(_loadedPath) && (DateTime.UtcNow - _lastFileCheck).TotalSeconds >= 2)
+        {
+            _lastFileCheck = DateTime.UtcNow;
+            if (!File.Exists(_loadedPath))
+            {
+                string gone = _loadedPath;
+                Unload();
+                ShowMessage("文件已被移动或删除：\n" + FileName(gone));
+                return;
+            }
+        }
 
         double position = 0;
         double duration = 0;

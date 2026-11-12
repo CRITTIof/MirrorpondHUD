@@ -11,6 +11,8 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Markup;
+using System.Windows.Automation;
+using System.Windows.Automation.Peers;
 using System.Windows.Media;
 using MirrorpondHUD.Core;
 
@@ -91,8 +93,11 @@ public sealed class CardBadge : Border, ICardFormControl
 
     public bool Dot { get; set; }
 
+    protected override AutomationPeer OnCreateAutomationPeer() => new FrameworkElementAutomationPeer(this);
+
     public void ApplyStyle(StyleSettings style, double cornerRadius)
     {
+        AutomationProperties.SetName(this, $"徽标 {_text.Text}");
         _style = style ?? new StyleSettings();
         _corner = cornerRadius;
         ThemeTokens tokens = ThemeResolver.Resolve(_style);
@@ -179,8 +184,11 @@ public sealed class CardTag : Border, ICardFormControl
         }
     }
 
+    protected override AutomationPeer OnCreateAutomationPeer() => new FrameworkElementAutomationPeer(this);
+
     public void ApplyStyle(StyleSettings style, double cornerRadius)
     {
+        AutomationProperties.SetName(this, $"标签 {_text.Text}");
         _style = style ?? new StyleSettings();
         _corner = cornerRadius;
         ThemeTokens tokens = ThemeResolver.Resolve(_style);
@@ -309,8 +317,11 @@ public sealed class CardMetricTile : Border, ICardFormControl
         if (caption is not null) Caption = caption;
     }
 
+    protected override AutomationPeer OnCreateAutomationPeer() => new FrameworkElementAutomationPeer(this);
+
     public void ApplyStyle(StyleSettings style, double cornerRadius)
     {
+        AutomationProperties.SetName(this, $"指标 {Title} {Value} {Unit}".Trim());
         _style = style ?? new StyleSettings();
         _cornerRadius = cornerRadius;
         ThemeTokens tokens = ThemeResolver.Resolve(_style);
@@ -399,8 +410,11 @@ public sealed class CardGauge : FrameworkElement, ICardFormControl
     public string ValueFormat { get => _valueFormat; set { _valueFormat = value ?? "0"; InvalidateVisual(); } }
     public CardBadgeTone Tone { get => _tone; set { _tone = value; InvalidateVisual(); } }
 
+    protected override AutomationPeer OnCreateAutomationPeer() => new FrameworkElementAutomationPeer(this);
+
     public void ApplyStyle(StyleSettings style, double cornerRadius)
     {
+        AutomationProperties.SetName(this, $"仪表 {_label} {_value}{_unit}".Trim());
         _style = style ?? new StyleSettings();
         InvalidateVisual();
     }
@@ -519,8 +533,11 @@ public sealed class CardProgressRing : FrameworkElement, ICardFormControl
     public double RingThickness { get => _ringThickness; set { _ringThickness = Math.Max(2, value); InvalidateVisual(); } }
     public CardBadgeTone Tone { get => _tone; set { _tone = value; InvalidateVisual(); } }
 
+    protected override AutomationPeer OnCreateAutomationPeer() => new FrameworkElementAutomationPeer(this);
+
     public void ApplyStyle(StyleSettings style, double cornerRadius)
     {
+        AutomationProperties.SetName(this, $"进度 {_label} {_value}".Trim());
         _style = style ?? new StyleSettings();
         InvalidateVisual();
     }

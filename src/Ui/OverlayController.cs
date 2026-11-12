@@ -232,10 +232,10 @@ public sealed class OverlayController : IDisposable
         _keys.Configure(_settings.Data.KeyHistoryCount, _settings.Data.RepeatThreshold,
                         _settings.Data.MaxKeyChars);
 
-        bool autoStarted = _args.Contains("--autostart");
         bool forcedVisible = _args.Contains("--visible");
+        // S-07：--autostart 也尊重“启动后最小化”（注册表命令会带 --minimized）。
         bool minimized = !forcedVisible &&
-                         ((!autoStarted && _settings.Behavior.StartMinimized) || _args.Contains("--minimized"));
+                         (_settings.Behavior.StartMinimized || _args.Contains("--minimized"));
         bool intro = _settings.Behavior.IntroEnabled && !minimized;
         CardMotion.ApplySettings(_settings);
 

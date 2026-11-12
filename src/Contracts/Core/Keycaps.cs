@@ -18,6 +18,7 @@ public static class Keycaps
 
     static readonly Dictionary<string, char> Map = Build();
 
+    [Obsolete("C-19：死代码，且区间判定与 Icons 的结论矛盾；后续版本移除。")]
     public static bool IsKeycap(char c) => c >= First && c <= Last;
 
     /// <summary>

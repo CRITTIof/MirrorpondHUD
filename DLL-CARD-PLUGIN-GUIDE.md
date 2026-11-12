@@ -1414,3 +1414,15 @@ copy MyCard\manifest.json <MirrorpondHUD>\plugins\cards\com.example.my-card\
 然后在「设置 → 内容 → 添加卡片」里添加「我的卡片」。
 
 > 没有热重载：改完代码重新 build → 覆盖插件目录 → 重启宿主。
+
+---
+
+## 已知限制：Extras 与 ALC
+
+P-6（2.44.2 审阅）确认：`CardSettings.Extras` 在运行期会缓存插件的强类型设置对象，
+因此插件 `AssemblyLoadContext` 在进程退出时**不一定能回收**。这是已知取舍，不是泄漏：
+
+- 宿主退出时只报告“上下文按预期保留”；只有“上下文已回收但模块仍被引用”才视为异常。
+- 插件不要把需要确定性释放的资源放在 `Extras`；模块级资源请在 `ICardModuleLifetime.OnPluginUnloading`
+  里释放（`Discard` 路径也会调用）。
+- 未来若改为“Extras 只存 JSON 节点”，会作为 `apiVersion` 变更单独发布。

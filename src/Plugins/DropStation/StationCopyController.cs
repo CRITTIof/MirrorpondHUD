@@ -206,28 +206,36 @@ internal sealed class StationCopyController : IDisposable
         context.Target = StationFiles.UniqueTarget(context.Directory, context.FileName, true);
         Directory.CreateDirectory(context.Target);
 
-        var options = new EnumerationOptions
-        {
-            RecurseSubdirectories = true,
-            AttributesToSkip = FileAttributes.ReparsePoint,
-            IgnoreInaccessible = false
-        };
-
-        foreach (string dir in Directory.EnumerateDirectories(context.Source, "*", options))
-        {
-            token.ThrowIfCancellationRequested();
-            string relative = Path.GetRelativePath(context.Source, dir);
-            Directory.CreateDirectory(Path.Combine(context.Target, relative));
-        }
-
+        // P-14/P-15：手工递归而不是 AttributesToSkip=ReparsePoint。后者会静默跳过链接，
+        // 导致“收纳成功但内容不全”；这里发现任何 reparse point 就拒绝整次操作。
         long total = 0;
-        foreach (string file in Directory.EnumerateFiles(context.Source, "*", options))
+        void Walk(string sourceDir, int depth)
         {
-            token.ThrowIfCancellationRequested();
-            string relative = Path.GetRelativePath(context.Source, file);
-            plan.Add(new KeyValuePair<string, string>(file, Path.Combine(context.Target, relative)));
-            total += StationFiles.SafeSize(file);
+            if (depth > 64) throw new IOException("目录层级过深（可能包含链接环）。");
+
+            foreach (string file in Directory.EnumerateFiles(sourceDir, "*", SearchOption.TopDirectoryOnly))
+            {
+                token.ThrowIfCancellationRequested();
+                if ((File.GetAttributes(file) & FileAttributes.ReparsePoint) != 0)
+                    throw new IOException($"不支持符号链接 / 联接点，已拒绝收纳: {file}");
+
+                string relative = Path.GetRelativePath(context.Source, file);
+                plan.Add(new KeyValuePair<string, string>(file, Path.Combine(context.Target, relative)));
+                total += StationFiles.SafeSize(file);
+            }
+
+            foreach (string dir in Directory.EnumerateDirectories(sourceDir, "*", SearchOption.TopDirectoryOnly))
+            {
+                token.ThrowIfCancellationRequested();
+                if ((File.GetAttributes(dir) & FileAttributes.ReparsePoint) != 0)
+                    throw new IOException($"不支持符号链接 / 联接点，已拒绝收纳: {dir}");
+
+                Directory.CreateDirectory(Path.Combine(context.Target, Path.GetRelativePath(context.Source, dir)));
+                Walk(dir, depth + 1);
+            }
         }
+
+        Walk(context.Source, 0);
         return total;
     }
 

@@ -1023,14 +1023,22 @@ public sealed class CardToast : Border
 
     /// <summary>在宿主底部居中显示一条 toast（自动加入宿主、自动消失）。</summary>
     public static CardToast Show(Panel host, string text, CardToastTone tone = CardToastTone.Info,
-                                 int durationMs = 3000) => ShowCore(host, text, tone, durationMs, null, null);
+                                 int durationMs = 3000) => ShowCore(host, text, tone, durationMs, null, null, null);
 
     /// <summary>带行动按钮的重载。</summary>
     public static CardToast Show(Panel host, string text, CardToastTone tone, int durationMs,
-                                 string actionText, Action action) => ShowCore(host, text, tone, durationMs, actionText, action);
+                                 string actionText, Action action) => ShowCore(host, text, tone, durationMs, actionText, action, null);
+
+    /// <summary>K-27：带宿主主题的重载；旧调用继续使用默认主题。</summary>
+    public static CardToast Show(Panel host, StyleSettings style, string text, CardToastTone tone = CardToastTone.Info,
+                                 int durationMs = 3000) => ShowCore(host, text, tone, durationMs, null, null, style);
+
+    /// <summary>带主题与行动按钮的重载。</summary>
+    public static CardToast Show(Panel host, StyleSettings style, string text, CardToastTone tone, int durationMs,
+                                 string actionText, Action action) => ShowCore(host, text, tone, durationMs, actionText, action, style);
 
     static CardToast ShowCore(Panel host, string text, CardToastTone tone, int durationMs,
-                              string actionText, Action action)
+                              string actionText, Action action, StyleSettings style)
     {
         if (host is null) return null;
 
@@ -1046,7 +1054,7 @@ public sealed class CardToast : Border
             toast.Action = action;
         }
 
-        toast.ApplyStyle(new StyleSettings(), 10);
+        toast.ApplyStyle(style ?? new StyleSettings(), 10);
         toast.AttachTo(host);
         return toast;
     }

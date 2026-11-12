@@ -4,6 +4,9 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using MirrorpondHUD.Core;
 
+// 自检刻意覆盖已标记 [Obsolete] 的 Lucide 查询 API（C-18），局部关闭过期警告。
+#pragma warning disable CS0618
+
 namespace MirrorpondHUD.Ui.Controls;
 
 /// <summary>
@@ -60,3 +63,5 @@ public static class CardIconSelfTest
         }
     }
 }
+
+#pragma warning restore CS0618

@@ -298,7 +298,21 @@ internal static class StationFiles
         {
             string root = Path.GetFullPath(directory).TrimEnd(Path.DirectorySeparatorChar);
             string full = Path.GetFullPath(path);
-            return full.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+            if (!full.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            // P-15：字符串前缀相同不代表真实落点在内——接收目录内部若有 junction / 符号链接，
+            // 写入会被重定向到目录外。只检查 root 以下的各级父目录（root 自身允许是链接）。
+            string current = Path.GetDirectoryName(full);
+            while (!string.IsNullOrEmpty(current) && current.Length > root.Length)
+            {
+                FileAttributes attributes;
+                try { attributes = File.GetAttributes(current); }
+                catch { return false; }
+                if ((attributes & FileAttributes.ReparsePoint) != 0) return false;
+                current = Path.GetDirectoryName(current);
+            }
+            return true;
         }
         catch { return false; }
     }

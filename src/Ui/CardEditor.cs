@@ -151,6 +151,21 @@ public sealed class CardEditor : INotifyPropertyChanged
 
     public Visibility PresetVisibility => PresetSource is null ? Visibility.Collapsed : Visibility.Visible;
 
+    /// <summary>S-08：预设项由模块声明，界面不再写死 4 项，也不会再按索引错位。</summary>
+    public IList<string> PresetItems
+    {
+        get
+        {
+            ICardPresetSource source = PresetSource;
+            if (source is null || source.Presets.Count == 0) return Array.Empty<string>();
+
+            var items = new List<string>(source.Presets.Count);
+            foreach (CardPreset preset in source.Presets)
+                items.Add(string.IsNullOrWhiteSpace(preset.Label) ? preset.Id : preset.Label);
+            return items;
+        }
+    }
+
     public int PresetIndex
     {
         get

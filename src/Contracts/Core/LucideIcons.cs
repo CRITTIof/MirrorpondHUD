@@ -6907,9 +6907,11 @@ public static class LucideIcons
     };
 
     /// <summary>全部图标名（CSS 里的 icon- 后面的名字，例如 "cpu" / "chart-line"）。</summary>
+    [Obsolete("C-18：生产代码零调用；保留只为兼容，后续版本移除。")]
     public static IReadOnlyList<string> Names => AllNames;
 
     /// <summary>按名字取字形；名字可带或不带 "icon-" 前缀，未知返回空串。</summary>
+    [Obsolete("C-18：生产代码零调用；保留只为兼容，后续版本移除。")]
     public static string Get(string name)
     {
         string key = (name ?? "").Trim().ToLowerInvariant();
@@ -6918,6 +6920,7 @@ public static class LucideIcons
     }
 
     /// <summary>按名字取字形；未知返回 false。</summary>
+    [Obsolete("C-18：生产代码零调用；保留只为兼容，后续版本移除。")]
     public static bool TryGet(string name, out string glyph)
     {
         string key = (name ?? "").Trim().ToLowerInvariant();

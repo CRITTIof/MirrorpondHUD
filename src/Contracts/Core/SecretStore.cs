@@ -50,14 +50,19 @@ public static class SecretStore
     public static bool IsProtected(string stored) => !string.IsNullOrEmpty(stored) && stored.StartsWith(Prefix, StringComparison.Ordinal);
 
     /// <summary>
-    /// 加密成 <c>dpapi:base64</c>。失败时返回空串（拒绝明文落盘），由调用方决定是否清空 Key。
+    /// 加密成 <c>dpapi:base64</c>。失败返回 <c>null</c>（拒绝明文落盘），由调用方决定是否清空 Key。
+    /// 与“用户主动清空”返回的空串区分开；失败原因见 <see cref="LastError"/>。
     /// </summary>
-    public static string Protect(string plain) => TryProtect(plain, out var stored) ? stored : "";
+    public static string Protect(string plain) => TryProtect(plain, out var stored) ? stored : null;
+
+    /// <summary>C-14：最近一次加密 / 解密失败的原因；成功时清空。</summary>
+    public static string LastError { get; private set; } = "";
 
     /// <summary>加密成功返回 true；失败不返回明文，只把原因写日志。</summary>
     public static bool TryProtect(string plain, out string stored)
     {
         stored = "";
+        LastError = "";
         if (string.IsNullOrEmpty(plain)) return true;
 
         try
@@ -67,6 +72,7 @@ public static class SecretStore
         }
         catch (Exception ex)
         {
+            LastError = ex.Message;
             Log.Warn($"加密失败，拒绝明文保存: {ex.Message}");
             return false;
         }

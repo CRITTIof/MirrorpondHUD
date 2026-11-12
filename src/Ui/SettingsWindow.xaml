@@ -367,12 +367,9 @@
 
                                                     <StackPanel Visibility="{Binding PresetVisibility}" Orientation="Horizontal" Margin="0,4,0,8">
                                                         <TextBlock Text="预设" VerticalAlignment="Center" Margin="0,0,10,0" />
-                                                        <ComboBox Width="200" SelectedIndex="{Binding PresetIndex}">
-                                                            <ComboBoxItem Content="系统信息" />
-                                                            <ComboBoxItem Content="时钟" />
-                                                            <ComboBoxItem Content="按键" />
-                                                            <ComboBoxItem Content="文本信息" />
-                                                        </ComboBox>
+                                                        <ComboBox Width="200"
+                                                                  ItemsSource="{Binding PresetItems}"
+                                                                  SelectedIndex="{Binding PresetIndex}" />
                                                     </StackPanel>
 
                                                     <StackPanel Visibility="{Binding ContentVisibility}">

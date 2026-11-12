@@ -67,8 +67,10 @@ public static class AutoStart
                 }
 
                 string exe = Process.GetCurrentProcess().MainModule.FileName;
-                // 开机自启一律带 --autostart：登录后直接显示卡片，不受「启动后最小化」影响。
-                string command = $"\"{exe}\" --autostart";
+                // S-07：自启尊重“启动后最小化”，由 --minimized 告知 OverlayController。
+                string command = startMinimized
+                    ? $"\"{exe}\" --autostart --minimized"
+                    : $"\"{exe}\" --autostart";
                 key.SetValue(ValueName, command);
                 key.DeleteValue(LegacyValueName, false);
                 Log.Info($"已开启开机自启: {command}");

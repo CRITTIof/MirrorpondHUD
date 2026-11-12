@@ -120,10 +120,13 @@ internal sealed class CardPluginUnloadProbe
 
         if (log)
         {
-            if (aliveModules > 0)
-                Log.Warn($"插件 ALC 卸载后仍有模块引用：模块 {aliveModules}/{_modules.Count}，上下文 {aliveContexts}/{_contexts.Count}（{string.Join("、", _names.ToArray())}）；文件将在下次启动清理");
-            else if (aliveContexts > 0)
-                Log.Info($"插件模块已回收，ALC 上下文仍在卸载（运行时延迟回收；开发模式可接受）: {string.Join("、", _names.ToArray())}");
+            // P-6：Extras 在内存里持有插件强类型对象，退出时 ALC 不回收是既定取舍
+            // （见 DLL-CARD-PLUGIN-GUIDE.md「已知限制」）。上下文仍活不算泄漏；
+            // 只有“上下文已回收、模块还被引用”才是真正的异常引用。
+            if (aliveContexts > 0)
+                Log.Info($"插件 ALC 上下文按预期保留（Extras 持有插件类型，P-6）: {string.Join("、", _names.ToArray())}");
+            else if (aliveModules > 0)
+                Log.Warn($"插件上下文已回收但模块仍被引用（疑似真实泄漏）：模块 {aliveModules}/{_modules.Count}（{string.Join("、", _names.ToArray())}）");
             else
                 Log.Info($"插件 ALC 已卸载（模块 / 上下文弱引用均已回收）: {string.Join("、", _names.ToArray())}");
         }
