@@ -48,9 +48,17 @@ internal sealed class StationStore
     public string ReadOnlyReason => _readOnlyReason;
 
     /// <summary>
-    /// 读取列表：过滤空条目、修正目录标记、按 AddedUtc 旧→新排序、裁剪到 MaxEntries，
-    /// 记下加载基线；<paramref name="autoRemoveMissing"/> 为真时再剔除丢失项（只清列表，不删文件）。
-    /// 返回的列表交给视图持有，Store 不缓存条目对象。
+    /// 读取列表：过滤空条目、按 AddedUtc 旧→新排序、裁剪到 MaxEntries，记下加载基线。
+    ///
+    /// P-11：这里**不再同步探测文件是否存在**。旧实现对每条做 1～3 次
+    /// <c>File.Exists</c> / <c>Directory.Exists</c>，上限 500 条 → 最多 1500 次文件系统调用
+    /// 全部压在 UI 线程；条目落在断开的网络共享或休眠硬盘上时单次可阻塞数秒，
+    /// 构造卡片 / 应用设置会让整个叠层无响应。现在首屏只读 JSON 就返回，存在性交给
+    /// <see cref="Probe"/> 在后台有界并发逐条回填（视图负责代次与迟到结果丢弃）。
+    ///
+    /// <paramref name="autoRemoveMissing"/> 仍保留在签名里，但剔除动作必须等后台探针，
+    /// 由视图在结果回来后只移除「明确缺失」的条目；因此这里的
+    /// <paramref name="autoRemoved"/> 恒为 0（真正计数由视图汇报给状态行）。
     /// </summary>
     public List<StationItem> Load(bool autoRemoveMissing, out int autoRemoved)
     {
@@ -70,8 +78,8 @@ internal sealed class StationStore
             foreach (StationItem item in state.Items)
             {
                 if (item is null || string.IsNullOrEmpty(item.DisplayPath)) continue;
-                if (!item.IsDirectory && Directory.Exists(item.DisplayPath)) item.IsDirectory = true;
-                item.Missing = !item.PathExists();
+                // P-11：目录标记修正也依赖磁盘（原 Directory.Exists），一并挪到后台探针；
+                // 这里先沿用 items.json 里记录的 IsDirectory，探针回来后才纠正。
                 items.Add(item);
             }
 
@@ -84,23 +92,63 @@ internal sealed class StationStore
 
             // 先记下加载基线：之后本视图删掉的条目，写盘合并时不会从磁盘「复活」（P1-6）。
             RememberLoaded(items);
-
-            if (autoRemoveMissing)
-            {
-                for (int i = items.Count - 1; i >= 0; i--)
-                {
-                    if (!items[i].Missing) continue;
-                    items.RemoveAt(i);
-                    autoRemoved++;
-                }
-                if (autoRemoved > 0) Persist(items);
-            }
         }
         catch (Exception ex)
         {
             Log.Warn($"中转站状态解析失败: {ex.Message}");
         }
         return items;
+    }
+
+    /// <summary>条目当前存在性：只有「明确不存在」才允许当丢失，网络 / 权限错误必须保持未知。</summary>
+    public enum StationPresence
+    {
+        Present,
+        Missing,
+        Unknown
+    }
+
+    /// <summary>
+    /// P-11：在**后台线程**判定一条列表项的当前状态（调用方保证不在 UI 线程）。
+    /// 用一次 <see cref="File.GetAttributes"/> 同时拿到「是否存在 / 是否目录」，比
+    /// <c>File.Exists || Directory.Exists</c> 少一次系统调用。
+    ///
+    /// 关键取舍：网络共享断开抛 <see cref="IOException"/>，权限不足抛
+    /// <see cref="UnauthorizedAccessException"/>——都不能当成「文件已丢失」，
+    /// 否则断网时一屏条目会被标成丢失，甚至被「自动移除丢失项」真从列表里删掉。
+    /// 只有 FileNotFound / DirectoryNotFound 才算 Missing，其余一律 Unknown 并回传原因。
+    /// </summary>
+    public static StationPresence Probe(string path, out bool isDirectory, out string error)
+    {
+        isDirectory = false;
+        error = null;
+        if (string.IsNullOrEmpty(path))
+        {
+            error = "路径为空";
+            return StationPresence.Missing;
+        }
+
+        try
+        {
+            FileAttributes attributes = File.GetAttributes(path);
+            isDirectory = (attributes & FileAttributes.Directory) != 0;
+            return StationPresence.Present;
+        }
+        catch (FileNotFoundException)
+        {
+            return StationPresence.Missing;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return StationPresence.Missing;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException
+                                       or ArgumentException or System.Security.SecurityException)
+        {
+            // 网络盘 / 离线盘 / 权限：状态不可判定，绝不能当丢失（见上面的取舍）。
+            error = ex.Message;
+            return StationPresence.Unknown;
+        }
     }
 
     /// <summary>

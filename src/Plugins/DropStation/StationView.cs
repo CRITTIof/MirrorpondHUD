@@ -1,6 +1,9 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -44,6 +47,43 @@ internal sealed class StationView : Grid, IDisposable, IStationCopySink
     readonly CardDropOverlay _dropOverlay;
     readonly StationSelection _selection;
     readonly List<StationItem> _items = new();
+
+    /// <summary>存在性后台检查的并发上限：数量小到不会打满线程池 / 网络盘，又明显快于逐条串行。</summary>
+    const int ProbeWorkers = 4;
+
+    /// <summary>图标提取的并发上限：目录图标会碰磁盘，500 条不能一次性全砸到网络盘上。</summary>
+    const int IconWorkers = 4;
+
+    /// <summary>
+    /// P-11：存在性检查的后台调度。每次启动一代，结果回来先校验视图未销毁、再校验
+    /// 「该条目最近一次探针」的代次，旧代次直接丢弃，避免快速切换视图时旧结果改写新状态。
+    /// </summary>
+    readonly object _probeSync = new();
+    readonly List<CancellationTokenSource> _probeCancels = new();
+    readonly Dictionary<StationItem, int> _probeLatest = new();
+    readonly LogThrottle _probeThrottle = new("中转站存在性检查", 60000);
+    int _probeGeneration;
+
+    /// <summary>
+    /// P-17：按条目引用复用行容器。搜索只改 Visible 列表 / 增删条目，不重建行，
+    /// 否则每敲一个字都要重建 500 个控件、重取 500 次图标。
+    /// </summary>
+    readonly Dictionary<StationItem, StationRowHandle> _rows = new();
+
+    /// <summary>图标缓存（含失败结果）：同一扩展名 / 目录路径只取一次；null 表示取不到，用占位。</summary>
+    readonly Dictionary<string, ImageSource> _iconCache = new(StringComparer.OrdinalIgnoreCase);
+    readonly HashSet<string> _iconFailed = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>同一图标键的等待者：多个同扩展名行的请求合并成一次后台提取。</summary>
+    readonly Dictionary<string, List<StationRowHandle>> _iconWaiters = new(StringComparer.OrdinalIgnoreCase);
+    readonly SemaphoreSlim _iconGate = new(IconWorkers);
+    readonly LogThrottle _iconThrottle = new("中转站图标加载", 60000);
+
+    /// <summary>行形状签名（显示方式 + 是否显示图标）：变化时旧容器不能复用，必须重建。</summary>
+    string _rowSignature = "";
+
+    /// <summary>本轮回填是否新建过行：只有新建行才需要整树重套描边 / 行高，搜索命中不重套。</summary>
+    bool _rowsCreated;
+
 
     /// <summary>宿主是否已经销毁本视图；销毁后所有后台回调直接丢弃，不再碰控件 / 写盘。</summary>
     volatile bool _disposed;
@@ -149,6 +189,9 @@ internal sealed class StationView : Grid, IDisposable, IStationCopySink
             SetStatus($"列表文件只读（{_store.ReadOnlyReason}）；本次改动不会写入磁盘", CardStatusKind.Warning);
         else if (_autoRemoved > 0) SetStatus($"已自动移除 {_autoRemoved} 个丢失项", CardStatusKind.Success);
         else SetStatus(_items.Count == 0 ? "把文件拖进来，或从资源管理器拖入。" : "就绪", CardStatusKind.Normal);
+
+        // P-11：条目已经先显示出来，存在性在后台有界并发回填；构造期不再做任何同步文件系统检查。
+        StartProbe(_items, reportStatus: true);
     }
 
     /// <summary>
@@ -171,6 +214,29 @@ internal sealed class StationView : Grid, IDisposable, IStationCopySink
 
         try { _copy.Dispose(); }
         catch (Exception ex) { Log.Warn($"中转站队列收尾失败: {ex.Message}"); }
+
+        // P-11：存在性检查可能正卡在断开的网络盘上；取消后后台任务在下一次检查点退出，
+        // 迟到的结果会因为 _disposed / 代次校验被丢弃（阻塞中的单次 IO 无法中断，需真机观察）。
+        List<CancellationTokenSource> cancels;
+        lock (_probeSync)
+        {
+            cancels = new List<CancellationTokenSource>(_probeCancels);
+            _probeCancels.Clear();
+        }
+        foreach (CancellationTokenSource cts in cancels)
+        {
+            try { cts.Cancel(); }
+            catch (ObjectDisposedException)
+            {
+                // 良性竞态：后台任务刚收尾并释放了自己的 CTS，取消已无意义。
+            }
+            cts.Dispose();
+        }
+
+        _rows.Clear();
+        _iconCache.Clear();
+        _iconFailed.Clear();
+        _iconWaiters.Clear();
 
         try
         {
@@ -207,7 +273,8 @@ internal sealed class StationView : Grid, IDisposable, IStationCopySink
         _dropOverlay.ApplyStyle(_settings.Style, _settings.Overlay.CornerRadius);
         _list.SetEmptyText(EmptyText());
         ApplySpacing(cli);
-        Rebuild();
+        // 换肤要把描边 / 行高重新套到整棵视觉树上；普通重建只在新建行时套一次。
+        Rebuild(restyle: true);
     }
 
     /// <summary>
@@ -303,6 +370,7 @@ internal sealed class StationView : Grid, IDisposable, IStationCopySink
         }
 
         int added = 0;
+        var fresh = new List<StationItem>();
         foreach (string raw in paths)
         {
             string source = StationFiles.FullPath(raw);
@@ -331,7 +399,7 @@ internal sealed class StationView : Grid, IDisposable, IStationCopySink
             string name = StationFiles.ItemName(source, isDirectory);
             if (_station.Mode == "Reference")
             {
-                _items.Add(new StationItem
+                var reference = new StationItem
                 {
                     Id = StationFiles.NewId(),
                     Path = source,
@@ -339,7 +407,9 @@ internal sealed class StationView : Grid, IDisposable, IStationCopySink
                     Size = isDirectory ? 0 : StationFiles.SafeSize(source),
                     AddedUtc = StationFiles.UtcNow(),
                     IsDirectory = isDirectory
-                });
+                };
+                _items.Add(reference);
+                fresh.Add(reference);
                 added++;
             }
             else
@@ -353,6 +423,7 @@ internal sealed class StationView : Grid, IDisposable, IStationCopySink
                     IsDirectory = isDirectory
                 };
                 _items.Add(item);
+                fresh.Add(item);
                 _copy.Enqueue(item);
                 added++;
             }
@@ -363,6 +434,8 @@ internal sealed class StationView : Grid, IDisposable, IStationCopySink
         _store.Trim(_items);
         Persist();
         Rebuild();
+        // 只有本次新加的条目需要探存在性；全量重探会在网络盘上做无谓的重复 IO。
+        StartProbe(fresh, reportStatus: false);
         if (_station.Mode == "Reference") SetStatus($"{added} 项已加入", CardStatusKind.Success);
         else RefreshCopyStatus();
         return added;
@@ -377,8 +450,26 @@ internal sealed class StationView : Grid, IDisposable, IStationCopySink
 
     // ==================== 列表 ====================
 
-    void Rebuild()
+    /// <summary>
+    /// P-17：重建列表改为**增量同步**。旧实现每次 <c>Items.Clear()</c> 后逐条新建行，
+    /// 并且每行同步取一次图标；搜索每敲一个字就是 500 次控件构造 + 500 次图标提取，
+    /// UI 线程直接被打满。现在：
+    /// · 行按条目引用缓存在 <see cref="_rows"/>，只有新增条目才建容器；
+    /// · 搜索 / 删除只调整 <see cref="CardList.Items"/> 的成员与顺序（差分替换中间段）；
+    /// · 图标由 <see cref="RequestIcon"/> 在后台线程取回后填入，失败保留占位。
+    /// </summary>
+    void Rebuild(bool restyle = false)
     {
+        // 显示方式 / 是否显示图标会改变行形状（列表行 vs 图块），旧容器不能复用。
+        // 这里只丢行对象、不清 Items：让 SyncRows 的差分把旧行换成新行，
+        // 它会在移除前记下选中项，切换显示方式后选中态不会丢（旧实现是保存后手动恢复）。
+        string signature = StationDisplayMode.Normalize(_station.View) + "|" + (_station.ShowIcons ? "1" : "0");
+        if (!string.Equals(signature, _rowSignature, StringComparison.Ordinal))
+        {
+            _rowSignature = signature;
+            _rows.Clear();
+        }
+
         if (_items.Count == 0 && _filter.Length > 0)
         {
             _filter = "";
@@ -390,22 +481,368 @@ internal sealed class StationView : Grid, IDisposable, IStationCopySink
             }
         }
 
-        List<StationItem> selectedItems = _selection.SelectedItems();
-        _list.Items.Clear();
-
-        foreach (StationItem item in _items)
-        {
-            if (!Matches(item)) continue;
-
-            FrameworkElement row = StationRow.Build(item, _station, _host, _foreground, _station.View);
-            _list.Items.Add(row);
-            if (selectedItems.Contains(item)) _list.Inner.SelectedItems.Add(row);
-        }
+        SyncRows();
 
         _list.SetEmptyText(EmptyText());
         _list.RefreshEmpty();
         UpdateHeader();
-        CardTextStyle.ApplyRichText(_settings.Style, _list);
+
+        // 换肤需要整棵树重套描边 / 行高；普通重建只在本轮确实新建了行时套一次，
+        // 搜索每敲一个键都遍历整棵视觉树是旧实现里另一处隐性开销。
+        if (restyle || _rowsCreated)
+        {
+            CardTextStyle.ApplyRichText(_settings.Style, _list);
+            _rowsCreated = false;
+        }
+    }
+
+    /// <summary>
+    /// 把 <see cref="_items"/> 的可见序列同步到列表：按「有序子序列」差分——
+    /// 先移除已不该出现的行，再在对不齐的位置插入缺失行。搜索逐字输入时通常只动几行，
+    /// 清空搜索时只把被挡掉的行按原顺序插回，未变化的行容器一次都不重建。
+    /// </summary>
+    void SyncRows()
+    {
+        var desired = new List<FrameworkElement>(_items.Count);
+        foreach (StationItem item in _items)
+        {
+            if (!Matches(item)) continue;
+            desired.Add(RowFor(item).Root);
+        }
+
+        // 条目已从 _items 移除（删除 / 清空 / 自动移除 / 截图样张替换）：丢弃对应行对象。
+        // 被搜索条件挡掉的行仍留在 _rows 里，清空搜索时可以直接复用。
+        var alive = new HashSet<StationItem>(_items);
+        var dead = new List<StationItem>();
+        foreach (StationItem cached in _rows.Keys)
+            if (!alive.Contains(cached)) dead.Add(cached);
+        foreach (StationItem cached in dead)
+        {
+            _rows.Remove(cached);
+            // 探针代次表也按条目引用持有：条目都删了就别留着它，避免字典无限增长。
+            _probeLatest.Remove(cached);
+        }
+
+        var wanted = new HashSet<FrameworkElement>(desired);
+
+        // 先记下选中项：移除 / 插入都会让 ListBox 丢掉被移动行的选中态，后面按条目引用补回。
+        // 必须放在移除之前，否则切换显示方式（整批行换形状）时选中态会丢。
+        List<StationItem> selected = _selection.SelectedItems();
+        var restored = new List<FrameworkElement>();
+
+        // 命中 / 失配都是引用比较：只有集合真的变了才动 ItemCollection。
+        int index = 0;
+        while (index < _list.Items.Count)
+        {
+            if (_list.Items[index] is FrameworkElement row && wanted.Contains(row))
+            {
+                index++;
+                continue;
+            }
+            _list.Items.RemoveAt(index);
+        }
+
+        index = 0;
+        foreach (FrameworkElement row in desired)
+        {
+            if (index < _list.Items.Count && ReferenceEquals(_list.Items[index], row))
+            {
+                index++;
+                continue;
+            }
+            _list.Items.Insert(index, row);
+            restored.Add(row);
+            index++;
+        }
+
+        if (selected.Count == 0) return;
+        foreach (FrameworkElement row in restored)
+        {
+            if (row.Tag is not StationItem item) continue;
+            if (!selected.Contains(item) || _list.Inner.SelectedItems.Contains(row)) continue;
+            _list.Inner.SelectedItems.Add(row);
+        }
+    }
+
+    /// <summary>取（必要时新建）一条目的行容器；存量行只刷新文本与颜色，不动容器与图标槽。</summary>
+    StationRowHandle RowFor(StationItem item)
+    {
+        if (_rows.TryGetValue(item, out StationRowHandle cached))
+        {
+            cached.Refresh(item, _foreground);
+            return cached;
+        }
+
+        StationRowHandle handle = StationRow.Create(item, _station, _foreground, _station.View);
+        _rows[item] = handle;
+        _rowsCreated = true;
+        RequestIcon(handle);
+        return handle;
+    }
+
+    // ==================== 图标（P-17：异步 + 缓存） ====================
+
+    /// <summary>
+    /// 为一个行请求图标：命中缓存立即填，同一键的等待合并成一次后台提取，
+    /// 失败（Shell 拿不到 / 目录图标不可用）缓存成 null 并保留占位，不反复重试。
+    /// </summary>
+    void RequestIcon(StationRowHandle handle)
+    {
+        if (_host is null || !_station.ShowIcons) return;
+
+        string key = IconKeyOf(handle);
+        handle.IconKey = key;
+
+        if (_iconCache.TryGetValue(key, out ImageSource cached))
+        {
+            handle.SetIcon(cached);
+            return;
+        }
+
+        // 已知取不到（例如目录路径的 Shell 图标在这套 ShellIcons 实现里必然为空）：
+        // 直接留在占位，别为每一行再排队一次后台失败。
+        if (_iconFailed.Contains(key))
+        {
+            handle.SetIcon(null);
+            return;
+        }
+
+        if (_iconWaiters.TryGetValue(key, out List<StationRowHandle> waiters))
+        {
+            waiters.Add(handle);
+            return;
+        }
+
+        _iconWaiters[key] = new List<StationRowHandle> { handle };
+
+        string path = handle.IconSourcePath;
+        bool extensionOnly = handle.IconExtensionOnly;
+        int size = (int)handle.IconSize;
+
+        // 用 Task.Run 而不是在这里直接 await：LoadIconWorker 在信号量立即可用时会同步
+        // 跑到 GetFileIcon，那就又回到 UI 线程取图标了。
+        _ = Task.Run(() => LoadIconWorkerAsync(key, path, size, extensionOnly));
+    }
+
+    string IconKeyOf(StationRowHandle handle)
+    {
+        StationItem item = handle.Item;
+        // 文件图标按扩展名取（ShellIcons 的 SHGFI_USEFILEATTRIBUTES 口径，不碰磁盘）；
+        // 目录要真实图标只能按路径取，可能落在网络盘上，所以必须走后台并限并发。
+        string scope = item.IsDirectory
+            ? "dir|" + item.DisplayPath
+            : "file|" + Path.GetExtension(item.Name);
+        return scope + "|" + (int)handle.IconSize;
+    }
+
+    /// <summary>
+    /// 后台线程：有界并发取图标并把结果 Freeze（跨线程交给 UI 需要冻结）。
+    /// 用 <see cref="SemaphoreSlim.WaitAsync"/> 而不是 Wait：500 个目录请求时只有 4 个真正
+    /// 在跑，其余挂起不占线程池线程，避免「异步化之后又把线程池占满」。
+    /// </summary>
+    async Task LoadIconWorkerAsync(string key, string path, int size, bool extensionOnly)
+    {
+        ImageSource image = null;
+        await _iconGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            image = _host.Shell.GetFileIcon(path, size, extensionOnly);
+            if (image is not null && image.CanFreeze && !image.IsFrozen) image.Freeze();
+        }
+        catch (Exception ex)
+        {
+            // 图标拿不到不是致命错误，但必须留痕：网络盘 / 损坏关联 / Shell 拒绝都要可诊断。
+            _iconThrottle.Failure($"{path}: {ex.Message}");
+        }
+        finally
+        {
+            _iconGate.Release();
+        }
+
+        // 图标拿不到也算失败路径：目录图标、损坏的文件关联都会返回 null，
+        // 没有占位会是一片空白且无迹可查。LogThrottle 保证 500 条时也只记一条。
+        if (image is null) _iconThrottle.Failure($"{path}: Shell 未返回图标，改用首字占位");
+        else _iconThrottle.Success();
+
+        _ = Dispatcher.BeginInvoke(new Action(() => ApplyIcon(key, image)));
+    }
+
+    /// <summary>UI 线程：写缓存并回填所有等待同一键的行（含 null = 失败占位）。</summary>
+    void ApplyIcon(string key, ImageSource image)
+    {
+        if (_disposed) return;
+
+        _iconCache[key] = image;
+        if (image is null) _iconFailed.Add(key);
+
+        if (!_iconWaiters.Remove(key, out List<StationRowHandle> waiters)) return;
+        foreach (StationRowHandle handle in waiters)
+        {
+            // 行可能已被复用给别的条目（改名 / 换路径）或已随筛除丢弃，键不一致就不写。
+            if (!string.Equals(handle.IconKey, key, StringComparison.OrdinalIgnoreCase)) continue;
+            if (!_rows.TryGetValue(handle.Item, out StationRowHandle live) || !ReferenceEquals(live, handle)) continue;
+            handle.SetIcon(image);
+        }
+    }
+
+    // ==================== 存在性后台回归（P-11） ====================
+
+    /// <summary>
+    /// 启动一代存在性检查。不取消上一代：不同代次各自持有结果，
+    /// 应用时按「该条目最近一次探针」的代次丢弃旧结果，避免新加的条目被旧一代覆盖。
+    /// </summary>
+    void StartProbe(IReadOnlyList<StationItem> targets, bool reportStatus)
+    {
+        if (_disposed || targets is null || targets.Count == 0) return;
+
+        int generation = ++_probeGeneration;
+        for (int i = 0; i < targets.Count; i++) _probeLatest[targets[i]] = generation;
+
+        var cts = new CancellationTokenSource();
+        lock (_probeSync) _probeCancels.Add(cts);
+
+        var snapshot = new List<StationItem>(targets);
+        _ = Task.Run(() => ProbeAsync(snapshot, generation, reportStatus, cts));
+    }
+
+    /// <summary>
+    /// 后台有界并发检查：上限 <see cref="ProbeWorkers"/> 条同时探测。
+    /// 单次 <see cref="StationStore.Probe"/> 在断开的网络盘上仍可能阻塞数秒，
+    /// 但只有 4 个后台线程被拖住，UI 线程不受影响（真正的阻塞中断需真机验证）。
+    /// </summary>
+    async Task ProbeAsync(List<StationItem> snapshot, int generation, bool reportStatus, CancellationTokenSource cts)
+    {
+        var results = new List<(StationItem Item, StationStore.StationPresence Presence, bool IsDirectory)>();
+        var sync = new object();
+
+        try
+        {
+            var queue = new ConcurrentQueue<StationItem>(snapshot);
+            int workers = Math.Min(ProbeWorkers, snapshot.Count);
+            var tasks = new Task[workers];
+
+            for (int i = 0; i < workers; i++)
+            {
+                tasks[i] = Task.Run(() =>
+                {
+                    while (queue.TryDequeue(out StationItem item))
+                    {
+                        cts.Token.ThrowIfCancellationRequested();
+
+                        try
+                        {
+                            StationStore.StationPresence presence =
+                                StationStore.Probe(item.DisplayPath, out bool isDirectory, out string error);
+
+                            // 只有「不可判定」才需要日志节流：缺失是正常结果，不该刷日志。
+                            if (presence == StationStore.StationPresence.Unknown)
+                                _probeThrottle.Failure($"{item.DisplayPath}: {error}");
+
+                            lock (sync) results.Add((item, presence, isDirectory));
+                        }
+                        catch (Exception ex) when (ex is not OperationCanceledException)
+                        {
+                            // 属性读取之外还有极少数壳层异常（例如路径规范化）：算「状态未知」，
+                            // 记一条节流日志后继续，绝不让单条异常把整轮检查做成未观察的任务异常。
+                            _probeThrottle.Failure($"{item.DisplayPath}: {ex.Message}");
+                            lock (sync) results.Add((item, StationStore.StationPresence.Unknown, item.IsDirectory));
+                        }
+                    }
+                }, cts.Token);
+            }
+
+            await Task.WhenAll(tasks);
+        }
+        catch (OperationCanceledException)
+        {
+            // 视图销毁或本轮被取消：属正常收尾，不记日志、不写任何状态。
+            return;
+        }
+        catch (Exception ex)
+        {
+            // 兜底：调度层（Dispatchers / 线程池）异常也不能静默，否则卡片只剩“没有状态”的假象。
+            Log.Warn($"中转站存在性检查异常: {ex.Message}");
+        }
+        finally
+        {
+            lock (_probeSync) _probeCancels.Remove(cts);
+            cts.Dispose();
+        }
+
+        // 后台线程收尾：不 await 这次投递（UI 队列与检查结果无关，视图销毁后由 _disposed 丢弃）。
+        _ = Dispatcher.BeginInvoke(new Action(() => ApplyProbeResults(results, generation, reportStatus)));
+    }
+
+    /// <summary>
+    /// UI 线程应用探针结果：只改「存在」状态与行颜色；自动移除只针对本轮**明确缺失**的条目，
+    /// 网络断开的 Unknown 一律不动，避免把暂时不可达的条目从列表里删掉。
+    /// </summary>
+    void ApplyProbeResults(List<(StationItem Item, StationStore.StationPresence Presence, bool IsDirectory)> results,
+                           int generation, bool reportStatus)
+    {
+        if (_disposed) return;
+
+        int missing = 0;
+        int unknown = 0;
+        var nowMissing = new List<StationItem>();
+
+        foreach ((StationItem item, StationStore.StationPresence presence, bool isDirectory) in results)
+        {
+            if (!_probeLatest.TryGetValue(item, out int latest) || latest != generation) continue;
+            if (!_items.Contains(item))
+            {
+                _probeLatest.Remove(item);
+                continue;
+            }
+
+            if (presence == StationStore.StationPresence.Present)
+            {
+                item.Missing = false;
+                // 顺手纠正 items.json 里过期的目录标记（原本在 Load 里同步做 Directory.Exists）。
+                if (!item.IsDirectory && isDirectory) item.IsDirectory = true;
+            }
+            else if (presence == StationStore.StationPresence.Missing)
+            {
+                item.Missing = true;
+                missing++;
+                nowMissing.Add(item);
+            }
+            else
+            {
+                unknown++;
+            }
+        }
+
+        RefreshRowStates();
+
+        if (nowMissing.Count > 0 && _station.AutoRemoveMissing)
+        {
+            int removed = 0;
+            foreach (StationItem item in nowMissing)
+            {
+                _probeLatest.Remove(item);
+                if (_items.Remove(item)) removed++;
+            }
+            if (removed > 0)
+            {
+                Rebuild();
+                Persist();
+                SetStatus($"已自动移除 {removed} 个丢失项", CardStatusKind.Success);
+                return;
+            }
+        }
+
+        if (!reportStatus) return;
+        if (unknown > 0)
+            SetStatus($"{unknown} 项状态未确认（路径暂时不可用），未按丢失处理", CardStatusKind.Warning);
+        else if (missing > 0)
+            SetStatus($"{missing} 个条目已丢失（未自动移除）", CardStatusKind.Warning);
+    }
+
+    /// <summary>存在性 / 名称变化后就地刷新所有行（不重建容器、不重取图标）。</summary>
+    void RefreshRowStates()
+    {
+        foreach (StationRowHandle handle in _rows.Values) handle.Refresh(handle.Item, _foreground);
     }
 
     bool Matches(StationItem item)

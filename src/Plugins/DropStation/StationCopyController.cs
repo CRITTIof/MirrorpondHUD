@@ -155,6 +155,13 @@ internal sealed class StationCopyController : IDisposable
             CopyEntries(context, plan, total, token, progress);
             if (total == 0) progress.Report(1.0);
 
+            // P-14：跳过项必须在完成前汇总进日志；状态行由 CompleteCopy 按数量降级为 Warning，
+            // 绝不把「目标内容不全」报成 Success。
+            LogSkippedLinks(context);
+            if (context.SourceLinkNote is not null)
+                Log.Warn($"中转站收纳的源是符号链接 / 联接点，复制的是指向的内容，链接语义本身不会保留"
+                       + $"  源={context.Source}  项={context.SourceLinkNote}");
+
             // Move 模式：删源与目标大小计算都留在工作线程。回到 UI 线程递归删除
             // 几万个文件会把整个叠层冻住，而且“取消”按钮此时已经无效（P-2）。
             context.TargetSize = context.IsDirectory ? 0 : StationFiles.SafeSize(context.Target);
@@ -178,6 +185,16 @@ internal sealed class StationCopyController : IDisposable
             return;
         }
 
+        // P-14：计划里出现过符号链接 / 联接点，说明源目录并不完整地复制到了目标。
+        // 此时递归删源会连带删掉链接本身（目标里也没有它们），必须保留源让用户手动处理。
+        if (context.SkippedLinks.Count > 0)
+        {
+            context.SourceDeleteError = $"源内含 {context.SkippedLinks.Count} 个符号链接 / 联接点，已保留源";
+            Log.Warn($"中转站移动模式保留源：计划里有 {context.SkippedLinks.Count} 个未跟随的链接，"
+                   + $"递归删除会连带删掉链接本身  源={context.Source}");
+            return;
+        }
+
         try
         {
             // 取消时保留源：宁可留一份重复数据，也不要在用户已经取消后继续删。
@@ -197,7 +214,41 @@ internal sealed class StationCopyController : IDisposable
         }
     }
 
-    /// <summary>文件夹：拒绝符号链接，先建目录树，再枚举出「源 → 目标」文件计划与总字节数。</summary>
+    /// <summary>
+    /// P-14：判断一个条目是否是 reparse point（符号链接 / 联接点 / OneDrive 占位等）。
+    /// 属性读不出来（失效链接、权限不足）时**保守按链接处理**：宁可少复制一个，
+    /// 也不要在无法确认安全的情况下递归进入一个可能指向任意位置的链接。
+    /// 返回 true 时 <paramref name="reason"/> 说明是链接还是读属性失败。
+    /// </summary>
+    static bool ShouldSkipLink(string path, out string reason)
+    {
+        reason = null;
+        try
+        {
+            if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+            {
+                reason = "符号链接 / 联接点";
+                return true;
+            }
+            return false;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException
+                                       or ArgumentException or System.Security.SecurityException)
+        {
+            reason = $"无法读取属性（{ex.Message}）";
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// 文件夹：拒绝链接作根，先建目录树，再枚举出「源 → 目标」文件计划与总字节数。
+    ///
+    /// P-14：手工递归而不是 <c>AttributesToSkip = ReparsePoint</c>。枚举选项会**静默**剔除
+    /// 子层级链接，计划偏小却仍报「已收纳」，Move 随后递归删源 → 目标缺文件、链接也消失。
+    /// 现在改为「跳过但不跟随、逐条记账」：计划里出现链接时完成状态降为 Warning 并写日志，
+    /// Move 模式还会保留源（见 <see cref="TryDeleteSource"/>）。跟随链接会引入环路与越界写，
+    /// 所以「跳过但可见」是安全侧的正确折中。
+    /// </summary>
     long BuildDirectoryPlan(CopyContext context, List<KeyValuePair<string, string>> plan, CancellationToken token)
     {
         if ((File.GetAttributes(context.Source) & FileAttributes.ReparsePoint) != 0)
@@ -206,8 +257,6 @@ internal sealed class StationCopyController : IDisposable
         context.Target = StationFiles.UniqueTarget(context.Directory, context.FileName, true);
         Directory.CreateDirectory(context.Target);
 
-        // P-14/P-15：手工递归而不是 AttributesToSkip=ReparsePoint。后者会静默跳过链接，
-        // 导致“收纳成功但内容不全”；这里发现任何 reparse point 就拒绝整次操作。
         long total = 0;
         void Walk(string sourceDir, int depth)
         {
@@ -216,8 +265,11 @@ internal sealed class StationCopyController : IDisposable
             foreach (string file in Directory.EnumerateFiles(sourceDir, "*", SearchOption.TopDirectoryOnly))
             {
                 token.ThrowIfCancellationRequested();
-                if ((File.GetAttributes(file) & FileAttributes.ReparsePoint) != 0)
-                    throw new IOException($"不支持符号链接 / 联接点，已拒绝收纳: {file}");
+                if (ShouldSkipLink(file, out string reason))
+                {
+                    NoteSkipped(context, file, reason);
+                    continue;
+                }
 
                 string relative = Path.GetRelativePath(context.Source, file);
                 plan.Add(new KeyValuePair<string, string>(file, Path.Combine(context.Target, relative)));
@@ -227,8 +279,12 @@ internal sealed class StationCopyController : IDisposable
             foreach (string dir in Directory.EnumerateDirectories(sourceDir, "*", SearchOption.TopDirectoryOnly))
             {
                 token.ThrowIfCancellationRequested();
-                if ((File.GetAttributes(dir) & FileAttributes.ReparsePoint) != 0)
-                    throw new IOException($"不支持符号链接 / 联接点，已拒绝收纳: {dir}");
+                if (ShouldSkipLink(dir, out string reason))
+                {
+                    // 不建目标目录、也不递归进入：链接指向的内容可能在这个盘之外。
+                    NoteSkipped(context, dir, reason);
+                    continue;
+                }
 
                 Directory.CreateDirectory(Path.Combine(context.Target, Path.GetRelativePath(context.Source, dir)));
                 Walk(dir, depth + 1);
@@ -239,11 +295,48 @@ internal sealed class StationCopyController : IDisposable
         return total;
     }
 
+    /// <summary>记下一条被跳过的链接（相对源根的路径），供完成状态与日志使用。</summary>
+    static void NoteSkipped(CopyContext context, string path, string reason)
+    {
+        string relative;
+        try { relative = Path.GetRelativePath(context.Source, path); }
+        catch (ArgumentException) { relative = path; }
+
+        context.SkippedLinks.Add($"{relative}（{reason}）");
+    }
+
+    /// <summary>
+    /// P-14：把跳过项汇总成一条 Warn。逐条 Log 在含 junction 的开发目录里会刷屏，
+    /// 这里只列前几条，完整数量进汇总行。
+    /// </summary>
+    static void LogSkippedLinks(CopyContext context)
+    {
+        if (context.SkippedLinks.Count == 0) return;
+
+        const int sample = 5;
+        var preview = new System.Text.StringBuilder();
+        for (int i = 0; i < context.SkippedLinks.Count && i < sample; i++)
+        {
+            if (preview.Length > 0) preview.Append("；");
+            preview.Append(context.SkippedLinks[i]);
+        }
+        if (context.SkippedLinks.Count > sample) preview.Append($"，等共 {context.SkippedLinks.Count} 项");
+
+        Log.Warn($"中转站收纳跳过 {context.SkippedLinks.Count} 个符号链接 / 联接点（未跟随、未复制）"
+               + $"  源={context.Source}  跳过项={preview}");
+    }
+
     /// <summary>单文件：先定唯一目标名，计划就是源 → 目标一条。</summary>
     long BuildFilePlan(CopyContext context, List<KeyValuePair<string, string>> plan)
     {
         context.Target = StationFiles.UniqueTarget(context.Directory, context.FileName);
         plan.Add(new KeyValuePair<string, string>(context.Source, context.Target));
+
+        // P-14：单文件链接是用户显式拖进来的。复制会跟随链接拿到内容（File.OpenRead 的语义），
+        // Move 的 File.Delete 只删链接本身、不会递归删目标——行为安全但语义变了，必须留痕。
+        if (ShouldSkipLink(context.Source, out string reason))
+            context.SourceLinkNote = $"{context.FileName}（{reason}）";
+
         return StationFiles.SafeSize(context.Source);
     }
 
@@ -389,13 +482,22 @@ internal sealed class StationCopyController : IDisposable
                 }
                 else
                 {
-                    _sink.CopyStatus($"已收纳，但删除源失败：{context.SourceDeleteError ?? "未知原因"}",
+                    _sink.CopyStatus($"已收纳，但未能删除源：{context.SourceDeleteError ?? "未知原因"}",
                                      CardStatusKind.Warning);
                 }
             }
             else
             {
-                _sink.CopyStatus($"已收纳 {item.Name}", CardStatusKind.Success);
+                // P-14：目标少了链接指向的内容，不能报 Success，否则又是一次「收纳成功但不完整」。
+                if (context.SkippedLinks.Count > 0)
+                {
+                    _sink.CopyStatus($"已收纳 {item.Name}，跳过 {context.SkippedLinks.Count} 个符号链接 / 联接点"
+                                   + "（未跟随、未复制）", CardStatusKind.Warning);
+                }
+                else
+                {
+                    _sink.CopyStatus($"已收纳 {item.Name}", CardStatusKind.Success);
+                }
             }
         }
         else if (job.State == CardJobState.Failed)
@@ -436,5 +538,9 @@ internal sealed class StationCopyController : IDisposable
         public bool SourceDeleted;
         public string SourceDeleteError;
         public long TargetSize;
+        // P-14：计划里因 reparse point 被跳过的条目（相对路径 + 原因）。非空即目标内容不全。
+        public readonly List<string> SkippedLinks = new();
+        // 单文件链接提示：复制跟随了链接内容，Move 只删链接本身；仅用于日志留痕。
+        public string SourceLinkNote;
     }
 }
