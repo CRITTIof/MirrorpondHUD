@@ -25,9 +25,6 @@ public sealed class GifAnimator : IDisposable
     readonly bool _loop;
     int _index;
 
-    /// <summary>最近一次因为预算被跳过时的原因；UI 用它在卡片状态行提示。</summary>
-    public static string LastSkipReason { get; private set; } = "";
-
     /// <summary>单张动图允许常驻的解码帧总预算（RGBA 估算）。</summary>
     const long MaxDecodedBytes = 64L * 1024 * 1024;
 
@@ -52,7 +49,7 @@ public sealed class GifAnimator : IDisposable
     public static GifAnimator TryCreate(string path, Image target, bool loop)
     {
         if (target is null) return null;
-        GifAnimator animator = TryLoad(path, loop);
+        GifAnimator animator = TryLoad(path, loop, out _);
         if (animator is not null) animator.AttachTarget(target);
         return animator;
     }
@@ -61,11 +58,14 @@ public sealed class GifAnimator : IDisposable
     /// K-12：只解一次 —— 旧实现先在 UI 线程用 BitmapDecoder 解首帧、再用 GDI+ 解全部帧，
     /// 等于两遍全尺寸解码。这里直接解帧，并按 64MB 预算降采样（而不是耗尽内存或直接失败）。
     /// 只允许在任意线程调用；返回的帧都已 Freeze，可安全跨线程。
+    ///
+    /// K-17：跳过原因改由 <paramref name="skipReason"/> 交还调用方，不再放在 static 字段里——
+    /// 两张媒体卡同时加载动图时，静态字段会互相覆盖，状态行显示成别人的原因。
     /// </summary>
-    public static GifAnimator TryLoad(string path, bool loop)
+    public static GifAnimator TryLoad(string path, bool loop, out string skipReason)
     {
+        skipReason = "";
         if (string.IsNullOrWhiteSpace(path)) return null;
-        LastSkipReason = "";
 
         GifAnimator animator = null;
         System.Drawing.Bitmap source = null;
@@ -90,8 +90,8 @@ public sealed class GifAnimator : IDisposable
                 scale = Math.Sqrt((double)MaxDecodedBytes / estimated);
                 if (scale < MinScale)
                 {
-                    LastSkipReason = $"动图约 {count} 帧 / {estimated / 1024.0 / 1024.0:0} MB，超过 64 MB 预算且需要缩到 {scale:0.###} 倍";
-                    Log.Warn($"动图帧缓存超预算，退回只显示首帧: {LastSkipReason}");
+                    skipReason = $"动图约 {count} 帧 / {estimated / 1024.0 / 1024.0:0} MB，超过 64 MB 预算且需要缩到 {scale:0.###} 倍";
+                    Log.Warn($"动图帧缓存超预算，退回只显示首帧: {skipReason}");
                     return null;
                 }
 
@@ -184,12 +184,28 @@ public sealed class GifAnimator : IDisposable
     [System.Runtime.InteropServices.DllImport("gdi32.dll")]
     static extern bool DeleteObject(IntPtr hObject);
 
-    public void Play()
+    /// <summary>
+    /// 开始 / 继续播放。
+    /// K-18：默认从暂停点续播（<paramref name="restart"/> = false）。旧实现无条件把
+    /// <c>_index</c> 归零，于是暂停后按播放会从第一帧重播，和"继续"的按钮语义不符；
+    /// 只有换文件 / 首次加载这种确实要回到开头的场景才传 true。
+    /// </summary>
+    public void Play(bool restart = false)
     {
         if (_frames.Count == 0) return;
         if (_target is null) return;   // 还没绑定显示控件（TryLoad 出来的实例要先 AttachTarget）
-        _index = 0;
-        _target.Source = _frames[0];
+
+        if (restart)
+        {
+            _index = 0;
+        }
+        else
+        {
+            // 上一轮的索引可能因为非循环播放停在末帧，夹进有效范围后再续播。
+            if (_index < 0 || _index >= _frames.Count) _index = 0;
+        }
+
+        _target.Source = _frames[_index];
         Schedule();
     }
 
@@ -247,8 +263,9 @@ public sealed class GifAnimator : IDisposable
 
     public void Dispose()
     {
-        // 释放路径：停表失败没有可补救动作，下面照样清空帧列表。
-        try { _timer?.Stop(); } catch { }
+        // 释放路径统一走 SafeRelease（X-9）：停表失败常发生在卡片已卸载 / Dispatcher
+        // 已关闭的收尾竞态，逐级记录而不是空 catch 吞掉。
+        SafeRelease.Run(() => _timer?.Stop(), "动图计时器");
         _frames.Clear();
         _delays.Clear();
         _target = null;

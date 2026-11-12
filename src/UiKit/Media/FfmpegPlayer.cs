@@ -69,6 +69,12 @@ internal sealed class FfmpegPlayer : IDisposable
     /// <summary>K-6：运行期音频死亡（USB 耳机被拔、驱动重置、waveOutWrite 失败）。
     /// 与 <see cref="AudioUnavailable"/> 分开：那是"没起来"，这是"播着播着没了"。</summary>
     public event Action<string> AudioFailed;
+    /// <summary>
+    /// K-22：ffmpeg 只能按原生速率读包（-readrate 回退到 -re）时，把实际生效的倍速报给上层。
+    /// 卡片收到后必须把显示的倍速回滚成这个值并说明原因，否则界面写着 2×、画面却是 1×。
+    /// 可能在读帧线程上触发，订阅方自己负责切回 UI 线程。
+    /// </summary>
+    public event Action<double> SpeedForced;
 
     readonly ManualResetEventSlim _resume = new(true);
 
@@ -190,7 +196,12 @@ internal sealed class FfmpegPlayer : IDisposable
         _ended = false;
         _duration = duration;
         _loop = loop;
-        _speed = ClampSpeed(speed);
+        // K-22：_re 回退模式下 ffmpeg 以原生速率读包，没有倍速语义。这里必须把 _speed 归到 1，
+        // 否则 LaunchVideo 走 -re（不读倍速）、LaunchAudio 却按 atempo 变速，音画各走各的；
+        // 同时把"请求倍速没生效"上报给卡片，让界面回滚显示值而不是继续写着 2×。
+        double requestedSpeed = ClampSpeed(speed);
+        bool speedForced = _useRe && Math.Abs(requestedSpeed - 1) > 0.001;
+        _speed = speedForced ? 1 : requestedSpeed;
         _audioEnabled = audio;
         _volume = Math.Max(0, Math.Min(100, volume));
 
@@ -211,6 +222,12 @@ internal sealed class FfmpegPlayer : IDisposable
         }
 
         StartReader(run);
+
+        if (speedForced)
+        {
+            Log.Warn($"-re 回退模式不支持倍速，已按 1× 播放（请求 {requestedSpeed:0.##}×）");
+            RaiseSpeedForced(1);
+        }
     }
 
     /// <summary>开始一代新播放：递增代次，重置本代的起始位置 / 帧计数 / 起播暂停标记。</summary>
@@ -413,8 +430,9 @@ internal sealed class FfmpegPlayer : IDisposable
                 // P1-6：失败原因要能给到 UI（状态行如实标注「音频不可用」），只写日志还不够。
                 Log.Warn($"音频输出启动失败，继续静音播放: {player.LastErrorName}");
                 RaiseAudioUnavailable(player.LastErrorName);
-                // 释放路径：Dispose 内部只会停线程/关句柄，异常没有可补救的动作。
-                try { player.Dispose(); } catch { }
+                // 释放路径统一走 SafeRelease（X-9）：Dispose 内部只会停线程/关句柄，
+                // 失败记 Debug/Warn，不再空 catch。
+                SafeRelease.Run(() => player.Dispose(), "音频播放器");
                 player = null;
                 StopAudio(run);
                 return;
@@ -436,9 +454,10 @@ internal sealed class FfmpegPlayer : IDisposable
             if (!installed)
             {
                 // 这一代已被作废：刚起来的播放器自己收掉，不污染当前状态。
-                // 释放路径：Stop/Dispose 失败没有可补救的动作，句柄交给下一次收尾。
-                try { player.Stop(); } catch { }
-                try { player.Dispose(); } catch { }
+                // 释放路径：Stop/Dispose 失败没有可补救的动作，句柄交给下一次收尾；
+                // 统一走 SafeRelease 留痕（X-9）。
+                SafeRelease.Run(() => player.Stop(), "音频播放器");
+                SafeRelease.Run(() => player.Dispose(), "音频播放器");
                 DisposeProcess(process);
                 return;
             }
@@ -602,6 +621,8 @@ internal sealed class FfmpegPlayer : IDisposable
                         if (switched)
                         {
                             Log.Warn($"ffmpeg 不支持 -readrate（0 帧输出），已改用 -re 回退，以 1× 播放  {DescribeLaunch()}");
+                            // K-22：卡片可能还显示着用户设置 / 热键给出的倍速，这里必须如实上报实际值。
+                            RaiseSpeedForced(1);
                             LoopRestart(run, 0);
                             continue;
                         }
@@ -922,19 +943,25 @@ internal sealed class FfmpegPlayer : IDisposable
         Seek(Position + seconds);
     }
 
-    public void SetSpeed(double speed)
+    /// <summary>
+    /// 设置播放速度。
+    /// K-22：返回 false = 这个请求没能生效（<c>-re</c> 回退模式只支持 1×；播放器已停止 / 已释放）。
+    /// 调用方（卡片）必须据此把显示的倍速回滚成实际值，不能"界面写 2×、画面走 1×"。
+    /// 返回 true 表示已按请求重开解码，真正的启动失败仍走 <see cref="Failed"/> 事件。
+    /// </summary>
+    public bool SetSpeed(double speed)
     {
-        if (_disposed || _stop) return;
+        if (_disposed || _stop) return false;
 
         double next = ClampSpeed(speed);
-        if (Math.Abs(next - _speed) < 0.001) return;
+        if (Math.Abs(next - _speed) < 0.001) return true;   // 已经是这个速度，等价于成功
 
         // P1-6：-re 回退模式下 ffmpeg 以原生速率读包，没有倍速语义；
         // 强行变速会让视频原速、音频 atempo 各走各的，所以保持 1×。
         if (_useRe && Math.Abs(next - 1) > 0.001)
         {
-            Log.Info("-re 回退模式不支持倍速，保持 1× 播放");
-            return;
+            Log.Warn("-re 回退模式不支持倍速，保持 1× 播放");
+            return false;
         }
 
         double position = Position;
@@ -944,11 +971,12 @@ internal sealed class FfmpegPlayer : IDisposable
         if (IsEnded)
         {
             Log.Info($"ffmpeg 播放速度已记为 {next:0.##}×（视频已播完，下次播放生效）");
-            return;
+            return true;
         }
 
         Log.Info($"ffmpeg 播放速度：{next:0.##}×");
         RestartAt(position);
+        return true;
     }
 
     /// <summary>运行期切换静音：停掉音频进程 / 播放器，恢复时从当前位置重新拉起一条。</summary>
@@ -1088,9 +1116,9 @@ internal sealed class FfmpegPlayer : IDisposable
     {
         if (process is null) return;
         // 释放路径：进程可能已退出/句柄已被系统回收，Kill/Dispose 的异常没有可补救动作，
-        // 但只要能杀就杀——这里不允许影响调用方的状态机（X-9 保留并注明）。
-        try { if (!process.HasExited) process.Kill(); } catch { }
-        try { process.Dispose(); } catch { }
+        // 但只要能杀就杀——这里不允许影响调用方的状态机。统一走 SafeRelease 留痕（X-9）。
+        SafeRelease.Run(() => { if (!process.HasExited) process.Kill(); }, "ffmpeg 进程");
+        SafeRelease.Run(() => process.Dispose(), "ffmpeg 进程");
     }
 
     static void DisposeAudio(WaveOutPlayer audio)
@@ -1185,6 +1213,20 @@ internal sealed class FfmpegPlayer : IDisposable
         if (handler is not null)
         {
             try { handler(message); } catch (Exception ex) { Log.Warn($"音频中断事件处理异常: {ex.Message}"); }
+        }
+    }
+
+    /// <summary>K-22：把"倍速被强制成这个值"的通知交给卡片（可能来自读帧线程）。</summary>
+    void RaiseSpeedForced(double actualSpeed)
+    {
+        Action<double> handler = SpeedForced;
+        if (handler is null) return;
+
+        try { handler(actualSpeed); }
+        catch (Exception ex)
+        {
+            // 订阅方（卡片视图）异常不能反噬解码线程；日志留痕即可。
+            Log.Warn($"倍速回退事件处理异常: {ex.Message}");
         }
     }
 
