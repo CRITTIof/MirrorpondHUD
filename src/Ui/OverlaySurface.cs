@@ -31,6 +31,14 @@ public sealed class OverlaySurface : Border
     readonly Border _contentLayer;
     readonly TextCanvas _canvas;
     readonly ParticleTextLayer _particleLayer;
+
+    /// <summary>
+    /// G-19：玻璃画刷只建一次。旧实现每帧 new ImageBrush + Freeze + 重设 BitmapScalingMode，
+    /// 每秒几十次分配，对静态属性重复赋值也会触发额外的属性失效。
+    /// G-17：取样图改成可复用的 WriteableBitmap 后，同一实例的内容更新由 WPF 自己重绘，
+    /// 这里只在换图（尺寸变化）时重建画刷。WriteableBitmap 不可 Freeze —— 只在 CanFreeze 时冻结。
+    /// </summary>
+    ImageBrush _glassBrush;
     readonly ContourDecoration _contourLayer;
     readonly Border _contourHost;
     readonly TextBlock _metaTop;
@@ -967,23 +975,34 @@ public sealed class OverlaySurface : Border
 
         _glassLayer.Child = null;
 
-        var brush = new ImageBrush(image)
+        // G-19 / G-17：同一张取样图（GlassFeed 的复用 WriteableBitmap）不重建画刷 ——
+        // 位图内容更新会由 WPF 自动重绘；换图（尺寸变化）时才换画刷。
+        if (_glassBrush is null || !ReferenceEquals(_glassBrush.ImageSource, image))
         {
-            Stretch = Stretch.Fill,
-            AlignmentX = AlignmentX.Center,
-            AlignmentY = AlignmentY.Center
-        };
-        brush.Freeze();
+            var brush = new ImageBrush(image)
+            {
+                Stretch = Stretch.Fill,
+                AlignmentX = AlignmentX.Center,
+                AlignmentY = AlignmentY.Center
+            };
 
-        // 取样图很小（几十像素），放大时用高质量插值，边缘不会出现方块。
-        RenderOptions.SetBitmapScalingMode(_glassLayer, BitmapScalingMode.HighQuality);
+            // WriteableBitmap 不可冻结；冻结一个引用可变源图片的画刷会抛 InvalidOperationException。
+            if (brush.CanFreeze) brush.Freeze();
 
-        _glassLayer.Background = brush;
+            _glassBrush = brush;
+            _glassLayer.Background = brush;
+
+            // 取样图很小（几十像素），放大时用高质量插值，边缘不会出现方块。
+            // 画刷复用时这条静态属性已经设过，不必每帧再设。
+            RenderOptions.SetBitmapScalingMode(_glassLayer, BitmapScalingMode.HighQuality);
+        }
+
         _glassLayer.Visibility = Visibility.Visible;
     }
 
     public void ClearGlass()
     {
+        _glassBrush = null;
         _glassLayer.Background = null;
         _glassLayer.Child = null;
         _glassLayer.Visibility = Visibility.Collapsed;

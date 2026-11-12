@@ -130,7 +130,12 @@ public partial class OverlayWindow : Window
         // 亚克力底板要跟着卡片走：位置 / 尺寸 / 可见性 / DPI 任何一个变了都重摆。
         LocationChanged += (s, e) => _glassRuntime.UpdateBackdrop();
         SizeChanged += (s, e) => _glassRuntime.UpdateBackdrop();
-        IsVisibleChanged += (s, e) => _glassRuntime.UpdateBackdrop();
+        IsVisibleChanged += (s, e) =>
+        {
+            _glassRuntime.UpdateBackdrop();
+            // G-19：隐藏 / 最小化后兼容取样定时器没有意义，按可见性起停（不影响底板决策）。
+            _glassRuntime.SyncCaptureTimerToVisibility();
+        };
         DpiChanged += (s, e) =>
         {
             // 缩放变了：重新取每屏 DPI。拖动跨屏时**不能** ApplyPosition：
