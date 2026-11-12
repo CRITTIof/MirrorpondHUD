@@ -198,7 +198,8 @@ internal sealed class CardLayoutCoordinator
         double workHeight = double.PositiveInfinity;
         try
         {
-            ScreenInfo screen = ScreenGeometry.Get(settings.Overlay.Monitor);
+            // G-14：优先按设备名定位（多屏热插拔后整数序号可能已指到别的屏）。
+            ScreenInfo screen = ScreenGeometry.Get(settings.Overlay.Monitor, settings.Overlay.MonitorDevice);
             if (screen is not null && screen.ScaleY > 0.1)
                 workHeight = screen.WorkHeight / screen.ScaleY;
         }
