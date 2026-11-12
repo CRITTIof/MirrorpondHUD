@@ -1,4 +1,4 @@
-<h1 align="center">MirrorpondHUD · 镜潭一览</h1>
+﻿<h1 align="center">MirrorpondHUD · 镜潭一览</h1>
 
 <p align="center">
   <b>可增删的桌面信息卡片：系统数据、时钟、按键、命令行、图片 / 动图 / 视频，各自一张独立小窗，按顺序堆叠在桌面最上层。</b><br>
@@ -245,6 +245,9 @@ dotnet build MirrorpondHUD.csproj -c Release
 
 输出在 `bin\Release\MirrorpondHUD.exe`。`build.bat` 会编译并调用 `sign.ps1` 做本地签名；
 `publish.bat` 生成四个单文件 exe（x64 / ARM64 × 自带运行时 / 依赖运行时）。
+
+签名口令不再写在仓库里：设置环境变量 `MIRRORPOND_PFX_PASSWORD`，或给 `sign.ps1` 传 `-Password`。
+未提供口令时脚本会跳过证书创建与签名并给出警告，构建本身不受影响。
 
 ```bat
 run.bat            :: 编译并运行

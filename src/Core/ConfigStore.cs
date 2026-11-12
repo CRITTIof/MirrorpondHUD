@@ -471,7 +471,11 @@ public static class ConfigStore
             string file = Path;
             if (File.Exists(file))
             {
-                string bad = $"{file}.broken-{DateTime.Now:yyyyMMdd-HHmmss}";
+                // C-26：同秒内多次损坏会互相覆盖；加毫秒并做一次存在性去重。
+                string stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss-fff", System.Globalization.CultureInfo.InvariantCulture);
+                string bad = $"{file}.broken-{stamp}";
+                for (int i = 2; File.Exists(bad); i++)
+                    bad = $"{file}.broken-{stamp}-{i}";
                 File.Copy(file, bad, true);
                 Log.Warn($"已备份损坏的配置文件到 {bad}");
                 return true;

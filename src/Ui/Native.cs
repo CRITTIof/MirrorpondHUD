@@ -102,6 +102,9 @@ internal static class Native
         }
     }
 
+    // X-11：src/Ui 与 src/UiKit 是两个程序集，内部 P/Invoke（如 GetWindowLongPtr64）
+    // 无法跨程序集共享；这里保留各自的声明，避免把 user32 依赖塞进 Contracts。
+    // GWL_EXSTYLE 本身是 32 位标志，返回 int 不会截断；指针型索引才需要 IntPtr 版本。
     public static int GetExStyle(IntPtr hwnd)
     {
         if (IntPtr.Size == 8)

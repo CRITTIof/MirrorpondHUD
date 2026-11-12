@@ -77,6 +77,12 @@ public partial class App : Application
                 "镜潭一览 · 权限受限", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
 
+        // X-16：唤醒事件必须在本进程拿到互斥体之前创建。这样只要首实例还活着，
+        // 第二实例就能立刻找到事件，不需要在 UI 线程上 Sleep 等它把事件建出来。
+        _activation = OverlayController.CreateActivationEvent(out string activationError);
+        if (_activation is null)
+            Log.Warn($"创建单实例唤醒事件失败，第二实例将无法唤起本进程: {activationError}");
+
         _mutex = new Mutex(true, "Local\\MirrorpondHUD.SingleInstance", out var createdNew);
         if (!createdNew)
         {
@@ -90,12 +96,12 @@ public partial class App : Application
             }
 
             // 首实例现在在拿到互斥后立刻创建唤醒事件（见下面），冷启动窗口期第二次双击
-            // 基本不会再遇到“事件还没建好”。这里仍保留短重试（2 秒），覆盖首实例刚起来、
+            // 基本不会再遇到“事件还没建好”。这里仍保留有界短重试（100 毫秒），覆盖首实例刚起来、
             // 事件对象正在创建 / 被杀毒软件短暂延迟的极端情况。
             Log.Info("已有实例在运行，等待唤醒句柄");
             EventWaitHandle activation = null;
             Exception lastError = null;
-            for (int attempt = 0; attempt < 20; attempt++)
+            for (int attempt = 0; attempt < 4; attempt++)
             {
                 try
                 {
@@ -111,12 +117,12 @@ public partial class App : Application
                     lastError = ex;
                     break;
                 }
-                Thread.Sleep(100);
+                Thread.Sleep(25);
             }
 
             if (activation is null)
             {
-                Log.Warn($"唤醒已有实例失败: {(lastError is null ? "2 秒内没有找到唤醒事件（首实例可能启动失败或事件创建失败）" : lastError.Message)}");
+                Log.Warn($"唤醒已有实例失败: {(lastError is null ? "100 毫秒内没有找到唤醒事件（首实例可能启动失败或事件创建失败）" : lastError.Message)}");
             }
             else
             {
@@ -127,12 +133,7 @@ public partial class App : Application
             return;
         }
 
-        // G-12：拿到互斥后立即创建唤醒事件，不再等 OverlayController.Start() 的最后一步。
-        // 冷启动窗口期（插件加载 / 读配置 / 建卡片 / 装钩子）里第二实例双击图标时，
-        // OpenExisting 必须能马上找到它；创建失败也不能静默——那会让第二实例永远唤不醒本进程。
-        _activation = OverlayController.CreateActivationEvent(out string activationError);
-        if (_activation is null)
-            Log.Warn($"创建单实例唤醒事件失败，第二实例将无法唤起本进程: {activationError}");
+        // X-16：唤醒事件已在取互斥体之前创建（见上），这里不再重复创建。
 
         List<string> args = e.Args.ToList();
         Settings settings;

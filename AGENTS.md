@@ -133,6 +133,7 @@ build.bat / publish.bat          :: 构建 / 发布（publish 默认单文件）
 - 提交前自检清单：`dotnet build -c Release` 0 警告 0 错误 → `--selftest` 退出 0 → 若涉及 UI 行为，顺手跑一次对应 `--screenshot-*` 模式确认渲染没坏。
 - 纯格式化 / 重排提交必须单独提交，并把提交哈希写入 `.git-blame-ignore-revs`；本地启用：`git config blame.ignoreRevsFile .git-blame-ignore-revs`。
 - 不要顺手重排无关代码 / 大幅移动文件；本项目大量 P-Invoke 结构体偏移、反射字段名（`PluginManifest` 的 camelCase 即 JSON 键名）对口依赖原始布局。
+- 本项目在开发阶段，一切改动以最终效果而不是兼容旧版为目的。
 - 修复问题时深挖问题原因而不是简单修复表面。
 
 ## 10. 显式风格

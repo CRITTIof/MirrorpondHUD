@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
@@ -106,8 +106,23 @@ public static class TemplateEngine
         return true;
     }
 
+    // C-28：NaN/∞ 直接格式化会显示 NaN/∞，看起来像真实监测值；回落到占位符并节流记录。
+    static readonly LogThrottle NonFiniteLog = new("模板数值非有限值", 60_000);
+
     static string FormatValue(object value, int alignment, string format)
     {
+        if (value is double d && (double.IsNaN(d) || double.IsInfinity(d)))
+        {
+            NonFiniteLog.Failure($"模板值={d}");
+            return "n/a";
+        }
+        if (value is float f && (float.IsNaN(f) || float.IsInfinity(f)))
+        {
+            NonFiniteLog.Failure($"模板值={f}");
+            return "n/a";
+        }
+        if (value is double || value is float) NonFiniteLog.Success();
+
         string text;
         if (value is IFormattable formattable && !string.IsNullOrEmpty(format))
             text = formattable.ToString(format, CultureInfo.InvariantCulture);

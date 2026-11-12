@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -60,12 +60,12 @@
     构建 / 发布后复制到 <exe>/plugins/cards/<id>/，由 CardPluginLoader 走普通运行时插件路径加载。
   -->
   <ItemGroup>
-    <ProjectReference Include="src\Plugins\InfoText\plugin.csproj" ReferenceOutputAssembly="false" />
-    <ProjectReference Include="src\Plugins\Buttons\plugin.csproj" ReferenceOutputAssembly="false" />
-    <ProjectReference Include="src\Plugins\Command\plugin.csproj" ReferenceOutputAssembly="false" />
-    <ProjectReference Include="src\Plugins\Chat\plugin.csproj" ReferenceOutputAssembly="false" />
-    <ProjectReference Include="src\Plugins\Media\plugin.csproj" ReferenceOutputAssembly="false" />
-    <ProjectReference Include="src\Plugins\DropStation\plugin.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="src\Plugins\InfoText\MirrorpondHUD.Cards.InfoText.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="src\Plugins\Buttons\MirrorpondHUD.Cards.Buttons.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="src\Plugins\Command\MirrorpondHUD.Cards.Command.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="src\Plugins\Chat\MirrorpondHUD.Cards.Chat.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="src\Plugins\Media\MirrorpondHUD.Cards.Media.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="src\Plugins\DropStation\MirrorpondHUD.Cards.DropStation.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>
@@ -120,7 +120,7 @@
 
   <!-- 内置主题：docs/themes/*.mptheme 编进程序集，发布版不依赖 docs 目录。 -->
   <ItemGroup>
-    <EmbeddedResource Include="docs\themes\*.mptheme" />
+    <EmbeddedResource Include="docs\themes\*.mptheme" LogicalName="themes/%(Filename)%(Extension)" />
   </ItemGroup>
 
 </Project>

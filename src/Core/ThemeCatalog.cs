@@ -20,8 +20,14 @@ public sealed class ThemePreset
 /// </summary>
 public static class ThemeCatalog
 {
+    // C-22：内置主题是只读资源，解析一次即可；每次打开设置窗重解析所有 JSON 纯属浪费。
+    static List<ThemePreset> _cache;
+
     public static List<ThemePreset> Load()
     {
+        List<ThemePreset> cached = _cache;
+        if (cached is not null) return new List<ThemePreset>(cached);
+
         var list = new List<ThemePreset>();
         // 主题资源编进宿主程序集（不是 Contracts），这里不能用 Settings.Assembly。
         Assembly assembly = typeof(ThemeCatalog).Assembly;
@@ -46,10 +52,13 @@ public static class ThemeCatalog
                         continue;
                     }
 
+                    // Id 用稳定的文件标识（LogicalName=themes/<文件名>），
+                    // 显示名可以随翻译/改名变化，不影响主题身份与迁移。
+                    string id = Path.GetFileNameWithoutExtension(name);
                     list.Add(new ThemePreset
                     {
-                        Id = name,
-                        Name = string.IsNullOrWhiteSpace(document.Name) ? name : document.Name,
+                        Id = id,
+                        Name = string.IsNullOrWhiteSpace(document.Name) ? id : document.Name,
                         Description = document.Description ?? "",
                         Document = document
                     });
@@ -62,6 +71,7 @@ public static class ThemeCatalog
         }
 
         list.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.CurrentCulture));
-        return list;
+        _cache = list;
+        return new List<ThemePreset>(list);
     }
 }

@@ -41,7 +41,8 @@ public partial class SettingsWindow
     {
         if (string.IsNullOrWhiteSpace(name)) return 0;
         for (int i = 0; i < _themes.Count; i++)
-            if (string.Equals(_themes[i].Name, name, StringComparison.OrdinalIgnoreCase)) return i + 1;
+            if (string.Equals(_themes[i].Name, name, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(_themes[i].Id, name, StringComparison.OrdinalIgnoreCase)) return i + 1;
         return 0;
     }
 

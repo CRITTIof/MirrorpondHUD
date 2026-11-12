@@ -531,7 +531,12 @@ public static class ThemeFile
     {
         string text = (value ?? "").Trim();
         if (text.Length == 0) return;   // 空 = 派生，不写进文件
-        if (!Settings.IsColorToken(text)) return;
+        if (!Settings.IsColorToken(text))
+        {
+            // C-27：非法软色以前被静默丢弃，导出结果看起来“少了一个颜色”。
+            Log.Warn($"导出主题：软色 {key}=\"{text}\" 不合法（需 #RRGGBB / #AARRGGBB），已跳过");
+            return;
+        }
         map[key] = text;
     }
 
@@ -768,7 +773,7 @@ public static class ThemeFile
             {
                 if (!Settings.IsLoopEffect(effect))
                 {
-                    motion.Fail("effect", "必须是 None / Breath / Scanline / Pulse");
+                    motion.Fail("effect", "必须是 " + string.Join(" / ", Settings.LoopEffectNames));
                 }
                 else
                 {

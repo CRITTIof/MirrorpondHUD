@@ -1,5 +1,6 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
+using System.Globalization;
 
 namespace MirrorpondHUD.Core;
 
@@ -85,7 +86,8 @@ public sealed class Settings
             Behavior.SettingsPreviewBg = "#0B1020";
         }
         if (Behavior.WelcomeText is null) Behavior.WelcomeText = "Welcome Back";
-        if (Behavior.WelcomeText.Length > 120) Behavior.WelcomeText = Behavior.WelcomeText.Substring(0, 120);
+        // C-29：按 text element 截断，不能把代理对/组合音标切成半个字符。
+        if (Behavior.WelcomeText.Length > 120) Behavior.WelcomeText = TruncateTextElements(Behavior.WelcomeText, 120);
 
         Hotkeys.ToggleOverlay = (Hotkeys.ToggleOverlay ?? "").Trim();
         Hotkeys.OpenSettings = NormalizeHotkey(Hotkeys.OpenSettings, "F10");
@@ -301,7 +303,9 @@ public sealed class Settings
         }
     }
 
-    /// <summary>M7 循环类型：None / Breath / Scanline / Pulse。</summary>
+    /// <summary>M7 循环类型（含 2.3x 的 Contour）；校验文案与解析共用这一份清单。</summary>
+    public static readonly string[] LoopEffectNames = { "None", "Breath", "Scanline", "Pulse", "Contour" };
+
     public static string NormalizeLoopEffect(string value, bool legacyLoopMotion)
     {
         switch ((value ?? "").Trim().ToLowerInvariant())
@@ -474,12 +478,37 @@ public sealed class Settings
             if (string.IsNullOrWhiteSpace(raw)) continue;
             string s = raw.Trim();
 
-            if (s.Length == 2 && s[1] == ':') s += "\\";
-            else if (!s.EndsWith("\\")) s += "\\";
+            // C-25：盘符统一大写（C:\ 与 c:\ 不能算两个分区）；UNC/网络路径原样保留，
+            // 只做尾部反斜杠规整，避免把 \\server\share 误当成本地盘符。
+            if (s.Length >= 2 && s[1] == ':' && char.IsLetter(s[0]))
+                s = char.ToUpperInvariant(s[0]) + s.Substring(1);
 
-            if (!result.Contains(s)) result.Add(s);
+            bool unc = s.StartsWith("\\\\", StringComparison.Ordinal);
+            if (unc)
+            {
+                if (s.Length > 2 && s.EndsWith("\\", StringComparison.Ordinal)) s = s.TrimEnd('\\');
+            }
+            else if (!s.EndsWith("\\", StringComparison.Ordinal))
+            {
+                s += "\\";
+            }
+
+            bool exists = false;
+            foreach (string item in result)
+            {
+                if (string.Equals(item, s, StringComparison.OrdinalIgnoreCase)) { exists = true; break; }
+            }
+            if (!exists) result.Add(s);
         }
         return result;
+    }
+
+    /// <summary>C-29：按 Unicode text element 截断，返回最多 maxElements 个用户可见字符。</summary>
+    static string TruncateTextElements(string text, int maxElements)
+    {
+        if (string.IsNullOrEmpty(text) || maxElements <= 0) return "";
+        int[] starts = StringInfo.ParseCombiningCharacters(text);
+        return starts.Length <= maxElements ? text : text.Substring(0, starts[maxElements]);
     }
 
     public static double Clamp(double v, double min, double max)

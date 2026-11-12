@@ -104,6 +104,16 @@ internal static class SettingsLoader
             style["BlurFps"] = ReadInt(style, desktop ? "GlassFps" : "AcrylicFps", desktop ? 10 : 15);
             style["GlassMode"] = Settings.NormalizeGlassMode(oldMode);
 
+            // C-24：两套模糊参数合并时，被丢弃的那一套以前完全静默。
+            var dropped = new List<string>();
+            foreach (string key in new[] { "AcrylicBlur", "AcrylicFps", "GlassBlur", "GlassFps" })
+            {
+                if (style.TryGetValue(key, out object value) && value is not null)
+                    dropped.Add($"{key}={value}");
+            }
+            Log.Info($"Schema v6→v7：GlassMode={oldMode} 合并为 BlurRadius={style["BlurRadius"]}, BlurFps={style["BlurFps"]}；" +
+                     (dropped.Count == 0 ? "没有旧模糊键需要丢弃" : $"丢弃 {string.Join(", ", dropped)}"));
+
             RemoveKey(style, "AcrylicBlur");
             RemoveKey(style, "AcrylicFps");
             RemoveKey(style, "GlassBlur");

@@ -1,4 +1,4 @@
-bin/
+﻿bin/
 obj/
 publish/
 certs/
@@ -28,8 +28,8 @@ docs/glass-probe-*.png
 *_wpftmp.csproj
 publish-run.log
 
-# 审阅报告
-docs/review/
+# 审阅报告：正文与清单入库，临时工作稿仍忽略（X-13）
+docs/review/.work/
 
 # 临时工作区
 .superpowers/
