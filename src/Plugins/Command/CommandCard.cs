@@ -266,8 +266,17 @@ internal sealed class CommandView : CliPanelView
         catch (Exception ex)
         {
             _running = false;
-            try { if (_cancel is not null) _cancel.Cancel(); } catch { }
-            try { SetInputReadOnly(false); } catch { }
+            try { if (_cancel is not null) _cancel.Cancel(); }
+            catch (ObjectDisposedException)
+            {
+                // 上一次命令的 CTS 已经随旧代释放：取消已无意义，属于预期收尾竞态。
+            }
+            try { SetInputReadOnly(false); }
+            catch (Exception resetEx)
+            {
+                // P-22：原始异常马上会记 Error；这里再吞掉会让“恢复输入框失败”无迹可查。
+                Log.Warn($"命令行异常收尾时恢复输入框失败: {resetEx.Message}");
+            }
             SetStatus($"! {ex.Message}", true);
             Log.Error("命令行界面异常", ex);
         }
@@ -363,8 +372,7 @@ internal sealed class CommandView : CliPanelView
 
             // 只收自己这一代的 CTS：用户取消后立刻开新命令时，旧 continuation
             // 晚归不能把新命令的 _cancel Dispose / 清空（B-3）。
-            try { cts.Dispose(); }
-            catch { }
+            SafeRelease.Run(cts.Dispose, "命令行取消源");
             if (ReferenceEquals(_cancel, cts)) _cancel = null;
         }
     }
@@ -389,6 +397,9 @@ internal sealed class CommandView : CliPanelView
     void CancelRunning()
     {
         try { if (_cancel is not null) _cancel.Cancel(); }
-        catch { }
+        catch (ObjectDisposedException)
+        {
+            // 旧代命令已经收尾并释放了 CTS：没有还在跑的命令，属于预期竞态。
+        }
     }
 }

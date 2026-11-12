@@ -3,6 +3,7 @@
   "name": "AI 对话",
   "version": "2.45.1",
   "apiVersion": 2,
+  "contractsVersion": "2.45.1",
   "entryType": "MirrorpondHUD.Cards.ChatCard",
   "assembly": "MirrorpondHUD.Cards.Chat.dll",
   "author": "MirrorpondHUD"

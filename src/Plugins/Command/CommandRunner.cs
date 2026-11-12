@@ -35,7 +35,12 @@ public static class CommandRunner
 {
     static CommandRunner()
     {
-        try { Encoding.RegisterProvider(CodePagesEncodingProvider.Instance); } catch { }
+        try { Encoding.RegisterProvider(CodePagesEncodingProvider.Instance); }
+        catch (Exception ex)
+        {
+            // P-22：注册失败只影响 GBK 输出解码，属于静默降级，但降级原因必须留痕。
+            Log.Warn($"注册系统代码页编码失败，CMD 中文输出可能乱码: {ex.Message}");
+        }
     }
 
     // ==================== 输出上限 ====================
@@ -212,13 +217,15 @@ public static class CommandRunner
                 Task<BoundedOutput> stderr = ReadBoundedAsync(process.StandardError.BaseStream, MaxCaptureBytes);
 
                 int timeoutMs = Math.Max(1, command_settings.TimeoutSeconds) * 1000;
-                using (token.Register(() => { try { process.Kill(true); } catch { } }))
+                using (token.Register(() => { try { process.Kill(true); } catch (Exception ex) { Log.Warn($"取消命令时结束进程失败（可能残留子进程）: {ex.Message}"); } }))
                 {
                     if (!process.WaitForExit(timeoutMs))
                     {
                         result.TimedOut = true;
-                        try { process.Kill(true); } catch { }
-                        try { process.WaitForExit(2000); } catch { }
+                        try { process.Kill(true); }
+                        catch (Exception ex) { Log.Warn($"命令超时后结束进程失败（可能残留子进程）: {ex.Message}"); }
+                        try { process.WaitForExit(2000); }
+                        catch (Exception ex) { Log.Debug($"等待超时命令退出失败: {ex.Message}"); }
                     }
                 }
 

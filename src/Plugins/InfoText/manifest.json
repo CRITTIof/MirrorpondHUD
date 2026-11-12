@@ -3,6 +3,7 @@
   "name": "信息与文本",
   "version": "2.45.1",
   "apiVersion": 2,
+  "contractsVersion": "2.45.1",
   "entryType": "MirrorpondHUD.Cards.InfoTextCard",
   "assembly": "MirrorpondHUD.Cards.InfoText.dll",
   "author": "MirrorpondHUD"

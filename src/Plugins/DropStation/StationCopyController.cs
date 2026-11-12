@@ -127,7 +127,8 @@ internal sealed class StationCopyController : IDisposable
 
     /// <summary>
     /// 一次复制任务的主体：建目录、后台计划、逐文件流式复制并节流回填进度。
-    /// 全程同步（与原实现一致：首个任务会在调用线程上直接跑，排队任务由队列调度）。
+    /// P-27 / B-2：本方法由 <see cref="CardJobQueue.Enqueue"/> 投递到线程池执行，
+    /// 不在调用线程（UI）上跑；首个任务与排队任务都不会冻住叠层。
     /// </summary>
     void RunCopy(CopyContext context, CancellationToken token, IProgress<double> progress)
     {

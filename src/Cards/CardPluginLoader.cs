@@ -373,6 +373,38 @@ internal static class CardPluginLoader
             return null;
         }
 
+        // P-26：apiVersion 是人填整数，和 Contracts 的 ABI 没有绑定；插件针对旧 Contracts
+        // 编译时可能“加载成功、运行期抛 MissingMethodException”。这里按宿主 Contracts
+        // 程序集版本做一次准入：高于宿主拒绝，低于宿主 Warn 但继续（兼容旧插件），
+        // 缺失视为当前版本（2.45.1 之前生成的 manifest 没有这个字段）。
+        string contractsText = (manifest.contractsVersion ?? "").Trim();
+        if (contractsText.Length > 0)
+        {
+            Version hostContracts = NormalizeContractVersion(typeof(ICardModule).Assembly.GetName().Version);
+            if (!Version.TryParse(contractsText, out Version pluginContracts))
+            {
+                string error = $"{label}: contractsVersion 无法解析 contracts={contractsText}";
+                Log.Warn($"卡片插件 contractsVersion 无法解析: {id} contracts={contractsText}");
+                errors.Add(error);
+                return null;
+            }
+
+            pluginContracts = NormalizeContractVersion(pluginContracts);
+            if (pluginContracts > hostContracts)
+            {
+                string error = $"{label}: Contracts 版本高于宿主 contracts={contractsText}（宿主 {hostContracts.ToString(3)}）";
+                Log.Warn($"卡片插件针对更高版本的 Contracts 编译，已拒绝: {id} contracts={contractsText}（宿主 {hostContracts.ToString(3)}）");
+                errors.Add(error);
+                return null;
+            }
+
+            if (pluginContracts < hostContracts)
+            {
+                // 低版本仍允许加载：宿主通常保留旧成员；但要在日志里留下“为什么它可能崩”。
+                Log.Warn($"卡片插件针对较旧 Contracts 编译，仍尝试加载: {id} contracts={contractsText}（宿主 {hostContracts.ToString(3)}）");
+            }
+        }
+
         string assemblyName = (manifest.assembly ?? "").Trim();
         if (!IsSafeAssemblyFileName(assemblyName))
         {
@@ -595,7 +627,12 @@ internal static class CardPluginLoader
         {
             if (handle.Context is not null) handle.Context.Unload();
         }
-        catch { }
+        catch (Exception ex)
+        {
+            // P-22：这里以前是空 catch，但卸载请求失败会让弱引用探测永远看不到回收，
+            // P-5 的“插件是否泄漏”结论就不可信，必须留痕。
+            Log.Warn($"插件丢弃时 ALC 卸载请求失败({handle.Id}): {ex.Message}");
+        }
         handle.Release();
         TryDeleteDirectory(handle.ShadowDirectory);
     }
@@ -606,7 +643,12 @@ internal static class CardPluginLoader
         {
             if (context is not null) context.Unload();
         }
-        catch { }
+        catch (Exception ex)
+        {
+            // P-22：加载失败后的回滚收尾；卸载失败通常意味着影子目录仍被锁，
+            // 留一条 Warn 便于和 CleanupShadowCache 的“下次再删”对上。
+            Log.Warn($"插件加载失败后 ALC 卸载请求失败: {ex.Message}");
+        }
         TryDeleteDirectory(shadowDir);
     }
 
@@ -622,6 +664,15 @@ internal static class CardPluginLoader
             // 可能仍被 ALC/文件映射持有；下次启动 CleanupShadowCache 再删。
         }
     }
+
+    /// <summary>
+    /// P-26：把 2.45.1 这样的三段版本补成四段，避免和 AssemblyName.Version
+    /// （2.45.1.0）比较时把当前版本误判成“更旧”。
+    /// </summary>
+    static Version NormalizeContractVersion(Version value) =>
+        value is null
+            ? new Version(0, 0, 0, 0)
+            : new Version(value.Major, value.Minor, Math.Max(value.Build, 0), Math.Max(value.Revision, 0));
 
     static bool IsSafePluginId(string id)
     {
@@ -717,6 +768,12 @@ internal static class CardPluginLoader
         public string entryType = "";
         public string assembly = "";
         public string author = "";
+
+        /// <summary>
+        /// P-26：插件编译所依据的 Contracts 程序集版本（2.45.1 这样的三段或四段字符串）。
+        /// 字段名必须与 manifest 的 camelCase 键一致；缺失按宿主当前版本处理。
+        /// </summary>
+        public string contractsVersion = "";
     }
 #pragma warning restore CS0649
 }
