@@ -5,6 +5,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
+using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using MirrorpondHUD.Core;
@@ -17,10 +18,10 @@ namespace MirrorpondHUD.Ui.Controls.Media;
 /// </summary>
 public sealed class GifAnimator : IDisposable
 {
-    readonly Image _target;
+    Image _target;
     readonly List<BitmapSource> _frames = new();
     readonly List<int> _delays = new();
-    readonly DispatcherTimer _timer;
+    DispatcherTimer _timer;
     readonly bool _loop;
     int _index;
 
@@ -30,21 +31,40 @@ public sealed class GifAnimator : IDisposable
     /// <summary>单张动图允许常驻的解码帧总预算（RGBA 估算）。</summary>
     const long MaxDecodedBytes = 64L * 1024 * 1024;
 
-    GifAnimator(Image target, bool loop)
+    /// <summary>降采样下限：低于它说明源图大得离谱，直接拒绝并提示，别再浪费解码时间。</summary>
+    const double MinScale = 0.1;
+
+    GifAnimator(bool loop)
     {
-        _target = target;
         _loop = loop;
-        _timer = new DispatcherTimer(DispatcherPriority.Render);
-        _timer.Tick += (s, e) => Advance();
     }
 
     public int FrameCount => _frames.Count;
     public Size CanvasSize { get; private set; }
 
-    /// <summary>读取动图。文件不是多帧 GIF 或读取失败时返回 null。</summary>
+    /// <summary>
+    /// 绑定要显示的 Image。必须在 UI 线程调用：计时器在第一次 Play 时才创建，
+    /// 这样后台解码（<see cref="TryLoad"/>）不会把 DispatcherTimer 建在线程池线程上。
+    /// </summary>
+    public void AttachTarget(Image target) => _target = target;
+
+    /// <summary>读取动图。文件不是多帧 GIF 或读取失败时返回 null。可在后台线程调用。</summary>
     public static GifAnimator TryCreate(string path, Image target, bool loop)
     {
-        if (string.IsNullOrWhiteSpace(path) || target is null) return null;
+        if (target is null) return null;
+        GifAnimator animator = TryLoad(path, loop);
+        if (animator is not null) animator.AttachTarget(target);
+        return animator;
+    }
+
+    /// <summary>
+    /// K-12：只解一次 —— 旧实现先在 UI 线程用 BitmapDecoder 解首帧、再用 GDI+ 解全部帧，
+    /// 等于两遍全尺寸解码。这里直接解帧，并按 64MB 预算降采样（而不是耗尽内存或直接失败）。
+    /// 只允许在任意线程调用；返回的帧都已 Freeze，可安全跨线程。
+    /// </summary>
+    public static GifAnimator TryLoad(string path, bool loop)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return null;
         LastSkipReason = "";
 
         GifAnimator animator = null;
@@ -61,16 +81,25 @@ public sealed class GifAnimator : IDisposable
             int count = source.GetFrameCount(dimension);
             if (count <= 1) return null;
 
+            // 像素/内存预算：estimated = w × h × 4 × 帧数（解码后常驻的 RGBA 大小）。
+            // 超预算时先算缩放比例，缩完再解，避免"解到一半 OOM"。
+            double scale = 1.0;
             long estimated = (long)source.Width * source.Height * 4 * count;
             if (estimated > MaxDecodedBytes)
             {
-                LastSkipReason = $"动图约 {count} 帧 / {estimated / 1024.0 / 1024.0:0} MB，超过 64 MB 预算";
-                Log.Warn($"动图帧缓存超预算，退回只显示首帧: {LastSkipReason}");
-                return null;
+                scale = Math.Sqrt((double)MaxDecodedBytes / estimated);
+                if (scale < MinScale)
+                {
+                    LastSkipReason = $"动图约 {count} 帧 / {estimated / 1024.0 / 1024.0:0} MB，超过 64 MB 预算且需要缩到 {scale:0.###} 倍";
+                    Log.Warn($"动图帧缓存超预算，退回只显示首帧: {LastSkipReason}");
+                    return null;
+                }
+
+                Log.Warn($"动图约 {count} 帧 / {estimated / 1024.0 / 1024.0:0} MB，超过 64 MB 预算，已按 {scale:0.##} 比例降采样");
             }
 
-            animator = new GifAnimator(target, loop);
-            animator.CanvasSize = new Size(source.Width, source.Height);
+            animator = new GifAnimator(loop);
+            animator.CanvasSize = new Size(Math.Max(1, source.Width * scale), Math.Max(1, source.Height * scale));
             var delays = ReadDelays(source);
 
             for (int i = 0; i < count; i++)
@@ -78,6 +107,16 @@ public sealed class GifAnimator : IDisposable
                 source.SelectActiveFrame(dimension, i);
                 BitmapSource frame = ToBitmapSource(source);
                 if (frame is null) continue;
+
+                if (scale < 0.999)
+                {
+                    // TransformedBitmap 延迟到渲染时才真正缩放，先 Freeze 固定下来，
+                    // 否则后台线程持有的是 GDI+ 位图的视图。
+                    var scaled = new TransformedBitmap(frame, new ScaleTransform(scale, scale));
+                    scaled.Freeze();
+                    frame = scaled;
+                }
+
                 animator._frames.Add(frame);
                 animator._delays.Add(i < delays.Count ? delays[i] : 100);
             }
@@ -118,7 +157,11 @@ public sealed class GifAnimator : IDisposable
                 }
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            // 没有延时属性时按默认 100ms/帧；但读取失败原因要留痕（X-9）。
+            Log.Warn($"读取动图帧延时失败，按默认 100ms/帧: {ex.Message}");
+        }
         return result;
     }
 
@@ -144,26 +187,45 @@ public sealed class GifAnimator : IDisposable
     public void Play()
     {
         if (_frames.Count == 0) return;
+        if (_target is null) return;   // 还没绑定显示控件（TryLoad 出来的实例要先 AttachTarget）
         _index = 0;
         _target.Source = _frames[0];
         Schedule();
     }
 
-    public void Stop() => _timer.Stop();
+    public void Stop() => _timer?.Stop();
+
+    /// <summary>计时器在 UI 线程懒建：TryLoad 可能在后台线程完成，不能在那里 new DispatcherTimer。</summary>
+    DispatcherTimer EnsureTimer()
+    {
+        if (_timer is null)
+        {
+            _timer = new DispatcherTimer(DispatcherPriority.Render);
+            _timer.Tick += (s, e) => Advance();
+        }
+        return _timer;
+    }
 
     void Schedule()
     {
         if (_frames.Count == 0) return;
         int delay = _delays[Math.Max(0, Math.Min(_index, _delays.Count - 1))];
-        _timer.Interval = TimeSpan.FromMilliseconds(Math.Max(20, delay));
-        _timer.Start();
+        DispatcherTimer timer = EnsureTimer();
+        timer.Interval = TimeSpan.FromMilliseconds(Math.Max(20, delay));
+        timer.Start();
     }
 
     void Advance()
     {
         if (_frames.Count == 0)
         {
-            _timer.Stop();
+            _timer?.Stop();
+            return;
+        }
+
+        if (_target is null)
+        {
+            _timer?.Stop();
             return;
         }
 
@@ -172,7 +234,7 @@ public sealed class GifAnimator : IDisposable
         {
             if (!_loop)
             {
-                _timer.Stop();
+                _timer?.Stop();
                 _index = _frames.Count - 1;
                 return;
             }
@@ -185,8 +247,10 @@ public sealed class GifAnimator : IDisposable
 
     public void Dispose()
     {
-        try { _timer.Stop(); } catch { }
+        // 释放路径：停表失败没有可补救动作，下面照样清空帧列表。
+        try { _timer?.Stop(); } catch { }
         _frames.Clear();
         _delays.Clear();
+        _target = null;
     }
 }

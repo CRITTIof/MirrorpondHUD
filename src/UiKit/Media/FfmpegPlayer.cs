@@ -37,14 +37,38 @@ internal sealed class VideoInfo
 /// 交给 <see cref="WaveOutPlayer"/>（winmm waveOut）播放。`-readrate` 控制视频速度，
 /// `atempo` 控制音频速度，两边同时重启即可实现快进 / 快退 / 变速。
 /// </summary>
+/// <summary>
+/// K-16：一帧原始 BGRA 数据。由解码线程从帧池租出、装进 <see cref="FfmpegPlayer"/> 的
+/// "最新一帧"槽位；UI 复制进 WriteableBitmap 后必须调用 <see cref="FfmpegPlayer.ReleaseFrame"/>
+/// 把缓冲还回池子（池子上限 3 块，天然有界）。用这种"租借"而不是每帧 BitmapSource，
+/// 是为了让 60/120fps 视频不再每秒分配几百 MB 托管位图。
+/// </summary>
+internal sealed class VideoFrame
+{
+    internal byte[] Buffer;
+    internal int Width;
+    internal int Height;
+    internal int Run;
+
+    int _released;
+
+    /// <summary>只允许归还一次（UI 可能在旧回调里重复归还）。</summary>
+    internal bool TryMarkReleased() => Interlocked.Exchange(ref _released, 1) == 0;
+}
+
 internal sealed class FfmpegPlayer : IDisposable
 {
-    public event Action<BitmapSource> FrameReady;
+    /// <summary>K-16：新帧可取的合并通知（同一时刻最多排一次）。UI 收到后调用
+    /// <see cref="TakeFrame"/> 取"最新一帧"，复制完 <see cref="ReleaseFrame"/>。</summary>
+    public event Action FrameAvailable;
     public event Action<string> Failed;
     public event Action Completed;
     /// <summary>P1-6：音频启动失败（WaveOut 打不开 / 解码进程起不来）时触发，
     /// 内容是原因描述；视频照常播，UI 可以用它在状态行如实标注「音频不可用」。</summary>
     public event Action<string> AudioUnavailable;
+    /// <summary>K-6：运行期音频死亡（USB 耳机被拔、驱动重置、waveOutWrite 失败）。
+    /// 与 <see cref="AudioUnavailable"/> 分开：那是"没起来"，这是"播着播着没了"。</summary>
+    public event Action<string> AudioFailed;
 
     readonly ManualResetEventSlim _resume = new(true);
 
@@ -60,6 +84,17 @@ internal sealed class FfmpegPlayer : IDisposable
     Thread _reader;
     WaveOutPlayer _audio;
 
+    // K-16 帧管线：解码线程 → "最新一帧"槽位（_pendingFrame）→ UI 复制进 WriteableBitmap。
+    // 池子只放 3 块 BGRA 缓冲，超过就主动丢帧而不是无限增长；_frameNotify 保证
+    // Dispatcher 队列里最多只有一个待处理通知（Render 优先级），高帧率不会堆积。
+    readonly object _frameSync = new();
+    readonly List<byte[]> _freeFrameBuffers = new();
+    VideoFrame _pendingFrame;
+    int _frameBufferSize;
+    int _frameAllocated;
+    int _frameNotify;
+    const int MaxFrameBuffers = 3;
+
     string _ffmpeg = "";
     string _path = "";
     /// <summary>最近一次视频解码启动的实际 argv 摘要，只在失败时写日志（审阅 §7.2：失败原因要可行动）。</summary>
@@ -67,6 +102,11 @@ internal sealed class FfmpegPlayer : IDisposable
     int _width;
     int _height;
     double _fps = 25;
+    /// <summary>
+    /// K-16：实际输出给 UI 的帧率（= min(源帧率, 30)）。ffmpeg 的 -r 用它，
+    /// Position 也用它把帧数换算回秒——两者必须同一个值，否则进度会按倍率跑偏。
+    /// </summary>
+    double _outputFps = 25;
     double _duration;
     double _speed = 1;
     double _startSeconds;
@@ -76,6 +116,13 @@ internal sealed class FfmpegPlayer : IDisposable
     bool _audioEnabled;
     volatile bool _stop;
     volatile bool _startPaused;
+    /// <summary>
+    /// K-7：非循环视频读到 EOF 后的"已播完"状态。和 <see cref="_stop"/> 分开：
+    /// _stop 是"用户/宿主停止"（Seek 等操作要拒绝），_ended 是"自然播完"
+    /// （Resume 应该从头重开，位置显示在末尾）。旧实现不分这两种状态，
+    /// 于是 EOF 后 IsRunning 恒 true、播放键按下去毫无反应。
+    /// </summary>
+    bool _ended;
     bool _disposed;
     /// <summary>
     /// ffmpeg 不认 <c>-readrate</c> 的回退标记（P1-6）：一旦某代 0 帧输出，就改用经典的
@@ -92,20 +139,31 @@ internal sealed class FfmpegPlayer : IDisposable
         {
             double start;
             long frames;
+            bool ended;
             lock (_sync)
             {
                 start = _startSeconds;
                 frames = _frames;
+                ended = _ended;
             }
 
-            double position = start + (_fps > 0 ? frames / _fps : 0);
+            // K-7：播完后位置就该停在末尾，不能再按帧数推算（末帧可能差半帧）。
+            if (ended && _duration > 0.01) return _duration;
+
+            double position = start + (_outputFps > 0 ? frames / _outputFps : 0);
             return _duration > 0.01 ? Math.Min(_duration, position) : position;
         }
     }
 
     public bool IsRunning
     {
-        get { lock (_sync) { return _process is not null && !_stop; } }
+        get { lock (_sync) { return _process is not null && !_stop && !_ended; } }
+    }
+
+    /// <summary>K-7：非循环视频是否已经自然播完（UI 用它显示"已结束"而不是"运行中"）。</summary>
+    public bool IsEnded
+    {
+        get { lock (_sync) { return _ended; } }
     }
     public bool IsPaused => !_resume.IsSet;
     public double Speed => _speed;
@@ -126,6 +184,10 @@ internal sealed class FfmpegPlayer : IDisposable
         _width = Math.Max(16, width - width % 2);
         _height = Math.Max(16, height - height % 2);
         _fps = fps >= 1 && fps <= 121 ? fps : 25;
+        // K-16：媒体卡在 1280 宽以内，30fps 视觉足够；把输出帧率封顶能同时
+        // 压掉解码 CPU、帧池压力和 Dispatcher 通知频率。Position 用 _outputFps 换算。
+        _outputFps = Math.Min(_fps, 30);
+        _ended = false;
         _duration = duration;
         _loop = loop;
         _speed = ClampSpeed(speed);
@@ -154,14 +216,21 @@ internal sealed class FfmpegPlayer : IDisposable
     /// <summary>开始一代新播放：递增代次，重置本代的起始位置 / 帧计数 / 起播暂停标记。</summary>
     int BeginRun(double startSeconds, bool paused)
     {
+        int run;
         lock (_sync)
         {
             _run++;
+            run = _run;
             _startSeconds = Math.Max(0, startSeconds);
             _frames = 0;
             _startPaused = paused;
-            return _run;
+            // K-7：新代开始必须清掉"已播完"，否则 Seek 重播后 IsRunning 仍然为 false。
+            _ended = false;
         }
+
+        // K-16：上一代可能还有没被 UI 取走的帧；代次校验能挡住旧帧，但缓冲要回收。
+        ResetFramePipeline();
+        return run;
     }
 
     bool IsCurrent(int run) => run == Volatile.Read(ref _run);
@@ -220,7 +289,8 @@ internal sealed class FfmpegPlayer : IDisposable
             $"scale={_width}:{_height}:force_original_aspect_ratio=decrease," +
             $"pad={_width}:{_height}:(ow-iw)/2:(oh-ih)/2:color=black");
         psi.ArgumentList.Add("-r");
-        psi.ArgumentList.Add(_fps.ToString("0.###", CultureInfo.InvariantCulture));
+        // K-16：输出帧率封顶 30fps（见 _outputFps 注释），与 Position 的换算保持一致。
+        psi.ArgumentList.Add(_outputFps.ToString("0.###", CultureInfo.InvariantCulture));
         psi.ArgumentList.Add("-f");
         psi.ArgumentList.Add("rawvideo");
         psi.ArgumentList.Add("-pix_fmt");
@@ -343,6 +413,7 @@ internal sealed class FfmpegPlayer : IDisposable
                 // P1-6：失败原因要能给到 UI（状态行如实标注「音频不可用」），只写日志还不够。
                 Log.Warn($"音频输出启动失败，继续静音播放: {player.LastErrorName}");
                 RaiseAudioUnavailable(player.LastErrorName);
+                // 释放路径：Dispose 内部只会停线程/关句柄，异常没有可补救的动作。
                 try { player.Dispose(); } catch { }
                 player = null;
                 StopAudio(run);
@@ -365,6 +436,7 @@ internal sealed class FfmpegPlayer : IDisposable
             if (!installed)
             {
                 // 这一代已被作废：刚起来的播放器自己收掉，不污染当前状态。
+                // 释放路径：Stop/Dispose 失败没有可补救的动作，句柄交给下一次收尾。
                 try { player.Stop(); } catch { }
                 try { player.Dispose(); } catch { }
                 DisposeProcess(process);
@@ -372,6 +444,15 @@ internal sealed class FfmpegPlayer : IDisposable
             }
 
             DisposeAudio(replacedAudio);
+
+            // K-6：运行期音频死亡（设备热拔 / 写失败）转成事件上报，卡片状态行据此
+            // 从"正常播放"改成"音频中断"。代次校验保证老播放器的晚归事件不污染新代。
+            player.AudioFailed += reason =>
+            {
+                if (!IsCurrent(run)) return;
+                RaiseAudioFailed(reason);
+            };
+
             Log.Info($"音频输出已启动（48 kHz 立体声，音量 {_volume}%）");
         }
         catch (Exception ex)
@@ -438,7 +519,9 @@ internal sealed class FfmpegPlayer : IDisposable
             int width = _width;
             int height = _height;
             int size = width * height * 4;
-            var buffer = new byte[size];
+            // 池子被 UI 占满时的兜底缓冲：读掉字节保证 ffmpeg 管道不被堵死。
+            // 每代最多一块，内存仍然有界（3 + 1 块）。
+            byte[] scratch = null;
             long framesSinceLaunch = 0;
 
             while (!_stop)
@@ -457,6 +540,27 @@ internal sealed class FfmpegPlayer : IDisposable
                 if (process is null) break;
 
                 Stream stream = process.StandardOutput.BaseStream;
+
+                // K-16：先租一块帧缓冲再读；池子见底时短暂等 UI 消费，仍没有就丢这一帧。
+                byte[] buffer = RentFrameBuffer(size);
+                if (buffer is null)
+                {
+                    for (int i = 0; i < 125 && buffer is null && !_stop && IsCurrent(run); i++)
+                    {
+                        Thread.Sleep(2);
+                        buffer = RentFrameBuffer(size);
+                    }
+
+                    if (buffer is null)
+                    {
+                        scratch ??= new byte[size];
+                        buffer = scratch;
+                    }
+                }
+
+                // scratch 是本代专用的丢弃缓冲，不能进入发布管道（否则内容会被覆盖）。
+                bool reusable = !ReferenceEquals(buffer, scratch);
+
                 bool frameRead;
                 try
                 {
@@ -465,12 +569,17 @@ internal sealed class FfmpegPlayer : IDisposable
                 catch (Exception)
                 {
                     // 进程被 Stop 杀掉时管道会抛 / 返回 0：老代不算错误。
+                    if (reusable) ReturnFrameBuffer(buffer);
                     if (!IsCurrent(run) || _stop) break;
                     throw;
                 }
 
                 if (!frameRead)
                 {
+                    // 读失败/被停止：这块缓冲还在我们手里，能还就还（scratch 不还，
+                    // 它是本代专用的丢弃缓冲，不能进入池子被当成可发布帧）。
+                    if (reusable) ReturnFrameBuffer(buffer);
+
                     // 老代晚归：直接退出，不碰新代状态、不报假失败（P2-18）。
                     if (!IsCurrent(run) || _stop) break;
 
@@ -512,34 +621,21 @@ internal sealed class FfmpegPlayer : IDisposable
                         continue;
                     }
 
-                    if (IsCurrent(run))
-                    {
-                        Action completed = Completed;
-                        if (completed is not null)
-                        {
-                            try { completed(); } catch { }
-                        }
-                    }
+                    // K-7：非循环视频自然播完：必须推进状态机（清进程 / 置 _ended /
+                    // 停音频 / 触发 Completed），否则 IsRunning 骗人、播放键失效。
+                    EndOfStream(run);
                     break;
                 }
 
                 framesSinceLaunch++;
-
-                var frame = BitmapSource.Create(width, height, 96, 96,
-                    PixelFormats.Bgra32, null, buffer, width * 4);
-                frame.Freeze();
 
                 // 出帧期间可能已被重启：老代的帧直接丢掉，不写进当前代的计数 / 画面。
                 if (!IsCurrent(run)) break;
 
                 Interlocked.Increment(ref _frames);
 
-                Action<BitmapSource> handler = FrameReady;
-                if (handler is not null)
-                {
-                    try { handler(frame); }
-                    catch (Exception ex) { Log.Warn($"显示视频帧失败: {ex.Message}"); }
-                }
+                // K-16：把缓冲交给"最新一帧"槽位并合并通知；中间帧被覆盖即丢弃。
+                if (reusable) PublishFrame(buffer, width, height, run);
 
                 if (_startPaused)
                 {
@@ -576,6 +672,170 @@ internal sealed class FfmpegPlayer : IDisposable
             read += n;
         }
         return true;
+    }
+
+    // ==================== 帧池 / 合并通知（K-16） ====================
+
+    /// <summary>
+    /// UI 线程取走"最新一帧"。高帧率下解码线程会不断用新帧覆盖槽位，
+    /// 所以这里拿到的可能是最新帧而中间帧已被丢弃——这正是我们要的合并语义。
+    /// </summary>
+    public VideoFrame TakeFrame()
+    {
+        lock (_frameSync)
+        {
+            VideoFrame frame = _pendingFrame;
+            _pendingFrame = null;
+            return frame;
+        }
+    }
+
+    /// <summary>UI 复制完一帧后归还缓冲（并允许下一次通知）。重复调用安全。</summary>
+    public void ReleaseFrame(VideoFrame frame)
+    {
+        if (frame is null || !frame.TryMarkReleased()) return;
+        ReturnFrameBuffer(frame.Buffer);
+        Interlocked.Exchange(ref _frameNotify, 0);
+    }
+
+    /// <summary>UI 丢弃这一帧（例如视图已释放）时也要复位通知标志，否则再也不会有通知。</summary>
+    public void SkipFrame() => Interlocked.Exchange(ref _frameNotify, 0);
+
+    byte[] RentFrameBuffer(int size)
+    {
+        lock (_frameSync)
+        {
+            if (size != _frameBufferSize)
+            {
+                // 帧尺寸变了：旧尺寸的缓冲不能给 WritePixels 用（会越界），整池作废。
+                _freeFrameBuffers.Clear();
+                _frameBufferSize = size;
+                _frameAllocated = 0;
+            }
+
+            if (_freeFrameBuffers.Count > 0)
+            {
+                int last = _freeFrameBuffers.Count - 1;
+                byte[] buffer = _freeFrameBuffers[last];
+                _freeFrameBuffers.RemoveAt(last);
+                return buffer;
+            }
+
+            // 池子上限 3 块：1 块在"待取"槽位、1 块在 UI 手里、1 块给读线程写。
+            // 再多就变成无界内存；没有可用缓冲时由调用方决定等待/丢帧。
+            if (_frameAllocated >= MaxFrameBuffers) return null;
+            _frameAllocated++;
+            return new byte[size];
+        }
+    }
+
+    void ReturnFrameBuffer(byte[] buffer)
+    {
+        if (buffer is null) return;
+
+        lock (_frameSync)
+        {
+            if (buffer.Length != _frameBufferSize) return;   // 旧尺寸缓冲：直接让 GC 收走
+            if (_freeFrameBuffers.Count >= MaxFrameBuffers) return;
+            _freeFrameBuffers.Add(buffer);
+        }
+    }
+
+    /// <summary>
+    /// 把新帧放进"待取"槽位；被顶掉的旧帧立即回收。
+    /// 通知只在 <see cref="_frameNotify"/> 从 0 变 1 时发出一次——UI 处理不过来时
+    /// Dispatcher 队列里始终只有一个回调，不会堆积帧。
+    /// </summary>
+    void PublishFrame(byte[] buffer, int width, int height, int run)
+    {
+        // 代次校验放在发布前：读线程刚通过 IsCurrent 检查就被重启时，
+        // 这一帧属于旧代，直接回收，不能贴到新代画面上（P2-18）。
+        lock (_sync)
+        {
+            if (run != _run)
+            {
+                ReturnFrameBuffer(buffer);
+                return;
+            }
+        }
+
+        VideoFrame previous;
+        lock (_frameSync)
+        {
+            previous = _pendingFrame;
+            _pendingFrame = new VideoFrame { Buffer = buffer, Width = width, Height = height, Run = run };
+        }
+
+        if (previous is not null) ReturnFrameBuffer(previous.Buffer);
+
+        if (Interlocked.CompareExchange(ref _frameNotify, 1, 0) != 0) return;
+
+        Action handler = FrameAvailable;
+        if (handler is null)
+        {
+            Interlocked.Exchange(ref _frameNotify, 0);
+            return;
+        }
+
+        try { handler(); }
+        catch (Exception ex)
+        {
+            // 通知方（卡片视图）异常不能拖垮解码线程；复位标志让后续帧还能通知。
+            Log.Warn($"通知视频帧失败: {ex.Message}");
+            Interlocked.Exchange(ref _frameNotify, 0);
+        }
+    }
+
+    /// <summary>换代 / 停止时清掉待取帧并复位通知；已在 UI 手里的帧由 ReleaseFrame 归还。</summary>
+    void ResetFramePipeline()
+    {
+        VideoFrame pending;
+        lock (_frameSync)
+        {
+            pending = _pendingFrame;
+            _pendingFrame = null;
+        }
+
+        if (pending is not null) ReturnFrameBuffer(pending.Buffer);
+        Interlocked.Exchange(ref _frameNotify, 0);
+    }
+
+    /// <summary>
+    /// K-7：非循环视频读到 EOF。旧实现只 break，_process 仍挂着、_stop 仍 false，
+    /// IsRunning 骗人、Resume() 只是置事件（读线程已经退出），播放键完全失效。
+    /// 这里把状态推进到"已播完"：清进程、置 _ended、停音频，再触发 Completed。
+    /// 不置 _stop —— "停止"与"播完"是两种状态，Seek / 再次播放仍要通过 _stop 守卫。
+    /// </summary>
+    void EndOfStream(int run)
+    {
+        Process process = null;
+        bool endedNow = false;
+
+        lock (_sync)
+        {
+            if (run != _run) return;
+
+            process = _process;
+            _process = null;
+            if (!_ended)
+            {
+                _ended = true;
+                endedNow = true;
+            }
+        }
+
+        DisposeProcess(process);
+        StopAudio(run);
+
+        // 帧池里可能还留着一帧没被 UI 取走：保留它（就是最后一帧），只清通知标志。
+        if (!endedNow) return;
+
+        Log.Info("ffmpeg 视频已播放到结尾");
+        Action completed = Completed;
+        if (completed is null) return;
+
+        try { completed(); }
+        catch (Exception ex) { Log.Warn($"视频结束事件处理异常: {ex.Message}"); }
     }
 
     /// <summary>
@@ -679,6 +939,14 @@ internal sealed class FfmpegPlayer : IDisposable
 
         double position = Position;
         _speed = next;
+
+        // K-7：播完之后改速度只需记住值，下一次从头播放时生效；不要为此重开解码进程。
+        if (IsEnded)
+        {
+            Log.Info($"ffmpeg 播放速度已记为 {next:0.##}×（视频已播完，下次播放生效）");
+            return;
+        }
+
         Log.Info($"ffmpeg 播放速度：{next:0.##}×");
         RestartAt(position);
     }
@@ -687,6 +955,13 @@ internal sealed class FfmpegPlayer : IDisposable
     public void SetMuted(bool muted)
     {
         if (_disposed || _stop) return;
+
+        // K-7：播完后不要再为"取消静音"拉一条新音频进程——它只会立刻读到 EOF。
+        if (IsEnded)
+        {
+            _audioEnabled = !muted;
+            return;
+        }
 
         if (muted)
         {
@@ -722,18 +997,31 @@ internal sealed class FfmpegPlayer : IDisposable
     public void Resume()
     {
         if (_disposed || _stop) return;
+
+        // K-7：自然播完后读线程已经退出，只置事件不会让画面动起来；
+        // 这里真的从头重开一代（UI 的播放键因此恢复可用）。
+        if (IsEnded)
+        {
+            Log.Info("视频已播完，从头重新播放");
+            RestartAt(0);
+            return;
+        }
+
         _resume.Set();
         ResumeAudio();
     }
 
     void PauseAudio()
     {
-        try { if (_audio is not null) _audio.Pause(); } catch { }
+        // X-9：暂停失败会导致"画面停住、声音继续"，不能吞。
+        try { if (_audio is not null) _audio.Pause(); }
+        catch (Exception ex) { Log.Warn($"暂停音频输出失败: {ex.Message}"); }
     }
 
     void ResumeAudio()
     {
-        try { if (_audio is not null) _audio.Resume(); } catch { }
+        try { if (_audio is not null) _audio.Resume(); }
+        catch (Exception ex) { Log.Warn($"恢复音频输出失败: {ex.Message}"); }
     }
 
     /// <summary>管理路径（StopInternal / Dispose）用：无条件收掉当前音频进程与播放器。</summary>
@@ -799,6 +1087,8 @@ internal sealed class FfmpegPlayer : IDisposable
     static void DisposeProcess(Process process)
     {
         if (process is null) return;
+        // 释放路径：进程可能已退出/句柄已被系统回收，Kill/Dispose 的异常没有可补救动作，
+        // 但只要能杀就杀——这里不允许影响调用方的状态机（X-9 保留并注明）。
         try { if (!process.HasExited) process.Kill(); } catch { }
         try { process.Dispose(); } catch { }
     }
@@ -808,7 +1098,8 @@ internal sealed class FfmpegPlayer : IDisposable
         if (audio is null) return;
         // 审阅 §20：Dispose 内部已经会 Stop()（Join 已改成后台有界等待），
         // 原来 Stop + Dispose 会把同一个音频线程 Join 两遍，这里只留一次。
-        try { audio.Dispose(); } catch { }
+        try { audio.Dispose(); }
+        catch (Exception ex) { Log.Warn($"释放音频播放器失败: {ex.Message}"); }
     }
 
     void RaiseFailed(string message)
@@ -819,7 +1110,8 @@ internal sealed class FfmpegPlayer : IDisposable
         Action<string> handler = Failed;
         if (handler is not null)
         {
-            try { handler(message); } catch { }
+            try { handler(message); }
+            catch (Exception ex) { Log.Warn($"失败事件处理异常: {ex.Message}"); }
         }
     }
 
@@ -881,7 +1173,18 @@ internal sealed class FfmpegPlayer : IDisposable
         Action<string> handler = AudioUnavailable;
         if (handler is not null)
         {
-            try { handler(message); } catch { }
+            try { handler(message); } catch (Exception ex) { Log.Warn($"音频不可用事件处理异常: {ex.Message}"); }
+        }
+    }
+
+    /// <summary>K-6：运行期音频死亡的通知（与"音频不可用"区分：这是播着播着断了）。</summary>
+    void RaiseAudioFailed(string message)
+    {
+        Log.Warn($"音频输出中断: {message}");
+        Action<string> handler = AudioFailed;
+        if (handler is not null)
+        {
+            try { handler(message); } catch (Exception ex) { Log.Warn($"音频中断事件处理异常: {ex.Message}"); }
         }
     }
 
@@ -1052,9 +1355,18 @@ internal sealed class FfmpegPlayer : IDisposable
         _stop = true;
         _resume.Set();
 
-        // 作废当前代：之后旧读线程无论从 ReadFull / FrameReady / LoopRestart 哪一步回来，
+        // 作废当前代：之后旧读线程无论从 ReadFull / 帧发布 / LoopRestart 哪一步回来，
         // 都会发现代次不符并立即退出，既不会 Kill 新进程，也不会对新一代报假失败（P2-18）。
-        lock (_sync) { _run++; }
+        lock (_sync)
+        {
+            _run++;
+            // 停止不是"播完"：下一次 Start/RestartAt 会重新置 false，这里提前清掉，
+            // 免得 IsEnded 在停止与重开之间给出误导性的 true。
+            _ended = false;
+        }
+
+        // K-16：把待取帧回收、复位通知标志；UI 若还持有帧，ReleaseFrame 会安全归还。
+        ResetFramePipeline();
 
         StopAudio();
         KillProcess();
@@ -1085,10 +1397,16 @@ internal sealed class FfmpegPlayer : IDisposable
                     if (!thread.Join(2000))
                         Log.Warn("ffmpeg 读线程 2s 内未退出（已脱离，不阻塞 UI）");
                 }
-                catch { }
+                catch (ThreadStateException)
+                {
+                    // 良性竞态：线程已终止且句柄被回收时 Join 会抛，无需再等。
+                }
             });
         }
-        catch { }
+        catch (ThreadStateException)
+        {
+            // 良性竞态：线程已经结束（信号 + Kill 后立即退出），不需要再 Join。
+        }
     }
 
     public void Dispose()

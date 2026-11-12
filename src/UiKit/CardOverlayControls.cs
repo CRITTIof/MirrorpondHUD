@@ -71,6 +71,12 @@ public class CardModal : Grid
         SnapsToDevicePixels = true;
         ClipToBounds = true;
 
+        // K-28：模态必须自己兜住焦点。遮罩并不会禁用下层卡片控件，键盘用户 Tab 时
+        // 焦点会跑到遮罩背后的输入框 / 按钮上。这里先用 WPF 的 Cycle 让默认遍历
+        // 限制在遮罩内部，PreviewKeyDown 再显式循环一层（部分控件会自己处理 Tab）。
+        KeyboardNavigation.SetTabNavigation(this, KeyboardNavigationMode.Cycle);
+        KeyboardNavigation.SetDirectionalNavigation(this, KeyboardNavigationMode.Contained);
+
         _backdrop = new Border();
         _backdrop.MouseLeftButtonDown += OnBackdropMouseDown;
 
@@ -139,9 +145,16 @@ public class CardModal : Grid
         }
 
         // 抢来的焦点还回去，键盘不会留在已经移除的遮罩上。
-        if (_previousFocus is not null && _previousFocus is UIElement)
+        // K-28：原焦点元素可能已经被重建 / 隐藏，Focus() 会静默失败；先用
+        // PresentationSource 校验它还在可视树里，失败就明确记一条（不是吞掉）。
+        if (_previousFocus is UIElement element && element.IsVisible && element.IsEnabled &&
+            PresentationSource.FromVisual(element) is not null)
         {
-            Keyboard.Focus(_previousFocus);
+            Keyboard.Focus(element);
+        }
+        else if (_previousFocus is not null)
+        {
+            Log.Info("关闭模态时原焦点元素已不在可视树，焦点交回宿主默认元素");
         }
         _previousFocus = null;
 
@@ -195,10 +208,67 @@ public class CardModal : Grid
         base.OnPreviewKeyDown(e);
         if (e.Handled) return;
 
+        if (e.Key == Key.Tab)
+        {
+            // K-28：显式循环 Tab / Shift+Tab。只靠 TabNavigation=Cycle 时，某些
+            // 自己处理 Tab 的控件（富文本框、下拉框）仍会把焦点送出遮罩。
+            e.Handled = true;
+            bool forward = (Keyboard.Modifiers & ModifierKeys.Shift) == 0;
+            if (!MoveFocusInside(forward) && !IsKeyboardFocusWithin) Focus();
+            return;
+        }
+
         if (e.Key == Key.Escape)
         {
             e.Handled = true;
             Close();
+        }
+    }
+
+    readonly List<UIElement> _focusCandidates = new();
+
+    /// <summary>
+    /// K-28：在遮罩面板内部循环移动焦点。返回 false = 面板里没有可聚焦控件
+    /// （例如纯文本对话框），此时焦点应留在遮罩本身，绝不能漏到背后的卡片。
+    /// </summary>
+    bool MoveFocusInside(bool forward)
+    {
+        _focusCandidates.Clear();
+        CollectFocusable(_panel, _focusCandidates);
+        if (_focusCandidates.Count == 0) return false;
+
+        int current = -1;
+        IInputElement focused = Keyboard.FocusedElement;
+        for (int i = 0; i < _focusCandidates.Count; i++)
+        {
+            UIElement candidate = _focusCandidates[i];
+            if (ReferenceEquals(candidate, focused) || candidate.IsKeyboardFocusWithin)
+            {
+                current = i;
+                break;
+            }
+        }
+
+        int next = forward
+            ? (current < 0 ? 0 : (current + 1) % _focusCandidates.Count)
+            : (current <= 0 ? _focusCandidates.Count - 1 : current - 1);
+
+        return _focusCandidates[next].Focus();
+    }
+
+    static void CollectFocusable(DependencyObject parent, List<UIElement> into)
+    {
+        int count = VisualTreeHelper.GetChildrenCount(parent);
+        for (int i = 0; i < count; i++)
+        {
+            DependencyObject child = VisualTreeHelper.GetChild(parent, i);
+            if (child is UIElement element &&
+                element.Focusable && element.IsVisible && element.IsEnabled)
+            {
+                into.Add(element);
+            }
+
+            CollectFocusable(child, into);
         }
     }
 

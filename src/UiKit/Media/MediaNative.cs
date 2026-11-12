@@ -14,6 +14,11 @@ internal static class MediaNative
     public const int WsExTransparent = 0x00000020;
     public const int WsExToolWindow = 0x00000080;
     public const int WsExNoActivate = 0x08000000;
+    /// <summary>K-10：分层窗口样式（配合 SetLayeredWindowAttributes 做整窗不透明度）。</summary>
+    public const int WsExLayered = 0x00080000;
+
+    /// <summary>SetLayeredWindowAttributes 的 LWA_ALPHA：用源 alpha 混合整个窗口。</summary>
+    public const int LwaAlpha = 0x00000002;
 
     [DllImport("user32.dll", SetLastError = true)]
     static extern int GetWindowLong(IntPtr hWnd, int nIndex);
@@ -46,4 +51,17 @@ internal static class MediaNative
         }
         SetWindowLong(hwnd, GwlExStyle, value);
     }
+
+    /// <summary>
+    /// K-10：设置整窗 alpha。失败（远程桌面 / 老驱动不支持分层窗口）时返回 false，
+    /// 让调用方走"WPF 合成路径"的降级逻辑，而不是悄悄忽略不透明度。
+    /// </summary>
+    public static bool SetWindowAlpha(IntPtr hwnd, byte alpha)
+    {
+        if (hwnd == IntPtr.Zero) return false;
+        return SetLayeredWindowAttributes(hwnd, 0, alpha, LwaAlpha);
+    }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    static extern bool SetLayeredWindowAttributes(IntPtr hwnd, uint colorKey, byte alpha, int flags);
 }
