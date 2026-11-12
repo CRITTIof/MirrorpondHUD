@@ -10,6 +10,7 @@ using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Markup;
 using System.Windows.Media;
+using System.Windows.Threading;
 using MirrorpondHUD.Core;
 
 namespace MirrorpondHUD.Ui.Controls;
@@ -126,6 +127,10 @@ public sealed class CardTree : Grid
     double _fontSize = 13;
     double _radius = 8;
 
+    // K-32：延后执行的选中请求。只保留最后一次选择，且同一时刻最多排一个回调。
+    CardTreeItem _pendingSelect;
+    bool _selectQueued;
+
     /// <summary>空树：默认套默认主题，宿主随后调 <see cref="ApplyStyle"/>。</summary>
     public CardTree()
     {
@@ -141,8 +146,9 @@ public sealed class CardTree : Grid
         ScrollViewer.SetCanContentScroll(_tree, true);
         VirtualizingPanel.SetIsVirtualizing(_tree, true);
         VirtualizingPanel.SetVirtualizationMode(_tree, VirtualizationMode.Recycling);
-        _tree.ItemsPanel = (ItemsPanelTemplate)XamlReader.Parse(
-            $"<ItemsPanelTemplate xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\"><VirtualizingStackPanel/></ItemsPanelTemplate>");
+        _tree.ItemsPanel = CardTemplates.Get("CardTree.ItemsPanel", () => (ItemsPanelTemplate)XamlReader.Parse(
+            $"<ItemsPanelTemplate xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\"><VirtualizingStackPanel/></ItemsPanelTemplate>"),
+            "树控件面板模板");
         _tree.ItemsSource = _roots;
         _tree.ItemTemplate = BuildItemTemplate();
         _tree.SelectedItemChanged += OnSelectedItemChanged;
@@ -277,6 +283,22 @@ public sealed class CardTree : Grid
     {
         if (item is null) return;
 
+        // K-32：原来在 setter 里同步 UpdateLayout() —— 调用方可能正好在布局回调里（卡片
+        // 按数据重排后选中首项），同步强制布局就会重入 LayoutManager。改成排队到 Loaded
+        // 优先级之后执行；同一时刻只排一次，后到的选择覆盖先前那次（幂等）。
+        _pendingSelect = item;
+        if (_selectQueued) return;
+        _selectQueued = true;
+        Dispatcher.BeginInvoke(new Action(ApplyPendingSelect), DispatcherPriority.Loaded);
+    }
+
+    void ApplyPendingSelect()
+    {
+        _selectQueued = false;
+        CardTreeItem item = _pendingSelect;
+        _pendingSelect = null;
+        if (item is null) return;
+
         var path = new List<CardTreeItem>();
         if (!FindPath(_roots, item, path)) return;
 
@@ -290,7 +312,13 @@ public sealed class CardTree : Grid
             _tree.UpdateLayout();
             container = FindContainer(_tree, item);
         }
-        if (container is null) return;
+        if (container is null)
+        {
+            // 虚拟化后容器可能仍然不存在（条目已滚出视口）。留一条 WARN 而不是静默失败，
+            // 否则“设了 SelectedItem 却没选中”永远查不出原因（K-32）。
+            Log.Warn("树控件选中项失败：找不到对应容器（节点可能已滚出虚拟化视口）");
+            return;
+        }
 
         container.IsSelected = true;
         container.BringIntoView();
@@ -406,7 +434,10 @@ public sealed class CardTree : Grid
             "<TextBlock Text=\"{Binding Icon}\" Margin=\"0,0,6,0\" VerticalAlignment=\"Center\" FontSize=\"12\"/>" +
             "<TextBlock Text=\"{Binding Text}\" VerticalAlignment=\"Center\"/>" +
             "</StackPanel></HierarchicalDataTemplate>";
-        return (DataTemplate)XamlReader.Parse(xaml);
+
+        // 树节点模板没有参数，全局解析一次（K-29）。
+        return CardTemplates.Get("CardTree.ItemTemplate", () => (DataTemplate)XamlReader.Parse(xaml),
+                                 "树节点模板");
     }
 
     static Style BuildItemStyle(ThemeTokens tokens, Color foreground, double fontSize, double radius,
@@ -427,7 +458,12 @@ public sealed class CardTree : Grid
                 : "");
 
         var style = new Style(typeof(TreeViewItem));
-        style.Setters.Add(new Setter(Control.TemplateProperty, (ControlTemplate)XamlReader.Parse(template)));
+        // K-29：模板参数就是这几个颜色 / 圆角 / 开关，按它们缓存，换肤不再重解析。
+        ControlTemplate itemTemplate = CardTemplates.Get(
+            $"CardTree.ItemStyle|{CardTemplates.Hex(foreground)}|{CardTemplates.Hex(tokens.Accent)}|{CardTemplates.Hex(tokens.Muted)}|{radius}|{fontSize}|{selectionBar}",
+            () => (ControlTemplate)XamlReader.Parse(template), "树节点样式模板");
+        if (itemTemplate is not null)
+            style.Setters.Add(new Setter(Control.TemplateProperty, itemTemplate));
         style.Setters.Add(new Setter(Control.BackgroundProperty, Brushes.Transparent));
         style.Setters.Add(new Setter(Control.BorderThicknessProperty, new Thickness(0)));
         style.Setters.Add(new Setter(Control.PaddingProperty, new Thickness(0)));
@@ -607,8 +643,9 @@ public sealed class CardTimeline : Grid
         ScrollViewer.SetCanContentScroll(_list, true);
         VirtualizingPanel.SetIsVirtualizing(_list, true);
         VirtualizingPanel.SetVirtualizationMode(_list, VirtualizationMode.Recycling);
-        _list.ItemsPanel = (ItemsPanelTemplate)XamlReader.Parse(
-            $"<ItemsPanelTemplate xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\"><VirtualizingStackPanel/></ItemsPanelTemplate>");
+        _list.ItemsPanel = CardTemplates.Get("CardTimeline.ItemsPanel", () => (ItemsPanelTemplate)XamlReader.Parse(
+            $"<ItemsPanelTemplate xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\"><VirtualizingStackPanel/></ItemsPanelTemplate>"),
+            "时间线面板模板");
         _list.ItemsSource = _items;
         _list.ItemTemplate = BuildItemTemplate();
         _list.SelectionChanged += OnSelectionChanged;
@@ -791,7 +828,10 @@ public sealed class CardTimeline : Grid
             "<TextBlock Text=\"{Binding Detail}\" Margin=\"0,1,0,0\" Opacity=\"0.62\" TextWrapping=\"Wrap\"/>" +
             "</StackPanel>" +
             "</Grid></DataTemplate>";
-        return (DataTemplate)XamlReader.Parse(xaml);
+
+        // 时间线条目模板没有参数，全局解析一次（K-29）。
+        return CardTemplates.Get("CardTimeline.ItemTemplate", () => (DataTemplate)XamlReader.Parse(xaml),
+                                 "时间线条目模板");
     }
 
     static Style BuildItemStyle(ThemeTokens tokens, Color foreground, double radius, bool selectionBar)
@@ -828,7 +868,12 @@ public sealed class CardTimeline : Grid
                 : "");
 
         var style = new Style(typeof(ListBoxItem));
-        style.Setters.Add(new Setter(Control.TemplateProperty, (ControlTemplate)XamlReader.Parse(template)));
+        // K-29：按参与拼接的颜色 / 圆角缓存行模板。
+        ControlTemplate rowTemplate = CardTemplates.Get(
+            $"CardTimeline.ItemStyle|{CardTemplates.Hex(foreground)}|{CardTemplates.Hex(tokens.Accent)}|{radius}|{selectionBar}",
+            () => (ControlTemplate)XamlReader.Parse(template), "时间线条目样式模板");
+        if (rowTemplate is not null)
+            style.Setters.Add(new Setter(Control.TemplateProperty, rowTemplate));
         style.Setters.Add(new Setter(Control.BackgroundProperty, Brushes.Transparent));
         style.Setters.Add(new Setter(Control.BorderThicknessProperty, new Thickness(0)));
         style.Setters.Add(new Setter(Control.PaddingProperty, new Thickness(0)));

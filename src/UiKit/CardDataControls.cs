@@ -451,7 +451,8 @@ public sealed class CardGauge : FrameworkElement, ICardFormControl
         if (ratio > 0.002)
             DrawArc(dc, center, radius, start, sweep * ratio, thickness, CardPalette.Brush(tone));
 
-        string value = _value.ToString(_valueFormat, CultureInfo.CurrentCulture) + (_unit ?? "");
+        // K-34：格式串非法时回退默认格式，不让 OnRender 抛 FormatException。
+        string value = CardFormat.Number(_value, _valueFormat) + (_unit ?? "");
         double valueSize = Math.Max(12, Math.Min(30, radius * 0.62));
         var valueText = CardDataStyle.Text(value, family, valueSize, FontWeights.SemiBold,
             CardPalette.Brush(foreground, 0.96), this);
@@ -586,7 +587,7 @@ public sealed class CardProgressRing : FrameworkElement, ICardFormControl
 
         if (!_showValue) return;
 
-        string value = _value.ToString(_valueFormat, CultureInfo.CurrentCulture);
+        string value = CardFormat.Number(_value, _valueFormat);
         double valueSize = Math.Max(10, Math.Min(30, radius * 0.58));
         var text = CardDataStyle.Text(value, family, valueSize, FontWeights.SemiBold,
             CardPalette.Brush(foreground, 0.96), this);
@@ -722,6 +723,10 @@ public sealed class CardTable : Grid, ICardFormControl
     string _emptyTextValue = "暂无数据";
     int _sortIndex = -1;
     bool _sortDescending;
+
+    // K-35：排序前的先后次序快照。WPF 的 CustomSort 底层排序不稳定，主键相同的行会乱跳；
+    // 用它当次级比较键，保证同一份数据排两次结果一致、同主键内保持原有先后。
+    readonly Dictionary<object, int> _stableOrder = new(ReferenceEqualityComparer.Instance);
 
     public CardTable()
     {
@@ -908,8 +913,11 @@ public sealed class CardTable : Grid, ICardFormControl
         _sortDescending = descending;
         if (_view is not null)
         {
-            _view.CustomSort = _comparer;
-            _view.Refresh();
+            // K-35：先记下当前次序当次级键；CustomSort 赋值本身会触发一次刷新，
+            // 只有重复点击同一列（实例没变）时才需要补一次显式刷新，绝不再叠第二次。
+            CaptureStableOrder();
+            if (ReferenceEquals(_view.CustomSort, _comparer)) _view.Refresh();
+            else _view.CustomSort = _comparer;
         }
         RebuildHeader();
         var handler = SortChanged;
@@ -931,7 +939,7 @@ public sealed class CardTable : Grid, ICardFormControl
 
         _list.FontFamily = family;
         _list.FontSize = size;
-        _list.Foreground = new SolidColorBrush(foreground);
+        _list.Foreground = CardPalette.Brush(foreground);
         _list.ItemContainerStyle = CardDataStyle.TableRowStyle(
             tokens, foreground, _cornerRadius, EndfieldVisuals.SelectionBar(_style));
 
@@ -972,8 +980,37 @@ public sealed class CardTable : Grid, ICardFormControl
     void RebuildColumns()
     {
         RebuildHeader();
-        _list.Items.Refresh();
+
+        // K-35：原来这里先 Items.Refresh() 再 _view.Refresh() —— 同一份视图被刷新两遍，
+        // 容器也重建两遍。Items 的刷新就是转调视图刷新，保留一次即可。
         _view.Refresh();
+    }
+
+    /// <summary>K-35：刷新前记下每一项的先后位置，作为主键相同时的次级比较键。</summary>
+    void CaptureStableOrder()
+    {
+        _stableOrder.Clear();
+        if (_view is null) return;
+
+        int index = 0;
+        foreach (object item in _view)
+        {
+            if (item is null) continue;
+            _stableOrder[item] = index++;
+        }
+    }
+
+    /// <summary>主键相同（或类型不同已按字符串相等）时的稳定比较：沿用排序前的次序。</summary>
+    internal int StableCompare(object x, object y)
+    {
+        bool hasLeft = _stableOrder.TryGetValue(x, out int left);
+        bool hasRight = _stableOrder.TryGetValue(y, out int right);
+        if (hasLeft && hasRight) return left.CompareTo(right);
+        if (hasLeft) return -1;
+        if (hasRight) return 1;
+
+        // 排序后新加进来的行没有快照：按显示文本兜底，至少结果是确定的。
+        return string.Compare(CellText(x, _sortIndex), CellText(y, _sortIndex), StringComparison.Ordinal);
     }
 
     void RebuildHeader()
@@ -1108,13 +1145,41 @@ public sealed class CardTable : Grid, ICardFormControl
 
             IComparable left = _table.SortKeyOf(x, _table.SortColumnIndex);
             IComparable right = _table.SortKeyOf(y, _table.SortColumnIndex);
-            int result;
-            if (left is null) result = right is null ? 0 : -1;
-            else if (right is null) result = 1;
-            else result = left.CompareTo(right);
+            int result = CompareKeys(left, right);
+            if (_table.SortDescending) result = -result;
 
-            return _table.SortDescending ? -result : result;
+            // 稳定排序（K-35）：主键相同沿用排序前的先后次序；降序不翻转次级键。
+            return result != 0 ? result : _table.StableCompare(x, y);
         }
+
+        /// <summary>
+        /// K-35：混合类型的列（数字和文本混排）直接 CompareTo 会抛 ArgumentException，
+        /// 异常从 ListCollectionView 的排序里冒出来就是 UI 线程崩溃。类型不同一律按
+        /// 不区分区域性的字符串比较；同类型仍走原生比较，坏了也只按字符串兜底并记日志。
+        /// </summary>
+        int CompareKeys(IComparable left, IComparable right)
+        {
+            if (left is null) return right is null ? 0 : -1;
+            if (right is null) return 1;
+
+            if (left.GetType() != right.GetType())
+                return CompareAsText(left, right);
+
+            try
+            {
+                return left.CompareTo(right);
+            }
+            catch (ArgumentException ex)
+            {
+                Log.Warn($"表格第 {_table.SortColumnIndex + 1} 列的排序键不可比较，已按字符串排序：{ex.Message}");
+                return CompareAsText(left, right);
+            }
+        }
+
+        static int CompareAsText(IComparable left, IComparable right) =>
+            string.Compare(Convert.ToString(left, CultureInfo.CurrentCulture),
+                           Convert.ToString(right, CultureInfo.CurrentCulture),
+                           StringComparison.Ordinal);
     }
 }
 
@@ -1189,7 +1254,13 @@ internal static class CardDataStyle
             .Replace("%BAR%", ThemeResolver.WithAlpha(tokens.Accent, 0.9).ToString())
             .Replace("%CONTENTMARGIN%", contentMargin)
             .Replace("%BARSETTER%", barSetter);
-        style.Setters.Add(new Setter(Control.TemplateProperty, (ControlTemplate)XamlReader.Parse(finalTemplate)));
+
+        // K-29：行模板只跟前景色 / 强调色 / 选项有关，按它们缓存；解析失败保持默认行样式。
+        ControlTemplate rowTemplate = CardTemplates.Get(
+            $"CardTable.Row|{CardTemplates.Hex(foreground)}|{CardTemplates.Hex(tokens.Accent)}|{contentMargin}|{barSetter}",
+            () => (ControlTemplate)XamlReader.Parse(finalTemplate), "表格行模板");
+        if (rowTemplate is not null)
+            style.Setters.Add(new Setter(Control.TemplateProperty, rowTemplate));
 
         var hover = new Trigger { Property = UIElement.IsMouseOverProperty, Value = true };
         hover.Setters.Add(new Setter(Control.BackgroundProperty, CardPalette.Brush(foreground, 0.06)));

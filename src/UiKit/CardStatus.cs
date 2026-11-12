@@ -24,7 +24,7 @@ public enum CardStatusKind
 /// 开启时是 28 段直角块，关闭时回到 3px 半圆端头；两种实现共用同一个 0–1 进度值。
 /// 对话 / 命令行 / 媒体卡 / 中转站都用这一块，避免各自拼一套状态行。
 /// </summary>
-public sealed class CardStatus : Grid
+public sealed class CardStatus : Grid, IDisposable
 {
     static readonly string[] Spin = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" };
 
@@ -36,7 +36,8 @@ public sealed class CardStatus : Grid
     readonly Border _track;
     readonly Border _fill;
     readonly CornerBrackets _brackets;
-    readonly DispatcherTimer _timer;
+    DispatcherTimer _timer;
+    bool _disposed;
 
     StyleSettings _style;
     ThemeTokens _tokens;
@@ -109,10 +110,16 @@ public sealed class CardStatus : Grid
         Children.Add(_brackets);
 
         _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(90) };
-        _timer.Tick += (s, e) =>
+        _timer.Tick += OnSpinTick;
+
+        // K-31：90ms 转圈表原来没有停止出口 —— Busy 时卡片被换肤重建 / 删除，定时器还在
+        // 空转并强引用控件。离树、隐藏时停表；重新上树且仍在忙碌时恢复。
+        Loaded += (s, e) => ResumeSpinIfNeeded();
+        Unloaded += (s, e) => StopTimer();
+        IsVisibleChanged += (s, e) =>
         {
-            _frame = (_frame + 1) % Spin.Length;
-            _icon.Text = Spin[_frame];
+            if (IsVisible) ResumeSpinIfNeeded();
+            else StopTimer();
         };
 
         _tokens = ThemeResolver.Resolve(null);
@@ -270,13 +277,46 @@ public sealed class CardStatus : Grid
         _busy = true;
         _frame = 0;
         _icon.Text = Spin[0];
-        if (!_timer.IsEnabled) _timer.Start();
+        ResumeSpinIfNeeded();
     }
 
     void StopSpin()
     {
         _busy = false;
-        if (_timer.IsEnabled) _timer.Stop();
+        StopTimer();
+    }
+
+    void OnSpinTick(object sender, EventArgs e)
+    {
+        _frame = (_frame + 1) % Spin.Length;
+        _icon.Text = Spin[_frame];
+    }
+
+    /// <summary>K-31：只有“仍然忙碌 + 当前可见”才转圈，离屏的控件不该占用 UI 定时器。</summary>
+    void ResumeSpinIfNeeded()
+    {
+        if (_disposed || !_busy || !IsVisible) return;
+        DispatcherTimer timer = _timer;
+        if (timer is not null && !timer.IsEnabled) timer.Start();
+    }
+
+    void StopTimer()
+    {
+        DispatcherTimer timer = _timer;
+        if (timer is not null && timer.IsEnabled) timer.Stop();
+    }
+
+    /// <summary>K-31：释放路径 —— 先停表再断开 Tick，控件不再被定时器强引用。</summary>
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+
+        DispatcherTimer timer = _timer;
+        _timer = null;
+        if (timer is null) return;
+        timer.Stop();
+        timer.Tick -= OnSpinTick;
     }
 
     void UpdateProgress()

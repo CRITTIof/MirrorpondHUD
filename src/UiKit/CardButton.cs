@@ -175,7 +175,7 @@ public class CardButton : Button
         }
 
         ApplyTextAndSurface(_baseFill, Colors.Transparent, _textColor);
-        Background = new SolidColorBrush(_baseFill);
+        Background = CardPalette.Brush(_baseFill);
         BorderBrush = Brushes.Transparent;
         BorderThickness = new Thickness(0);
     }
@@ -218,17 +218,17 @@ public class CardButton : Button
         }
 
         ApplyTextAndSurface(background, border, text);
-        Background = new SolidColorBrush(background);
-        BorderBrush = new SolidColorBrush(border);
+        Background = CardPalette.Brush(background);
+        BorderBrush = CardPalette.Brush(border);
         BorderThickness = new Thickness(1);
     }
 
     void ApplyTextAndSurface(Color background, Color border, Color text)
     {
-        var textBrush = new SolidColorBrush(text);
-        textBrush.Freeze();
+        // K-30：统一走调色板（内部按颜色缓存并 Freeze），不再每次换肤新建等价画刷。
+        SolidColorBrush textBrush = CardPalette.Brush(text);
         Foreground = textBrush;
-        BorderBrush = new SolidColorBrush(border);
+        BorderBrush = CardPalette.Brush(border);
 
         // 内容是自己创建的 TextBlock：显式给字色，不依赖模板重建时的 Foreground 继承。
         var block = Content as TextBlock;
@@ -248,14 +248,12 @@ public class CardButton : Button
                 bool cut = _cut && (_active || Tone == CardButtonTone.Primary);
                 Geometry shape = BuildShape(new Rect(0, 0, w, h), cut);
                 Color fill = IsPressed ? _pressFill : IsMouseOver ? _hoverFill : _baseFill;
-                var brush = new SolidColorBrush(fill);
-                brush.Freeze();
-                dc.DrawGeometry(brush, null, shape);
+                dc.DrawGeometry(CardPalette.Brush(fill), null, shape);
 
                 if (IsKeyboardFocused)
                 {
                     Geometry ring = BuildShape(new Rect(-2, -2, w + 4, h + 4), cut);
-                    var pen = new Pen(new SolidColorBrush(_accent), 2);
+                    var pen = new Pen(CardPalette.Brush(_accent), 2);
                     pen.Freeze();
                     dc.DrawGeometry(null, pen, ring);
                 }
@@ -387,7 +385,9 @@ public class CardButton : Button
             "HorizontalAlignment=\"Center\" VerticalAlignment=\"Center\" RecognizesAccessKey=\"True\"/>" +
             "</Grid>" +
             "</ControlTemplate>";
-        return (ControlTemplate)XamlReader.Parse(xaml);
+        // 模板没有参数，整进程只需要解析一次（K-29）；解析失败返回 null，控件保持默认模板。
+        return CardTemplates.Get("CardButton.Modern", () => (ControlTemplate)XamlReader.Parse(xaml),
+                                 "卡片按钮模板");
     }
 
     /// <summary>
@@ -432,7 +432,8 @@ public class CardButton : Button
             "</ControlTemplate.Triggers>" +
             "</ControlTemplate>";
 
-        return (ControlTemplate)XamlReader.Parse(xaml);
+        return CardTemplates.Get($"CardButton.Legacy|{r}|{hoverHex}|{pressedHex}|{focusHex}",
+                                 () => (ControlTemplate)XamlReader.Parse(xaml), "卡片按钮旧模板");
     }
 
     static string ToHex(Color color) => $"#{color.A:X2}{color.R:X2}{color.G:X2}{color.B:X2}";

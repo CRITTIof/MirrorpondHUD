@@ -24,7 +24,6 @@ public sealed class CardList : Grid
     readonly TextBlock _emptyText;
 
     StyleSettings _lastStyle;
-    CliSettings _lastCli;
     bool _tiles;
 
     public CardList()
@@ -145,7 +144,7 @@ public sealed class CardList : Grid
         }
 
         // 调用方可能先 SetViewMode 再 ApplyStyle；若已经套过样式，这里补一次行模板。
-        if (_lastStyle is not null) ApplyStyle(_lastStyle, _lastCli);
+        if (_lastStyle is not null) ApplyStyle(_lastStyle);
     }
 
     /// <summary>双击一行或按回车时触发（参数是当前选中项）。</summary>
@@ -163,18 +162,17 @@ public sealed class CardList : Grid
     }
 
     /// <summary>按当前外观重套：行高 / 字体 / 悬停 / 选中 / 滚动条 / 空状态颜色。</summary>
-    public void ApplyStyle(StyleSettings style, CliSettings cli)
+    public void ApplyStyle(StyleSettings style)
     {
         StyleSettings s = style ?? new StyleSettings();
         _lastStyle = s;
-        _lastCli = cli;
 
         ThemeTokens tokens = ThemeResolver.Resolve(s);
         Color foreground = CardPalette.TryColor(s.Foreground, Color.FromRgb(0xE6, 0xED, 0xF3));
 
         _list.FontFamily = CardPalette.ResolveFont(s.FontFamily);
         _list.FontSize = Math.Max(10, s.FontSize - 1);
-        _list.Foreground = new SolidColorBrush(foreground);
+        _list.Foreground = CardPalette.Brush(foreground);
         _list.ItemContainerStyle = BuildItemStyle(tokens, foreground, EndfieldVisuals.SelectionBar(s), _tiles);
 
         CliScrollBars.Apply(this, tokens.Scrollbar, tokens.ScrollbarHot);
@@ -247,7 +245,7 @@ public sealed class CardList : Grid
             tiles ? new Thickness(3) : new Thickness(0, 0, 0, 1)));
         style.Setters.Add(new Setter(Control.HorizontalContentAlignmentProperty, HorizontalAlignment.Stretch));
         style.Setters.Add(new Setter(Control.VerticalContentAlignmentProperty, VerticalAlignment.Center));
-        style.Setters.Add(new Setter(Control.ForegroundProperty, new SolidColorBrush(foreground)));
+        style.Setters.Add(new Setter(Control.ForegroundProperty, CardPalette.Brush(foreground)));
         style.Setters.Add(new Setter(Control.FocusVisualStyleProperty, null));
 
         string template = templateXaml
@@ -255,7 +253,13 @@ public sealed class CardList : Grid
             .Replace("%CONTENTMARGIN%", contentMargin)
             .Replace("%BAR%", ThemeResolver.WithAlpha(tokens.Accent, 0.9).ToString())
             .Replace("%BARSETTER%", barSetter);
-        style.Setters.Add(new Setter(Control.TemplateProperty, (ControlTemplate)XamlReader.Parse(template)));
+
+        // K-29：行模板只跟颜色 / 圆角 / 选项有关，按这些参数缓存；解析失败保持默认行样式。
+        ControlTemplate rowTemplate = CardTemplates.Get(
+            $"CardList.Row|{CardTemplates.Hex(foreground)}|{CardTemplates.Hex(tokens.Accent)}|{bar}|{tiles}",
+            () => (ControlTemplate)XamlReader.Parse(template), "卡片列表行模板");
+        if (rowTemplate is not null)
+            style.Setters.Add(new Setter(Control.TemplateProperty, rowTemplate));
 
         var hover = new Trigger { Property = IsMouseOverProperty, Value = true };
         hover.Setters.Add(new Setter(Control.BackgroundProperty, CardPalette.Brush(foreground, 0.06)));

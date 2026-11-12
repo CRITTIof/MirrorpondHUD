@@ -938,7 +938,13 @@ public sealed class CardContextMenu : ContextMenu
         separator.Background = Brushes.Transparent;
     }
 
-    static ControlTemplate ParseTemplate(string xaml) => (ControlTemplate)XamlReader.Parse(xaml);
+    /// <summary>
+    /// K-29：浮层模板同样是字符串拼的。缓存键直接用整段 XAML —— 它本身完整描述了参数
+    /// （颜色 / 圆角），既不会误命中别的配色，也不用再维护一份参数列表。
+    /// 解析失败记日志并返回 null，控件保持系统默认模板。
+    /// </summary>
+    static ControlTemplate ParseTemplate(string xaml) =>
+        CardTemplates.Get($"Overlay|{xaml}", () => (ControlTemplate)XamlReader.Parse(xaml), "浮层模板");
 
     /// <summary>菜单条目：保存点击动作、快捷键与危险标记，自绘 Header。</summary>
     sealed class CardMenuItem : MenuItem

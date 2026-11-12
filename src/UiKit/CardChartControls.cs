@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Media;
@@ -44,13 +45,7 @@ internal static class ChartDraw
             pixelsPerDip);
 
     /// <summary>按设置里的格式显示数值；格式串非法时退回默认格式，不抛异常。</summary>
-    public static string FormatValue(double value, string format)
-    {
-        if (!IsFinite(value)) return "";
-        string text = string.IsNullOrWhiteSpace(format) ? "0.##" : format;
-        try { return value.ToString(text, CultureInfo.CurrentCulture); }
-        catch { return value.ToString("0.##", CultureInfo.CurrentCulture); }
-    }
+    public static string FormatValue(double value, string format) => CardFormat.Number(value, format);
 
     /// <summary>
     /// 计算纵轴范围与刻度步长。数据为空 / 全是非有限值返回 false。
@@ -334,6 +329,7 @@ internal static class ChartDraw
 public class CardSparkline : FrameworkElement
 {
     readonly List<double> _values = new();
+    readonly ReadOnlyCollection<double> _valuesView;
     ThemeTokens _tokens = ThemeResolver.Resolve(null);
     bool _autoScale = true;
     bool _fill = true;
@@ -344,15 +340,19 @@ public class CardSparkline : FrameworkElement
     /// <summary>空趋势线：默认最小高度 40，颜色先用默认主题。</summary>
     public CardSparkline()
     {
+        _valuesView = new ReadOnlyCollection<double>(_values);
         MinHeight = 40;
         SnapsToDevicePixels = true;
         ApplyStyle(null, 8);
     }
 
-    /// <summary>数值序列（直接往里加不会自动重绘，批量改完请调 <see cref="SetValues"/> 或等待布局）。</summary>
-    public IList<double> Values
+    /// <summary>
+    /// 数值序列的只读视图（K-36）。要改数据请用 Add / AddRange / RemoveAt / Clear / SetValues，
+    /// 这些方法会触发重绘；旧实现直接暴露内部 List，改了列表不重绘是纯粹的 API 陷阱。
+    /// </summary>
+    public IReadOnlyList<double> Values
     {
-        get => _values;
+        get => _valuesView;
         set
         {
             _values.Clear();
@@ -423,6 +423,31 @@ public class CardSparkline : FrameworkElement
         InvalidateVisual();
     }
 
+    /// <summary>批量追加并只重绘一次（K-36：外部拿不到内部 List 之后，这是流式数据的入口）。</summary>
+    public void AddRange(IEnumerable<double> values)
+    {
+        if (values is null) return;
+        foreach (double value in values) _values.Add(value);
+        InvalidateVisual();
+    }
+
+    /// <summary>删掉指定下标的值并重绘；越界返回 false。</summary>
+    public bool RemoveAt(int index)
+    {
+        if (index < 0 || index >= _values.Count) return false;
+        _values.RemoveAt(index);
+        InvalidateVisual();
+        return true;
+    }
+
+    /// <summary>清空数据并重绘。</summary>
+    public void Clear()
+    {
+        if (_values.Count == 0) return;
+        _values.Clear();
+        InvalidateVisual();
+    }
+
     /// <summary>套用卡片外观（颜色取主题强调色，圆角参数保留给后续扩展）。</summary>
     public void ApplyStyle(StyleSettings style, double cornerRadius)
     {
@@ -481,6 +506,8 @@ public class CardLineChart : FrameworkElement
 {
     readonly List<CardChartSeries> _series = new();
     readonly List<string> _labels = new();
+    readonly ReadOnlyCollection<CardChartSeries> _seriesView;
+    readonly ReadOnlyCollection<string> _labelsView;
     ThemeTokens _tokens = ThemeResolver.Resolve(null);
     Color _foreground = Color.FromRgb(0xE6, 0xED, 0xF3);
     FontFamily _font = new("Microsoft YaHei UI");
@@ -498,15 +525,20 @@ public class CardLineChart : FrameworkElement
     /// <summary>空折线图：默认最小高度 120。</summary>
     public CardLineChart()
     {
+        _seriesView = new ReadOnlyCollection<CardChartSeries>(_series);
+        _labelsView = new ReadOnlyCollection<string>(_labels);
         MinHeight = 120;
         SnapsToDevicePixels = true;
         ApplyStyle(null, 8);
     }
 
-    /// <summary>数据序列（直接改列表不会自动重绘，改完可重新 ApplyStyle 或等待布局）。</summary>
-    public IList<CardChartSeries> Series
+    /// <summary>
+    /// 数据序列的只读视图（K-36）。要改数据请用 AddSeries / RemoveSeries / ClearSeries，
+    /// 它们会触发重绘；旧实现直接暴露内部 List，改完不重绘是纯粹的 API 陷阱。
+    /// </summary>
+    public IReadOnlyList<CardChartSeries> Series
     {
-        get => _series;
+        get => _seriesView;
         set
         {
             _series.Clear();
@@ -521,10 +553,37 @@ public class CardLineChart : FrameworkElement
         }
     }
 
-    /// <summary>横轴标签（数量可以少于数据点；不等长时按整段均匀分布）。</summary>
-    public IList<string> Labels
+    /// <summary>追加一条序列并重绘。</summary>
+    public void AddSeries(CardChartSeries series)
     {
-        get => _labels;
+        if (series is null) return;
+        _series.Add(series);
+        InvalidateVisual();
+    }
+
+    /// <summary>移除一条序列并重绘；返回是否真的移除了。</summary>
+    public bool RemoveSeries(CardChartSeries series)
+    {
+        if (series is null || !_series.Remove(series)) return false;
+        InvalidateVisual();
+        return true;
+    }
+
+    /// <summary>清空所有序列并重绘。</summary>
+    public void ClearSeries()
+    {
+        if (_series.Count == 0) return;
+        _series.Clear();
+        InvalidateVisual();
+    }
+
+    /// <summary>
+    /// 横轴标签的只读视图（数量可以少于数据点；不等长时按整段均匀分布）。
+    /// 改数据用 AddLabel / ClearLabels，它们会触发重绘（K-36）。
+    /// </summary>
+    public IReadOnlyList<string> Labels
+    {
+        get => _labelsView;
         set
         {
             _labels.Clear();
@@ -534,6 +593,21 @@ public class CardLineChart : FrameworkElement
             }
             InvalidateVisual();
         }
+    }
+
+    /// <summary>追加一个横轴标签并重绘。</summary>
+    public void AddLabel(string label)
+    {
+        _labels.Add(label ?? "");
+        InvalidateVisual();
+    }
+
+    /// <summary>清空横轴标签并重绘。</summary>
+    public void ClearLabels()
+    {
+        if (_labels.Count == 0) return;
+        _labels.Clear();
+        InvalidateVisual();
     }
 
     public bool AutoScale
@@ -675,6 +749,8 @@ public class CardBarChart : FrameworkElement
 {
     readonly List<CardChartSeries> _series = new();
     readonly List<string> _labels = new();
+    readonly ReadOnlyCollection<CardChartSeries> _seriesView;
+    readonly ReadOnlyCollection<string> _labelsView;
     ThemeTokens _tokens = ThemeResolver.Resolve(null);
     Color _foreground = Color.FromRgb(0xE6, 0xED, 0xF3);
     FontFamily _font = new("Microsoft YaHei UI");
@@ -692,15 +768,20 @@ public class CardBarChart : FrameworkElement
     /// <summary>空柱状图：默认最小高度 120。</summary>
     public CardBarChart()
     {
+        _seriesView = new ReadOnlyCollection<CardChartSeries>(_series);
+        _labelsView = new ReadOnlyCollection<string>(_labels);
         MinHeight = 120;
         SnapsToDevicePixels = true;
         ApplyStyle(null, 8);
     }
 
-    /// <summary>数据序列（直接改列表不会自动重绘，改完可重新 ApplyStyle 或等待布局）。</summary>
-    public IList<CardChartSeries> Series
+    /// <summary>
+    /// 数据序列的只读视图（K-36）。要改数据请用 AddSeries / RemoveSeries / ClearSeries，
+    /// 它们会触发重绘；旧实现直接暴露内部 List，改完不重绘是纯粹的 API 陷阱。
+    /// </summary>
+    public IReadOnlyList<CardChartSeries> Series
     {
-        get => _series;
+        get => _seriesView;
         set
         {
             _series.Clear();
@@ -715,10 +796,37 @@ public class CardBarChart : FrameworkElement
         }
     }
 
-    /// <summary>横轴标签（数量可以少于数据点；不等长时按整段均匀分布）。</summary>
-    public IList<string> Labels
+    /// <summary>追加一条序列并重绘。</summary>
+    public void AddSeries(CardChartSeries series)
     {
-        get => _labels;
+        if (series is null) return;
+        _series.Add(series);
+        InvalidateVisual();
+    }
+
+    /// <summary>移除一条序列并重绘；返回是否真的移除了。</summary>
+    public bool RemoveSeries(CardChartSeries series)
+    {
+        if (series is null || !_series.Remove(series)) return false;
+        InvalidateVisual();
+        return true;
+    }
+
+    /// <summary>清空所有序列并重绘。</summary>
+    public void ClearSeries()
+    {
+        if (_series.Count == 0) return;
+        _series.Clear();
+        InvalidateVisual();
+    }
+
+    /// <summary>
+    /// 横轴标签的只读视图（数量可以少于数据点；不等长时按整段均匀分布）。
+    /// 改数据用 AddLabel / ClearLabels，它们会触发重绘（K-36）。
+    /// </summary>
+    public IReadOnlyList<string> Labels
+    {
+        get => _labelsView;
         set
         {
             _labels.Clear();
@@ -728,6 +836,21 @@ public class CardBarChart : FrameworkElement
             }
             InvalidateVisual();
         }
+    }
+
+    /// <summary>追加一个横轴标签并重绘。</summary>
+    public void AddLabel(string label)
+    {
+        _labels.Add(label ?? "");
+        InvalidateVisual();
+    }
+
+    /// <summary>清空横轴标签并重绘。</summary>
+    public void ClearLabels()
+    {
+        if (_labels.Count == 0) return;
+        _labels.Clear();
+        InvalidateVisual();
     }
 
     public bool AutoScale

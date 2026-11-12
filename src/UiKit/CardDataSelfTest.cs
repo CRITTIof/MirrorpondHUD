@@ -77,6 +77,41 @@ public static class CardDataSelfTest
         Render(ring, 100, 100);
         if (ring.ActualWidth <= 0 || ring.ActualHeight <= 0) return "CardProgressRing 布局失败";
 
+        // K-34：仪表盘的格式串非法时必须回退默认格式，OnRender 不能抛 FormatException。
+        gauge.ValueFormat = "X2";
+        Render(gauge, 140, 96);
+
+        // K-35：混合类型的列（整数 + 文本）不能再抛 ArgumentException。
+        var mixed = new CardTable { Width = 320, Height = 180 };
+        mixed.AddColumn("值");
+        mixed.AddRow((object)10);
+        mixed.AddRow("b");
+        mixed.AddRow((object)2);
+        mixed.AddRow("a");
+        mixed.ApplyStyle(style, 8);
+        Render(mixed, 320, 180);
+        mixed.SortBy(0, false);
+        if (mixed.Count != 4) return "CardTable 混合类型排序后行数不为 4";
+        if (mixed.GetItem(0) is not CardTableItem mixedFirst || mixedFirst.Cell(0) != "10")
+            return "CardTable 混合类型排序没有按字符串兜底";
+
+        // K-35：主键相同的行必须保持加入顺序（稳定排序），降序也不能翻转次级键。
+        var stable = new CardTable { Width = 260, Height = 140 };
+        stable.AddColumn("组");
+        stable.AddColumn("序");
+        stable.AddRow("b", "1");
+        stable.AddRow("b", "2");
+        stable.AddRow("a", "3");
+        stable.ApplyStyle(style, 8);
+        Render(stable, 260, 140);
+        stable.SortBy(0, false);
+        if (stable.GetItem(0) is not CardTableItem stableFirst || stableFirst.Cell(1) != "3")
+            return "CardTable 稳定排序的首行不对";
+        if (stable.GetItem(1) is not CardTableItem stableSecond || stableSecond.Cell(1) != "1")
+            return "CardTable 稳定排序没有保持同键行的原有先后";
+        if (stable.GetItem(2) is not CardTableItem stableThird || stableThird.Cell(1) != "2")
+            return "CardTable 稳定排序没有保持同键行的原有先后";
+
         return null;
     }
 

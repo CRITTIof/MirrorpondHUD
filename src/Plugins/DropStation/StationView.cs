@@ -267,7 +267,7 @@ internal sealed class StationView : Grid, IDisposable, IStationCopySink
         _footer.ApplyStyle(_settings.Style);
         _search.ApplyStyle(_settings.Style, _settings.Overlay.CornerRadius);
         _list.SetViewMode(StationDisplayMode.IsTiles(_station.View));
-        _list.ApplyStyle(_settings.Style, cli);
+        _list.ApplyStyle(_settings.Style);
         _status.ApplyStyle(_settings.Style, _settings.Overlay.CornerRadius);
         _cancelCopy.ApplyStyle(_settings.Style, _settings.Overlay.CornerRadius);
         _dropOverlay.ApplyStyle(_settings.Style, _settings.Overlay.CornerRadius);

@@ -431,7 +431,7 @@ public static class Screenshots
             stack.Children.Add(status);
 
             var list = new CardList { Height = 160, Margin = new Thickness(0, 0, 0, 10) };
-            list.ApplyStyle(style, settings.Cli);
+            list.ApplyStyle(style);
             list.SetEmptyText("把文件拖进来");
             list.Items.Add(WidgetRow("a.zip", "12.4 MB", foreground, ShellIcons.GetIcon("a.zip", 16)));
             list.Items.Add(WidgetRow("screenshot.png", "2.1 MB", foreground, ShellIcons.GetIcon("x.png", 16)));
@@ -447,7 +447,7 @@ public static class Screenshots
 
             var dropHost = new Grid { Height = 100, Margin = new Thickness(0, 0, 0, 10) };
             var dropList = new CardList();
-            dropList.ApplyStyle(style, settings.Cli);
+            dropList.ApplyStyle(style);
             dropList.SetEmptyText("把文件拖进来（空状态）");
             dropHost.Children.Add(dropList);
 

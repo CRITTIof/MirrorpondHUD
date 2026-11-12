@@ -27,11 +27,12 @@ public class CardTextBox : TextBox
 
         Color foreground = CardPalette.TryColor(style.Foreground, Color.FromRgb(0xE6, 0xED, 0xF3));
 
-        Foreground = new SolidColorBrush(foreground);
-        CaretBrush = new SolidColorBrush(foreground);
-        SelectionBrush = new SolidColorBrush(Alpha(foreground, 0.35));
-        Background = new SolidColorBrush(Alpha(foreground, 0.07));
-        BorderBrush = new SolidColorBrush(Alpha(foreground, 0.24));
+        // K-30：统一走调色板（按颜色缓存 + Freeze），不再为每个实例新建等价画刷。
+        Foreground = CardPalette.Brush(foreground);
+        CaretBrush = CardPalette.Brush(foreground);
+        SelectionBrush = CardPalette.Brush(foreground, 0.35);
+        Background = CardPalette.Brush(foreground, 0.07);
+        BorderBrush = CardPalette.Brush(foreground, 0.24);
         FontFamily = ResolveFont(style.FontFamily);
         FontSize = Math.Max(9, style.FontSize);
 
@@ -53,13 +54,10 @@ public class CardTextBox : TextBox
             "</Border>" +
             "</ControlTemplate>";
 
-        return (ControlTemplate)System.Windows.Markup.XamlReader.Parse(xaml);
-    }
-
-    static Color Alpha(Color color, double alpha)
-    {
-        byte a = (byte)Math.Round(Math.Max(0.0, Math.Min(1.0, alpha)) * 255.0);
-        return Color.FromArgb(a, color.R, color.G, color.B);
+        // 模板只跟圆角有关：同一圆角全局只解析一次（K-29），失败返回 null 保持系统模板。
+        return CardTemplates.Get($"CardTextBox.Template|{r}",
+                                 () => (ControlTemplate)System.Windows.Markup.XamlReader.Parse(xaml),
+                                 "卡片输入框模板");
     }
 
     static FontFamily ResolveFont(string name)
