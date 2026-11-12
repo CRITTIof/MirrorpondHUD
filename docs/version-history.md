@@ -3617,7 +3617,8 @@ M3 在大/中图标里改为下缘条；动效档位按“优雅 / 标准 / 简�
 6. **几何采样**：开启后先取字形 alpha 边界点，再在不足目标数时补填充点；对图标 / 键帽混排也有效。
 7. **富内容样式关联**：新增 `CardTextStyle`，给 CLI / 对话 / 媒体 / 中转站补：
    描边（0 偏移柔和阴影）、加粗、行高；CLI 正文补 `TextAlignment`；`CardHeader` 标题跟 `Bold`；
-   中转站重建列表后重新套用，CLI 新记录在 `AddText` 时套用。
+   中转站重建列表后重新套用，CLI 新记录在 `AddText` 时套用；宿主 `EnsureContent`
+   在首次创建富内容后也补一次，首帧即生效。
 8. **有意不覆盖**：CLI 等宽终端字体、`MonoReadouts`、图标倍率、富内容的结构性布局对齐不强行套正文设置；
    这些在富内容里由各自控件承担语义。
 9. **仓库清理**：`.gitignore` 排除 `samples/ParticleToText/`、`samples/EndfieldDesign/`、

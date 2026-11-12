@@ -507,6 +507,8 @@ public sealed class OverlayController : IDisposable
         {
             slot.Content = slot.Rich.CreateContent(
                 new CardRenderContext(_settings, _render.LastSnapshot, _keys, slot.Config, null, slot.Host));
+            if (slot.Content is not null)
+                CardTextStyle.ApplyRichText(_settings.Style, slot.Content);
         }
         catch (Exception ex)
         {
