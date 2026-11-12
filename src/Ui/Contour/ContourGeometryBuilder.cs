@@ -129,14 +129,12 @@ internal sealed class ContourGeometryBuilder
             return;
         }
 
-        // 与旧实现 BuildGeometry 完全一致的网格尺寸推导（ScalarGrid.Build 的
-        // cell 下限、cols/rows 的 [4,512] 夹取也一并照搬），保证等高线位置不跳。
-        double cell = Math.Max(6.0, Math.Max(request.Width, request.Height) / MaxCellsPerAxis);
-        double cellSize = Math.Max(2.0, cell);
-        int cols = (int)Math.Ceiling(request.Width / cellSize);
-        int rows = (int)Math.Ceiling(request.Height / cellSize);
-        cols = Math.Max(4, Math.Min(cols, 512));
-        rows = Math.Max(4, Math.Min(rows, 512));
+        // T-12：尺寸推导只走 ScalarGrid.ComputeSize。生产路径原来在这里内联了一份，
+        // 与可测 API 的 512 上限各写一个数，已经漂移过；统一入口后改上限只改一处。
+        // 单元格下限 6 DIP 与上限 140 是本路径的预算（12 级全网格提取 + 平滑），
+        // 与 ScalarGrid 的通用默认值（512）刻意不同，所以显式传 maxCellsPerAxis。
+        double cellSize = Math.Max(6.0, Math.Max(request.Width, request.Height) / MaxCellsPerAxis);
+        (int cols, int rows) = ScalarGrid.ComputeSize(request.Width, request.Height, cellSize, MaxCellsPerAxis);
 
         // Relief 变了才需要新的 scale（噪声种子与采样顺序保持不变）。
         if (_terrain is null || _terrainRelief != request.Relief)

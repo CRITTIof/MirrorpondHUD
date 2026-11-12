@@ -214,6 +214,9 @@ public static class Screenshots
             stack.Margin = new Thickness(80, 0, 80, 0);
             host.Children.Add(stack);
 
+            // T-11：先注入真实 DPI 再量尺寸，排版宽度 / 换行才与屏上一致。
+            ApplyScreenshotDpi(host, settings);
+
             host.Measure(new Size(host.Width, host.Height));
             host.Arrange(new Rect(0, 0, host.Width, host.Height));
             host.UpdateLayout();
@@ -292,6 +295,9 @@ public static class Screenshots
             surface.HorizontalAlignment = HorizontalAlignment.Center;
             surface.VerticalAlignment = VerticalAlignment.Center;
             host.Children.Add(surface);
+
+            // T-11：截图不是真实窗口，必须显式告诉自绘文本"屏上是多少 DPI"。
+            ApplyScreenshotDpi(host, settings);
 
             host.Measure(new Size(width, height));
             host.Arrange(new Rect(0, 0, width, height));
@@ -509,6 +515,9 @@ public static class Screenshots
             column.VerticalAlignment = VerticalAlignment.Center;
             host.Children.Add(column);
 
+            // T-11：共享控件截图同样按真实 DPI 排版。
+            ApplyScreenshotDpi(host, settings);
+
             host.Measure(new Size(host.Width, host.Height));
             host.Arrange(new Rect(0, 0, host.Width, host.Height));
             host.UpdateLayout();
@@ -658,6 +667,9 @@ public static class Screenshots
                     45)
             };
             root.Children.Add(panel);
+            // T-11：模板卡片里的自绘文本也按真实 DPI 排版（面板量尺寸之前）。
+            ApplyScreenshotDpi(root, settings);
+
             panel.Measure(new Size(1040, double.PositiveInfinity));
             panel.Arrange(new Rect(0, 0, 1040, panel.DesiredSize.Height));
             panel.UpdateLayout();
@@ -834,6 +846,46 @@ public static class Screenshots
         {
             Log.Error("生成设置界面截图失败", ex);
             return false;
+        }
+    }
+
+    /// <summary>
+    /// T-11：截图前把目标屏的真实缩放注入每个 <see cref="TextCanvas"/>。
+    ///
+    /// 离屏合成树（Grid + OverlaySurface）没有 PresentationSource，
+    /// <see cref="VisualTreeHelper.GetDpi"/> 一律返回 96：自绘文本会按 1.0 px/DIP 做
+    /// Display hinting，再被 2× RenderTargetBitmap 放大，与屏上 150% / 175% 的字形宽度、
+    /// 笔画粗细对不上，验收"像素对齐 / 描边"类问题时会产生假差异。
+    ///
+    /// 需真机验证：在 150% 缩放机器上对比系统截屏与 `--screenshot-cards` 的字形。
+    /// </summary>
+    static void ApplyScreenshotDpi(DependencyObject root, Settings settings)
+    {
+        double scale = 1.0;
+        try
+        {
+            ScreenInfo screen = ScreenGeometry.Get(settings is null ? 0 : settings.Overlay.Monitor);
+            if (screen is not null && screen.ScaleX > 0.1) scale = screen.ScaleX;
+        }
+        catch (Exception ex)
+        {
+            // 读不到缩放时按 100% 继续：截图仍然可出，只是与屏上可能有 1px 级字形差。
+            Log.Warn($"读取截图 DPI 失败，按 100% 排版: {ex.Message}");
+        }
+
+        ApplyPixelsPerDip(root, scale);
+    }
+
+    static void ApplyPixelsPerDip(DependencyObject root, double scale)
+    {
+        if (root is null) return;
+
+        if (root is TextCanvas canvas) canvas.PixelsPerDipOverride = scale;
+
+        int count = VisualTreeHelper.GetChildrenCount(root);
+        for (int i = 0; i < count; i++)
+        {
+            ApplyPixelsPerDip(VisualTreeHelper.GetChild(root, i), scale);
         }
     }
 
