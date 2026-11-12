@@ -16,6 +16,27 @@ namespace MirrorpondHUD.Ui;
 /// <summary>离屏渲染成 PNG，用于自动化验收（--screenshot）。</summary>
 public static class Screenshots
 {
+    /// <summary>
+    /// T-19：截图模式一律只改**演示副本**，绝不污染运行中的配置。
+    ///
+    /// ConfigStore.Load() 返回的对象以前被就地改成演示参数（关投影、拉开间距、关闭 Endfield
+    /// 分支、强制浅色设置页、演示循环粗细行），随后又交给真实的 SettingsWindow 与卡片模块。
+    /// 单进程跑完即退时看不到污染，但一旦截图被复用到"运行中导出预览"，或设置窗的
+    /// "改即应用"路径接上真实落盘，这些演示参数就会写进用户配置，而且没有任何提示。
+    ///
+    /// 深拷贝走 SettingsWindow.TryClone（与设置窗同一个出口：JSON 往返、失败返回 null + 原因），
+    /// 不另写一份手抄字段的 Copy——手抄会漏字段，漏掉的字段还是会被就地改。克隆失败说明
+    /// 设置树本身已不可序列化，此时宁可让截图失败（可见），也不拿原对象凑合。
+    /// </summary>
+    static Settings LoadDemoSettings(string scope)
+    {
+        Settings source = ConfigStore.Load();
+        if (SettingsWindow.TryClone(source, out Settings demo, out string error)) return demo;
+
+        Log.Error($"{scope}: 演示设置深拷贝失败，取消本次截图（不修改实时配置）: {error}");
+        return null;
+    }
+
     /// <summary>MIRRORPOND_SETTINGS_SCROLL=1：设置页每一页再拍一张「滚到底」的图。</summary>
     static bool SettingsScrollDemo
     {
@@ -99,7 +120,8 @@ public static class Screenshots
     {
         try
         {
-            Settings settings = ConfigStore.Load();
+            Settings settings = LoadDemoSettings("卡片组截图");
+            if (settings is null) return false;
             // 文档截图关掉投影、拉开间距：卡片边缘干净，不会互相压到。
             // MIRRORPOND_SHADOW_DEMO=1 时保留投影，用来验收自然投影。
             if (Environment.GetEnvironmentVariable("MIRRORPOND_SHADOW_DEMO") != "1")
@@ -232,7 +254,7 @@ public static class Screenshots
                 96 * scale, 96 * scale, PixelFormats.Pbgra32);
             rtb.Render(host);
 
-            SavePng(rtb, path);
+            if (!SavePng(rtb, path)) return false;
             Log.Info($"已生成卡片组截图: {path}（{count} 张）");
             return count > 0;
         }
@@ -247,7 +269,8 @@ public static class Screenshots
     {
         try
         {
-            Settings settings = ConfigStore.Load();
+            Settings settings = LoadDemoSettings("叠层截图");
+            if (settings is null) return false;
             settings.Overlay.Shadow = false;
             MetricsSnapshot snap = DemoSnapshot();
             KeyHistory keys = DemoKeys(settings.Data.KeyHistoryCount, settings.Data.RepeatThreshold,
@@ -313,7 +336,7 @@ public static class Screenshots
                 96 * scale, 96 * scale, PixelFormats.Pbgra32);
             rtb.Render(host);
 
-            SavePng(rtb, path);
+            if (!SavePng(rtb, path)) return false;
             Log.Info($"已生成叠层截图: {path}");
             return true;
         }
@@ -385,7 +408,8 @@ public static class Screenshots
     {
         try
         {
-            Settings settings = ConfigStore.Load();
+            Settings settings = LoadDemoSettings("共享控件截图");
+            if (settings is null) return false;
             settings.Overlay.Shadow = false;
             StyleSettings style = settings.Style;
             Color foreground = OverlaySurface.ParseColor(style.Foreground, Color.FromRgb(0xE6, 0xED, 0xF3));
@@ -529,7 +553,7 @@ public static class Screenshots
                 96 * scale, 96 * scale, PixelFormats.Pbgra32);
             rtb.Render(host);
 
-            SavePng(rtb, path);
+            if (!SavePng(rtb, path)) return false;
             Log.Info($"已生成共享控件截图: {path}");
             return true;
         }
@@ -686,7 +710,7 @@ public static class Screenshots
                 96 * scale, 96 * scale, PixelFormats.Pbgra32);
             rtb.Render(root);
 
-            SavePng(rtb, path);
+            if (!SavePng(rtb, path)) return false;
             Log.Info($"已生成中转站视图截图: {path}");
             return true;
         }
@@ -760,7 +784,8 @@ public static class Screenshots
     {
         try
         {
-            Settings settings = ConfigStore.Load();
+            Settings settings = LoadDemoSettings("设置界面截图");
+            if (settings is null) return false;
             // 截图验收可强制浅色设置页；MIRRORPOND_SETTINGS_LIGHT=1。
             if (Environment.GetEnvironmentVariable("MIRRORPOND_SETTINGS_LIGHT") == "1")
                 settings.Behavior.SettingsTheme = "Light";
@@ -797,6 +822,11 @@ public static class Screenshots
 
             double width = Math.Max(1, window.ActualWidth);
             double height = Math.Max(1, window.ActualHeight);
+            // T-18：位图像素尺寸向上取整，Arrange/Measure 仍用同一个 double。
+            // 原来 (int) 截断会丢掉右/下边缘不足 1px 的部分（ActualWidth 很少是整数），
+            // 贴边 / 描边类验收会因此误判成"少了 1px"。
+            int pixelWidth = Math.Max(1, (int)Math.Ceiling(width));
+            int pixelHeight = Math.Max(1, (int)Math.Ceiling(height));
 
             string basePath = Path.GetFullPath(path);
             string dir = Path.GetDirectoryName(basePath);
@@ -811,15 +841,19 @@ public static class Screenshots
                 root.UpdateLayout();
                 Dispatcher.CurrentDispatcher.Invoke(new Action(() => { }), DispatcherPriority.Background);
 
-                var rtb = new RenderTargetBitmap((int)width, (int)height, 96, 96, PixelFormats.Pbgra32);
+                var rtb = new RenderTargetBitmap(pixelWidth, pixelHeight, 96, 96, PixelFormats.Pbgra32);
                 rtb.Render(root);
 
                 string target = tab == 0
                     ? basePath
                     : Path.Combine(dir, $"{stem}-tab{tab}.png");
-                SavePng(rtb, target);
-                wrote = true;
-                Log.Info($"已生成设置界面截图: {target}");
+                // T-18：单页失败只记 WARN（见 SavePng），继续拍其余页；
+                // 整批结果按"是否至少写出一张"汇报，不中断整本相册。
+                if (SavePng(rtb, target))
+                {
+                    wrote = true;
+                    Log.Info($"已生成设置界面截图: {target}");
+                }
 
                 // MIRRORPOND_SETTINGS_SCROLL=1：把这一页滚到底再拍一张，长页面（外观页）的下半部分才看得到。
                 if (SettingsScrollDemo)
@@ -831,10 +865,14 @@ public static class Screenshots
                         root.UpdateLayout();
                         Dispatcher.CurrentDispatcher.Invoke(new Action(() => { }), DispatcherPriority.Background);
 
-                        var bottom = new RenderTargetBitmap((int)width, (int)height, 96, 96, PixelFormats.Pbgra32);
+                        var bottom = new RenderTargetBitmap(pixelWidth, pixelHeight, 96, 96, PixelFormats.Pbgra32);
                         bottom.Render(root);
-                        SavePng(bottom, Path.Combine(dir, $"{stem}-tab{tab}-bottom.png"));
-                        Log.Info($"已生成设置界面截图（滚到底）: {stem}-tab{tab}-bottom.png");
+                        string bottomPath = Path.Combine(dir, $"{stem}-tab{tab}-bottom.png");
+                        if (SavePng(bottom, bottomPath))
+                        {
+                            wrote = true;
+                            Log.Info($"已生成设置界面截图（滚到底）: {stem}-tab{tab}-bottom.png");
+                        }
                     }
                 }
             }
@@ -889,15 +927,30 @@ public static class Screenshots
         }
     }
 
+    /// <summary>
+    /// T-18：PNG 走 <see cref="AtomicFile"/> 原子写（临时文件 → Move 覆盖），失败只记 WARN 并返回 false。
+    ///
+    /// 原来 File.Create 直写目标：编码中途失败（磁盘满 / 编码器异常）会留下一张半截图，
+    /// 而且已经把上一张验收图覆盖掉，肉眼只能看到"打不开的 png"。
+    /// 相册批量写（设置页每一页 / 每一页滚到底）靠返回值继续拍其余图片，不中断整批。
+    /// 临时文件是「目标 + .tmp」，目标仍是 .png——编码器只认流，不认扩展名。
+    /// </summary>
     static bool SavePng(BitmapSource source, string path)
     {
-        string dir = Path.GetDirectoryName(Path.GetFullPath(path));
-        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+        string fullPath = Path.GetFullPath(path);
 
         var encoder = new PngBitmapEncoder();
         encoder.Frames.Add(BitmapFrame.Create(source));
-        using (var stream = File.Create(path))
-            encoder.Save(stream);
-        return true;
+
+        AtomicFile.WriteResult result = AtomicFile.WriteBinary(fullPath, stream => encoder.Save(stream),
+                                                              createBackup: false);
+        if (result.Success) return true;
+
+        string reason = result.Error is not null ? result.Error.Message
+                      : result.BackupError is not null ? result.BackupError.Message
+                      : result.ReplaceError is not null ? result.ReplaceError.Message
+                      : "未知原因";
+        Log.Warn($"截图写盘失败({fullPath}): {reason}，继续其余图片");
+        return false;
     }
 }

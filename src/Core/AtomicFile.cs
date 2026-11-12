@@ -49,46 +49,7 @@ internal static class AtomicFile
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
 
             WriteDurable(tmp, text ?? "");
-
-            if (File.Exists(path))
-            {
-                if (createBackup)
-                {
-                    string backup = $"{path}.bak";
-                    try
-                    {
-                        File.Replace(tmp, path, backup, true);
-                    }
-                    catch (Exception ex)
-                    {
-                        // 某些文件系统 / 杀软会拒绝 Replace：退回「先备份再覆盖」。
-                        result.ReplaceError = ex;
-                        try
-                        {
-                            File.Copy(path, backup, true);
-                        }
-                        catch (Exception copyEx)
-                        {
-                            // 备份失败必须中止，绝不能无备份覆盖主文件。
-                            result.BackupError = copyEx;
-                            return result;
-                        }
-
-                        File.Move(tmp, path, true);
-                    }
-                }
-                else
-                {
-                    // 损坏恢复路径（backup=false）不能把旧文件复制回 .bak，否则会顶掉唯一的好备份。
-                    File.Move(tmp, path, true);
-                }
-            }
-            else
-            {
-                File.Move(tmp, path, true);
-            }
-
-            result.Success = true;
+            MoveIntoPlace(tmp, path, createBackup, result);
             return result;
         }
         catch (Exception ex)
@@ -100,6 +61,95 @@ internal static class AtomicFile
         {
             CleanupTemp(tmp);
         }
+    }
+
+    /// <summary>
+    /// 原子写二进制（截图 PNG 等）。语义与 <see cref="Write"/> 完全一致，内容由回调写进临时流。
+    ///
+    /// 为什么不让调用方自己 Create → Save → Move：截图路径原来的 <c>File.Create</c> 直写目标，
+    /// 编码中途失败（磁盘满 / 编码器异常）会留下一张半截图，且已经把上一张验收图覆盖掉；
+    /// 临时文件仍是「目标 + .tmp」，目标路径的 .png 语义不变——编码器只认流，不认扩展名。
+    /// </summary>
+    internal static WriteResult WriteBinary(string path, Action<Stream> write, bool createBackup)
+    {
+        WriteResult result = new();
+        string tmp = $"{path}.tmp";
+
+        try
+        {
+            if (write is null) throw new ArgumentNullException("write");
+
+            string dir = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+
+            // WriteThrough + Flush(true)：与文本路径一样尽量落盘，避免"文件在、内容是空的"。
+            using (var stream = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None,
+                                               4096, FileOptions.WriteThrough))
+            {
+                write(stream);
+                stream.Flush(true);
+            }
+
+            MoveIntoPlace(tmp, path, createBackup, result);
+            return result;
+        }
+        catch (Exception ex)
+        {
+            result.Error = ex;
+            return result;
+        }
+        finally
+        {
+            CleanupTemp(tmp);
+        }
+    }
+
+    /// <summary>
+    /// 临时文件 → 目标的收尾，两条写入路径共用：
+    /// 有备份时 Replace（.bak = 上一版），Replace 被拒则「Copy 备份 → Move 覆盖」；
+    /// 备份失败只写 BackupError 并返回（绝不无备份覆盖主文件）；其余异常留给调用方的 catch。
+    /// </summary>
+    static void MoveIntoPlace(string tmp, string path, bool createBackup, WriteResult result)
+    {
+        if (File.Exists(path))
+        {
+            if (createBackup)
+            {
+                string backup = $"{path}.bak";
+                try
+                {
+                    File.Replace(tmp, path, backup, true);
+                }
+                catch (Exception ex)
+                {
+                    // 某些文件系统 / 杀软会拒绝 Replace：退回「先备份再覆盖」。
+                    result.ReplaceError = ex;
+                    try
+                    {
+                        File.Copy(path, backup, true);
+                    }
+                    catch (Exception copyEx)
+                    {
+                        // 备份失败必须中止，绝不能无备份覆盖主文件。
+                        result.BackupError = copyEx;
+                        return;
+                    }
+
+                    File.Move(tmp, path, true);
+                }
+            }
+            else
+            {
+                // 损坏恢复路径（backup=false）不能把旧文件复制回 .bak，否则会顶掉唯一的好备份。
+                File.Move(tmp, path, true);
+            }
+        }
+        else
+        {
+            File.Move(tmp, path, true);
+        }
+
+        result.Success = true;
     }
 
     /// <summary>写到临时文件并尽量落盘（WriteThrough + Flush(true)），两处原实现逐字相同。</summary>

@@ -84,6 +84,16 @@ internal sealed class ParticleTextLayer : FrameworkElement
     bool _resampling;
     bool _sampling;
     int _version;
+
+    /// <summary>
+    /// T-20：本轮是否已回发过 <see cref="Finished"/>。结束路径有自然收敛、取消（<see cref="Stop"/>）、
+    /// 画布未就绪的提前返回、采样不到字形、启动异常五种，宿主只该收到一次；
+    /// 新一轮在 <see cref="SchedulePlay"/> 里复位。
+    /// </summary>
+    bool _finishNotified;
+
+    /// <summary>画布未就绪的连续次数：只进日志，用来区分"偶尔布局慢"和"卡片一直被折叠"。</summary>
+    int _earlyExitCount;
     double _size = 2.2;
     double _speed = 1.0;
     double _settleMs = BaseSettleMs;
@@ -150,6 +160,8 @@ internal sealed class ParticleTextLayer : FrameworkElement
         int version = ++_version;
         _pending = true;
         _resampling = false;
+        // T-20：新一轮开始，允许本轮的结束事件回发一次（上一轮的已回发状态不能带进来）。
+        _finishNotified = false;
         TextCanvas target = canvas;
         Dispatcher.BeginInvoke(new Action(() =>
         {
@@ -162,6 +174,10 @@ internal sealed class ParticleTextLayer : FrameworkElement
 
     public void Stop()
     {
+        // T-20：取消也是"本轮结束"的一条出口。只有真的排了 / 在播的一轮才回发，
+        // 避免 Unloaded 之类的空停路径给宿主发假事件。
+        bool hadRound = _playing || _pending || _resampling;
+
         _version++;
         _pending = false;
         _resampling = false;
@@ -174,6 +190,32 @@ internal sealed class ParticleTextLayer : FrameworkElement
         Visibility = Visibility.Collapsed;
         _canvas?.ClearHiddenChars();
         ReleaseCanvas();
+
+        if (hadRound) NotifyFinished("取消");
+    }
+
+    /// <summary>
+    /// T-20：本轮结束的统一出口。自然收敛、取消、提前返回、异常全部走这里，
+    /// 保证宿主收到且只收到一次 <see cref="Finished"/>，并且一定在 UI 线程上。
+    ///
+    /// 幂等靠 <see cref="_finishNotified"/>：同一轮重复调用直接忽略（例如异常路径里
+    /// Stop 已经发过，catch 再兜一次）；新一轮由 SchedulePlay 复位。
+    /// </summary>
+    void NotifyFinished(string reason)
+    {
+        if (_finishNotified) return;
+
+        // 宿主回调要碰可视树（ClearHiddenChars），非 UI 线程调 Stop 时必须转回 UI 线程；
+        // 转投后重新检查幂等标志，避免两个线程各发一次。
+        if (!CheckAccess())
+        {
+            Dispatcher.BeginInvoke(new Action(() => NotifyFinished(reason)));
+            return;
+        }
+
+        _finishNotified = true;
+        if (reason is not null) Log.Debug($"粒子文字本轮结束: {reason}");
+        Finished?.Invoke();
     }
 
     /// <summary>把画布恢复成不透明并断开尺寸监听；不动粒子位置，下次播放继续用。</summary>
@@ -193,11 +235,20 @@ internal sealed class ParticleTextLayer : FrameworkElement
 
         Stop();
         _version = version;
+        // T-20：上面这次 Stop 属于"旧一轮被新一轮顶掉"，它可能已经回发过一次；
+        // 新一轮从此刻重新获得一次回发机会。
+        _finishNotified = false;
 
         double width = canvas.ActualWidth;
         double height = canvas.ActualHeight;
         if (width < 2 || height < 2 || !canvas.IsVisible)
+        {
+            // T-20：这一轮到此为止（布局还没完成 / 卡片被折叠），必须回发 Finished。
+            // 原来直接 return，宿主会一直等一个永远不会来的动画结束事件。
+            _earlyExitCount++;
+            NotifyFinished($"画布未就绪 {width:0}×{height:0} DIP（第 {_earlyExitCount} 次）");
             return;
+        }
 
         try
         {
@@ -211,7 +262,11 @@ internal sealed class ParticleTextLayer : FrameworkElement
             try
             {
                 if (!SampleTargets(canvas, width, height, requestedCount, geometry, out targets))
+                {
+                    // 空文本 / 全透明：本轮没有粒子可播，同样要收尾，否则宿主等不到结束事件。
+                    NotifyFinished("没有可采样的字形");
                     return;
+                }
             }
             finally
             {
@@ -229,7 +284,7 @@ internal sealed class ParticleTextLayer : FrameworkElement
             if (firstPool)
             {
                 Log.Info($"粒子文字就位：{targets.Count} 点 / {width:0}×{height:0} DIP");
-                Finished?.Invoke();
+                NotifyFinished("首池就位（不动画）");
                 return;
             }
 
@@ -258,7 +313,10 @@ internal sealed class ParticleTextLayer : FrameworkElement
         catch (Exception ex)
         {
             Log.Warn($"粒子文字启动失败: {ex.Message}");
+            // Stop 负责复位状态与清遮罩并（若已有在播的一轮）回发结束事件；
+            // 异常可能发生在任何状态之前，这里再兜一次，幂等标志保证宿主只收到一次。
             Stop();
+            NotifyFinished("启动失败");
         }
     }
 
@@ -692,7 +750,7 @@ internal sealed class ParticleTextLayer : FrameworkElement
         Visibility = Visibility.Collapsed;
         _canvas?.ClearHiddenChars();
         ReleaseCanvas();
-        Finished?.Invoke();
+        NotifyFinished(null);
     }
 
     protected override void OnRender(DrawingContext dc)
