@@ -8,8 +8,9 @@
 
 - P1 **26/26 已处理**（提交 `38c07ac`）：20 条 `[x]`、6 条 `[~]`。
 - P2 **87/87 已处理**：55 条 `[x]`、31 条 `[~]`、1 条 `[-]`，0 条待办。
-- P3 62 条未动。
+- P3 **62/62 已处理**：50 条 `[x]`、11 条 `[~]`、1 条 `[-]`，0 条待办。
 - 本轮（2.45.1 第五轮）提交：主线 `fe332a5`、玻璃 `dac04cc`、文本 `cbe5cc4`、插件 `73c549c`、媒体 `0ac1c71`；`dotnet build` 0 警告 0 错误，两种 `--selftest` 退出 0，xUnit 12/12，`dotnet format --verify-no-changes` 0，卡片/设置窗截图正常。
+- 第六轮（P3）提交：核心/跨层 `bd0a34a`、文本 `a587442`、插件 `7ff99d8`、媒体 `4c4a442`、运行时 `bbc39b2`、UiKit `9e3d706`；空 catch 100→36，三种截图冒烟通过。
 - 其中 `X-3` 为顺带修复：源文件裸 NUL 导致 git 把 `RecycleBin.cs` 当二进制。
 - 第一轮 P2 已由 `82a955e` 提交；决策项累计再改 **22 个文件，+294 / −81 行**。P1 在 `38c07ac`。`dotnet build` 0 警告 0 错误，`--selftest` 退出 0（失败项 0），`dotnet format --verify-no-changes` 退出 0。
 
@@ -148,54 +149,54 @@
 | [x] | C-27 | 契约/核心 | src/Core/ThemeFile.cs:766-773 | effect 接受 Contour 但错误文案只列 4 种；导出时非法软色静默丢弃（建议：文案与校验表同源） | src/Contracts/Core/Settings.cs；src/Core/ThemeFile.cs。循环类型校验文案由 LoopEffectNames 单一清单生成（含 Contour）；导出非法软色 Log.Warn 后跳过 |
 | [x] | C-28 | 契约/核心 | src/Contracts/Text/Variables.cs:59-64 | NaN 直接交给模板，显示 "NaN"（建议：格式化前判 NaN/Inf 并回落占位符） | src/Contracts/Text/TemplateEngine.cs。模板值 NaN/∞ 回落 n/a，并用 LogThrottle 节流记录原因 |
 | [x] | C-29 | 契约/核心 | src/Contracts/Core/Settings.cs:88 | 按 char 截断文本，可能切断代理对（建议：按 text element 截断） | src/Contracts/Core/Settings.cs。WelcomeText 按 StringInfo text element 截断，不再切断代理对/组合字符 |
-| [ ] | S-13 | 设置/托盘 | src/Ui/HotkeyManager.cs:78,158-172 | 热键 id 单调增长不复用，逼近 0xBFFF 后注册必失败且日志归因"被占用"（建议：空闲 id 回收池） |  |
-| [ ] | S-14 | 设置/托盘 | src/Ui/SettingsWindow.xaml.cs:507-538 | "关闭"仍是 Hide，模块区块/预览位图/两份深拷贝一直被持有（建议：关闭时释放区块、重新加载时重建） |  |
-| [ ] | S-15 | 设置/托盘 | src/Ui/ShellIcons.cs:231-235 | IShellItemImageFactory.GetImage 丢 HRESULT，失败与"无缩略图"不可区分（建议：检查 HRESULT 并节流日志） |  |
-| [ ] | S-16 | 设置/托盘 | src/Ui/TrayIcon.cs:351-372 | 托盘回退图标是共享 SystemIcons.Application，Dispose 会释放它（建议：Icon.FromHandle 后克隆，或持有独立副本） |  |
-| [ ] | S-17 | 设置/托盘 | src/Ui/TrayIcon.cs:334-349 | 气泡失败路径全空 catch/忽略返回值，固定 256 字符截断（建议：检查返回码；截断显式加省略号） |  |
-| [ ] | S-18 | 设置/托盘 | src/Ui/SettingsWindow.Appearance.cs:161-192 | 字体列表首次在 UI 线程全量枚举；筛选框每键入换 ItemsSource（建议：启动预热 + 复用集合） |  |
-| [ ] | S-19 | 设置/托盘 | src/Ui/SettingsWindow.Appearance.cs:76-101 | ApplyCliBoxes 非法输入静默回退；任一框失焦重写四个框（建议：逐框校验 + 只写变更框） |  |
-| [ ] | S-20 | 设置/托盘 | src/Ui/CommandLineMode.cs:57-62 | --screenshot-settings 的"标题"实为输出路径，未校验（建议：解析为绝对路径并确认目录可写） |  |
-| [ ] | S-21 | 设置/托盘 | src/Ui/HotkeyManager.cs:91-103 | 热键消息回调无异常隔离，OnHotkey 抛错从 WndProc 逸出（待实测）（建议：try/catch + Log.Error） |  |
-| [ ] | G-17 | 玻璃/渲染 | src/Ui/GlassFeed.cs:559 | 每帧新建 BitmapSource 并整块拷贝（P-2 半修）（建议：复用 WriteableBitmap + Lock/Unlock） |  |
-| [ ] | G-18 | 玻璃/渲染 | src/Ui/OverlayWindow.xaml.cs:284 等 | 本区域 40 处裸 catch，关键 Win32 返回值集体不检查，GetExStyle 的 int 截断（建议：统一 GetExStyle 返回 nint；返回值检查） |  |
-| [ ] | G-19 | 玻璃/渲染 | src/Ui/OverlayController.cs:831、GlassRuntime.cs:255 | 退出时可能打伪 WARN；隐藏后泵空转、每帧读环境变量（建议：停机判定收口；环境变量缓存） |  |
-| [ ] | T-14 | 文本/布局 | src/Ui/Contour/ContourExtractor.cs:512-518 | ContourPath.Level/LevelIndex 恒为 0（建议：填真实层级或删字段） |  |
-| [ ] | T-15 | 文本/布局 | src/Ui/Contour/ScalarGrid.cs:26-44 | 网格上限两份（512 vs 140），生产用后者（建议：单一常量） |  |
-| [ ] | T-16 | 文本/布局 | src/Ui/TextCanvas.cs:55,80-81 | 键帽码位区间注释 83 与实现 87 不一致（建议：注释与常量同源） |  |
-| [ ] | T-17 | 文本/布局 | src/Ui/CardDragAdorner.cs:60-79 | 拖动层硬编码颜色；每帧新建 Pen/Brush/Geometry（建议：用主题令牌并缓存） |  |
-| [ ] | T-18 | 文本/布局 | src/Ui/Screenshots.cs:828-837 | PNG 非原子写；设置窗截图按整 DIP 截断（建议：走 AtomicFile；按 DPI 取整） |  |
-| [ ] | T-19 | 文本/布局 | src/Ui/Screenshots.cs:102-120 | 截图模式直接在运行中的 Settings 上改演示参数（待实测污染）（建议：深拷贝一份再改） |  |
-| [ ] | T-20 | 文本/布局 | src/Ui/ParticleTextLayer.cs:154-157 | 粒子提前返回路径不回发 Finished（建议：统一收尾事件） |  |
-| [ ] | T-21 | 文本/布局 | src/Ui/TextCanvas.cs:557,749-750 | 排版缓存上限 12，被光标前缀键反复驱逐（P-1 残余）（建议：光标键不计入缓存或单独缓存） |  |
-| [ ] | K-17 | UiKit/媒体 | GifAnimator.cs:28 | "动图过大"提示被换肤覆盖；LastSkipReason 是 static，双卡串提示（建议：改实例字段，状态行优先 Warning） |  |
-| [ ] | K-18 | UiKit/媒体 | GifAnimator.cs:144-150 | GIF 暂停后按播放从头重播（建议：Play(bool restart=false) 默认续播） |  |
-| [ ] | K-19 | UiKit/媒体 | WaveOutPlayer.cs:273,286,407；VideoWindow.cs:67 等 | winmm 返回码被忽略 + catch {}，Unprepare/Close/SetVolume 失败不可见（建议：检查返回码并节流日志） |  |
-| [ ] | K-20 | UiKit/媒体 | VideoWindow.cs:210-214 | HWND_TOPMOST 把视频窗抬到所有置顶窗口之上（建议：用 owner 句柄作 hWndInsertAfter） |  |
-| [ ] | K-21 | UiKit/媒体 | CardMediaView.cs:805-811 | 跨不同缩放屏幕时子窗位置/圆角偏（待实测）（建议：TransformToDevice 逆变换 + DpiChanged） |  |
-| [ ] | K-22 | UiKit/媒体 | FfmpegPlayer.cs:484 | -re 回退锁 1×，UI 仍显示用户设置倍速（建议：SetSpeed 返回 bool 并回滚显示） |  |
-| [ ] | K-29 | UiKit/媒体 | 16 处 XamlReader.Parse | 每次换肤重解析模板，颜色串错误时 XamlParseException 直崩 UI 线程（建议：缓存模板 + TryParse 回退） |  |
-| [ ] | K-30 | UiKit/媒体 | CardButton.cs:178 等 | 未 Freeze 的 SolidColorBrush（含生产控件 CardTextBox/CardList）（建议：统一走 CardPalette.Brush） |  |
-| [ ] | K-31 | UiKit/媒体 | CardStatus.cs:111,267 | 90 ms 转圈定时器无停止出口（建议：Unloaded 停表） |  |
-| [ ] | K-32 | UiKit/媒体 | CardTreeTimeline.cs:276-297 | SelectedItem setter 同步 UpdateLayout()，布局回调重入风险（待实测）（建议：BeginInvoke 延后） |  |
-| [ ] | K-33 | UiKit/媒体 | CliUi.cs:260,332-336 | 换肤丢失 per-block bold；构造对 Style==null 无防护（建议：存 Bold；settings?.Style ?? new） |  |
-| [ ] | K-34 | UiKit/媒体 | CardFormControls.cs:166 等 | ToString(ValueFormat) 无校验，非法格式抛 FormatException（建议：复用图表侧的安全格式化） |  |
-| [ ] | K-35 | UiKit/媒体 | CardDataControls.cs:1084,947 | 表格排序混合类型抛 ArgumentException；列重建双 Refresh（待实测）（建议：类型不同按字符串比较） |  |
-| [ ] | K-36 | UiKit/媒体 | CardChartControls.cs:353,507,701 | Series/Values/Labels 直接暴露内部 List，改列表不重绘（建议：返回只读集合） |  |
-| [ ] | K-37 | UiKit/媒体 | CardList.cs:166,148 | ApplyStyle(style, cli) 的 cli 从未被读（建议：删参数或真正使用） |  |
-| [ ] | K-38 | UiKit/媒体 | CardIcon.cs:39,42 | Size 不同步 FontSize，运行期改大小无效（建议：setter 内同步 + InvalidateMeasure） |  |
-| [ ] | K-39 | UiKit/媒体 | CardSegmentBar.cs:87-94 | OnRender 里改 _segments，渲染副作用改写公开属性（建议：局部变量 + Arrange 更新） |  |
-| [ ] | K-40 | UiKit/媒体 | CardTextStyle.cs:57-83 | 每次换肤为每个 TextBlock 新建 DropShadowEffect（建议：复用 Effect；跳过空子树） |  |
-| [ ] | K-41 | UiKit/媒体 | HudMenuStyle.cs:51,76,83 | 每次 Apply 重复订阅，LayoutUpdated 永不解绑（建议：附加属性防重入；Opened 挂 Closed 解） |  |
-| [ ] | K-42 | UiKit/媒体 | CardOverlaySelfTest.cs:193 | 自检只验"不崩/尺寸"，不验颜色与对比度；清理只吞 InvalidOperationException（建议：补对比度断言；宽 catch 计入失败） |  |
-| [ ] | P-20 | 插件/指标 | src/Cards/CardRegistry.cs:78-97 | 空 Kind 仍硬编码 "infotext"；零模块时每次调用新建占位模块（建议：用 UnavailableCardModule 单例） |  |
-| [ ] | P-21 | 插件/指标 | src/Cards/CardRegistry.cs:19-25 | 双检锁的 _initialized 不是 volatile（历史 L-16）（建议：volatile 或 Lazy<T>） |  |
-| [ ] | P-22 | 插件/指标 | 本区域 32 处空 catch | 其中 6 处吞掉了需要留痕的失败（建议：见 §5.2 分类治理） |  |
-| [ ] | P-23 | 插件/指标 | InfoTextCard.cs:105-109 | 用内容字符串相等反推预设，手改内容会静默换预设（建议：记录显式 Preset，内容只做兜底） |  |
-| [ ] | P-24 | 插件/指标 | MediaCardSettingsView.xaml.cs:220-265 | DecoderHint 是带副作用的绑定 getter，每次刷新同步 File.Exists 并可能启动探测（建议：改为显式刷新方法） |  |
-| [ ] | P-25 | 插件/指标 | 四份设置视图 | Raise/commit 复制粘贴，只有 Chat 实现 ICardEditorCommit（建议：抽基类或共享 helper） |  |
-| [ ] | P-26 | 插件/指标 | CardPluginLoader.cs:356-362 | 只校验 manifest.apiVersion，不校验插件编译所依据的 Contracts 版本（建议：manifest 加 contractsVersion 并校验） |  |
-| [ ] | P-27 | 插件/指标 | CardJobQueue.cs:1-6 | 位置与文档不符；StationCopyController.cs:126 注释与事实相反（建议：修正文档/注释） |  |
+| [x] | S-13 | 设置/托盘 | src/Ui/HotkeyManager.cs:78,158-172 | 热键 id 单调增长不复用，逼近 0xBFFF 后注册必失败且日志归因"被占用"（建议：空闲 id 回收池） | src/Ui/HotkeyManager.cs。空闲热键 id 回收池；日志区分无可用 id 与组合键被占用 |
+| [x] | S-14 | 设置/托盘 | src/Ui/SettingsWindow.xaml.cs:507-538 | "关闭"仍是 Hide，模块区块/预览位图/两份深拷贝一直被持有（建议：关闭时释放区块、重新加载时重建） | src/Ui/SettingsWindow.xaml.cs；src/Ui/SettingsWindow.Load.cs。关闭（Hide）时释放模块区块/预览位图/可重建缓存，重开 Reload 重建 |
+| [x] | S-15 | 设置/托盘 | src/Ui/ShellIcons.cs:231-235 | IShellItemImageFactory.GetImage 丢 HRESULT，失败与"无缩略图"不可区分（建议：检查 HRESULT 并节流日志） | src/Ui/ShellIcons.cs。检查 IShellItemImageFactory.GetImage HRESULT，失败 LogThrottle；无缩略图不刷日志 |
+| [x] | S-16 | 设置/托盘 | src/Ui/TrayIcon.cs:351-372 | 托盘回退图标是共享 SystemIcons.Application，Dispose 会释放它（建议：Icon.FromHandle 后克隆，或持有独立副本） | src/Ui/TrayIcon.cs。回退图标改自有副本，不再释放共享 SystemIcons.Application |
+| [x] | S-17 | 设置/托盘 | src/Ui/TrayIcon.cs:334-349 | 气泡失败路径全空 catch/忽略返回值，固定 256 字符截断（建议：检查返回码；截断显式加省略号） | src/Ui/TrayIcon.cs。气泡失败检查返回码并 Warn；超长文本截断加省略号 |
+| [~] | S-18 | 设置/托盘 | src/Ui/SettingsWindow.Appearance.cs:161-192 | 字体列表首次在 UI 线程全量枚举；筛选框每键入换 ItemsSource（建议：启动预热 + 复用集合） | src/Ui/SettingsWindow.Appearance.cs。字体列表后台预热、筛选复用集合，避免每键换 ItemsSource；需真机字体环境验证 |
+| [x] | S-19 | 设置/托盘 | src/Ui/SettingsWindow.Appearance.cs:76-101 | ApplyCliBoxes 非法输入静默回退；任一框失焦重写四个框（建议：逐框校验 + 只写变更框） | src/Ui/SettingsWindow.Appearance.cs。CLI 逐框校验，只回写变化的框，不再整组重写 |
+| [x] | S-20 | 设置/托盘 | src/Ui/CommandLineMode.cs:57-62 | --screenshot-settings 的"标题"实为输出路径，未校验（建议：解析为绝对路径并确认目录可写） | src/Ui/CommandLineMode.cs；src/Ui/Screenshots.cs。截图参数按输出路径校验：绝对路径、.png 扩展、目录可写、目标非目录/只读 |
+| [x] | S-21 | 设置/托盘 | src/Ui/HotkeyManager.cs:91-103 | 热键消息回调无异常隔离，OnHotkey 抛错从 WndProc 逸出（待实测）（建议：try/catch + Log.Error） | src/Ui/HotkeyManager.cs。热键消息回调 try/catch + Log.Error，异常不再从 WndProc 逸出 |
+| [x] | G-17 | 玻璃/渲染 | src/Ui/GlassFeed.cs:559 | 每帧新建 BitmapSource 并整块拷贝（P-2 半修）（建议：复用 WriteableBitmap + Lock/Unlock） | src/Ui/GlassFeed.cs。复用 WriteableBitmap/帧缓冲，尺寸变化才重建；避免每帧 BitmapSource+整块拷贝 |
+| [~] | G-18 | 玻璃/渲染 | src/Ui/OverlayWindow.xaml.cs:284 等 | 本区域 40 处裸 catch，关键 Win32 返回值集体不检查，GetExStyle 的 int 截断（建议：统一 GetExStyle 返回 nint；返回值检查） | src/Ui/OverlayWindow.xaml.cs；src/Ui/Native.cs；src/Ui/GlassBackdrop.cs；src/Ui/GlassBackdrops.cs；src/Ui/DesktopBackground.cs。GetExStyle/SetExStyle 改 nint+返回值检查；关键 Win32 调用检查与节流日志；释放路径走 SafeRelease。需真机验证 Z 序/系统交互 |
+| [x] | G-19 | 玻璃/渲染 | src/Ui/OverlayController.cs:831、GlassRuntime.cs:255 | 退出时可能打伪 WARN；隐藏后泵空转、每帧读环境变量（建议：停机判定收口；环境变量缓存） | src/Ui/OverlayController.cs；src/Ui/GlassRuntime.cs。停机判定收口，隐藏时停泵，环境变量缓存一次 |
+| [x] | T-14 | 文本/布局 | src/Ui/Contour/ContourExtractor.cs:512-518 | ContourPath.Level/LevelIndex 恒为 0（建议：填真实层级或删字段） | src/Ui/Contour/ContourExtractor.cs。删除恒 0 的 Level/LevelIndex 死字段与写入（全仓零读取） |
+| [x] | T-15 | 文本/布局 | src/Ui/Contour/ScalarGrid.cs:26-44 | 网格上限两份（512 vs 140），生产用后者（建议：单一常量） | src/Ui/Contour/ScalarGrid.cs；src/Ui/Contour/ContourGeometryBuilder.cs。单一 MaxCellsPerAxis=140 + MinCellSize，生产/自检共用 ComputeProductionSize |
+| [x] | T-16 | 文本/布局 | src/Ui/TextCanvas.cs:55,80-81 | 键帽码位区间注释 83 与实现 87 不一致（建议：注释与常量同源） | src/Ui/TextCanvas.cs；src/Contracts/Core/Icons.cs；src/Contracts/Core/Keycaps.cs。键帽码位区间统一引用 Keycaps.First/Last，删除手写数字与字形个数 |
+| [~] | T-17 | 文本/布局 | src/Ui/CardDragAdorner.cs:60-79 | 拖动层硬编码颜色；每帧新建 Pen/Brush/Geometry（建议：用主题令牌并缓存） | src/Ui/CardDragAdorner.cs；src/Ui/SettingsWindow.Cards.cs。拖动层改主题令牌并缓存 Pen/Brush/Geometry；需真机看浅色主题与高 DPI 描边 |
+| [x] | T-18 | 文本/布局 | src/Ui/Screenshots.cs:828-837 | PNG 非原子写；设置窗截图按整 DIP 截断（建议：走 AtomicFile；按 DPI 取整） | src/Core/AtomicFile.cs；src/Ui/Screenshots.cs。PNG 走 AtomicFile.WriteBinary 原子写；尺寸改 Math.Ceiling 按 DPI 取整 |
+| [x] | T-19 | 文本/布局 | src/Ui/Screenshots.cs:102-120 | 截图模式直接在运行中的 Settings 上改演示参数（待实测污染）（建议：深拷贝一份再改） | src/Ui/Screenshots.cs。截图演示参数改深拷贝 Settings，失败则本次截图失败，不污染实时配置 |
+| [x] | T-20 | 文本/布局 | src/Ui/ParticleTextLayer.cs:154-157 | 粒子提前返回路径不回发 Finished（建议：统一收尾事件） | src/Ui/ParticleTextLayer.cs。统一幂等 NotifyFinished，提前返回/取消/异常都回发一次 Finished |
+| [~] | T-21 | 文本/布局 | src/Ui/TextCanvas.cs:557,749-750 | 排版缓存上限 12，被光标前缀键反复驱逐（P-1 残余）（建议：光标键不计入缓存或单独缓存） | src/Ui/TextCanvas.cs。光标前缀独立单槽缓存；主缓存改近似 LRU（12→8），不再整表清空；需真机看输入手感 |
+| [x] | K-17 | UiKit/媒体 | GifAnimator.cs:28 | "动图过大"提示被换肤覆盖；LastSkipReason 是 static，双卡串提示（建议：改实例字段，状态行优先 Warning） | src/UiKit/Media/GifAnimator.cs；src/UiKit/Media/CardMediaView.cs。跳过原因改实例字段经 out 返回；状态行 Warning 优先，换肤/刷新不覆盖 |
+| [x] | K-18 | UiKit/媒体 | GifAnimator.cs:144-150 | GIF 暂停后按播放从头重播（建议：Play(bool restart=false) 默认续播） | src/UiKit/Media/GifAnimator.cs；src/UiKit/Media/CardMediaView.cs。Play(bool restart=false) 默认续播，仅首次加载 restart:true；4 个调用点已更新 |
+| [~] | K-19 | UiKit/媒体 | WaveOutPlayer.cs:273,286,407；VideoWindow.cs:67 等 | winmm 返回码被忽略 + catch {}，Unprepare/Close/SetVolume 失败不可见（建议：检查返回码并节流日志） | src/UiKit/Media/MediaNative.cs；src/UiKit/Media/VideoWindow.cs；src/UiKit/Media/WaveOutPlayer.cs；src/UiKit/Media/FfmpegPlayer.cs。TryGetExStyle/SetExStyle 改 bool 并用 LastPInvokeError 区分；GDI/音频释放返回码检查；需热拔/远程桌面真机 |
+| [~] | K-20 | UiKit/媒体 | VideoWindow.cs:210-214 | HWND_TOPMOST 把视频窗抬到所有置顶窗口之上（建议：用 owner 句柄作 hWndInsertAfter） | src/UiKit/Media/VideoWindow.cs。视频窗不再全局 Topmost，以 owner/前邻窗为 z-order 锚点跟随卡片；需多置顶窗真机验证 |
+| [~] | K-21 | UiKit/媒体 | CardMediaView.cs:805-811 | 跨不同缩放屏幕时子窗位置/圆角偏（待实测）（建议：TransformToDevice 逆变换 + DpiChanged） | src/UiKit/Media/CardMediaView.cs；src/UiKit/Media/VideoWindow.cs。物理像素坐标经 TransformToDevice 计算，处理 DpiChanged 并重建 region；需混合缩放多屏真机 |
+| [~] | K-22 | UiKit/媒体 | FfmpegPlayer.cs:484 | -re 回退锁 1×，UI 仍显示用户设置倍速（建议：SetSpeed 返回 bool 并回滚显示） | src/UiKit/Media/FfmpegPlayer.cs；src/UiKit/Media/CardMediaView.cs。SetSpeed 返回 bool，-re 回退时 SpeedForced 上报实际 1×，卡片回滚显示并说明；需旧版 ffmpeg 真机 |
+| [x] | K-29 | UiKit/媒体 | 16 处 XamlReader.Parse | 每次换肤重解析模板，颜色串错误时 XamlParseException 直崩 UI 线程（建议：缓存模板 + TryParse 回退） | src/UiKit/CardTemplates.cs；src/UiKit 各控件。XamlReader 模板集中缓存 + TryParse 回退，解析失败 Log.Error 不再直崩 UI 线程 |
+| [x] | K-30 | UiKit/媒体 | CardButton.cs:178 等 | 未 Freeze 的 SolidColorBrush（含生产控件 CardTextBox/CardList）（建议：统一走 CardPalette.Brush） | src/UiKit/CardButton.cs；src/UiKit/CardTextBox.cs；src/UiKit/CardList.cs。画刷统一走调色板并 Freeze，避免每实例新建等价画刷 |
+| [x] | K-31 | UiKit/媒体 | CardStatus.cs:111,267 | 90 ms 转圈定时器无停止出口（建议：Unloaded 停表） | src/UiKit/CardStatus.cs。90ms 转圈定时器在 Unloaded/隐藏时停止，Dispose 清理 |
+| [~] | K-32 | UiKit/媒体 | CardTreeTimeline.cs:276-297 | SelectedItem setter 同步 UpdateLayout()，布局回调重入风险（待实测）（建议：BeginInvoke 延后） | src/UiKit/CardTreeTimeline.cs。SelectedItem 滚动/布局改 BeginInvoke 延后且幂等；需真机验证不再重入 |
+| [x] | K-33 | UiKit/媒体 | CliUi.cs:260,332-336 | 换肤丢失 per-block bold；构造对 Style==null 无防护（建议：存 Bold；settings?.Style ?? new） | src/UiKit/CliUi.cs。换肤保留 per-block Bold；Style==null 用兜底实例，不崩 |
+| [x] | K-34 | UiKit/媒体 | CardFormControls.cs:166 等 | ToString(ValueFormat) 无校验，非法格式抛 FormatException（建议：复用图表侧的安全格式化） | src/UiKit/CardFormControls.cs；src/UiKit/CardFormat.cs。ValueFormat 走共享安全格式化，非法格式回退默认并 Warn 一次 |
+| [x] | K-35 | UiKit/媒体 | CardDataControls.cs:1084,947 | 表格排序混合类型抛 ArgumentException；列重建双 Refresh（待实测）（建议：类型不同按字符串比较） | src/UiKit/CardDataControls.cs。排序混合类型按字符串比较，稳定；列重建只 Refresh 一次 |
+| [x] | K-36 | UiKit/媒体 | CardChartControls.cs:353,507,701 | Series/Values/Labels 直接暴露内部 List，改列表不重绘（建议：返回只读集合） | src/UiKit/CardChartControls.cs。Series/Values/Labels 公共面改 IReadOnlyList，变更走显式 Add/Remove/Clear 并重绘 |
+| [x] | K-37 | UiKit/媒体 | CardList.cs:166,148 | ApplyStyle(style, cli) 的 cli 从未被读（建议：删参数或真正使用） | src/UiKit/CardList.cs；src/Ui/Screenshots.cs；src/SelfTest.cs；src/Plugins/DropStation/StationView.cs。删除未使用的 cli 参数并更新全部调用点 |
+| [x] | K-38 | UiKit/媒体 | CardIcon.cs:39,42 | Size 不同步 FontSize，运行期改大小无效（建议：setter 内同步 + InvalidateMeasure） | src/UiKit/CardIcon.cs。Size setter 同步 FontSize 并 InvalidateMeasure |
+| [x] | K-39 | UiKit/媒体 | CardSegmentBar.cs:87-94 | OnRender 里改 _segments，渲染副作用改写公开属性（建议：局部变量 + Arrange 更新） | src/UiKit/CardSegmentBar.cs。分段计算移到 Arrange/属性变更，OnRender 只读局部变量 |
+| [x] | K-40 | UiKit/媒体 | CardTextStyle.cs:57-83 | 每次换肤为每个 TextBlock 新建 DropShadowEffect（建议：复用 Effect；跳过空子树） | src/UiKit/CardTextStyle.cs。阴影 Effect 按颜色/半径复用并冻结，跳过空子树 |
+| [x] | K-41 | UiKit/媒体 | HudMenuStyle.cs:51,76,83 | 每次 Apply 重复订阅，LayoutUpdated 永不解绑（建议：附加属性防重入；Opened 挂 Closed 解） | src/UiKit/HudMenuStyle.cs。附加属性防重入；Opened 挂/Closed 解，重复 Apply 不叠加 |
+| [x] | K-42 | UiKit/媒体 | CardOverlaySelfTest.cs:193 | 自检只验"不崩/尺寸"，不验颜色与对比度；清理只吞 InvalidOperationException（建议：补对比度断言；宽 catch 计入失败） | src/UiKit/CardOverlaySelfTest.cs。补前景/背景对比度与令牌一致断言；清理异常计入失败 |
+| [x] | P-20 | 插件/指标 | src/Cards/CardRegistry.cs:78-97 | 空 Kind 仍硬编码 "infotext"；零模块时每次调用新建占位模块（建议：用 UnavailableCardModule 单例） | src/Cards/CardRegistry.cs。FallbackKind 常量 + NoModulesModule 单例，零模块不再每次分配 |
+| [x] | P-21 | 插件/指标 | src/Cards/CardRegistry.cs:19-25 | 双检锁的 _initialized 不是 volatile（历史 L-16）（建议：volatile 或 Lazy<T>） | src/Cards/CardRegistry.cs。_initialized 改 volatile，双检锁语义正确 |
+| [~] | P-22 | 插件/指标 | 本区域 32 处空 catch | 其中 6 处吞掉了需要留痕的失败（建议：见 §5.2 分类治理） | src/Cards/CardPluginLoader.cs；src/Plugins/Command/CommandRunner.cs；src/Plugins/Command/CommandCard.cs。6 处吞失败空 catch 改为 Warn/收窄；其余合法释放路径保留；需真实 ALC 卸载失败/进程杀不死场景 |
+| [x] | P-23 | 插件/指标 | InfoTextCard.cs:105-109 | 用内容字符串相等反推预设，手改内容会静默换预设（建议：记录显式 Preset，内容只做兜底） | src/Plugins/InfoText/InfoTextCard.cs。Extras 新增显式 Preset，旧配置按内容兜底推断一次并写回 |
+| [~] | P-24 | 插件/指标 | MediaCardSettingsView.xaml.cs:220-265 | DecoderHint 是带副作用的绑定 getter，每次刷新同步 File.Exists 并可能启动探测（建议：改为显式刷新方法） | src/Plugins/Media/MediaCardSettingsView.xaml.cs。DecoderHint 绑定 getter 改只读缓存；去抖+版本号后台探测；需网络盘真机 |
+| [x] | P-25 | 插件/指标 | 四份设置视图 | Raise/commit 复制粘贴，只有 Chat 实现 ICardEditorCommit（建议：抽基类或共享 helper） | src/UiKit/CardEditorNotifier.cs；Chat/Media/DropStation/Command 设置视图。抽出组合式 CardEditorNotifier 统一 Raise/Notify/MarkChanged；Command 数字框接入 pending |
+| [x] | P-26 | 插件/指标 | CardPluginLoader.cs:356-362 | 只校验 manifest.apiVersion，不校验插件编译所依据的 Contracts 版本（建议：manifest 加 contractsVersion 并校验） | src/Contracts/Cards/PluginManifest 所在文件；src/Cards/CardPluginLoader.cs；6 份 manifest.json；DLL-CARD-PLUGIN-GUIDE.md。manifest 增 contractsVersion；缺失跳过、解析失败拒绝、高于宿主拒绝、低于 Warn；apiVersion 仍 2 |
+| [x] | P-27 | 插件/指标 | CardJobQueue.cs:1-6 | 位置与文档不符；StationCopyController.cs:126 注释与事实相反（建议：修正文档/注释） | src/Plugins/DropStation/CardJobQueue.cs；src/Plugins/DropStation/StationCopyController.cs。修正文件归属/命名空间与首任务执行方式的过时注释，不改位置 |
 | [x] | X-11 | 跨层 | 20 个文件 / 117 处 DllImport | Native.cs 的集中声明未被遵守；GetWindowLongPtrW 等在 Native.cs 与 MediaNative.cs 重复声明（建议：单文件 P/Invoke + 可空性/句柄包装） | src/Ui/Native.cs。最小集：确认 GWL_EXSTYLE 32 位语义并补跨程序集 P/Invoke 边界注释；ForceForeground 失败改为 Log.Debug 可见。全量集中到 Native.cs 暂不做 |
 | [x] | X-12 | 跨层 | src/Ui/Controls/、src/Text/、6 个 plugin.csproj、9 个 RootNamespace | 空目录残留；六个工程同名导致构建日志不可辨；所有程序集同根命名空间（建议：清空目录；工程按卡片改名；RootNamespace 按程序集区分） | MirrorpondHUD.csproj；src/Plugins/*/MirrorpondHUD.Cards.*.csproj；src/Ui/Controls、src/Text。6 个同名 plugin.csproj 按程序集名重命名并同步根工程引用；删除两个空目录。RootNamespace 暂不动 |
 | [x] | X-13 | 跨层 | .gitignore 第 34 行附近 | docs/review/ 被忽略，审阅报告无法入库/评审/在 PR 引用（建议：改为跟踪，或独立仓库 + 链接） | .gitignore；docs/review/*.md。仅忽略 docs/review/.work/；review 正文、清单与历史评估入库 |

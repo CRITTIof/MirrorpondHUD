@@ -1,4 +1,4 @@
-# AGENTS.md — AI 编码代理工作指南
+﻿# AGENTS.md — AI 编码代理工作指南
 
 本文件是为在本仓库工作的 AI 代理（Claude Code、OpenCode 等）编写的工程守则。目的是让代理不必重新发现本项目的契约与坑，改出**编译通过、自检通过、不破坏隐性约束**的代码。
 
@@ -99,7 +99,7 @@ build.bat / publish.bat          :: 构建 / 发布（publish 默认单文件）
 ### 6.4 插件生命周期（`src/Cards/CardPluginLoader.cs`）
 - `Unload` 只发请求；弱引用验证必须延后（`CardUnloadProbe.Verify()` 幂等，宿主在退出收尾调）。不要把 `GC.Collect` 判定塞进 Unload 调用栈，会误报泄漏。
 - 影子复制目录下加载（源目录不锁文件），换插件后重启生效；`CleanupShadowCache` 在启动早期调用。
-- manifest `apiVersion` 必须是 2，Kind 走 `IsSafeKind` 白名单；`author` 字段保留并已用于加载日志。详见 `DLL-CARD-PLUGIN-GUIDE.md`。
+- manifest `apiVersion` 必须是 2，Kind 走 `IsSafeKind` 白名单；`contractsVersion` 声明插件编译依据的 Contracts 版本（缺失视为当前，高于宿主拒绝、低于 Warn，apiVersion 仍为 2）；`author` 字段保留并已用于加载日志。详见 `DLL-CARD-PLUGIN-GUIDE.md`。
 
 ### 6.5 主题文件（`src/Core/ThemeFile.cs`）
 - `foreground`/`background` 严格 **7 位 `#RRGGBB`**（透明度必须走 `backgroundOpacity`）；`accent`/`danger`/软色允许 9 位 `#AARRGGBB`。解析失败把错误串进返回值，不抛给 UI。
