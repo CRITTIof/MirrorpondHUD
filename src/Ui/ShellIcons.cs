@@ -37,6 +37,13 @@ public static class ShellIcons
     static readonly Lazy<StaWorker> Worker = new(() => new StaWorker(), LazyThreadSafetyMode.ExecutionAndPublication);
 
     /// <summary>
+    /// S-15：缩略图取图失败（HRESULT 负数）。网络盘断连 / 提供程序崩溃时会连片出现，
+    /// 用节流器把「状态转移 + 60 秒补记」压住，避免文件列表刷新时刷满日志。
+    /// 「S_OK 但句柄为空」是这类文件本来就没有缩略图，属正常降级，不打这个点。
+    /// </summary>
+    static readonly LogThrottle _thumbnailFailure = new("Shell 缩略图", 60000);
+
+    /// <summary>
     /// 取文件图标。默认只按扩展名（<paramref name="extensionOnly"/> = true），不访问真实文件；
     /// 需要 exe / 快捷方式的专属图标时传 false（会碰磁盘，慢盘请放后台线程）。
     /// </summary>
@@ -103,7 +110,11 @@ public static class ShellIcons
 
         string ext = "";
         try { ext = Path.GetExtension(path ?? ""); }
-        catch { }
+        catch (Exception)
+        {
+            // 只有畸形路径（非法字符 / 超长）才会进来：缓存键退化为「无扩展名」，
+            // 图标仍按通用文件图标返回。这条路径每次刷新列表都会跑，记日志只会刷屏。
+        }
 
         return $"ext|{(ext ?? "").ToLowerInvariant()}|{size}";
     }
@@ -112,7 +123,11 @@ public static class ShellIcons
     {
         string full = path ?? "";
         try { full = Path.GetFullPath(full); }
-        catch { }
+        catch (Exception)
+        {
+            // 同上：规范化失败就用原始串当缓存键，只影响命中率（相对路径按不同 cwd 解析时
+            // 本来也会分开缓存），不影响缩略图本身能否取到。
+        }
 
         return $"{size}|{full.ToLowerInvariant()}";
     }
@@ -128,7 +143,11 @@ public static class ShellIcons
             {
                 string ext = "";
                 try { ext = Path.GetExtension(path ?? ""); }
-                catch { }
+                catch (Exception)
+                {
+                    // 扩展名解析失败按「无扩展名」处理，下面回退到通用文件图标；
+                    // 每次列表刷新都会走，不值得为它写日志。
+                }
 
                 target = string.IsNullOrEmpty(ext) ? "file" : $"x{ext}";
                 flags |= SHGFI_USEFILEATTRIBUTES;
@@ -173,15 +192,32 @@ public static class ShellIcons
             SHCreateItemFromParsingName(path, IntPtr.Zero, ref iid, out var factory);
             if (factory is null) return null;
 
-            factory.GetImage(new SIZE { cx = size, cy = size },
-                             SIIGBF.THUMBNAILONLY | SIIGBF.RESIZETOFIT, out var hBitmap);
-            if (hBitmap == IntPtr.Zero) return null;
+            IntPtr hBitmap = IntPtr.Zero;
+            int hr = factory.GetImage(new SIZE { cx = size, cy = size },
+                                      SIIGBF.THUMBNAILONLY | SIIGBF.RESIZETOFIT, out hBitmap);
+            if (hr < 0)
+            {
+                // S-15：以前这里声明成 void，HRESULT 被直接丢弃，失败与「没有缩略图」同形；
+                // 现在显式判失败。失败时 out 句柄的内容由 Shell 决定、不保证为 0，
+                // 因此绝不能把它当位图用（会访问非法 GDI 对象），统一释放掉。
+                if (hBitmap != IntPtr.Zero) DeleteObject(hBitmap);
+                _thumbnailFailure.Failure($"{path} HRESULT=0x{hr:X8}");
+                return null;
+            }
+
+            if (hBitmap == IntPtr.Zero)
+            {
+                // 正常情形：文本 / 部分归档没有缩略图。只做恢复打点，不逐次记日志。
+                _thumbnailFailure.Success();
+                return null;
+            }
 
             try
             {
                 BitmapSource source = Imaging.CreateBitmapSourceFromHBitmap(
                     hBitmap, IntPtr.Zero, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
                 if (source.CanFreeze) source.Freeze();
+                _thumbnailFailure.Success();
                 return source;
             }
             finally
@@ -191,7 +227,8 @@ public static class ShellIcons
         }
         catch (Exception ex)
         {
-            Log.Info($"Shell 缩略图不可用({path}): {ex.Message}");
+            // 走到这里说明 COM 激活 / 建图本身失败（不是「没有缩略图」），必须留痕。
+            _thumbnailFailure.Failure($"{path} {ex.Message}");
             return null;
         }
     }
@@ -231,7 +268,13 @@ public static class ShellIcons
     [ComImport, Guid("bcc18b79-ba16-442f-80c4-8a59c30c463b"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     interface IShellItemImageFactory
     {
-        void GetImage(SIZE size, SIIGBF flags, out IntPtr phbm);
+        /// <summary>
+        /// S-15：必须保留签名拿 HRESULT。声明成 <c>void</c> 时失败码无人接收，
+        /// 屏上表现就是「有的文件没缩略图」，和真正的取图失败无法区分，
+        /// 且失败时 out 句柄的内容未定义。
+        /// </summary>
+        [PreserveSig]
+        int GetImage(SIZE size, SIIGBF flags, out IntPtr phbm);
     }
 
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)]

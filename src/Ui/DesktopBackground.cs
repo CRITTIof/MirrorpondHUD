@@ -220,7 +220,13 @@ internal static class DesktopBackground
             string path = value as string;
             return string.IsNullOrWhiteSpace(path) ? "" : Environment.ExpandEnvironmentVariables(path);
         }
-        catch { return ""; }
+        catch (Exception ex)
+        {
+            // 注册表读不到（键不存在 / 权限）时按「没有壁纸」继续：桌面取样会退回窗口拼接，
+            // 结果仍是可用画面，只是少了壁纸底；原因留 Debug 便于排查。
+            Log.Debug($"读取壁纸路径失败，按无壁纸处理: {ex.Message}");
+            return "";
+        }
     }
 
     static string CurrentWallpaperStyle()
@@ -231,6 +237,11 @@ internal static class DesktopBackground
             string style = value as string;
             return string.IsNullOrWhiteSpace(style) ? "10" : style.Trim();
         }
-        catch { return "10"; }
+        catch (Exception ex)
+        {
+            // 同上：读不到风格按「填充」处理，只影响壁纸缩放方式。
+            Log.Debug($"读取壁纸填充风格失败，按填充处理: {ex.Message}");
+            return "10";
+        }
     }
 }

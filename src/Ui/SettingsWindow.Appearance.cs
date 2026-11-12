@@ -1,12 +1,17 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Globalization;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Markup;
 using System.Windows.Media;
+using System.Windows.Threading;
 using MirrorpondHUD.Core;
 
 namespace MirrorpondHUD.Ui;
@@ -22,6 +27,26 @@ public partial class SettingsWindow
 {
     List<FontItem> _allFonts;
     FontItem _selectedFont;
+
+    /// <summary>
+    /// S-18：字体下拉的筛选视图。整个窗口生命周期只建一次，筛选时只 Refresh，
+    /// 不再每次键入都换 ItemsSource（换源会让 ComboBox 重建全部项容器，几百项时输入明显发顿）。
+    /// </summary>
+    ICollectionView _fontView;
+
+    /// <summary>当前筛选词；后台加载完成回填时要按它重新过滤，不能丢用户输入。</summary>
+    string _fontKeyword = "";
+
+    /// <summary>正在程序化套用字体列表 / 选中项：此时 SelectedItem 变化不是用户操作，不能标脏。</summary>
+    bool _applyingFonts;
+
+    /// <summary>
+    /// S-18：系统字体表是进程级数据，后台枚举一次、所有设置窗实例共享。
+    /// 旧实现在 UI 线程首次打开设置窗时全量枚举（还要取本地化名），中文字体多的机器会停顿数百毫秒。
+    /// </summary>
+    static readonly object FontGate = new();
+    static List<FontItem> _fontCache;
+    static Task<List<FontItem>> _fontLoad;
 
     // ==================== 数字框绑定 ====================
 
@@ -76,36 +101,129 @@ public partial class SettingsWindow
     void ApplyCliBoxes() => ApplyCliBoxesTo(_working, true);
 
     /// <summary>
-    /// S-11：判脏时把 CLI 输入框读进副本，不回写控件、不触发 UiChanged。
+    /// S-19：四个 CLI 尺寸框逐个校验、逐个提交。
+    ///
+    /// 旧实现把解析失败静默换回旧值，然后无条件重写四个框：既吃掉用户输入，又会覆盖另一个
+    /// 框里尚未失焦的半截内容，而且每次失焦都触发一次全量 UiChanged（标脏 + 重建预览）。
+    /// 现在：非法 → 就地标红 + ToolTip（保留原文让用户改）；超范围 → 按区间钳制并在框上说明；
+    /// 只有设置值真的变化才提交，只有真的要规范化时才回写那一个框。
     /// </summary>
     void ApplyCliBoxesTo(Settings target, bool writeBack)
     {
         if (target is null || _suppress) return;
 
         CliSettings cli = target.Cli ?? (target.Cli = new CliSettings());
-        cli.MaxWidth = ParseBox(CliWidthBox, cli.MaxWidth);
-        cli.MaxHeight = ParseBox(CliHeightBox, cli.MaxHeight);
-        cli.EntryMaxHeight = ParseBox(CliEntryBox, cli.EntryMaxHeight);
-        cli.MaxEntries = (int)ParseBox(CliEntriesBox, cli.MaxEntries);
-        cli.Normalize();
+        bool changed = false;
 
-        if (!writeBack) return;
+        // markUi 跟随 writeBack：判脏用的探针副本不该在界面上闪红框。
+        changed |= CommitDoubleBox(CliWidthBox, 240, 1600, writeBack,
+                                   () => cli.MaxWidth, v => cli.MaxWidth = v, "面板宽度");
+        changed |= CommitDoubleBox(CliHeightBox, 140, 3000, writeBack,
+                                   () => cli.MaxHeight, v => cli.MaxHeight = v, "面板最大高度");
+        changed |= CommitDoubleBox(CliEntryBox, 60, 2000, writeBack,
+                                   () => cli.EntryMaxHeight, v => cli.EntryMaxHeight = v, "单条记录最大高度");
+        changed |= CommitIntBox(CliEntriesBox, 1, 100, writeBack,
+                                () => cli.MaxEntries, v => cli.MaxEntries = v, "最多保留条数");
 
-        CliWidthBox.Text = cli.MaxWidth.ToString("0", CultureInfo.InvariantCulture);
-        CliHeightBox.Text = cli.MaxHeight.ToString("0", CultureInfo.InvariantCulture);
-        CliEntryBox.Text = cli.EntryMaxHeight.ToString("0", CultureInfo.InvariantCulture);
-        CliEntriesBox.Text = cli.MaxEntries.ToString(CultureInfo.InvariantCulture);
+        // 两条区间互相约束（与 CliSettings.Normalize 同义）：单条高度不能超过面板最大高度。
+        // 只有真的越界才回写这一个框，并说明原因。
+        if (cli.EntryMaxHeight > cli.MaxHeight)
+        {
+            cli.EntryMaxHeight = cli.MaxHeight;
+            changed = true;
+            if (writeBack)
+            {
+                CliEntryBox.Text = FormatCliValue(cli.EntryMaxHeight);
+                MarkFieldHint(CliEntryBox, $"不能大于面板最大高度，已按 {FormatCliValue(cli.MaxHeight)} 生效");
+            }
+        }
 
-        UiChanged();
+        if (writeBack && changed) UiChanged();
     }
 
-    static double ParseBox(TextBox box, double fallback)
+    /// <summary>读一个浮点尺寸框；返回设置值是否真的变化。</summary>
+    bool CommitDoubleBox(TextBox box, double min, double max, bool markUi,
+                         Func<double> get, Action<double> set, string what)
     {
-        if (!double.TryParse((box.Text ?? "").Trim(), NumberStyles.Float,
-                CultureInfo.CurrentCulture, out var value))
-            return fallback;
-        return value;
+        string text = (box.Text ?? "").Trim();
+        if (!double.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out var parsed))
+        {
+            if (markUi) MarkFieldInvalid(box, $"{what}需要数字（{FormatCliValue(min)}–{FormatCliValue(max)}）");
+            return false;
+        }
+
+        double value = Math.Max(min, Math.Min(max, parsed));
+        if (markUi)
+        {
+            if (Math.Abs(value - parsed) > 0.001)
+            {
+                // 超范围不是格式错误：提交钳制值，并把「实际生效值」写回这个框。
+                box.Text = FormatCliValue(value);
+                MarkFieldHint(box, $"{what}超出范围，按 {FormatCliValue(value)} 生效（{FormatCliValue(min)}–{FormatCliValue(max)}）");
+            }
+            else
+            {
+                ClearFieldValidation(box);
+            }
+        }
+
+        if (Math.Abs(get() - value) < 0.0001) return false;
+        set(value);
+        return true;
     }
+
+    /// <summary>读一个整数尺寸框；返回设置值是否真的变化。</summary>
+    bool CommitIntBox(TextBox box, int min, int max, bool markUi,
+                      Func<int> get, Action<int> set, string what)
+    {
+        string text = (box.Text ?? "").Trim();
+        if (!int.TryParse(text, NumberStyles.Integer, CultureInfo.CurrentCulture, out var parsed))
+        {
+            if (markUi) MarkFieldInvalid(box, $"{what}需要整数（{min}–{max}）");
+            return false;
+        }
+
+        int value = Math.Max(min, Math.Min(max, parsed));
+        if (markUi)
+        {
+            if (value != parsed)
+            {
+                box.Text = value.ToString(CultureInfo.CurrentCulture);
+                MarkFieldHint(box, $"{what}超出范围，按 {value} 生效（{min}–{max}）");
+            }
+            else
+            {
+                ClearFieldValidation(box);
+            }
+        }
+
+        if (get() == value) return false;
+        set(value);
+        return true;
+    }
+
+    /// <summary>就地标记非法输入：红框 + ToolTip（沿用 ValidateColorBox 的视觉语言）。</summary>
+    void MarkFieldInvalid(TextBox box, string message)
+    {
+        box.BorderBrush = FindResource("Danger") as Brush;
+        box.ToolTip = message;
+    }
+
+    /// <summary>值合法但被钳制：不标红（值会生效），只用 ToolTip 说明真实生效值。</summary>
+    void MarkFieldHint(TextBox box, string message)
+    {
+        box.ClearValue(Control.BorderBrushProperty);
+        box.ToolTip = message;
+    }
+
+    void ClearFieldValidation(TextBox box)
+    {
+        box.ClearValue(Control.BorderBrushProperty);
+        box.ToolTip = null;
+    }
+
+    static string FormatCliValue(double value) =>
+        value.ToString("0.##", CultureInfo.InvariantCulture);
 
     void BindNumberBox(TextBox box, Slider slider, string format)
     {
@@ -165,37 +283,157 @@ public partial class SettingsWindow
         public override string ToString() => Display;
     }
 
-    void BuildFontList()
+    /// <summary>启动时预热（宿主构造 OverlayController 时调用）：后台枚举字体，首次打开设置窗直接命中缓存。</summary>
+    public static void WarmFontCache() => _ = EnsureFontCacheAsync();
+
+    static Task<List<FontItem>> EnsureFontCacheAsync()
     {
-        if (_allFonts is not null) return;
-
-        XmlLanguage zh = XmlLanguage.GetLanguage("zh-CN");
-        var items = new List<FontItem>();
-
-        foreach (FontFamily family in Fonts.SystemFontFamilies)
+        lock (FontGate)
         {
-            string name = family.Source;
-            if (string.IsNullOrWhiteSpace(name)) continue;
+            if (_fontCache is not null) return Task.FromResult(_fontCache);
 
-            string local = null;
-            try
+            return _fontLoad ??= Task.Factory.StartNew(() =>
             {
-                if (family.FamilyNames.ContainsKey(zh)) local = family.FamilyNames[zh];
+                List<FontItem> fonts = LoadSystemFonts();
+                lock (FontGate)
+                {
+                    // 空表代表枚举失败：不写入缓存，下次打开设置窗再试一次（失败原因已进日志）。
+                    if (fonts.Count > 0) _fontCache = fonts;
+                    _fontLoad = null;
+                }
+                return fonts;
+            }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+        }
+    }
+
+    static bool TryGetFontCache(out List<FontItem> fonts)
+    {
+        lock (FontGate)
+        {
+            fonts = _fontCache;
+            return fonts is not null;
+        }
+    }
+
+    /// <summary>
+    /// 独立 STA 线程枚举系统字体：WPF 的字体表 API 在部分系统上要求 STA，
+    /// 直接扔进线程池（MTA）有踩坑风险；这里用一次性线程，读完只返回纯字符串数据，
+    /// 不把任何 WPF 对象带出后台线程。
+    /// </summary>
+    static List<FontItem> LoadSystemFonts()
+    {
+        try
+        {
+            XmlLanguage zh = XmlLanguage.GetLanguage("zh-CN");
+            var items = new List<FontItem>();
+
+            foreach (FontFamily family in Fonts.SystemFontFamilies)
+            {
+                string name = family.Source;
+                if (string.IsNullOrWhiteSpace(name)) continue;
+
+                string local = null;
+                try
+                {
+                    if (family.FamilyNames.ContainsKey(zh)) local = family.FamilyNames[zh];
+                }
+                catch (Exception ex)
+                {
+                    // 个别字体族读不到本地化名：退回英文名即可，不影响列表可用性。
+                    Log.Debug($"读取字体本地化名失败({name}): {ex.Message}");
+                }
+
+                bool chinese = !string.IsNullOrWhiteSpace(local)
+                               && !string.Equals(local, name, StringComparison.OrdinalIgnoreCase)
+                               && HasCjk(local);
+
+                string display = chinese ? $"{local} ({name})" : name;
+                items.Add(new FontItem { Family = name, Display = display, Chinese = chinese });
             }
-            catch { }
 
-            bool chinese = !string.IsNullOrWhiteSpace(local)
-                           && !string.Equals(local, name, StringComparison.OrdinalIgnoreCase)
-                           && HasCjk(local);
+            List<FontItem> sorted = items
+                .OrderBy(f => f.Chinese ? 0 : 1)
+                .ThenBy(f => f.Display, StringComparer.CurrentCultureIgnoreCase)
+                .ToList();
 
-            string display = chinese ? $"{local} ({name})" : name;
-            items.Add(new FontItem { Family = name, Display = display, Chinese = chinese });
+            Log.Info($"系统字体枚举完成：{sorted.Count} 项（后台线程）");
+            return sorted;
+        }
+        catch (Exception ex)
+        {
+            // 字体表读不到属于环境故障：界面显示空列表并带提示，原因必须进日志。
+            Log.Warn($"系统字体枚举失败: {ex.Message}");
+            return new List<FontItem>();
+        }
+    }
+
+    /// <summary>
+    /// 把字体列表装进界面。缓存命中时同步完成；冷启动时先禁用下拉框，
+    /// 后台枚举完成后回到 UI 线程回填 —— UI 线程不再做全量枚举（S-18）。
+    /// </summary>
+    void LoadFontsIntoUi(string family)
+    {
+        _fontKeyword = "";
+
+        if (TryGetFontCache(out var cached))
+        {
+            ApplyFontList(cached, family);
+            return;
         }
 
-        _allFonts = items
-            .OrderBy(f => f.Chinese ? 0 : 1)
-            .ThenBy(f => f.Display, StringComparer.CurrentCultureIgnoreCase)
-            .ToList();
+        _applyingFonts = true;
+        try
+        {
+            FontCombo.ItemsSource = null;
+            FontCombo.SelectedItem = null;
+            FontCombo.IsEnabled = false;
+            FontCombo.ToolTip = "正在后台加载系统字体…";
+        }
+        finally
+        {
+            _applyingFonts = false;
+        }
+
+        _ = EnsureFontCacheAsync().ContinueWith(task =>
+        {
+            if (task.Status != TaskStatus.RanToCompletion) return;
+            Dispatcher.BeginInvoke(new Action(() => ApplyFontList(task.Result, family)), DispatcherPriority.Background);
+        }, TaskScheduler.Default);
+    }
+
+    void ApplyFontList(List<FontItem> fonts, string family)
+    {
+        // 窗口可能已经真正关闭（后台枚举还没回来）：不再往可视树上写。
+        if (_reallyClose) return;
+
+        // 缓存列表是共享的，视图必须按窗口实例建；Reload 时复用同一个视图，保留筛选状态。
+        if (!ReferenceEquals(_allFonts, fonts) || _fontView is null)
+        {
+            _allFonts = fonts;
+            _fontView = new ListCollectionView(fonts) { Filter = FontPassesFilter };
+            FontCombo.ItemsSource = _fontView;
+        }
+
+        _selectedFont = fonts.FirstOrDefault(
+                            f => string.Equals(f.Family, family, StringComparison.OrdinalIgnoreCase))
+                        ?? fonts.FirstOrDefault(
+                            f => string.Equals(f.Family, "Microsoft YaHei UI", StringComparison.OrdinalIgnoreCase))
+                        ?? fonts.FirstOrDefault();
+
+        FontCombo.IsEnabled = true;
+        FontCombo.ToolTip = fonts.Count == 0 ? "系统字体枚举失败（详情见日志）" : null;
+
+        _applyingFonts = true;
+        try
+        {
+            FontFilterBox.Text = _fontKeyword;
+            _fontView.Refresh();
+            FontCombo.SelectedItem = _selectedFont;
+        }
+        finally
+        {
+            _applyingFonts = false;
+        }
     }
 
     static bool HasCjk(string text)
@@ -207,19 +445,31 @@ public partial class SettingsWindow
 
     void FilterFonts(string keyword)
     {
-        BuildFontList();
+        _fontKeyword = (keyword ?? "").Trim();
 
-        keyword = (keyword ?? "").Trim();
-        IEnumerable<FontItem> filtered = _allFonts;
-        if (keyword.Length > 0)
+        // 字体还在后台枚举：加载完成后 ApplyFontList 会按这个关键字刷新视图。
+        if (_fontView is null) return;
+
+        // S-18：只刷新同一个视图的过滤结果，不换 ItemsSource、不重建 List。
+        _applyingFonts = true;
+        try
         {
-            filtered = _allFonts.Where(f =>
-                f.Family.IndexOf(keyword, StringComparison.CurrentCultureIgnoreCase) >= 0 ||
-                f.Display.IndexOf(keyword, StringComparison.CurrentCultureIgnoreCase) >= 0);
+            _fontView.Refresh();
+            FontCombo.SelectedItem = _selectedFont;
         }
+        finally
+        {
+            _applyingFonts = false;
+        }
+    }
 
-        FontCombo.ItemsSource = filtered.ToList();
-        FontCombo.SelectedItem = _selectedFont;
+    bool FontPassesFilter(object item)
+    {
+        if (_fontKeyword.Length == 0) return true;
+        if (item is not FontItem font) return false;
+
+        return font.Family.IndexOf(_fontKeyword, StringComparison.CurrentCultureIgnoreCase) >= 0
+               || font.Display.IndexOf(_fontKeyword, StringComparison.CurrentCultureIgnoreCase) >= 0;
     }
 
     /// <summary>
@@ -297,8 +547,16 @@ public partial class SettingsWindow
             string current = (ImagePathBox.Text ?? "").Trim();
             if (current.Length > 0)
             {
-                try { dialog.InitialDirectory = System.IO.Path.GetDirectoryName(current); }
-                catch { }
+                try
+                {
+                    dialog.InitialDirectory = System.IO.Path.GetDirectoryName(current);
+                }
+                catch (Exception ex)
+                {
+                    // 当前路径是相对路径 / 非法字符时选不出初始目录：对话框仍会打开，
+                    // 只是从默认位置开始，不影响用户选择。
+                    Log.Debug($"设置背景图片对话框初始目录失败: {ex.Message}");
+                }
             }
 
             if (dialog.ShowDialog(this) == true)

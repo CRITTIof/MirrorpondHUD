@@ -889,6 +889,108 @@ public static class Screenshots
         }
     }
 
+    /// <summary>
+    /// S-20：截图参数其实是「输出文件路径」，不是 AGENTS 里写的“标题”。五种截图模式共用这条校验：
+    /// · 解析成绝对路径（相对路径按进程 cwd 展开，并在日志里回显最终落点）；
+    /// · 没扩展名补 <c>.png</c>，扩展名必须是 <c>.png</c> —— 否则误传 settings.json 会把配置写成 PNG 字节；
+    /// · 目录不存在则创建，创建失败 / 目录不可写 / 目标是目录 / 目标是只读文件都算失败。
+    /// 同名 .png 允许覆盖：截图验收通常反复跑同一路径，禁止覆盖会把最常用的用法堵死。
+    /// </summary>
+    internal static bool TryResolveOutputPath(string raw, out string path, out string error)
+    {
+        path = null;
+        error = null;
+
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            error = "缺少输出路径";
+            return false;
+        }
+
+        string text = raw.Trim();
+        if (text.StartsWith("--", StringComparison.Ordinal))
+        {
+            // 典型误用：--screenshot --minimized 会把下一个选项当成文件名。
+            error = $"缺少输出路径（读到的是另一个选项 {text}）";
+            return false;
+        }
+
+        string full;
+        try
+        {
+            full = Path.GetFullPath(text);
+        }
+        catch (Exception ex)
+        {
+            error = $"无法解析为绝对路径：{ex.Message}";
+            return false;
+        }
+
+        if (string.IsNullOrEmpty(Path.GetExtension(full))) full += ".png";
+
+        string ext = Path.GetExtension(full);
+        if (!string.Equals(ext, ".png", StringComparison.OrdinalIgnoreCase))
+        {
+            error = $"输出文件必须是 .png（当前扩展名 {ext}）";
+            return false;
+        }
+
+        string dir;
+        try
+        {
+            dir = Path.GetDirectoryName(full);
+        }
+        catch (Exception ex)
+        {
+            error = $"无法确定输出目录：{ex.Message}";
+            return false;
+        }
+        if (string.IsNullOrEmpty(dir))
+        {
+            error = "无法确定输出目录";
+            return false;
+        }
+
+        try
+        {
+            if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+        }
+        catch (Exception ex)
+        {
+            error = $"输出目录不可用（{dir}）：{ex.Message}";
+            return false;
+        }
+
+        // 可写性探测：先建一个临时文件再删掉。若等渲染完才在 File.Create 处失败，
+        // 用户已经等了一整轮截图却什么都拿不到，而且原因只剩一条异常。
+        try
+        {
+            string probe = Path.Combine(dir, $".mhud-write-{Guid.NewGuid():N}.tmp");
+            using (File.Create(probe)) { }
+            File.Delete(probe);
+        }
+        catch (Exception ex)
+        {
+            error = $"输出目录不可写（{dir}）：{ex.Message}";
+            return false;
+        }
+
+        if (Directory.Exists(full))
+        {
+            error = $"输出路径是一个目录（{full}）";
+            return false;
+        }
+
+        if (File.Exists(full) && (File.GetAttributes(full) & FileAttributes.ReadOnly) != 0)
+        {
+            error = $"目标文件是只读的（{full}）";
+            return false;
+        }
+
+        path = full;
+        return true;
+    }
+
     static bool SavePng(BitmapSource source, string path)
     {
         string dir = Path.GetDirectoryName(Path.GetFullPath(path));

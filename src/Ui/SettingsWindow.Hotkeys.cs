@@ -38,7 +38,15 @@ public partial class SettingsWindow
         }
 
         Style sectionStyle = null;
-        try { sectionStyle = FindResource("SettingsSection") as Style; } catch { }
+        try
+        {
+            sectionStyle = FindResource("SettingsSection") as Style;
+        }
+        catch (Exception ex)
+        {
+            // 资源字典还没合并（极早的热键面板重建）：区块退化为默认样式，内容仍然可见。
+            Log.Debug($"读取 SettingsSection 样式失败，使用默认样式: {ex.Message}");
+        }
 
         bool any = false;
         foreach (ICardModule module in CardRegistry.Modules)

@@ -91,7 +91,16 @@ public partial class SettingsWindow : Window
         _glassState = glassState;
         _applyWarning = applyWarning;
         _liveSettings = live;
-        try { VersionText.Text = $"v{typeof(SettingsWindow).Assembly.GetName().Version}"; } catch { }
+        try
+        {
+            VersionText.Text = $"v{typeof(SettingsWindow).Assembly.GetName().Version}";
+        }
+        catch (Exception ex)
+        {
+            // 版本号只是底栏信息：读取程序集版本失败不应该拖垮设置窗打开，
+            // 但也不能完全无声，留 Debug 线索（X-9 / G-18）。
+            Log.Debug($"设置窗版本号显示失败: {ex.Message}");
+        }
 
         HookEvents();
         BindNumberBoxes();
@@ -203,6 +212,10 @@ public partial class SettingsWindow : Window
     {
         FontCombo.SelectionChanged += (s, e) =>
         {
+            // S-18：程序化套用字体列表 / 筛选结果时也会改 SelectedItem，
+            // 那不是用户操作，不能借此标脏或重渲染预览。
+            if (_applyingFonts) return;
+
             FontItem item = FontCombo.SelectedItem as FontItem;
             if (item is not null) _selectedFont = item;
             UiChanged();
@@ -562,23 +575,59 @@ public partial class SettingsWindow : Window
             // S-10：窗口隐藏后不再需要为残留的输入事件渲染预览。
             _previewTimer?.Stop();
             Hide();
+            // S-14：Hide 之后没有人再看这些对象；先隐藏再释放，避免看到可视树被拆的瞬间。
+            ReleaseTransientState();
             return;
         }
         base.OnClosing(e);
     }
 
     /// <summary>
-    /// 窗口真正关闭时断开设置页对卡片模块的引用。
+    /// S-14：Hide 不是真正关闭，但隐藏期间没有理由继续持有模块区块 / 主题预览位图 / 字体视图。
+    ///
+    /// 这些都能从设置树重建：下次 OverlayController 走 <see cref="Reload"/> → LoadUi 时，
+    /// RebuildCardList 重建模块区块、RenderThemePreview 重建预览位图、LoadFontsIntoUi 重新装字体视图
+    /// （字体表本身在进程级静态缓存里，不会因此重新枚举）。
+    /// _working / _liveSettings / _runtimeBaseline 不能在这里清空 —— 保存链路与判脏都要用它们。
+    /// </summary>
+    void ReleaseTransientState()
+    {
+        ReleaseCardEditors();
+
+        // 2× 缩放的 Pbgra32 预览位图：隐藏期间没人看，留着就是几百 KB 常驻。
+        if (ThemePreviewImage is not null) ThemePreviewImage.Source = null;
+
+        _applyingFonts = true;
+        try
+        {
+            if (FontCombo is not null)
+            {
+                FontCombo.ItemsSource = null;
+                FontCombo.SelectedItem = null;
+            }
+        }
+        finally
+        {
+            _applyingFonts = false;
+        }
+
+        _allFonts = null;
+        _fontView = null;
+        _fontKeyword = "";
+    }
+
+    /// <summary>
+    /// 断开设置页对卡片模块的引用（真正关闭与 S-14 的隐藏释放共用）。
     /// WPF 的绑定引擎在窗口关闭后还可能短暂保留 ItemsControl/ListCollectionView；
     /// 只 Close 不摘 ItemsSource 会让 CardEditor 继续持有插件模块 / 内容。
     /// </summary>
     public void ReleaseCardEditors()
     {
+        // 释放路径统一走 SafeRelease.Run（X-9），不再写空 catch。
         foreach (CardEditor editor in _editors)
-        {
-            try { editor.ReleaseModule(); } catch { }
-        }
-        try { CardList.ItemsSource = null; } catch { }
+            SafeRelease.Run(editor.ReleaseModule, "卡片编辑区块");
+
+        SafeRelease.Run(() => CardList.ItemsSource = null, "卡片列表绑定");
         _editors.Clear();
     }
 

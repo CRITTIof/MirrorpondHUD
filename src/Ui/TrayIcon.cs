@@ -96,6 +96,16 @@ public sealed class TrayIcon : IDisposable
     [DllImport("user32.dll", SetLastError = true)]
     static extern bool DestroyIcon(IntPtr hIcon);
 
+    /// <summary>S-16：复制一个 HICON，供兜底托盘图标使用（副本由本类销毁，不是共享实例）。</summary>
+    [DllImport("user32.dll", SetLastError = true)]
+    static extern IntPtr CopyIcon(IntPtr hIcon);
+
+    /// <summary>气泡正文缓冲 256 字符：自行截断并补省略号，避免 ByValTStr 静默吃字。</summary>
+    const int BalloonTextMax = 200;
+
+    /// <summary>气泡标题缓冲 64 字符。</summary>
+    const int BalloonTitleMax = 60;
+
     sealed class TrayHostWindow : WinForms.NativeWindow
     {
         readonly uint _taskbarCreated;
@@ -161,6 +171,12 @@ public sealed class TrayIcon : IDisposable
     readonly MenuItem _lockItem;
     readonly Icon _icon;
 
+    /// <summary>
+    /// S-16：句柄是否归本类销毁。只有从共享 HICON 复制出来的兜底图标为 true ——
+    /// <c>Icon.FromHandle</c> 不接管句柄所有权，必须自己 DestroyIcon。
+    /// </summary>
+    readonly bool _ownsIconHandle;
+
     bool _added;
     bool _addFailed;
     bool _disposed;
@@ -175,7 +191,9 @@ public sealed class TrayIcon : IDisposable
 
     public TrayIcon()
     {
-        _icon = LoadIcon();
+        (Icon icon, bool ownsHandle) loaded = LoadIcon();
+        _icon = loaded.icon;
+        _ownsIconHandle = loaded.ownsHandle;
 
         // 用 WPF 的 ContextMenu：它本身是工具窗口，不会在任务栏里留下一个窗口。
         _menu = new ContextMenu
@@ -245,7 +263,13 @@ public sealed class TrayIcon : IDisposable
             bottom = rect.Bottom;
             return true;
         }
-        catch { return false; }
+        catch (Exception ex)
+        {
+            // 这是一条「图标到底进没进托盘」的诊断探针：失败等价于“读不到位置”，
+            // 上层只少一条 INFO，不改图标状态，因此按 Debug 记录即可。
+            Log.Debug($"Shell_NotifyIconGetRect 读取托盘位置失败: {ex.Message}");
+            return false;
+        }
     }
 
     void AddIcon()
@@ -289,7 +313,9 @@ public sealed class TrayIcon : IDisposable
     {
         if (!_added) return;
         var data = NewData();
-        Shell_NotifyIcon(NIM_DELETE, ref data);
+        // S-17：删除失败时图标会一直残留在托盘区直到 Explorer 重启，必须留痕。
+        if (!Shell_NotifyIcon(NIM_DELETE, ref data))
+            Log.Warn($"Shell_NotifyIcon(NIM_DELETE) 失败 err={Marshal.GetLastWin32Error()}，图标可能残留在托盘区");
         _added = false;
     }
 
@@ -358,26 +384,53 @@ public sealed class TrayIcon : IDisposable
 
     public void ShowBalloon(string title, string text)
     {
-        if (_disposed || !_added) return;
+        if (_disposed) return;
+        if (!_added)
+        {
+            // 托盘被用户关掉 / 添加失败时气泡确实无处可显示：这是状态而不是发送异常，
+            // 但也不能静默 —— 热键冲突提示主要靠它，必须留一条可归因的记录。
+            Log.Info("托盘气泡未显示：托盘图标当前不在托盘区（用户关闭了托盘或添加失败）");
+            return;
+        }
+
+        string safeTitle = ClampBalloon(title, BalloonTitleMax, "标题");
+        string safeText = ClampBalloon(text, BalloonTextMax, "正文");
 
         try
         {
             var data = NewData();
             data.uFlags = NIF_INFO;
-            data.szInfoTitle = title;
-            data.szInfo = text;
+            data.szInfoTitle = safeTitle;
+            data.szInfo = safeText;
             data.dwInfoFlags = NIIF_INFO;
             data.uVersion = 0;
             if (!Shell_NotifyIcon(NIM_MODIFY, ref data))
-                Log.Warn("托盘气泡通知发送失败（Shell_NotifyIcon 返回 false）");
+            {
+                // S-17：专注助手 / 通知策略关闭时 Shell 直接返回 false，用户什么都看不到。
+                Log.Warn($"托盘气泡通知发送失败（Shell_NotifyIcon 返回 false）err={Marshal.GetLastWin32Error()}，"
+                         + $"用户可能没看到「{safeTitle}」这条提示");
+            }
         }
         catch (Exception ex)
         {
-            Log.Warn($"托盘气泡通知异常: {ex.Message}");
+            Log.Warn($"托盘气泡通知异常: {ex.Message}（标题：{safeTitle}）");
         }
     }
 
-    static Icon LoadIcon()
+    /// <summary>
+    /// S-17：szInfo / szInfoTitle 是定长 ByValTStr，超长会被封送层静默截断成半句话。
+    /// 这里主动截到上限并补省略号，让用户知道内容没有显示全（同时避免封送层行为依赖）。
+    /// </summary>
+    static string ClampBalloon(string value, int max, string what)
+    {
+        string text = value ?? "";
+        if (text.Length <= max) return text;
+
+        Log.Info($"托盘气泡{what}超过 {max} 字符，已截断补省略号（原长 {text.Length}）");
+        return text.Substring(0, max - 1) + "…";
+    }
+
+    static (Icon Icon, bool OwnsHandle) LoadIcon()
     {
         // 深色任务栏用浅色版本，浅色任务栏用深色版本
         string name = IsLightTaskbar() ? "assets/logo.ico" : "assets/logo-light.ico";
@@ -389,7 +442,8 @@ public sealed class TrayIcon : IDisposable
             {
                 var icon = new Icon(info.Stream, new System.Drawing.Size(32, 32));
                 info.Stream.Dispose();
-                return icon;
+                // 资源图标自己拥有句柄，Dispose 时由 Icon 自己销毁。
+                return (icon, false);
             }
         }
         catch (Exception ex)
@@ -397,7 +451,15 @@ public sealed class TrayIcon : IDisposable
             Log.Warn($"加载托盘图标失败，改用系统图标: {ex.Message}");
         }
 
-        return SystemIcons.Application;
+        // S-16：SystemIcons.Application 是进程级共享实例，直接 Dispose 会销毁整个进程共用的 HICON，
+        // 之后任何再取 SystemIcons.* 的代码都会拿到失效句柄。兜底图标必须是自有副本：
+        // CopyIcon 得到独立句柄 → Icon.FromHandle（不接管所有权）→ Dispose 时显式 DestroyIcon。
+        IntPtr copy = CopyIcon(SystemIcons.Application.Handle);
+        if (copy != IntPtr.Zero) return (Icon.FromHandle(copy), true);
+
+        // 连复制都失败（几乎不可能）：退回 Clone —— 它同样会复制句柄，可安全 Dispose。
+        Log.Warn($"复制系统兜底图标失败 err={Marshal.GetLastWin32Error()}，改用 Clone 副本");
+        return ((Icon)SystemIcons.Application.Clone(), false);
     }
 
     static bool IsLightTaskbar()
@@ -424,9 +486,15 @@ public sealed class TrayIcon : IDisposable
         if (_disposed) return;
         _disposed = true;
 
-        try { RemoveIcon(); } catch { }
-        try { _window.Destroy(); } catch { }
+        SafeRelease.Run(RemoveIcon, "托盘图标移除");
+        SafeRelease.Run(_window.Destroy, "托盘宿主窗口");
 
-        try { _icon.Dispose(); } catch { }
+        SafeRelease.Run(() =>
+        {
+            // S-16：只有 CopyIcon 出来的兜底句柄需要显式销毁；
+            // Icon.FromHandle 的 Dispose 不会释放 HICON，而资源图标由 Icon 自己负责。
+            if (_ownsIconHandle) DestroyIcon(_icon.Handle);
+            _icon.Dispose();
+        }, "托盘图标");
     }
 }

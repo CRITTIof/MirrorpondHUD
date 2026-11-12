@@ -147,7 +147,9 @@ public partial class SettingsWindow
 
         Dispatcher.BeginInvoke(new Action(() =>
         {
-            try { CardScroll.ScrollToEnd(); } catch { }
+            // 滚动只是让新卡片进入视野：列表可能已重排 / 卸载，失败不影响添加结果，
+            // 用 SafeRelease 留 Debug 记录即可（X-9）。
+            SafeRelease.Run(() => CardScroll.ScrollToEnd(), "卡片列表滚动到底");
         }), System.Windows.Threading.DispatcherPriority.Background);
     }
 

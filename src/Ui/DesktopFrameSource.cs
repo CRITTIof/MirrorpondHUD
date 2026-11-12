@@ -488,7 +488,8 @@ internal sealed class DesktopFrameSource : IDisposable
         {
             if (acquired)
             {
-                try { _release(_duplication); } catch { }
+                // 释放路径：桌面复制对象可能已被系统回收，交给 SafeRelease 记录（X-9）。
+                SafeRelease.Run(() => _release(_duplication), "桌面复制对象");
             }
             if (box != IntPtr.Zero) Marshal.FreeHGlobal(box);
             if (texture != IntPtr.Zero) Marshal.Release(texture);
