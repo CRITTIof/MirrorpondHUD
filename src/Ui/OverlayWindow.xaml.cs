@@ -136,6 +136,13 @@ public partial class OverlayWindow : Window
             // G-19：隐藏 / 最小化后兼容取样定时器没有意义，按可见性起停（不影响底板决策）。
             _glassRuntime.SyncCaptureTimerToVisibility();
         };
+        // G-19 兜底：Win+D / 最小化恢复时 WPF 不保证派发 IsVisibleChanged，
+        // 只看 WindowState 变化也能把暂停的玻璃泵叫醒，避免恢复后一直不刷新。
+        StateChanged += (s, e) =>
+        {
+            _glassRuntime.UpdateBackdrop();
+            _glassRuntime.SyncCaptureTimerToVisibility();
+        };
         DpiChanged += (s, e) =>
         {
             // 缩放变了：重新取每屏 DPI。拖动跨屏时**不能** ApplyPosition：
