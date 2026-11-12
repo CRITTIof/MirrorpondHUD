@@ -47,6 +47,7 @@ public sealed class OverlaySurface : Border
     string _lastCardAlignSetting;
     string _particleSkeleton;
     string _lastTextEffect = "None";
+    string _lastParticleSettings;
     Color _particleColor = Colors.White;
     bool _particlePending;
     int _particleRetries;
@@ -557,6 +558,14 @@ public sealed class OverlaySurface : Border
 
         _particleColor = ParseColor(style.Foreground, Colors.White);
         string textEffect = Settings.NormalizeTextEffect(style.TextEffect);
+        string particleSettings = $"{style.TextParticleSize:0.###}|{style.TextParticleCount}|"
+            + $"{style.TextParticleSpeed:0.###}|{style.TextParticleNearest}|{style.TextParticleGeometry}";
+        if (!string.Equals(particleSettings, _lastParticleSettings, StringComparison.Ordinal))
+        {
+            _lastParticleSettings = particleSettings;
+            // 改大小 / 数量 / 速度 / 采样方式后，即使文字没变也重播一次，方便即时看效果。
+            _particleSkeleton = null;
+        }
         if (!string.Equals(textEffect, _lastTextEffect, StringComparison.Ordinal))
         {
             _lastTextEffect = textEffect;
