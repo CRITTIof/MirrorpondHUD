@@ -735,7 +735,11 @@ internal sealed class ChatView : CliPanelView, IDisposable
                 return Convert.ToString(root["error"]);
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            // 失败就退回截断原文；原因留在日志里，便于排查 API 错误格式变化。
+            Log.Debug($"解析 API 错误响应失败: {ex.Message}");
+        }
 
         return ClipText(payload, 160);
     }

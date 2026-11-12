@@ -241,5 +241,9 @@ public partial class App : Application
         // 最早的可验证点。Verify 内部幂等且自带日志（泄漏 / 正常回收）。
         try { _unloadProbe?.Verify(); }
         catch (Exception ex) { Log.Warn($"卸载探针验证失败: {ex.Message}"); }
+
+        // X-8：日志是异步写的，退出流程结束前把队列排空（最多 2 秒），
+        // 否则最后几条（包括上面的探针结论）可能随进程一起消失。
+        if (!Log.Flush(2000)) Log.Warn("退出时日志队列未在 2 秒内排空，可能有少量记录丢失");
     }
 }

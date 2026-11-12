@@ -747,7 +747,8 @@ public sealed class OverlayController : IDisposable
         {
             // 第 5 个参数把「当前实际实现」提供给设置窗：下拉框是用户的期望，运行时状态才是事实。
             _settingsWindow = new SettingsWindow(_settings, ApplySettings, ApplyAnchor, ClearKeys,
-                                                 () => CurrentGlassState);
+                                                 () => CurrentGlassState,
+                                                 () => _settingsApplier.LastApplyWarning);
             if (_settingsWindow.LoadFailed)
             {
                 _settingsWindow.CloseForReal();

@@ -8,6 +8,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using MirrorpondHUD.Cards;
 using MirrorpondHUD.Core;
 
@@ -36,6 +37,9 @@ public partial class SettingsWindow : Window
     readonly Action _onClearKeys;
     /// <summary>读「当前实际玻璃实现」；无头截图等没有宿主的场景为 null。</summary>
     readonly Func<GlassRuntimeState> _glassState;
+    readonly Func<string> _applyWarning;
+    /// <summary>S-10：主题预览防抖定时器（第一次需要时创建）。</summary>
+    DispatcherTimer _previewTimer;
 
     Settings _working;
     /// <summary>
@@ -63,12 +67,13 @@ public partial class SettingsWindow : Window
 
     /// <summary>
     /// 第 5 个参数读「当前实际玻璃实现」（可为 null：无头截图等没有宿主窗口的场景）。
-    /// 参数类型 GlassRuntimeState 是程序集内部类型，所以构造函数保持 internal ——
-    /// 设置窗只由宿主（OverlayController）与无头截图（Screenshots）创建，没有跨程序集调用点。
+    /// 第 6 个参数读「本次应用的非致命警告」（S-06：如开机自启写注册表失败），
+    /// 可为 null；类型均为程序集内部类型，所以构造函数保持 internal。
     /// </summary>
     internal SettingsWindow(Settings live, Func<Settings, bool> onApply,
                             Action<double, double, int> onPosition, Action onClearKeys,
-                            Func<GlassRuntimeState> glassState = null)
+                            Func<GlassRuntimeState> glassState = null,
+                            Func<string> applyWarning = null)
     {
         InitializeComponent();
 
@@ -84,6 +89,7 @@ public partial class SettingsWindow : Window
         _onPosition = onPosition;
         _onClearKeys = onClearKeys;
         _glassState = glassState;
+        _applyWarning = applyWarning;
         _liveSettings = live;
         try { VersionText.Text = $"v{typeof(SettingsWindow).Assembly.GetName().Version}"; } catch { }
 
@@ -302,7 +308,8 @@ public partial class SettingsWindow : Window
         MarkDirty();
         if (!_applyingTheme) ClearThemeName();
         UpdateSwatches();
-        RenderThemePreview();
+        // S-10：预览走防抖，拖动滑块 / 连续输入时只渲染最后一帧。
+        RequestThemePreview();
     }
 
     /// <summary>用户改了任一设置：标题加 *，关闭时提示保存 / 放弃。</summary>
@@ -331,16 +338,30 @@ public partial class SettingsWindow : Window
         }
     }
 
-    /// <summary>关闭前判断是否有未保存编辑。先看显式脏标记，再看控件读回与干净快照。</summary>
+    /// <summary>
+    /// 关闭前判断是否有未保存编辑。先看显式脏标记，再看控件读回与干净快照（S-11：
+    /// 判脏走副本，不提交草稿、不原地归一化；草稿存在性单独查询）。
+    /// </summary>
     bool IsDirty()
     {
         if (_dirty) return true;
         if (_working is null || _cleanSnapshot is null) return false;
 
+        // API Key 这类“失焦才提交”的草稿不会触发 UiChanged，但它确实是未保存修改。
+        foreach (CardEditor editor in _editors)
+            if (editor.HasPendingEdits) return true;
+
         try
         {
-            Settings current = ReadUi();
-            return !string.Equals(Json.Serialize(current), _cleanSnapshot, StringComparison.Ordinal);
+            if (!TryClone(_working, out var probe, out var cloneError))
+            {
+                Log.Warn($"设置判脏克隆失败，按有修改处理: {cloneError}");
+                return true;
+            }
+
+            Settings current = ReadUiCore(probe, commitPending: false);
+            return current is null ||
+                   !string.Equals(Json.Serialize(current), _cleanSnapshot, StringComparison.Ordinal);
         }
         catch (Exception ex)
         {
@@ -527,10 +548,19 @@ public partial class SettingsWindow : Window
                     return;
                 }
 
-                if (answer == MessageBoxResult.No) ClearDirty();
+                if (answer == MessageBoxResult.No)
+                {
+                    ClearDirty();
+                    // S-11：判脏 / 主题预览可能已经动过 _working（读回控件、归一化、草稿提交）。
+                    // 选择“放弃”必须从 live 设置重载，不能让被改过的副本留在内存里。
+                    if (!Reload(_liveSettings))
+                        Log.Warn("放弃修改时重载设置失败，内存副本可能仍含未保存改动");
+                }
             }
 
             e.Cancel = true;
+            // S-10：窗口隐藏后不再需要为残留的输入事件渲染预览。
+            _previewTimer?.Stop();
             Hide();
             return;
         }

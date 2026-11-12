@@ -368,9 +368,13 @@ public sealed class TrayIcon : IDisposable
             data.szInfo = text;
             data.dwInfoFlags = NIIF_INFO;
             data.uVersion = 0;
-            Shell_NotifyIcon(NIM_MODIFY, ref data);
+            if (!Shell_NotifyIcon(NIM_MODIFY, ref data))
+                Log.Warn("托盘气泡通知发送失败（Shell_NotifyIcon 返回 false）");
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Log.Warn($"托盘气泡通知异常: {ex.Message}");
+        }
     }
 
     static Icon LoadIcon()
@@ -407,7 +411,11 @@ public sealed class TrayIcon : IDisposable
                 if (value is int) return (int)value != 0;
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            // X-9：读不到系统主题时仍按深色任务栏处理，但要把原因记下来。
+            Log.Warn($"读取任务栏明暗主题失败，按深色处理: {ex.Message}");
+        }
         return true;
     }
 

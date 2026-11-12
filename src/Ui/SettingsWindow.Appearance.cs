@@ -73,16 +73,23 @@ public partial class SettingsWindow
         }
     }
 
-    void ApplyCliBoxes()
-    {
-        if (_working is null || _suppress) return;
+    void ApplyCliBoxes() => ApplyCliBoxesTo(_working, true);
 
-        CliSettings cli = _working.Cli ?? (_working.Cli = new CliSettings());
+    /// <summary>
+    /// S-11：判脏时把 CLI 输入框读进副本，不回写控件、不触发 UiChanged。
+    /// </summary>
+    void ApplyCliBoxesTo(Settings target, bool writeBack)
+    {
+        if (target is null || _suppress) return;
+
+        CliSettings cli = target.Cli ?? (target.Cli = new CliSettings());
         cli.MaxWidth = ParseBox(CliWidthBox, cli.MaxWidth);
         cli.MaxHeight = ParseBox(CliHeightBox, cli.MaxHeight);
         cli.EntryMaxHeight = ParseBox(CliEntryBox, cli.EntryMaxHeight);
         cli.MaxEntries = (int)ParseBox(CliEntriesBox, cli.MaxEntries);
         cli.Normalize();
+
+        if (!writeBack) return;
 
         CliWidthBox.Text = cli.MaxWidth.ToString("0", CultureInfo.InvariantCulture);
         CliHeightBox.Text = cli.MaxHeight.ToString("0", CultureInfo.InvariantCulture);

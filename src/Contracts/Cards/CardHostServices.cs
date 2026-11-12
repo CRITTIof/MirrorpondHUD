@@ -47,6 +47,16 @@ public interface ICardEditorCommit
 }
 
 /// <summary>
+/// S-11：只读的“有没有未提交草稿”查询。设置窗判脏时用它，避免为了判脏去调用
+/// <see cref="ICardEditorCommit.CommitPendingEdits"/>（那会把 API Key 加密写进配置）。
+/// 单独一个接口而不是给 ICardEditorCommit 加成员，是为了不破坏已编译插件的 ABI。
+/// </summary>
+public interface ICardEditorPendingEdits
+{
+    bool HasPendingEdits { get; }
+}
+
+/// <summary>
 /// 富内容卡片可以参与文档截图：截图时宿主先调用它，让内容切到可离屏渲染的状态
 /// （例如视频卡把第一帧画成静态封面）。返回的控件必须仍可测量 / 渲染。
 /// </summary>

@@ -478,16 +478,26 @@ public partial class SettingsWindow
 
     // ==================== 读取 ====================
 
-    Settings ReadUi()
+    Settings ReadUi() => ReadUiCore(_working, commitPending: true);
+
+    /// <summary>
+    /// S-11：把控件读进指定设置对象。判脏传副本且 commitPending=false，
+    /// 这样“只是检查有没有改动”不会加密 API Key、也不会原地 Normalize 活配置。
+    /// </summary>
+    Settings ReadUiCore(Settings s, bool commitPending)
     {
         _readingUi = true;
         try
         {
-            // 输入框里可能还有没失焦的 API Key（直接点了「确定」）：先加密收下来，别丢。
-            foreach (CardEditor editor in _editors) editor.CommitPendingEdits();
+            if (s is null) return null;
 
-            Settings s = _working;
-            ApplyCliBoxes();   // 输入框可能还没失焦（直接点了「确定」）
+            // 输入框里可能还有没失焦的 API Key（直接点了「确定」）：先加密收下来，别丢。
+            if (commitPending)
+            {
+                foreach (CardEditor editor in _editors) editor.CommitPendingEdits();
+            }
+
+            ApplyCliBoxesTo(s, writeBack: ReferenceEquals(s, _working));   // 输入框可能还没失焦（直接点了「确定」）
 
             FontItem font = FontCombo.SelectedItem as FontItem ?? _selectedFont;
             if (font is not null && !string.IsNullOrWhiteSpace(font.Family)) s.Style.FontFamily = font.Family;

@@ -1,6 +1,9 @@
 using System;
+using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.IO;
 using System.Text;
+using System.Threading;
 
 namespace MirrorpondHUD.Core;
 
@@ -12,6 +15,12 @@ namespace MirrorpondHUD.Core;
 /// 写失败不再永久熔断：按指数冷却重试（期间日志丢弃但进程不受影响），
 /// 并把失败的记录降级写到 %TEMP%\MirrorpondHUD\mirrorpond-fallback.log，
 /// 保证"最需要日志的时候日志恰好失效"这种场景有迹可寻。
+///
+/// X-8：磁盘 IO 不再发生在调用线程上。调用方只把记录放进有界队列，
+/// 由一条后台线程串行写文件；这样 UI 线程 / 渲染线程 / 采样线程打日志时
+/// 不会因为磁盘慢（杀软扫描、网络盘、日志轮转）被拖住。
+/// 退出时 <see cref="Flush"/> 会把队列排空（App.OnExit 与 ProcessExit 都会调），
+/// 崩溃路径仍保留同步降级：队列满 / 程序退出后直接写，绝不无限积压。
 /// </summary>
 public static class Log
 {
@@ -21,13 +30,48 @@ public static class Log
     const int KeepBackups = 3;          // 镜像pond.log.1/.2/.3，总量约 2 MB
     const int MaxRetryDelayMs = 30_000;
 
+    /// <summary>X-8：队列上限；满了就丢弃并计数，宁可丢日志也不能拖住调用线程。</summary>
+    const int QueueCapacity = 8192;
+
     static string _path;
     static int _writeFailures;
     // 冷却窗口内被丢弃的条数：恢复后补一条汇总，避免“故障瞬间没有日志、事后也不知道丢了多少”。
     static int _droppedDuringCooldown;
+    // X-8：队列溢出丢弃的条数（与磁盘冷却分开统计）。
+    static int _droppedInQueue;
     static DateTime _nextRetryUtc = DateTime.MinValue;
 
     static bool? _debugEnabled;
+
+    readonly struct Entry
+    {
+        public readonly string Level;
+        public readonly string Message;
+
+        public Entry(string level, string message)
+        {
+            Level = level;
+            Message = message;
+        }
+    }
+
+    static readonly BlockingCollection<Entry> Queue = new(new ConcurrentQueue<Entry>(), QueueCapacity);
+
+    /// <summary>已入队但还没写完的条数；Flush 用它判断是否排空。</summary>
+    static int _pending;
+
+    static Log()
+    {
+        var writer = new Thread(WriterLoop)
+        {
+            IsBackground = true,
+            Name = "MirrorpondHUD.LogWriter"
+        };
+        writer.Start();
+
+        // 进程退出（含未走 App.OnExit 的路径）时再兜一次，尽量不丢最后几条。
+        AppDomain.CurrentDomain.ProcessExit += (s, e) => Flush(2000);
+    }
 
     /// <summary>日志文件路径（第一次访问时决定并缓存）。</summary>
     public static string FilePath
@@ -147,7 +191,55 @@ public static class Log
         Write("ERROR", sb.ToString());
     }
 
+    /// <summary>
+    /// 把队列里的记录尽量写完。返回 false 表示超时后仍未排空（剩余记录已经被本线程
+    /// 同步写掉，返回 false 只用于调用方记录“这次退出可能丢日志”）。
+    /// </summary>
+    public static bool Flush(int timeoutMs = 2000)
+    {
+        if (Queue.Count == 0 && Volatile.Read(ref _pending) == 0) return true;
+
+        var watch = Stopwatch.StartNew();
+        while (Volatile.Read(ref _pending) > 0 && watch.ElapsedMilliseconds < Math.Max(1, timeoutMs))
+            Thread.Sleep(5);
+
+        if (Volatile.Read(ref _pending) <= 0) return true;
+
+        // 超时：由当前线程把剩下的写掉（Gate 串行化磁盘写），避免退出时整段丢失。
+        while (Queue.TryTake(out Entry entry))
+        {
+            WriteEntry(entry);
+            Interlocked.Decrement(ref _pending);
+        }
+
+        return Volatile.Read(ref _pending) <= 0;
+    }
+
     static void Write(string level, string msg)
+    {
+        // X-8：先计数再入队，写线程消费后减回去；队列满则丢弃并计数。
+        Interlocked.Increment(ref _pending);
+        if (!Queue.TryAdd(new Entry(level, msg)))
+        {
+            Interlocked.Decrement(ref _pending);
+            Interlocked.Increment(ref _droppedInQueue);
+        }
+    }
+
+    static void WriterLoop()
+    {
+        foreach (Entry entry in Queue.GetConsumingEnumerable())
+        {
+            try { WriteEntry(entry); }
+            finally
+            {
+                if (Interlocked.Decrement(ref _pending) < 0) Interlocked.Exchange(ref _pending, 0);
+            }
+        }
+    }
+
+    /// <summary>真正的磁盘写；只在写线程（或 Flush 超时后的退出路径）调用。</summary>
+    static void WriteEntry(Entry entry)
     {
         lock (Gate)
         {
@@ -173,11 +265,16 @@ public static class Log
                 RotateIfNeeded(path);
 
                 int dropped = _droppedDuringCooldown;
-                string line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [{level}] {(msg ?? "")}{Environment.NewLine}";
+                int queueDropped = Interlocked.Exchange(ref _droppedInQueue, 0);
+                string line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [{entry.Level}] {(entry.Message ?? "")}{Environment.NewLine}";
                 if (dropped > 0)
                 {
                     _droppedDuringCooldown = 0;
                     line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [WARN] 日志写入恢复，冷却期间丢弃 {dropped} 条记录{Environment.NewLine}" + line;
+                }
+                if (queueDropped > 0)
+                {
+                    line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [WARN] 日志队列溢出，丢弃 {queueDropped} 条记录{Environment.NewLine}" + line;
                 }
 
                 File.AppendAllText(path, line, Encoding.UTF8);
@@ -202,7 +299,7 @@ public static class Log
                         : Path.Combine(localData, "MirrorpondHUD");
 
                     File.AppendAllText(Path.Combine(fallbackDir, "mirrorpond-fallback.log"),
-                        $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [FALLBACK {level}] {(msg ?? "")}{Environment.NewLine}",
+                        $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [FALLBACK {entry.Level}] {(entry.Message ?? "")}{Environment.NewLine}",
                         Encoding.UTF8);
                 }
                 catch { }

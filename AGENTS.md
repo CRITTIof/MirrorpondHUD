@@ -26,6 +26,10 @@ build.bat / publish.bat          :: 构建 / 发布（publish 默认单文件）
 - 配置与日志生成在 `bin\Release\`：`settings.json`、`mirrorpond.log`。排查问题/验证行为时先看这两处。
 - 其它可用的命令行模式：`--smoke N`（自动起跑 N 秒后退出）、`--perf N`（性能采样，结果写日志，见 `docs/performance-baseline.md`）、`--screenshot[-cards|-settings|-widgets] <标题>`（无头截图，用于 UI 自查）。
 - **改完代码必须跑一次构建 + `--selftest`**；动了设置存储、主题解析、卡片契约的改动尤其要看自检对应段落的结论。
+- `--selftest` / `--screenshot` 是立即模式：检测到已有实例会直接退出 2，不会伪造绿灯。并行跑多个自检（比如多 worktree 同时验证）会撞同一个 `Local\MirrorpondHUD.SingleInstance` 互斥体，请串行执行。
+- 构建门禁（X-6）：`global.json` 把 SDK 固定在 **8.0.4xx**；`Directory.Build.props` 开了 `TreatWarningsAsErrors` + `EnforceCodeStyleInBuild` + `AnalysisLevel=latest`，任何警告都会挡住构建。`IDE0090`（显式 `new Type()`）按仓库既有风格在 `.editorconfig` 里显式降为 suggestion，不要在功能提交里批量重排。
+- 空 catch 棘轮（X-9）：`tools/check-empty-catches.ps1` 对比 `tools/empty-catch-baseline.txt`，数量只能降不能升。释放路径统一用 `SafeRelease.Run(action, "对象名")`，业务路径必须 `Log.Warn/Error`。
+- `publish.bat`（X-5）不再删除 `bin`/`obj` 里的用户数据，也不再经过 `%TEMP%` 中转；运行中的实例存在时会明确报错退出，先关窗口再发布。
 
 ## 3. 多程序集结构（最容易踩的坑）
 

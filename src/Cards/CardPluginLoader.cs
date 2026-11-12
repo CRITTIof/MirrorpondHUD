@@ -179,7 +179,11 @@ internal static class CardPluginLoader
                 if (!string.IsNullOrEmpty(local))
                     return Path.Combine(local, "MirrorpondHUD", "plugin-cache");
             }
-            catch { }
+            catch (Exception ex)
+            {
+                // X-9：LocalAppData 不可用时还要退回 TEMP，但原因必须留痕。
+                Log.Warn($"解析插件缓存目录失败，退回临时目录: {ex.Message}");
+            }
 
             return Path.Combine(Path.GetTempPath(), "MirrorpondHUD", "plugin-cache");
         }

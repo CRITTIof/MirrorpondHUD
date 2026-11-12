@@ -398,7 +398,11 @@ public sealed class MetricEngine : IDisposable
                         TotalGb = drive.TotalSize / gb
                     });
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    // X-9：单个分区枚举失败不能让整段磁盘采样静默变空。
+                    Log.Warn($"枚举分区 {drive?.Name} 失败: {ex.Message}");
+                }
             }
         }
         catch (Exception ex)

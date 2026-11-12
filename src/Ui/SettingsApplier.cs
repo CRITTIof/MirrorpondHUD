@@ -51,6 +51,12 @@ internal sealed class SettingsApplier
     int _dragLastDx;
     int _dragLastDy;
 
+    /// <summary>
+    /// S-06：本次 Apply 中“设置已生效但附属动作失败”的原因（目前是开机自启写注册表）。
+    /// 设置窗在成功后把它追加到状态行，避免出现“已保存并应用”但自启其实没写进去。
+    /// </summary>
+    public string LastApplyWarning { get; private set; }
+
     public SettingsApplier(ISettingsHost host, RenderScheduler render,
                            CardLayoutCoordinator layout, KeyHistory keys)
     {
@@ -101,6 +107,7 @@ internal sealed class SettingsApplier
     public bool Apply(Settings settings)
     {
         _host.ExitCommandLine();
+        LastApplyWarning = null;
 
         // 位置与锁定是运行时状态：只由拖动、F8 和托盘菜单改变。
         // 设置窗口里的坐标是打开窗口那一刻的快照，这里必须以实时值为准。
@@ -415,9 +422,19 @@ internal sealed class SettingsApplier
 
         bool enabled = _host.Settings.Behavior.AutoStart;
         if (AutoStart.IsEnabled() != enabled)
-            AutoStart.Set(enabled, _host.Settings.Behavior.StartMinimized);
+        {
+            if (!AutoStart.Set(enabled, _host.Settings.Behavior.StartMinimized))
+                LastApplyWarning = $"开机自启{(enabled ? "开启" : "关闭")}失败：{AutoStart.LastError ?? "未知原因"}";
+        }
         else if (enabled)
-            AutoStart.Set(true, _host.Settings.Behavior.StartMinimized);
+        {
+            // 已开启时重写一次，保证 exe 路径 / --minimized 跟随当前设置。
+            if (!AutoStart.Set(true, _host.Settings.Behavior.StartMinimized))
+                LastApplyWarning = $"开机自启更新失败：{AutoStart.LastError ?? "未知原因"}";
+        }
+
+        if (!string.IsNullOrWhiteSpace(LastApplyWarning))
+            Log.Warn($"设置已应用，但{LastApplyWarning}");
     }
 
     public void ToggleAutoStart()

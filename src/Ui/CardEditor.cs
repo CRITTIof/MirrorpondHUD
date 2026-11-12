@@ -111,6 +111,12 @@ public sealed class CardEditor : INotifyPropertyChanged
         if (commit is not null) commit.CommitPendingEdits();
     }
 
+    /// <summary>
+    /// S-11：判脏专用，无副作用。只问区块有没有草稿，不触发提交 / 加密 / 归一化。
+    /// </summary>
+    public bool HasPendingEdits =>
+        _sectionCreated && _section is ICardEditorPendingEdits pending && pending.HasPendingEdits;
+
     public string Icon
     {
         get

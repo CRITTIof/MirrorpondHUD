@@ -154,9 +154,17 @@ public partial class SettingsWindow
             return false;
         }
 
+        // S-06：设置本身已落盘，但附属动作（开机自启写注册表）可能失败；
+        // 这类失败不能藏在日志里，否则窗口显示“已保存并应用”与事实不符。
+        string applyWarning = _applyWarning?.Invoke();
+        bool hasWarning = !string.IsNullOrWhiteSpace(applyWarning);
         StatusText.Text = _loadFailed
-            ? "已保存并应用，但刷新设置副本失败（详情见日志）"
-            : $"已保存并应用（{DateTime.Now:HH:mm:ss}）";
+            ? (hasWarning
+                ? $"已保存并应用，但刷新设置副本失败、{applyWarning}（详情见日志）"
+                : "已保存并应用，但刷新设置副本失败（详情见日志）")
+            : (hasWarning
+                ? $"已保存并应用，但{applyWarning}（{DateTime.Now:HH:mm:ss}）"
+                : $"已保存并应用（{DateTime.Now:HH:mm:ss}）");
         ClearDirty();
         CaptureCleanSnapshot();
         return true;

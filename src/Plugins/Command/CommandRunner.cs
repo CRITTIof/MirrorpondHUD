@@ -333,8 +333,14 @@ public static class CommandRunner
         {
             return new UTF8Encoding(false, true).GetString(bytes, start, count);
         }
-        catch (DecoderFallbackException) { }
-        catch { }
+        catch (DecoderFallbackException)
+        {
+            // 预期分支：不是 UTF-8，继续尝试 OEM / ANSI。
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"命令输出 UTF-8 解码失败: {ex.Message}");
+        }
 
         try
         {

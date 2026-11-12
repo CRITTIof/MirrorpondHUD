@@ -19,6 +19,15 @@
     <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <DebugType>portable</DebugType>
+    <!--
+      X-6：把“0 警告”从人工纪律变成门禁。
+      TreatWarningsAsErrors 让任何新警告直接挡住构建；EnforceCodeStyleInBuild 让
+      .editorconfig 里的 IDE 规则真正参与编译；AnalysisLevel=latest 用当前 SDK 的最新分析器。
+      如果某条规则确实不适合本仓库，应在 .editorconfig 里显式降级并写明原因，而不是关掉整个门禁。
+    -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <AnalysisLevel>latest</AnalysisLevel>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">

@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using MirrorpondHUD.Cards;
 using MirrorpondHUD.Core;
 
@@ -255,6 +256,32 @@ public partial class SettingsWindow
 
         _working.Overlay.CornerRadius = Math.Round(CornerSlider.Value);
         _working.Overlay.Shadow = ShadowCheck.IsChecked == true;
+    }
+
+    /// <summary>
+    /// S-10：主题预览防抖。拖动滑块会连续触发 UiChanged，过去每一次都整块离屏渲染
+    /// （OverlaySurface + 2× RenderTargetBitmap），保存/关闭读回控件时也会白渲染一次。
+    /// 这里合并到一次 Background 优先级的渲染；读取控件期间（_readingUi）直接跳过。
+    /// </summary>
+    void RequestThemePreview()
+    {
+        if (_suppress || _readingUi || _working is null) return;
+
+        if (_previewTimer is null)
+        {
+            _previewTimer = new DispatcherTimer(DispatcherPriority.Background)
+            {
+                Interval = TimeSpan.FromMilliseconds(160)
+            };
+            _previewTimer.Tick += (s, e) =>
+            {
+                _previewTimer.Stop();
+                RenderThemePreview();
+            };
+        }
+
+        _previewTimer.Stop();
+        _previewTimer.Start();
     }
 
     /// <summary>用 OverlaySurface 离屏渲染一张缩略卡：颜色、字体、圆角、投影、内边距都跟着主题走。</summary>

@@ -758,7 +758,7 @@ public sealed class CliSettings
     /// <summary>最多保留几条记录（轮次 / 命令数），超过就把最老的整块扔掉。</summary>
     public int MaxEntries = 12;
 
-    public CliSettings Clone() => new CliSettings
+    public CliSettings Clone() => new()
     {
         MaxWidth = MaxWidth,
         MaxHeight = MaxHeight,

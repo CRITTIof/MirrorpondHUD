@@ -39,7 +39,10 @@ csharp_style_expression_bodied_methods = true:warning
 dotnet_diagnostic.IDE0022.severity = warning
 
 csharp_style_implicit_object_creation_when_type_is_apparent = true:warning
-dotnet_diagnostic.IDE0090.severity = warning
+# X-6：启用 EnforceCodeStyleInBuild 后 IDE0090 命中 18 处既有显式 new。
+# 本仓库的 DTO / 互操作代码有意保留显式类型（可读性 + AGENTS §9 禁止顺手批量重排），
+# 所以该规则只交给 dotnet format，不进构建门禁；其余 IDE 规则仍按 warning 参与编译。
+dotnet_diagnostic.IDE0090.severity = suggestion
 
 csharp_style_inlined_variable_declaration = true:warning
 dotnet_diagnostic.IDE0018.severity = warning

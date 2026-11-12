@@ -57,5 +57,5 @@ public sealed class MetricsSnapshot
     public NvidiaSample Nvidia = new();
     public string Error = "";
 
-    public static MetricsSnapshot Empty() => new MetricsSnapshot();
+    public static MetricsSnapshot Empty() => new();
 }

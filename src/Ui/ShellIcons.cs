@@ -282,7 +282,11 @@ public static class ShellIcons
             foreach (Action action in _queue.GetConsumingEnumerable())
             {
                 try { action(); }
-                catch { }
+                catch (Exception ex)
+                {
+                    // X-9：后台图标任务失败过去完全静默，界面只会少一个图标。
+                    Log.Warn($"Shell 图标任务失败: {ex.Message}");
+                }
             }
         }
     }

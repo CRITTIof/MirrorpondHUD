@@ -173,6 +173,12 @@ internal static class SelfTest
                     string commandHotkey = CommandHotkey(settings);
                     bool d = RegisterIfSet(hotkeys, HotkeyManager.CardAction("selftest-command"), commandHotkey);
 
+                    // C-15：热键注册失败过去只体现在文案里，退出码仍是 0；这里按失败个数计入。
+                    if (!a) failures++;
+                    if (!b) failures++;
+                    if (!c) failures++;
+                    if (!d) failures++;
+
                     Fix(sb, "热键",
                         $"{Show(settings.Hotkeys.ToggleOverlay, a)}  {Show(commandHotkey, d)}  {Show(settings.Hotkeys.OpenSettings, b)}  {Show(settings.Hotkeys.ToggleLock, c)}");
                 }
@@ -192,6 +198,8 @@ internal static class SelfTest
         }
         catch (Exception ex)
         {
+            // C-15：设备枚举段失败过去只记日志、不进失败数，退出码 0 会掩盖真实故障。
+            failures++;
             Log.Error("自检设备枚举异常", ex);
         }
 
@@ -235,8 +243,14 @@ internal static class SelfTest
         results.SecretOk = RunSecretStoreChecks();
         results.RenderOk = RunRenderContextChecks();
 
-        if (!results.AllPassed())
-            failures++;
+        // C-15：过去 24+ 个领域结果被压成 0/1，任何一个失败都只让退出码 +1；
+        // 现在按领域累加，退出码等于失败领域数，并逐条输出 FAIL 行。
+        int unitFailures = results.Failures();
+        if (unitFailures > 0)
+        {
+            results.AppendFailureLines(sb);
+            failures += unitFailures;
+        }
 
         ReportUnitChecks(sb, results);
     }
@@ -1784,7 +1798,7 @@ internal static class SelfTest
         Fix(sb, "Shell / 拖出", results.ShellOk ? "OK（图标缓存一致；空输入安全）" : "FAIL");
     }
 
-    /// <summary>RunUnitChecks 的领域结果。各领域只返回布尔，汇总处只加一次失败，保持拆分前语义。</summary>
+    /// <summary>RunUnitChecks 的领域结果。每个领域失败各自计数，退出码 = 失败领域数（C-15）。</summary>
     sealed class UnitCheckResults
     {
         public bool TemplateOk;
@@ -1818,13 +1832,56 @@ internal static class SelfTest
         public bool ShellOk;
         public bool PluginSelfTestOk;
 
-        /// <summary>任一领域失败即整体失败（对应拆分前末尾那一次 failures++）。</summary>
-        public bool AllPassed() => TemplateOk && UnknownOk && CollapseOk && ThresholdOk && ConfigOk && ConfigRepairOk && CardOk &&
-                   KeyNameOk && KeyLimitOk && KeyOverflowOk && StateStoreOk && RenderOk &&
-                   GlassPolicyOk && ThemeOk && ThemeFileOk && ThemeRejectOk && ThemeCatalogOk && CloneGuardOk &&
-                   SingleInteractiveOk && WidgetsOk && Widgets2Ok && FormControlsOk && DataControlsOk &&
-                   ChartControlsOk && OverlayControlsOk && IconFontOk && ContextHostOk && ShellOk && SecretOk &&
-                   PluginSelfTestOk;
+        /// <summary>报告文案用：领域名与结果一一对应，新增领域时只改这里一处。</summary>
+        IEnumerable<KeyValuePair<string, bool>> Domains()
+        {
+            yield return new KeyValuePair<string, bool>("模板", TemplateOk);
+            yield return new KeyValuePair<string, bool>("未知占位符", UnknownOk);
+            yield return new KeyValuePair<string, bool>("折叠", CollapseOk);
+            yield return new KeyValuePair<string, bool>("阈值内展开", ThresholdOk);
+            yield return new KeyValuePair<string, bool>("配置读写", ConfigOk);
+            yield return new KeyValuePair<string, bool>("配置修复", ConfigRepairOk);
+            yield return new KeyValuePair<string, bool>("卡片模块", CardOk);
+            yield return new KeyValuePair<string, bool>("键名", KeyNameOk);
+            yield return new KeyValuePair<string, bool>("按键长度", KeyLimitOk);
+            yield return new KeyValuePair<string, bool>("超长截断", KeyOverflowOk);
+            yield return new KeyValuePair<string, bool>("Key 加密", SecretOk);
+            yield return new KeyValuePair<string, bool>("状态存储", StateStoreOk);
+            yield return new KeyValuePair<string, bool>("渲染节流", RenderOk);
+            yield return new KeyValuePair<string, bool>("外观令牌", ThemeOk);
+            yield return new KeyValuePair<string, bool>("毛玻璃策略", GlassPolicyOk);
+            yield return new KeyValuePair<string, bool>("主题文件", ThemeFileOk);
+            yield return new KeyValuePair<string, bool>("主题文件校验", ThemeRejectOk);
+            yield return new KeyValuePair<string, bool>("内置主题", ThemeCatalogOk);
+            yield return new KeyValuePair<string, bool>("设置副本", CloneGuardOk);
+            yield return new KeyValuePair<string, bool>("交互卡唯一", SingleInteractiveOk);
+            yield return new KeyValuePair<string, bool>("共享控件", WidgetsOk);
+            yield return new KeyValuePair<string, bool>("共享控件（交互）", Widgets2Ok);
+            yield return new KeyValuePair<string, bool>("表单控件", FormControlsOk);
+            yield return new KeyValuePair<string, bool>("数据控件", DataControlsOk);
+            yield return new KeyValuePair<string, bool>("图表 / 树 / 时间线", ChartControlsOk);
+            yield return new KeyValuePair<string, bool>("浮层 / 交互控件", OverlayControlsOk);
+            yield return new KeyValuePair<string, bool>("图标字体", IconFontOk);
+            yield return new KeyValuePair<string, bool>("渲染上下文", ContextHostOk);
+            yield return new KeyValuePair<string, bool>("Shell / 拖出", ShellOk);
+            yield return new KeyValuePair<string, bool>("插件自检", PluginSelfTestOk);
+        }
+
+        /// <summary>失败领域数；退出码直接用它。</summary>
+        public int Failures()
+        {
+            int count = 0;
+            foreach (KeyValuePair<string, bool> domain in Domains())
+                if (!domain.Value) count++;
+            return count;
+        }
+
+        /// <summary>逐条打印 FAIL，便于从日志直接定位失败领域（C-15）。</summary>
+        public void AppendFailureLines(StringBuilder sb)
+        {
+            foreach (KeyValuePair<string, bool> domain in Domains())
+                if (!domain.Value) sb.Append("FAIL: ").Append(domain.Key).AppendLine();
+        }
     }
 
 

@@ -191,7 +191,11 @@ internal sealed class NvidiaSmi
                 if (File.Exists(candidate)) { _exe = candidate; return _exe; }
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            // PATH 里没有 / 读不了只影响能否自动发现 nvidia-smi，仍要留下原因。
+            Log.Warn($"扫描 PATH 查找 nvidia-smi 失败: {ex.Message}");
+        }
 
         if (!_reportedMissing)
         {
