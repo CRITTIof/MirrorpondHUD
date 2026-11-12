@@ -9,7 +9,7 @@
         Background="Transparent"
         FontFamily="Microsoft YaHei UI" FontSize="13"
         UseLayoutRounding="True" SnapsToDevicePixels="True"
-        Icon="/assets/logo.ico">
+        Icon="/assets/MirrorpondHUDLogoYellow.ico">
     <shell:WindowChrome.WindowChrome>
         <shell:WindowChrome CaptionHeight="60" ResizeBorderThickness="6"
                             GlassFrameThickness="0" CornerRadius="22" />
@@ -111,7 +111,7 @@
 
             <StackPanel Orientation="Horizontal" Margin="24,26,18,0" Background="Transparent"
                         MouseLeftButtonDown="TitleBarMouseDown">
-                <Image x:Name="BrandLogo" Source="/assets/logo-lightmode.png" Width="58" Height="58"
+                <Image x:Name="BrandLogo" Source="/assets/MirrorpondHUDLogoDeepYellow.png" Width="58" Height="58"
                        VerticalAlignment="Center" RenderOptions.BitmapScalingMode="HighQuality" />
                 <StackPanel Margin="14,0,0,0" VerticalAlignment="Center">
                     <TextBlock Text="Mirrorpond" FontSize="14" FontWeight="SemiBold"

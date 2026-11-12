@@ -7,13 +7,13 @@
     <AssemblyName>MirrorpondHUD</AssemblyName>
     <RootNamespace>MirrorpondHUD</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <ApplicationIcon>assets\logo.ico</ApplicationIcon>
+    <ApplicationIcon>assets\MirrorpondHUDLogoYellow.ico</ApplicationIcon>
     <!-- x64 by default; publish -r win-arm64 switches PlatformTarget automatically. -->
     <Platforms>x64;ARM64</Platforms>
     <PlatformTarget Condition="'$(RuntimeIdentifier)' == ''">x64</PlatformTarget>
     <PlatformTarget Condition="'$(RuntimeIdentifier)' == 'win-arm64'">arm64</PlatformTarget>
     <NoWarn>$(NoWarn);WFAC010</NoWarn>
-    <Version>2.44.1</Version>
+    <Version>2.44.2</Version>
     <Product>镜潭一览 (MirrorpondHUD)</Product>
     <AssemblyTitle>MirrorpondHUD</AssemblyTitle>
     <SatelliteResourceLanguages>en;zh-Hans</SatelliteResourceLanguages>
@@ -106,12 +106,12 @@
   <ItemGroup>
     <Resource Include="assets\logo.ico" />
     <Resource Include="assets\logo-light.ico" />
-    <Resource Include="assets\logo-endfield.ico" />
     <Resource Include="assets\logo-black.png" />
     <Resource Include="assets\logo-white.png" />
-    <Resource Include="assets\logo-yellow.png" />
-    <Resource Include="assets\logo-lightmode.png" />
-    <Resource Include="assets\logo-lightmode.ico" />
+    <Resource Include="assets\MirrorpondHUDLogoYellow.png" />
+    <Resource Include="assets\MirrorpondHUDLogoYellow.ico" />
+    <Resource Include="assets\MirrorpondHUDLogoDeepYellow.png" />
+    <Resource Include="assets\MirrorpondHUDLogoDeepYellow.ico" />
     <Resource Include="assets\keycaps\ReiconFont-Regular.ttf" />
     <!-- Lucide 图标字体（ISC）；见 assets/icons/README.md。 -->
     <Resource Include="assets\icons\Lucide.ttf" />

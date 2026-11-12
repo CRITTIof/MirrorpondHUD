@@ -186,7 +186,15 @@
                             BorderThickness="{TemplateBinding BorderThickness}"
                             CornerRadius="4"
                             Padding="{TemplateBinding Padding}">
-                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        <!-- 隐式 TextBlock 样式会把 Foreground 固定成 TextPrimary；
+                             ContentPresenter 生成的字符串 TextBlock 也吃这条样式，
+                             所以主按钮必须显式把按钮前景色交给文字。 -->
+                        <TextBlock Text="{TemplateBinding Content}"
+                                   Foreground="{TemplateBinding Foreground}"
+                                   FontFamily="{TemplateBinding FontFamily}"
+                                   FontSize="{TemplateBinding FontSize}"
+                                   FontWeight="{TemplateBinding FontWeight}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
@@ -527,7 +535,10 @@
                         <Track x:Name="PART_Track" IsDirectionReversed="True"
                                Orientation="{TemplateBinding Orientation}">
                             <Track.Thumb>
-                                <Thumb MinWidth="24" MinHeight="24">
+                                <!-- 只给纵向滑块设 MinHeight、横向设 MinWidth。
+                                     两个方向都写 24 会把竖向滑块撑到 24px 宽，
+                                     在 10px 的 ScrollBar 里右半边被裁掉，圆角变成直角。 -->
+                                <Thumb x:Name="Thumb">
                                     <Thumb.Template>
                                         <ControlTemplate TargetType="Thumb">
                                             <Border x:Name="Bd" Background="{DynamicResource Scrollbar}"
@@ -549,8 +560,12 @@
                         </Track>
                     </Grid>
                     <ControlTemplate.Triggers>
+                        <Trigger Property="Orientation" Value="Vertical">
+                            <Setter TargetName="Thumb" Property="MinHeight" Value="24" />
+                        </Trigger>
                         <Trigger Property="Orientation" Value="Horizontal">
                             <Setter TargetName="PART_Track" Property="IsDirectionReversed" Value="False" />
+                            <Setter TargetName="Thumb" Property="MinWidth" Value="24" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>

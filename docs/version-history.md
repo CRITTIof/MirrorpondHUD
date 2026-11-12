@@ -1,4 +1,4 @@
-# 版本修改记录（2.4.1 → 2.44.1）
+# 版本修改记录（2.4.1 → 2.44.2）
 
 > 范围：本文只记录**这一轮接手后我做的版本**（v2.4.1 起）。v2.4.0 及更早是既有历史，不在本文档里。
 > 数据全部取自仓库真实提交（`git diff --shortstat <上一版>..<本版>`），文件行的 `+ / -` 就是实际增删行数。
@@ -100,6 +100,7 @@
 | v2.43.2 | 2026-11-12 | 粒子持续触发、按键裁切与显隐横移 | 数字刷新也触发粒子；首帧/新增粒子直接落在目标点，不聚拢不散开；粒子目标按半径夹取，修按键卡末排只露上半；右对齐堆叠固定右边缘并在显隐时保留 X；新 logo 黑/白/终末地黄三套 ICO | 源码 7 文件，+198 / −73（版本号 15 文件、文档与 logo 资源另计） |
 | v2.44.0 | 2026-11-12 | 逐字粒子、拖拽限位与设置窗重构 | 按字符差异遮罩：未变文字保持普通，变化字符走粒子；DrawingVisual 精确采样，修复粒子偏移；右侧拖拽按卡片矩形夹取；设置窗改为双栏一体化、悬浮按钮、底部明暗、自绘窗口钮、22px 圆角；ICO 全尺寸统一母版，设置用 256px PNG | 源码 9 文件，+445 / −184（版本号 15 文件、文档与资源另计） |
 | v2.44.1 | 2026-11-12 | 设置窗细节与浅色图标 | 选中导航 hover 不再盖黄；窗口圆钮改用次按钮配色；滚动条内缩圆角；分隔线加长；暗色保存按钮整块黄色黑字；左栏 248→220；顶部 60px 可拖动窗口；去掉窗口外透明边框；黄色/白色 ICO 去除黑填充弧线，新增黑主体+黄涟漪浅色 ICO | 源码 6 文件，+52 / −33（版本号 15 文件、文档与图标资源另计） |
+| v2.44.2 | 2026-11-12 | 品牌图标与设置窗收尾 | 手工 SVG 生成纯黄 / 深黄 PNG+ICO，随明暗切换标题栏与窗口图标；滚动条按方向设最小尺寸，修右侧直角；主按钮文字显式取按钮前景色；关闭 DWM 圆角与非客户区渲染，去掉内层圆角外的系统阴影 | 源码 3 文件（版本号 16 文件、文档与图标资源另计） |
 
 ---
 
@@ -3802,6 +3803,7 @@ M3 在大/中图标里改为下缘条；动效档位按“优雅 / 标准 / 简�
 2. **窗口按钮**：最小化 / 退出圆钮改用 `CardBg` + `BorderSoft` + `TextPrimary`，与“恢复默认”同款；
    悬停 / 按下用通用 HoverBg / PressedBg。
 3. **滚动条**：宽/高 8→10，滑块圆角 4→5、内缩 2px；右栏 `Tabs` 再留 12px，滚动条不再直接贴窗口边。
+   2.44.2 又补修了 `MinWidth=24` 把竖向滑块横向撑宽、右半边被裁成直角的问题。
 4. **分隔线**：上下留白 92→64，线更长；左栏宽度 248→220，分隔线同步到 220。
 5. **保存按钮**：暗色主题 `PrimaryBg` 改为终末地黄、`PrimaryText` 改黑、悬停/按下用亮/暗黄；
    按钮整块黄色、文字黑色。
@@ -3810,7 +3812,7 @@ M3 在大/中图标里改为下缘条；动效档位按“优雅 / 标准 / 简�
    消除四角外的透明边框感。
 7. **图标**：黄色弧线变黑是浏览器把开放路径按默认黑色填充导致；渲染时加 `path{fill:transparent!important}`，
    重新生成黑 / 白 / 黄三套 ICO（所有尺寸同一母版）；新增“黑色主体 + 黄色涟漪”的浅色模式
-   [logo-lightmode.ico](assets/logo-lightmode.ico) / PNG，浅色设置标题栏使用它。
+   [MirrorpondHUDLogoDeepYellow.ico](assets/MirrorpondHUDLogoDeepYellow.ico) / PNG，浅色设置标题栏使用它。
 8. **多显示器拖拽**：`ClampAnchorToWorkArea` 之前读 `slot.Dialog.Overlay.X/Y`，拖动中它仍是旧锚点；
    多屏时旧坐标属于另一块屏，导致夹取算错、卡片回弹。现在由 `OnCardMoved` 把按目标屏
    `WorkLeft/WorkTop` 反算出的真实落点传入，再按卡片矩形夹取。
@@ -3832,7 +3834,53 @@ M3 在大/中图标里改为下缘条；动效档位按“优雅 / 标准 / 简�
 
 ---
 
-## 82. 不在版本里的东西
+## 82. v2.44.2（品牌图标与设置窗收尾，未合并 main）
+
+### 背景
+
+2.44.1 之后仍有四个可见问题：手工修正颜色的 SVG 没有被应用，设置页仍读旧 PNG；
+竖向滚动条右侧两角是直角；暗色“保存并应用”文字仍是浅色；窗口内层 22px 圆角外还有一圈
+半径不同的系统阴影，中间夹着透明缝隙。
+
+### 改动
+
+1. **品牌图标**：`MirrorpondHUDLogoYellow.svg` / `MirrorpondHUDLogoDeepYellow.svg` 是内嵌 PNG 的
+   Affinity 导出。新增 `tools/make_brand_icons.py`，直接提取内嵌 PNG，居中成正方形后生成
+   256px PNG 与 16/20/24/32/40/48/64/128/256 九档 ICO；不再经过会重新带回画板留白的 SVG 渲染。
+   暗色标题栏 / 窗口图标用纯黄 `#F2E900`，亮色用深黄 `#B7A400`；`ApplicationIcon` 改为纯黄版。
+2. **滚动条**：竖向滑块之前同时带 `MinWidth=24 MinHeight=24`，`MinWidth` 把 10px 宽的轨道
+   撑到 24px，右半边被 ScrollBar 裁掉，圆角只剩左侧。改为方向触发器：纵向只设 `MinHeight`，
+   横向只设 `MinWidth`；四角都保留 5px 圆角。
+3. **主按钮文字**：隐式 `TextBlock` 样式把前景色固定成 `TextPrimary`，`ContentPresenter` 为字符串
+   生成的 TextBlock 也吃这条样式，所以 `PrimaryButton.Foreground` 没生效。模板改为显式 TextBlock，
+   直接 `TemplateBinding Foreground`；暗色按钮现在整块黄、文字 `#111111`。
+4. **窗口外圈**：透明分层窗口的圆角由内层 Border + `FrameContent.Clip` 负责；DWM 又按自己的半径
+   画系统圆角/阴影，两层半径不同就露出第二圈。`OnSourceInitialized` 现在把
+   `DWMWA_WINDOW_CORNER_PREFERENCE` 设为 `DONOTROUND`，并把 `DWMWA_NCRENDERING_POLICY` 设为
+   `DWMNCRP_DISABLED`；系统非客户区边框和阴影不再绘制，`WindowChrome` 仍负责拖动 / 缩放命中。
+5. **资源清理**：删除被替代的 `logo-yellow.png`、`logo-lightmode.png`、`logo-lightmode.ico`、
+   `logo-endfield.ico`；新增三张 SVG（黑版由旧文件更名）+ 两张 PNG + 两个 ICO。
+6. **版本**：宿主 / Contracts / UiKit / 6 个插件工程与 6 个 manifest 统一 2.44.2。
+
+### 验证
+
+- `dotnet build -c Release`：**0 警告 0 错误**；`--selftest`：**0**；格式 / 空白门禁 **0 / 0**。
+- 暗 / 浅 `--screenshot-settings`：滚动条四角均为圆角；暗色保存按钮文字为黑色；两张新 Logo
+  颜色分别为 `#F2E900` 与 `#B7A400`，无黑色残线。
+- 实际窗口 DWM 查询：`DWMWA_NCRENDERING_ENABLED=0`，`DWMWA_EXTENDED_FRAME_BOUNDS` 与
+  `GetWindowRect` 四边差均为 0，说明系统阴影/非客户区边框已关闭。
+- ICO 帧检查：两个 ICO 均含 9 档尺寸，PNG 的透明边界为 `(0, 9, 256, 247)`。
+
+### 风险 / 未验证
+
+- 设置窗是 WPF 分层窗口，GDI `CopyFromScreen` 抓不到它的内容；阴影消失是用 DWM 属性验证的，
+  没有拿到桌面合成后的像素截图。
+- 关闭 DWM 非客户区渲染后，窗口缩放仍依赖 `WindowChrome` 的 `WM_NCHITTEST`；未做 Win10 实机回归。
+- 新 ICO 由 735×671 的位图母版缩放，16px 档仍是位图缩放而非手工像素对齐；与原三套图标保持同一策略。
+
+---
+
+## 83. 不在版本里的东西
 
 - 验收脚本、样张与测量脚本都在仓库外维护，**没有提交**。
 - 发布：`main` 与标签已推送到 [github.com/CRITTIof/MirrorpondHUD](https://github.com/CRITTIof/MirrorpondHUD)；
@@ -3841,7 +3889,7 @@ M3 在大/中图标里改为下缘条；动效档位按“优雅 / 标准 / 简�
   更早的 Release 正文与附件保留原样，v2.4.0 的 Release 已删除（tag `v2.4.0` 保留，历史仍可检出）。
 - 仓库追踪的文件共 228 个（v2.21.0 时 174 个；2.23.0 结构性拆分 +20，2.24.0 +7，2.25.0 新增 CardMotion +1，2.27.0 新增 PerformanceProbe / 性能基线 +2，2.29.0 新增 ScreenGeometry +1、删除 CardDefaults / InfoTextDefaults −2，2.30.0 新增两套终末地主题 +2、docs/UI 三篇 +3，2.31.0 新增 M7/M8 实现记录 +1，2.32.0 新增等高线核心 +7，2.33.0 新增等高线几何构建器 +1，2.34.0 新增构建治理三件 +3，2.35.0 新增 M2–M8 实现记录 +1，2.36.0 新增 `EndfieldStyleSettings` / `EndfieldVisuals` / `StationDisplayMode` / `SettingsWindow.Endfield` +4），`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
 
-## 83. 已知代价（跨版本）
+## 84. 已知代价（跨版本）
 
 - 桌面亚克力为了不拍到自己，会把卡片排除在截屏之外 —— 这个模式下截图 / 录屏里**看不到卡片**，观感只能靠肉眼与离屏渲染验证。
 - 兼容实现每帧对身后窗口做 `PrintWindow`，拖动时最多 ~21 帧/秒；要更高只能走桌面亚克力（DXGI）。

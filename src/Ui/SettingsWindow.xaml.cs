@@ -111,13 +111,14 @@ public partial class SettingsWindow : Window
     // ==================== 初始化 ====================
 
     /// <summary>
-    /// Windows 11 的 DWM 圆角是额外一层兜底；主圆角由透明窗 + 内层 12px 边框和几何裁切保证，
-    /// 所以 Windows 10 上也有圆角。DWM 调用失败只记日志，不影响窗口。
+    /// 透明窗的圆角由内层 Border + 几何裁切保证；这里反而要关掉 DWM 的圆角和非客户区渲染，
+    /// 否则系统会在内层圆角外再画一圈半径不同的阴影/边框，中间露出透明缝隙（2.44.1 截图）。
+    /// DWM 调用失败只记日志，不影响窗口。
     /// </summary>
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
-        TryEnableDwmRoundedCorners();
+        TryDisableSystemWindowFrame();
         Loaded += (s, a) => UpdateFrameClip();
     }
 
@@ -154,29 +155,40 @@ public partial class SettingsWindow : Window
         FrameContent.Clip = clip;
     }
 
-    void TryEnableDwmRoundedCorners()
+    void TryDisableSystemWindowFrame()
     {
         try
         {
             IntPtr handle = new WindowInteropHelper(this).Handle;
             if (handle == IntPtr.Zero) return;
 
-            int preference = DwmWindowCornerRound;
-            int hr = DwmSetWindowAttribute(handle, DwmWindowCornerPreference, ref preference, sizeof(int));
+            // Windows 11：先取消系统圆角，避免它按 8px 半径再给窗口裁一次。
+            int noRound = DwmWindowCornerDoNotRound;
+            int hr = DwmSetWindowAttribute(handle, DwmWindowCornerPreference, ref noRound, sizeof(int));
             if (hr != 0)
             {
-                // Windows 10 没有这个属性；内层 Border 的圆角仍是可见的，不算失败路径。
-                Log.Info($"设置窗 DWM 圆角不可用（HRESULT=0x{hr:X8}），使用内层圆角边框");
+                Log.Info($"设置窗 DWM 圆角关闭不可用（HRESULT=0x{hr:X8}），继续关闭非客户区渲染");
+            }
+
+            // 再关闭非客户区渲染：WS_THICKFRAME 带来的系统阴影/边框不再绘制，
+            // 窗口只剩内层 Border 的 22px 圆角和外层透明像素。
+            int disabled = DwmNcRenderingDisabled;
+            hr = DwmSetWindowAttribute(handle, DwmNcRenderingPolicy, ref disabled, sizeof(int));
+            if (hr != 0)
+            {
+                Log.Info($"设置窗 DWM 非客户区渲染关闭不可用（HRESULT=0x{hr:X8}），系统阴影可能仍存在");
             }
         }
         catch (Exception ex)
         {
-            Log.Warn($"设置窗 DWM 圆角调用失败: {ex.Message}");
+            Log.Warn($"设置窗 DWM 窗口框调用失败: {ex.Message}");
         }
     }
 
+    const int DwmNcRenderingPolicy = 2;
+    const int DwmNcRenderingDisabled = 1;
     const int DwmWindowCornerPreference = 33;
-    const int DwmWindowCornerRound = 2;
+    const int DwmWindowCornerDoNotRound = 1;
 
     [DllImport("dwmapi.dll")]
     static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
@@ -445,25 +457,51 @@ public partial class SettingsWindow : Window
         UpdateBrandLogo();
     }
 
-    /// <summary>暗色标题栏用终末地黄，浅色用黑；白版只给深色任务栏托盘。</summary>
+    /// <summary>暗色标题栏用纯黄，浅色用深黄；窗口图标同步换，任务栏不再固定成一种颜色。</summary>
     void UpdateBrandLogo()
     {
         if (BrandLogo is null) return;
-        string asset = _settingsDark ? "assets/logo-yellow.png" : "assets/logo-lightmode.png";
+        string png = _settingsDark
+            ? "assets/MirrorpondHUDLogoYellow.png"
+            : "assets/MirrorpondHUDLogoDeepYellow.png";
+        string ico = _settingsDark
+            ? "assets/MirrorpondHUDLogoYellow.ico"
+            : "assets/MirrorpondHUDLogoDeepYellow.ico";
         try
         {
-            var image = new BitmapImage();
-            image.BeginInit();
-            image.UriSource = new Uri("pack://application:,,,/" + asset, UriKind.Absolute);
-            image.CacheOption = BitmapCacheOption.OnLoad;
-            image.EndInit();
-            image.Freeze();
-            BrandLogo.Source = image;
+            BrandLogo.Source = LoadBitmap(png);
+            Icon = LoadLargestIconFrame(ico);
         }
         catch (Exception ex)
         {
-            Log.Warn($"设置标题栏 logo 加载失败({asset}): {ex.Message}");
+            Log.Warn($"设置标题栏 logo 加载失败({png}): {ex.Message}");
         }
+    }
+
+    static BitmapImage LoadBitmap(string asset)
+    {
+        var image = new BitmapImage();
+        image.BeginInit();
+        image.UriSource = new Uri("pack://application:,,,/" + asset, UriKind.Absolute);
+        image.CacheOption = BitmapCacheOption.OnLoad;
+        image.EndInit();
+        image.Freeze();
+        return image;
+    }
+
+    /// <summary>ICO 解码器按帧保存多尺寸；取最大一帧给 Window.Icon，避免系统先取到 16px 帧。</summary>
+    static BitmapSource LoadLargestIconFrame(string asset)
+    {
+        var uri = new Uri("pack://application:,,,/" + asset, UriKind.Absolute);
+        BitmapDecoder decoder = BitmapDecoder.Create(uri, BitmapCreateOptions.None, BitmapCacheOption.OnLoad);
+        BitmapFrame largest = null;
+        foreach (BitmapFrame frame in decoder.Frames)
+        {
+            if (largest is null || frame.PixelWidth > largest.PixelWidth) largest = frame;
+        }
+        if (largest is null) throw new InvalidOperationException($"ICO 没有可用帧: {asset}");
+        largest.Freeze();
+        return largest;
     }
 
     protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
