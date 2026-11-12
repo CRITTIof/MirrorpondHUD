@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -25,6 +26,15 @@ public partial class OverlayWindow : Window
     bool _closed;
     bool _commandMode;
     IntPtr _previousForeground;
+
+    /// <summary>
+    /// G-18：SetWindowPos 返回 FALSE 时既不抛异常也没人检查，表现为「窗口没动 / 没置顶但日志干净」。
+    /// 拖动 / 补位会高频调用它，失败按状态转移 + 60 秒补记节流，不刷屏（成功时打点用于记录恢复）。
+    /// </summary>
+    static readonly LogThrottle _windowPosFailure = new("卡片窗口定位", 60000);
+
+    /// <summary>G-18：拖放判定回调由卡片实现，拖动中每帧都会调用，失败同样走节流。</summary>
+    static readonly LogThrottle _dropCheckFailure = new("卡片拖放判定", 60000);
 
     /// <summary>
     /// 毛玻璃运行时（2026-11 审阅第三批第 12 项）：底板选择 / 截屏排除 / 兼容取图定时器
@@ -266,13 +276,14 @@ public partial class OverlayWindow : Window
         UpdateClickThrough();
         EnsureTopmost();
 
-        // 还原前台失败只影响焦点落点，不改变本窗口状态；下面马上清空记录，因此安全。
-        try
+        // 还原前台失败只影响焦点落点，不改变本窗口状态；下面马上清空记录。
+        // G-18：SetForegroundWindow 受前台锁限制，失败返回 FALSE 而不是抛异常，必须看返回值。
+        if (_previousForeground != IntPtr.Zero
+            && _previousForeground != new WindowInteropHelper(this).Handle
+            && !Native.SetForegroundWindow(_previousForeground))
         {
-            if (_previousForeground != IntPtr.Zero && _previousForeground != new WindowInteropHelper(this).Handle)
-                Native.SetForegroundWindow(_previousForeground);
+            Log.Debug($"命令行结束后还原前台失败（前台锁），焦点留在本窗口 err={Marshal.GetLastWin32Error()}");
         }
-        catch { }
         _previousForeground = IntPtr.Zero;
 
         Log.Info("命令行模式结束");
@@ -348,8 +359,15 @@ public partial class OverlayWindow : Window
         IntPtr hwnd = new WindowInteropHelper(this).Handle;
         if (hwnd == IntPtr.Zero) return;
 
-        Native.SetWindowPos(hwnd, IntPtr.Zero, x, y, 0, 0,
-                            Native.SwpNoSize | Native.SwpNoZorder | Native.SwpNoActivate);
+        if (Native.SetWindowPos(hwnd, IntPtr.Zero, x, y, 0, 0,
+                                Native.SwpNoSize | Native.SwpNoZorder | Native.SwpNoActivate))
+        {
+            _windowPosFailure.Success();
+            return;
+        }
+
+        // G-18：返回值 FALSE 不抛异常，位置真的没生效时必须留痕，否则只表现为「卡片不动」。
+        _windowPosFailure.Failure($"SetWindowPos(x={x}, y={y}) err={Marshal.GetLastWin32Error()}");
     }
 
     /// <summary>当前窗口左上角的物理像素坐标；句柄未就绪时返回 false。</summary>
@@ -444,9 +462,10 @@ public partial class OverlayWindow : Window
     {
         if (_moveTimer is null) return;
 
-        // 释放路径：计时器可能已随 Dispatcher 关闭，Stop 失败无后续影响，引用下面立即清空。
-        try { _moveTimer.Stop(); } catch { }
+        // 释放路径：计时器可能已随 Dispatcher 关闭。先摘引用再 Stop，失败交给 SafeRelease 记录。
+        DispatcherTimer timer = _moveTimer;
         _moveTimer = null;
+        SafeRelease.Run(timer.Stop, "位置动画计时器");
     }
 
     /// <summary>当前是否有位置动画在跑；布局协调器据此避免瞬移打断呼出 / 补位。</summary>
@@ -622,7 +641,7 @@ public partial class OverlayWindow : Window
         IntPtr hwnd = new WindowInteropHelper(this).Handle;
         if (hwnd == IntPtr.Zero) return;
 
-        int ex = Native.GetExStyle(hwnd);
+        nint ex = Native.GetExStyle(hwnd);
         // 交互卡片（按钮 / 输入框）即使在锁定状态下也不开 WS_EX_TRANSPARENT，
         // 否则鼠标事件永远到不了卡片里的控件；代价是它会挡住身下的桌面点击。
         bool clickThrough = _settings.Overlay.Locked && !_commandMode && !_interactive;
@@ -631,7 +650,9 @@ public partial class OverlayWindow : Window
         else
             ex &= ~(Native.WsExTransparent | Native.WsExNoActivate);
 
-        Native.SetExStyle(hwnd, ex);
+        // G-18：写扩展样式失败会让「锁定 / 穿透」与设置不符，而且不会抛异常。
+        if (!Native.SetExStyle(hwnd, ex))
+            Log.Warn($"设置点击穿透样式失败 err={Marshal.GetLastWin32Error()}（锁定={_settings.Overlay.Locked}）");
 
         Cursor = _commandMode ? Cursors.IBeam
                : (clickThrough || _interactive) ? Cursors.Arrow : Cursors.SizeAll;
@@ -643,8 +664,11 @@ public partial class OverlayWindow : Window
         IntPtr hwnd = new WindowInteropHelper(this).Handle;
         if (hwnd == IntPtr.Zero) return;
 
-        Native.SetWindowPos(hwnd, Native.HwndTopmost, 0, 0, 0, 0,
-            Native.SwpNoMove | Native.SwpNoSize | Native.SwpNoActivate | Native.SwpNoOwnerZorder);
+        if (!Native.SetWindowPos(hwnd, Native.HwndTopmost, 0, 0, 0, 0,
+                Native.SwpNoMove | Native.SwpNoSize | Native.SwpNoActivate | Native.SwpNoOwnerZorder))
+            _windowPosFailure.Failure($"置顶 SetWindowPos 失败 err={Marshal.GetLastWin32Error()}");
+        else
+            _windowPosFailure.Success();
 
         // G-13：记下置顶后「直接压在我们上面的窗口」，共享调度据此判断 Z 序有没有真的变化。
         _lastZPrev = Native.GetWindow(hwnd, Native.GwHwndPrev);
@@ -668,7 +692,7 @@ public partial class OverlayWindow : Window
         IntPtr hwnd = new WindowInteropHelper(this).Handle;
         if (hwnd == IntPtr.Zero) return;
 
-        int ex = Native.GetExStyle(hwnd);
+        nint ex = Native.GetExStyle(hwnd);
         if ((ex & Native.WsExTopmost) == 0)
         {
             // 被别的程序 / 系统清掉了 topmost 标志：这是真的没置顶，必须补一次。
@@ -754,8 +778,18 @@ public partial class OverlayWindow : Window
         if (_canDrop is null) return;
 
         bool ok;
-        try { ok = _canDrop(e.Data); }
-        catch { ok = false; }
+        try
+        {
+            ok = _canDrop(e.Data);
+            _dropCheckFailure.Success();
+        }
+        catch (Exception ex)
+        {
+            // 卡片自己决定能否接住拖放：抛错时本次按「不接受」处理（用户可见的行为），
+            // 不能让一次判定异常打断拖动；拖动中每帧都会调用，因此走节流日志。
+            _dropCheckFailure.Failure(ex.Message);
+            ok = false;
+        }
 
         e.Effects = ok ? DragDropEffects.Copy : DragDropEffects.None;
         e.Handled = true;

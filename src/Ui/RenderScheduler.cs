@@ -45,6 +45,12 @@ internal sealed class RenderScheduler : IDisposable
     readonly Dictionary<string, LogThrottle> _renderThrottles =
         new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// G-18：模块契约回调（RefreshIntervalMs / 内容签名序列化）在渲染循环里高频执行，
+    /// 抛错时过去被空 catch 吞掉；这里按「状态转移 + 60 秒补记」留痕。
+    /// </summary>
+    static readonly LogThrottle _moduleFailure = new("卡片模块契约", 60000);
+
     DispatcherTimer _timer;
     MetricsSnapshot _last = new();
     bool _hasSnapshot;
@@ -82,10 +88,12 @@ internal sealed class RenderScheduler : IDisposable
         _timer.Start();
     }
 
-    public void Stop()
-    {
-        try { if (_timer is not null) _timer.Stop(); } catch { }
-    }
+    // 释放路径：计时器可能已随 Dispatcher 关闭，交给 SafeRelease 记录（X-9）。
+    public void Stop() =>
+        SafeRelease.Run(() =>
+        {
+            if (_timer is not null) _timer.Stop();
+        }, "渲染定时器");
 
     public void Dispose() => Stop();
 
@@ -106,8 +114,17 @@ internal sealed class RenderScheduler : IDisposable
 
             // 模块可以声明「最快多久重画一次」：时钟不必按 8 帧/秒重算模板。
             int interval = 0;
-            try { interval = slot.Module.RefreshIntervalMs(slot.Config); }
-            catch { interval = 0; }
+            try
+            {
+                interval = slot.Module.RefreshIntervalMs(slot.Config);
+            }
+            catch (Exception ex)
+            {
+                // 卡片自己声明的刷新间隔抛错：按 0（每轮都渲染）继续，保证内容仍然更新；
+                // 但这是模块契约违约，必须让卡片作者看得到。
+                _moduleFailure.Failure($"{ThrottleKey(slot)} RefreshIntervalMs 抛错: {ex.Message}（按 0 继续）");
+                interval = 0;
+            }
 
             if (_hasSnapshot && interval > 0 &&
                 (now - slot.LastRenderUtc).TotalMilliseconds < interval)
@@ -238,7 +255,13 @@ internal sealed class RenderScheduler : IDisposable
         };
 
         try { return Json.Serialize(inputs); }
-        catch { return null; }   // 序列化失败：当作「变了」，走重建，宁可贵一点也不要留下陈旧内容
+        catch (Exception ex)
+        {
+            // 序列化失败：当作「变了」，走重建，宁可贵一点也不要留下陈旧内容。
+            // 但失败本身要可见，否则卡片配置里放了个序列化不了的字段会表现为「设置不生效」。
+            _moduleFailure.Failure($"内容签名序列化失败: {ex.Message}");
+            return null;
+        }
     }
 
     public string StyleSignature()
@@ -253,7 +276,11 @@ internal sealed class RenderScheduler : IDisposable
         };
 
         try { return Json.Serialize(inputs); }
-        catch { return null; }
+        catch (Exception ex)
+        {
+            _moduleFailure.Failure($"样式签名序列化失败: {ex.Message}");
+            return null;
+        }
     }
 
     /// <summary>

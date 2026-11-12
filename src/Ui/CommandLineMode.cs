@@ -57,40 +57,13 @@ internal static class CommandLineMode
         }
 
         // 顺序与旧实现一致：--screenshot-cards 必须先于 --screenshot 判断。
-        string shotCards = GetOption(args, "--screenshot-cards");
-        if (shotCards is not null)
-        {
-            exitCode = Screenshots.CaptureCards(shotCards) ? 0 : 1;
-            return true;
-        }
-
-        string shot = GetOption(args, "--screenshot");
-        if (shot is not null)
-        {
-            exitCode = Screenshots.CaptureOverlay(shot) ? 0 : 1;
-            return true;
-        }
-
-        string shotSettings = GetOption(args, "--screenshot-settings");
-        if (shotSettings is not null)
-        {
-            exitCode = Screenshots.CaptureSettings(shotSettings) ? 0 : 1;
-            return true;
-        }
-
-        string shotWidgets = GetOption(args, "--screenshot-widgets");
-        if (shotWidgets is not null)
-        {
-            exitCode = Screenshots.CaptureWidgets(shotWidgets) ? 0 : 1;
-            return true;
-        }
-
-        string shotStation = GetOption(args, "--screenshot-station");
-        if (shotStation is not null)
-        {
-            exitCode = Screenshots.CaptureStationViews(shotStation) ? 0 : 1;
-            return true;
-        }
+        // S-20：五种模式的参数都是「输出文件路径」，统一先做绝对路径 / 扩展名 / 目录可写校验；
+        // 校验失败必须 Log.Error + 非 0 退出，不能把配置或任意文件当 PNG 覆盖掉。
+        if (TryRunScreenshot(args, "--screenshot-cards", Screenshots.CaptureCards, out exitCode)) return true;
+        if (TryRunScreenshot(args, "--screenshot", Screenshots.CaptureOverlay, out exitCode)) return true;
+        if (TryRunScreenshot(args, "--screenshot-settings", Screenshots.CaptureSettings, out exitCode)) return true;
+        if (TryRunScreenshot(args, "--screenshot-widgets", Screenshots.CaptureWidgets, out exitCode)) return true;
+        if (TryRunScreenshot(args, "--screenshot-station", Screenshots.CaptureStationViews, out exitCode)) return true;
 
         if (args.Contains("--selftest"))
         {
@@ -122,6 +95,30 @@ internal static class CommandLineMode
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// S-20：解析并执行某个截图选项。未命中该选项返回 false（调用方继续看下一个模式）；
+    /// 命中时无论成败都返回 true 并写 <paramref name="exitCode"/> ——
+    /// 非法路径是明确失败，不能被当成“没有设这个参数”而落到正常启动。
+    /// </summary>
+    static bool TryRunScreenshot(List<string> args, string option, Func<string, bool> capture, out int exitCode)
+    {
+        exitCode = 0;
+        string raw = GetOption(args, option);
+        if (raw is null) return false;
+
+        if (!Screenshots.TryResolveOutputPath(raw, out var path, out var error))
+        {
+            Log.Error($"{option} 输出路径非法：{error}（参数：{raw}）");
+            exitCode = 1;
+            return true;
+        }
+
+        // 回显最终落点：相对路径按 cwd 展开后，用户才能确认图写到了哪。
+        Log.Info($"{option} 输出到 {path}");
+        exitCode = capture(path) ? 0 : 1;
+        return true;
     }
 
     /// <summary>

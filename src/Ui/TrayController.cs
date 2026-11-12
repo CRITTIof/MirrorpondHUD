@@ -122,7 +122,11 @@ internal sealed class TrayController : IDisposable
 
     public void Dispose()
     {
-        try { if (_balloonTimer is not null) _balloonTimer.Stop(); } catch { }
-        try { _tray?.Dispose(); } catch { }
+        // 释放路径：气泡计时器 / 托盘图标可能已经随退出流程收尾，交给 SafeRelease 记录（X-9）。
+        SafeRelease.Run(() =>
+        {
+            if (_balloonTimer is not null) _balloonTimer.Stop();
+        }, "托盘气泡计时器");
+        SafeRelease.Run(() => _tray?.Dispose(), "托盘图标");
     }
 }

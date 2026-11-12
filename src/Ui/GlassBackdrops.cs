@@ -110,7 +110,7 @@ internal sealed class SystemAcrylicBackdrop : IGlassBackdrop
     {
         if (_backdrop is null) return;
 
-        try { _backdrop.Dispose(); } catch { }
+        SafeRelease.Run(_backdrop.Dispose, "玻璃底板块");
         _backdrop = null;
     }
 }

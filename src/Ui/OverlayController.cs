@@ -215,6 +215,10 @@ public sealed class OverlayController : IDisposable
                                   _render.RenderCardText, _layout.SyncHeight, _layout.Layout,
                                   _render.RenderNow, Dispatcher.CurrentDispatcher);
         _command = new CommandModeController(new CommandHostAdapter(this));
+
+        // S-18：趁启动阶段把系统字体表在后台枚举掉（独立 STA 线程），
+        // 首次打开设置窗就不再在 UI 线程付那几百毫秒；失败只影响下拉框内容，绝不拖累启动。
+        SettingsWindow.WarmFontCache();
     }
 
     public Settings CurrentSettings => _settings;
@@ -361,8 +365,8 @@ public sealed class OverlayController : IDisposable
         if (ReferenceEquals(slot, _command.Card)) _command.Reset();
 
         ReleaseContent(slot);
-        // 释放路径：卡片窗口可能已随设置重建 / 退出被关闭，Close 失败无后续影响。
-        try { slot.Window.Close(); } catch { }
+        // 释放路径：卡片窗口可能已随设置重建 / 退出被关闭；Close 失败交给 SafeRelease 记录（X-9）。
+        SafeRelease.Run(slot.Window.Close, "卡片窗口关闭");
     }
 
     /// <summary>
@@ -744,8 +748,23 @@ public sealed class OverlayController : IDisposable
                         Application.Current.Dispatcher.BeginInvoke(new Action(ShowSettings));
                     }
                 }
+                catch (ObjectDisposedException)
+                {
+                    // G-19：退出流程是「先 Set 再 Dispose」，监听线程可能正好在 WaitOne 里醒来并撞上
+                    // 已释放的句柄。这是停机时的预期竞态，不是故障 —— 以前它会写一条伪 WARN，
+                    // 让每次正常退出都像出了事。
+                    Log.Debug("唤醒监听在停机阶段结束（句柄已释放，预期竞态）");
+                    return;
+                }
                 catch (Exception ex)
                 {
+                    // 已经在退出 / 已释放：不再把收尾期异常报成业务失败。
+                    if (_disposed)
+                    {
+                        Log.Debug($"唤醒监听在停机阶段结束: {ex.Message}");
+                        return;
+                    }
+
                     Log.Warn($"唤醒监听退出: {ex.Message}");
                     return;
                 }
@@ -906,40 +925,39 @@ public sealed class OverlayController : IDisposable
             _topmostTimer = null;
         }
 
-        // 以下 try/catch { } 全部处在释放路径：渲染 / 主题 / 激活事件 / 采样 / 钩子 / 托盘
-        // 可能已经随窗口关闭或上一次清理释放，重复 Dispose / Close / Set 不会留下半初始化状态；
-        // 在退出流程里上报这些失败只会掩盖真正原因，因此保留空 catch。
-        try { _render.Dispose(); } catch { }
-        try { _intro.Dispose(); } catch { }
+        // 以下全部处在释放路径：渲染 / 主题 / 激活事件 / 采样 / 钩子 / 托盘
+        // 可能已经随窗口关闭或上一次清理释放。统一走 SafeRelease.Run（X-9）：
+        // 「对象已释放 / 状态已失效」记 Debug，其余异常记 Warn，不再用空 catch 吞掉。
+        SafeRelease.Run(_render.Dispose, "渲染调度");
+        SafeRelease.Run(_intro.Dispose, "入场动画");
 
         foreach (CardSlot slot in _cards)
         {
             ICliFocusTarget target = slot.Content as ICliFocusTarget;
-            if (target is not null)
-            {
-                try { target.Cancel(); } catch { }
-            }
+            if (target is not null) SafeRelease.Run(target.Cancel, "命令行焦点取消");
         }
 
-        try { _activation?.Set(); } catch { }
-        try { _activation?.Dispose(); } catch { }
+        // G-19：先唤醒监听线程（它会看到 _disposed 直接退出），再释放句柄；
+        // 顺序反了就会稳定触发 ObjectDisposedException。
+        SafeRelease.Run(() => _activation?.Set(), "唤醒事件触发");
+        SafeRelease.Run(() => _activation?.Dispose(), "唤醒事件句柄");
+        _activation = null;
 
-        try { _engine?.Dispose(); } catch { }
-        try { _hook?.Dispose(); } catch { }
-        try { _hotkeyRouter?.Dispose(); } catch { }
-        try { _hotkeys?.Dispose(); } catch { }
-        try { _tray?.Dispose(); } catch { }
+        SafeRelease.Run(() => _engine?.Dispose(), "指标采样");
+        SafeRelease.Run(() => _hook?.Dispose(), "键盘钩子");
+        SafeRelease.Run(() => _hotkeyRouter?.Dispose(), "热键路由");
+        SafeRelease.Run(() => _hotkeys?.Dispose(), "全局热键");
+        SafeRelease.Run(() => _tray?.Dispose(), "托盘图标");
 
-        try
+        SafeRelease.Run(() =>
         {
             if (_settingsWindow is not null) _settingsWindow.CloseForReal();
-        }
-        catch { }
+        }, "设置窗口");
 
         foreach (CardSlot slot in _cards)
         {
             ReleaseContent(slot);
-            try { slot.Window.Close(); } catch { }
+            SafeRelease.Run(slot.Window.Close, "卡片窗口");
         }
         _cards.Clear();
     }

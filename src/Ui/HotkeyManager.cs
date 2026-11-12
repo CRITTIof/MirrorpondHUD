@@ -75,7 +75,18 @@ public sealed class HotkeyManager : IDisposable
     readonly Dictionary<string, int> _keyToId = new(StringComparer.Ordinal);
     readonly Dictionary<string, int> _actionToId = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>RegisterHotKey 的应用 id 合法上界；0xC000 以上由 GlobalAddAtom 占用。</summary>
+    const int MaxHotkeyId = 0xBFFF;
+
     int _nextId = 10;
+
+    /// <summary>
+    /// S-13：已注销 / 注册失败的 id 回收池。
+    /// 旧实现只增不减，每次改键都会消耗一个新 id；逼近 0xBFFF 后 RegisterHotKey 必然失败，
+    /// 日志却把原因写成「多半被其它程序占用」，用户看到的是「所有热键突然不灵」且只能重启。
+    /// </summary>
+    readonly Stack<int> _freeIds = new();
+
     HotkeyWindow _window;
     bool _disposed;
 
@@ -98,8 +109,47 @@ public sealed class HotkeyManager : IDisposable
         {
             Log.Info($"热键触发: {action}");
             Action<string> handler = HotkeyPressed;
-            if (handler is not null) handler(action);
+            if (handler is null) continue;
+
+            // S-21：这条调用链位于 WinForms 窗口过程（WM_HOTKEY）里，异常从这里逸出不会经过
+            // WPF 的 DispatcherUnhandledException，可能直接终止进程。动作失败只损失这一次触发，
+            // 必须就地隔离并留痕，不能让它穿出 WndProc。
+            try
+            {
+                handler(action);
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"热键动作失败: {action}", ex);
+            }
         }
+    }
+
+    /// <summary>
+    /// 取一个可用的热键 id：优先复用回收池；池空且仍在合法区间内才自增。
+    /// 返回 0 表示没有可用 id（调用方必须按「id 耗尽」记录，不能混同于「组合键被占用」）。
+    /// </summary>
+    int TakeId()
+    {
+        while (_freeIds.Count > 0)
+        {
+            int recycled = _freeIds.Pop();
+            // 防御：池里若混进仍在使用的 id（重复归还 / 池未清空），宁可丢弃也不能让两个动作共用。
+            if (!_idToActions.ContainsKey(recycled) && !_idToKey.ContainsKey(recycled)) return recycled;
+        }
+
+        if (_nextId > MaxHotkeyId) return 0;
+        return _nextId++;
+    }
+
+    /// <summary>
+    /// 注销成功后才把 id 还给回收池（S-13）。注册失败的 id 也要还：它从未被 OS 占用，
+    /// 不回池就等于永久漏掉一个 id。位于区间外的 id 不回收（防止池被异常值污染）。
+    /// </summary>
+    void ReleaseId(int id)
+    {
+        if (id < 10 || id > MaxHotkeyId) return;
+        _freeIds.Push(id);
     }
 
     /// <summary>
@@ -155,11 +205,20 @@ public sealed class HotkeyManager : IDisposable
             return true;
         }
 
-        int newId = _nextId++;
+        int newId = TakeId();
+        if (newId == 0)
+        {
+            // 与「组合键被占用」分开记录：这两种失败对用户的意义完全不同。
+            Log.Error($"热键 id 已全部占用（0x10–0x{MaxHotkeyId:X4}），无法注册 {combination}（{action}）；重启程序可回收 id");
+            return false;
+        }
+
         if (!RegisterHotKey(_window.Handle, newId, mods | ModNoRepeat, vk))
         {
             // 注册失败：旧绑定保持原样（这是 P2-3 的核心）。
-            Log.Warn($"热键注册失败（多半被其它程序占用）: {combination} err={Marshal.GetLastWin32Error()}，保留原绑定");
+            // id 从未被 OS 占用，立刻还回池里，避免改键失败几次就把 id 空间耗掉。
+            ReleaseId(newId);
+            Log.Warn($"热键注册失败（组合键 {combination} 多半已被其它程序占用）err={Marshal.GetLastWin32Error()}，保留原绑定");
             return false;
         }
 
@@ -181,7 +240,20 @@ public sealed class HotkeyManager : IDisposable
         if (actions.Count > 0) return;
 
         _idToActions.Remove(id);
-        if (_window is not null) UnregisterHotKey(_window.Handle, id);
+        if (_window is not null)
+        {
+            if (UnregisterHotKey(_window.Handle, id))
+            {
+                // S-13：注销成功的 id 立刻回池，下一次改键复用而不是继续自增。
+                ReleaseId(id);
+            }
+            else
+            {
+                // 注销失败时 id 可能仍被 OS 占着：不回池，避免下次注册到同一个 id 后
+                // 两个动作互相顶掉。窗口销毁时 OS 会兜底回收。
+                Log.Warn($"注销热键失败（id={id}）err={Marshal.GetLastWin32Error()}，该 id 不复用");
+            }
+        }
 
         if (_idToKey.TryGetValue(id, out var key))
         {
@@ -202,7 +274,20 @@ public sealed class HotkeyManager : IDisposable
         if (actions.Count > 0) return;
 
         _idToActions.Remove(id);
-        if (_window is not null) UnregisterHotKey(_window.Handle, id);
+        if (_window is not null)
+        {
+            if (UnregisterHotKey(_window.Handle, id))
+            {
+                // S-13：注销成功的 id 立刻回池，下一次改键复用而不是继续自增。
+                ReleaseId(id);
+            }
+            else
+            {
+                // 注销失败时 id 可能仍被 OS 占着：不回池，避免下次注册到同一个 id 后
+                // 两个动作互相顶掉。窗口销毁时 OS 会兜底回收。
+                Log.Warn($"注销热键失败（id={id}）err={Marshal.GetLastWin32Error()}，该 id 不复用");
+            }
+        }
 
         if (_idToKey.TryGetValue(id, out var key))
         {
@@ -214,14 +299,34 @@ public sealed class HotkeyManager : IDisposable
     public void UnregisterAll()
     {
         if (_window is null) return;
+
+        int failed = 0;
+        int lastError = 0;
         foreach (int id in new List<int>(_idToActions.Keys))
         {
-            try { UnregisterHotKey(_window.Handle, id); } catch { }
+            // UnregisterHotKey 返回 BOOL 而不是抛异常，catch 在这里本来就兜不住（G-18）。
+            if (!UnregisterHotKey(_window.Handle, id))
+            {
+                failed++;
+                lastError = Marshal.GetLastWin32Error();
+            }
         }
+
+        if (failed > 0)
+        {
+            Log.Warn($"批量注销热键有 {failed} 个失败（err={lastError}），这些 id 不再回收；窗口销毁时由系统兜底");
+        }
+
         _idToActions.Clear();
         _idToKey.Clear();
         _keyToId.Clear();
         _actionToId.Clear();
+
+        // S-13：全部注销后 id 空间回到起点。id 复用理论上可能残留旧的 WM_HOTKEY，
+        // 但注册 / 注销都在同一条 UI 线程的消息泵里，残留消息最多早于新注册一拍，
+        // 实际风险远低于「id 耗尽后所有热键永久失效」。
+        _nextId = 10;
+        _freeIds.Clear();
     }
 
     public static bool TryParse(string combination, out uint modifiers, out uint vk)
@@ -274,13 +379,16 @@ public sealed class HotkeyManager : IDisposable
         if (_disposed) return;
         _disposed = true;
 
-        try { UnregisterAll(); } catch { }
+        // 释放路径统一走 SafeRelease.Run（X-9）：注销 / 销毁失败必须是 Debug/Warn，
+        // 不能再写成空 catch。
+        SafeRelease.Run(UnregisterAll, "全局热键注销");
 
         if (_window is not null)
         {
-            try { _window.Hotkey -= OnHotkeyMessage; } catch { }
-            try { _window.Destroy(); } catch { }
+            HotkeyWindow window = _window;
             _window = null;
+            SafeRelease.Run(() => window.Hotkey -= OnHotkeyMessage, "热键事件退订");
+            SafeRelease.Run(window.Destroy, "热键宿主窗口");
         }
     }
 }

@@ -86,7 +86,11 @@ public sealed class CardEditor : INotifyPropertyChanged
             var found = Application.Current is null ? null : Application.Current.TryFindResource("Danger");
             if (found is Brush) danger = (Brush)found;
         }
-        catch { }
+        catch (Exception themeEx)
+        {
+            // 取主题色失败只影响这条错误提示的颜色，文本仍然可见；留 Debug 线索即可。
+            Log.Debug($"读取错误提示主题色失败，用内置红色: {themeEx.Message}");
+        }
 
         return new TextBlock
         {

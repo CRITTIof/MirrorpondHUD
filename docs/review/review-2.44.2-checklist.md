@@ -140,14 +140,14 @@
 
 | 状态 | 编号 | 模块 | 位置 | 问题 | 改动文件 / 说明 |
 | --- | --- | --- | --- | --- | --- |
-| [ ] | C-22 | 契约/核心 | src/Core/ThemeCatalog.cs:23-66,51 | Load 每次全量重解析，Id 直接用品名（建议：加缓存；Id 用稳定文件标识） |  |
-| [ ] | C-23 | 契约/核心 | src/Contracts/Core/Log.cs:148-199,202-223 | 日志在调用线程同步落盘（含轮转 File.Move）（建议：见 §5.2 异步化） |  |
-| [ ] | C-24 | 契约/核心 | src/Core/SettingsLoader.cs:97-111 | v6→v7 迁移静默丢弃另一套模糊参数（建议：迁移时记一条 Info 汇总丢弃字段） |  |
-| [ ] | C-25 | 契约/核心 | src/Contracts/Core/Settings.cs:469-483 | NormalizeDrives 给非盘符路径补反斜杠；盘符大小写不同会重复（建议：只接受 X:\ 形态；统一大写） |  |
-| [ ] | C-26 | 契约/核心 | src/Core/ConfigStore.cs:395-396 | .broken-* 同秒内多次失败互相覆盖（建议：加毫秒或序号后缀） |  |
-| [ ] | C-27 | 契约/核心 | src/Core/ThemeFile.cs:766-773 | effect 接受 Contour 但错误文案只列 4 种；导出时非法软色静默丢弃（建议：文案与校验表同源） |  |
-| [ ] | C-28 | 契约/核心 | src/Contracts/Text/Variables.cs:59-64 | NaN 直接交给模板，显示 "NaN"（建议：格式化前判 NaN/Inf 并回落占位符） |  |
-| [ ] | C-29 | 契约/核心 | src/Contracts/Core/Settings.cs:88 | 按 char 截断文本，可能切断代理对（建议：按 text element 截断） |  |
+| [x] | C-22 | 契约/核心 | src/Core/ThemeCatalog.cs:23-66,51 | Load 每次全量重解析，Id 直接用品名（建议：加缓存；Id 用稳定文件标识） | src/Core/ThemeCatalog.cs；MirrorpondHUD.csproj；src/Ui/SettingsWindow.Theme.cs。内置主题解析结果缓存；Id 改用稳定文件标识（LogicalName=themes/<文件名>），主题选择同时按 Name/Id 兼容旧配置 |
+| [x] | C-23 | 契约/核心 | src/Contracts/Core/Log.cs:148-199,202-223 | 日志在调用线程同步落盘（含轮转 File.Move）（建议：见 §5.2 异步化） | src/Contracts/Core/Log.cs；src/App.xaml.cs。已由 X-8 解决：有界队列 + 单写线程，退出 Flush(2s)，不再在调用线程同步落盘 |
+| [x] | C-24 | 契约/核心 | src/Core/SettingsLoader.cs:97-111 | v6→v7 迁移静默丢弃另一套模糊参数（建议：迁移时记一条 Info 汇总丢弃字段） | src/Core/SettingsLoader.cs。v6→v7 合并模糊参数时记录选中的 BlurRadius/BlurFps 与被丢弃的旧键值 |
+| [x] | C-25 | 契约/核心 | src/Contracts/Core/Settings.cs:469-483 | NormalizeDrives 给非盘符路径补反斜杠；盘符大小写不同会重复（建议：只接受 X:\ 形态；统一大写） | src/Contracts/Core/Settings.cs。盘符统一大写、补尾反斜杠并按 OrdinalIgnoreCase 去重；UNC 保留末尾规整 |
+| [x] | C-26 | 契约/核心 | src/Core/ConfigStore.cs:395-396 | .broken-* 同秒内多次失败互相覆盖（建议：加毫秒或序号后缀） | src/Core/ConfigStore.cs。.broken-* 命名加毫秒并对同秒冲突追加序号，不再互相覆盖 |
+| [x] | C-27 | 契约/核心 | src/Core/ThemeFile.cs:766-773 | effect 接受 Contour 但错误文案只列 4 种；导出时非法软色静默丢弃（建议：文案与校验表同源） | src/Contracts/Core/Settings.cs；src/Core/ThemeFile.cs。循环类型校验文案由 LoopEffectNames 单一清单生成（含 Contour）；导出非法软色 Log.Warn 后跳过 |
+| [x] | C-28 | 契约/核心 | src/Contracts/Text/Variables.cs:59-64 | NaN 直接交给模板，显示 "NaN"（建议：格式化前判 NaN/Inf 并回落占位符） | src/Contracts/Text/TemplateEngine.cs。模板值 NaN/∞ 回落 n/a，并用 LogThrottle 节流记录原因 |
+| [x] | C-29 | 契约/核心 | src/Contracts/Core/Settings.cs:88 | 按 char 截断文本，可能切断代理对（建议：按 text element 截断） | src/Contracts/Core/Settings.cs。WelcomeText 按 StringInfo text element 截断，不再切断代理对/组合字符 |
 | [ ] | S-13 | 设置/托盘 | src/Ui/HotkeyManager.cs:78,158-172 | 热键 id 单调增长不复用，逼近 0xBFFF 后注册必失败且日志归因"被占用"（建议：空闲 id 回收池） |  |
 | [ ] | S-14 | 设置/托盘 | src/Ui/SettingsWindow.xaml.cs:507-538 | "关闭"仍是 Hide，模块区块/预览位图/两份深拷贝一直被持有（建议：关闭时释放区块、重新加载时重建） |  |
 | [ ] | S-15 | 设置/托盘 | src/Ui/ShellIcons.cs:231-235 | IShellItemImageFactory.GetImage 丢 HRESULT，失败与"无缩略图"不可区分（建议：检查 HRESULT 并节流日志） |  |
@@ -196,12 +196,12 @@
 | [ ] | P-25 | 插件/指标 | 四份设置视图 | Raise/commit 复制粘贴，只有 Chat 实现 ICardEditorCommit（建议：抽基类或共享 helper） |  |
 | [ ] | P-26 | 插件/指标 | CardPluginLoader.cs:356-362 | 只校验 manifest.apiVersion，不校验插件编译所依据的 Contracts 版本（建议：manifest 加 contractsVersion 并校验） |  |
 | [ ] | P-27 | 插件/指标 | CardJobQueue.cs:1-6 | 位置与文档不符；StationCopyController.cs:126 注释与事实相反（建议：修正文档/注释） |  |
-| [ ] | X-11 | 跨层 | 20 个文件 / 117 处 DllImport | Native.cs 的集中声明未被遵守；GetWindowLongPtrW 等在 Native.cs 与 MediaNative.cs 重复声明（建议：单文件 P/Invoke + 可空性/句柄包装） |  |
-| [ ] | X-12 | 跨层 | src/Ui/Controls/、src/Text/、6 个 plugin.csproj、9 个 RootNamespace | 空目录残留；六个工程同名导致构建日志不可辨；所有程序集同根命名空间（建议：清空目录；工程按卡片改名；RootNamespace 按程序集区分） |  |
-| [ ] | X-13 | 跨层 | .gitignore 第 34 行附近 | docs/review/ 被忽略，审阅报告无法入库/评审/在 PR 引用（建议：改为跟踪，或独立仓库 + 链接） |  |
-| [ ] | X-14 | 跨层 | sign.ps1:27 | PFX 口令硬编码（MirrorpondHUDDev!2026），并向 CurrentUser 存储写入自签名证书（建议：参数/环境变量；文档说明信任流程） |  |
-| [ ] | X-15 | 跨层 | src/Contracts/MirrorpondHUD.Contracts.csproj:4 | UseWPF=true；契约里出现 Color（19 处）、FrameworkElement（16 处）、Brush/Pen/Size/CornerRadius（建议：拆出不依赖 WPF 的纯数据/纯逻辑契约） |  |
-| [ ] | X-16 | 跨层 | src/App.xaml.cs:76-104 | 第二实例在 UI 线程 Thread.Sleep(100) × 30（最多 3 s）等唤醒事件（建议：短超时 + 异步/后台等待，或先建事件再建互斥） |  |
+| [x] | X-11 | 跨层 | 20 个文件 / 117 处 DllImport | Native.cs 的集中声明未被遵守；GetWindowLongPtrW 等在 Native.cs 与 MediaNative.cs 重复声明（建议：单文件 P/Invoke + 可空性/句柄包装） | src/Ui/Native.cs。最小集：确认 GWL_EXSTYLE 32 位语义并补跨程序集 P/Invoke 边界注释；ForceForeground 失败改为 Log.Debug 可见。全量集中到 Native.cs 暂不做 |
+| [x] | X-12 | 跨层 | src/Ui/Controls/、src/Text/、6 个 plugin.csproj、9 个 RootNamespace | 空目录残留；六个工程同名导致构建日志不可辨；所有程序集同根命名空间（建议：清空目录；工程按卡片改名；RootNamespace 按程序集区分） | MirrorpondHUD.csproj；src/Plugins/*/MirrorpondHUD.Cards.*.csproj；src/Ui/Controls、src/Text。6 个同名 plugin.csproj 按程序集名重命名并同步根工程引用；删除两个空目录。RootNamespace 暂不动 |
+| [x] | X-13 | 跨层 | .gitignore 第 34 行附近 | docs/review/ 被忽略，审阅报告无法入库/评审/在 PR 引用（建议：改为跟踪，或独立仓库 + 链接） | .gitignore；docs/review/*.md。仅忽略 docs/review/.work/；review 正文、清单与历史评估入库 |
+| [x] | X-14 | 跨层 | sign.ps1:27 | PFX 口令硬编码（MirrorpondHUDDev!2026），并向 CurrentUser 存储写入自签名证书（建议：参数/环境变量；文档说明信任流程） | sign.ps1；README.md。PFX 口令改读 MIRRORPOND_PFX_PASSWORD 或 -Password；缺失时 Warn 并跳过证书/签名，README 已说明 |
+| [-] | X-15 | 跨层 | src/Contracts/MirrorpondHUD.Contracts.csproj:4 | UseWPF=true；契约里出现 Color（19 处）、FrameworkElement（16 处）、Brush/Pen/Size/CornerRadius（建议：拆出不依赖 WPF 的纯数据/纯逻辑契约） | 。决策：暂不拆 WPF-free 契约程序集，避免插件 ABI/引用关系大改；在 Contracts 继续禁止新增 UI 类型，后续单独评估 |
+| [x] | X-16 | 跨层 | src/App.xaml.cs:76-104 | 第二实例在 UI 线程 Thread.Sleep(100) × 30（最多 3 s）等唤醒事件（建议：短超时 + 异步/后台等待，或先建事件再建互斥） | src/App.xaml.cs。唤醒事件提前到取互斥体之前创建；第二实例改为 4×25ms 有界尝试，不再阻塞 UI 线程 2 秒 |
 
 ## 验证记录
 

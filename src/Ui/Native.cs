@@ -104,26 +104,36 @@ internal static class Native
 
     // X-11：src/Ui 与 src/UiKit 是两个程序集，内部 P/Invoke（如 GetWindowLongPtr64）
     // 无法跨程序集共享；这里保留各自的声明，避免把 user32 依赖塞进 Contracts。
-    // GWL_EXSTYLE 本身是 32 位标志，返回 int 不会截断；指针型索引才需要 IntPtr 版本。
-    public static int GetExStyle(IntPtr hwnd)
+    /// <summary>
+    /// G-18：返回完整位宽的扩展样式（nint），不再截成 int。
+    /// 旧实现的 <c>ToInt64() → (int)</c> 会把高于第 31 位的 WS_EX_* 当成负数，
+    /// 再经 <see cref="SetExStyle"/> 写回时等于把那些扩展样式抹掉；当前用到的常量恰好都低于 0x10000000，
+    /// 但这是隐式契约，不能依赖。
+    /// </summary>
+    public static nint GetExStyle(IntPtr hwnd)
     {
-        if (IntPtr.Size == 8)
-        {
-            IntPtr value = GetWindowLongPtr64(hwnd, GwlExStyle);
-            return unchecked((int)value.ToInt64());
-        }
+        if (IntPtr.Size == 8) return GetWindowLongPtr64(hwnd, GwlExStyle);
         return GetWindowLong(hwnd, GwlExStyle);
     }
 
-    public static void SetExStyle(IntPtr hwnd, int value)
+    /// <summary>
+    /// 设置扩展样式；返回 false 表示这次没有写成功（GetLastError 可读）。
+    /// SetWindowLongPtr 的「旧值」本身可能就是 0，必须先把 last error 清零才能区分成功与失败。
+    /// </summary>
+    public static bool SetExStyle(IntPtr hwnd, nint value)
     {
+        Marshal.SetLastPInvokeError(0);
+
         if (IntPtr.Size == 8)
         {
-            SetWindowLongPtr64(hwnd, GwlExStyle, new IntPtr(value));
-            return;
+            IntPtr previous = SetWindowLongPtr64(hwnd, GwlExStyle, new IntPtr(value));
+            return previous != IntPtr.Zero || Marshal.GetLastPInvokeError() == 0;
         }
-        SetWindowLong(hwnd, GwlExStyle, value);
+
+        int previous32 = SetWindowLong(hwnd, GwlExStyle, unchecked((int)value));
+        return previous32 != 0 || Marshal.GetLastPInvokeError() == 0;
     }
+
 
     [StructLayout(LayoutKind.Sequential)]
     public struct Rect

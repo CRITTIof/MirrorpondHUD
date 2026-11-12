@@ -164,10 +164,12 @@ internal sealed class OverlayIntro : IDisposable
         return null;
     }
 
-    void StopTimer()
-    {
-        try { if (_timer is not null) _timer.Stop(); } catch { }
-    }
+    // 释放路径：计时器可能已随 Dispatcher 关闭，交给 SafeRelease 记录（X-9）。
+    void StopTimer() =>
+        SafeRelease.Run(() =>
+        {
+            if (_timer is not null) _timer.Stop();
+        }, "入场动画计时器");
 
     void Tick()
     {

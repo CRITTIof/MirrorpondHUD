@@ -1,4 +1,4 @@
-# DLL 卡片插件开发指南（2.24.0+）
+﻿# DLL 卡片插件开发指南（2.24.0+）
 
 本文面向要在 MirrorpondHUD 里添加**运行时卡片插件**的开发者。插件是一个独立的 .NET 8 WPF 类库（DLL），
 通过 `plugins/cards/<id>/manifest.json` 被宿主加载，可以贡献文字卡或富内容卡，并复用宿主的设置页、
@@ -148,6 +148,7 @@
   "name": "My Card",
   "version": "1.0.0",
   "apiVersion": 2,
+  "contractsVersion": "2.45.1",
   "entryType": "MyCard.MyCardModule",
   "assembly": "MyCard.dll",
   "author": "example"
@@ -161,6 +162,7 @@
 | `id` | 稳定插件 id，≤100 字符，只允许字母数字与 `.` `-` `_` |
 | `name` / `version` | 展示与排错用 |
 | `apiVersion` | 必须是 **2** |
+| `contractsVersion` | 插件编译时引用的 Contracts 版本（如 `2.45.1`）。缺失视为当前版本；高于宿主时拒绝加载并 Warn，低于宿主时允许但 Warn |
 | `entryType` | 入口类型全名，必须实现 `ICardModule`，public 无参构造 |
 | `assembly` | 裸 DLL 文件名，不能带路径 |
 | `author` | 可选展示信息 |
@@ -1368,6 +1370,7 @@ MyCard/
   "name": "我的卡片",
   "version": "1.0.0",
   "apiVersion": 2,
+  "contractsVersion": "2.45.1",
   "entryType": "MyCard.MyCardModule",
   "assembly": "MyCard.dll",
   "author": "example"

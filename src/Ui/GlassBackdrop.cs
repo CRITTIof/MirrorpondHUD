@@ -66,6 +66,12 @@ internal sealed class GlassBackdrop : IDisposable
 
     IntPtr _handle;
     bool _visible;
+
+    /// <summary>
+    /// G-18：底板窗口的 SetWindowPos / ShowWindow 返回 FALSE 不抛异常。拖动时每帧都会摆一次，
+    /// 失败按状态转移 + 60 秒补记节流，否则要么完全静默、要么刷屏。
+    /// </summary>
+    static readonly LogThrottle _windowFailure = new("玻璃底板窗口", 60000);
     int _gradientColor = DefaultGradientColor;
 
     // G-13：上一次真正摆过的几何 / 卡片句柄。常驻卡片每 2.5 秒的置顶调度会走到 Follow，
@@ -133,8 +139,17 @@ internal sealed class GlassBackdrop : IDisposable
 
     static bool IsRemoteSession()
     {
-        try { return GetSystemMetrics(SmRemoteSession) != 0; }
-        catch { return false; }
+        try
+        {
+            return GetSystemMetrics(SmRemoteSession) != 0;
+        }
+        catch (Exception ex)
+        {
+            // 取不到系统指标时按“非远程”继续：真正的取图失败会由采集层的节流日志兜住，
+            // 这里再报一次只会重复；但要留下 Debug 线索，避免完全无声。
+            Log.Debug($"读取远程会话标志失败，按非远程处理: {ex.Message}");
+            return false;
+        }
     }
 
     static bool IsTransparencyEnabled()
@@ -258,11 +273,20 @@ internal sealed class GlassBackdrop : IDisposable
     {
         if (_handle == IntPtr.Zero) return;
 
-        // 释放路径：窗口可能已被系统销毁，DestroyWindow 失败无后续影响，句柄下面立即置零。
-        try { DestroyWindow(_handle); }
-        catch { }
-
+        IntPtr handle = _handle;
         _handle = IntPtr.Zero;
+
+        // 释放路径：窗口可能已被系统销毁。DestroyWindow 返回 FALSE 并不抛异常，
+        // 这里按 Debug 记录（句柄已经置零，不会有后续影响）。
+        try
+        {
+            if (!DestroyWindow(handle)) Log.Debug($"销毁玻璃底板窗口失败 err={Marshal.GetLastWin32Error()}");
+        }
+        catch (Exception ex)
+        {
+            Log.Debug($"销毁玻璃底板窗口异常: {ex.Message}");
+        }
+
         _visible = false;
     }
 
@@ -317,8 +341,16 @@ internal sealed class GlassBackdrop : IDisposable
         }
 
         IntPtr cardHandle;
-        try { cardHandle = new WindowInteropHelper(card).Handle; }
-        catch { cardHandle = IntPtr.Zero; }
+        try
+        {
+            cardHandle = new WindowInteropHelper(card).Handle;
+        }
+        catch (Exception ex)
+        {
+            // 卡片窗口还没建好 / 正在释放：拿不到句柄就先收起底板，下一轮 UpdateBackdrop 再摆。
+            Log.Debug($"读取卡片窗口句柄失败（底板先收起）: {ex.Message}");
+            cardHandle = IntPtr.Zero;
+        }
 
         if (cardHandle == IntPtr.Zero)
         {
@@ -373,8 +405,16 @@ internal sealed class GlassBackdrop : IDisposable
                             && pixelWidth == _lastWidth && pixelHeight == _lastHeight;
         if (sameGeometry && Native.GetWindow(_handle, Native.GwHwndPrev) == cardHandle) return;
 
-        SetWindowPos(_handle, cardHandle, left, top, pixelWidth, pixelHeight,
-                     SwpNoActivate | SwpNoOwnerZorder | SwpShowWindow);
+        if (!SetWindowPos(_handle, cardHandle, left, top, pixelWidth, pixelHeight,
+                          SwpNoActivate | SwpNoOwnerZorder | SwpShowWindow))
+        {
+            // G-18：底板没摆到卡片下方就会露出错位的模糊块，必须能归因。
+            _windowFailure.Failure($"SetWindowPos({left},{top},{pixelWidth}x{pixelHeight}) err={Marshal.GetLastWin32Error()}");
+        }
+        else
+        {
+            _windowFailure.Success();
+        }
         _visible = true;
         _lastCardHandle = cardHandle;
         _lastLeft = left;
@@ -388,7 +428,13 @@ internal sealed class GlassBackdrop : IDisposable
         if (_handle == IntPtr.Zero) return;
         if (_visible == show) return;
 
-        ShowWindow(_handle, show ? SwShowNoActivate : SwHide);
+        if (!ShowWindow(_handle, show ? SwShowNoActivate : SwHide))
+        {
+            // 首次显示时 ShowWindow 返回上一次的可见状态（false 属正常），只在隐藏失败且我们
+            // 以为已隐藏时才值得记录 —— 用节流器统一收口，避免把正常返回值当故障。
+            int err = Marshal.GetLastWin32Error();
+            if (err != 0) _windowFailure.Failure($"ShowWindow({show}) err={err}");
+        }
         _visible = show;
     }
 

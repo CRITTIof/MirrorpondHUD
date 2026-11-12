@@ -41,15 +41,8 @@ public partial class SettingsWindow
                 ? "自定义" : _working.Style.ThemeName;
             ThemePreviewBgBox.Text = _working.Behavior.SettingsPreviewBg;
 
-            BuildFontList();
-            _selectedFont = _allFonts.FirstOrDefault(
-                                f => string.Equals(f.Family, s.Style.FontFamily, StringComparison.OrdinalIgnoreCase))
-                            ?? _allFonts.FirstOrDefault(
-                                f => string.Equals(f.Family, "Microsoft YaHei UI", StringComparison.OrdinalIgnoreCase))
-                            ?? _allFonts.FirstOrDefault();
-            FontFilterBox.Text = "";
-            FilterFonts("");
-            FontCombo.SelectedItem = _selectedFont;
+            // S-18：字体列表改成后台预热 + 缓存，UI 只负责装视图与选中项（不再在 UI 线程全量枚举）。
+            LoadFontsIntoUi(s.Style.FontFamily);
 
             // 毛玻璃有三条实现：accent 底板（系统）/ 桌面取样（DesktopFeed）/ 兼容取样（Compat）。
             string align = Settings.NormalizeCardAlign(s.Style.CardAlign);
