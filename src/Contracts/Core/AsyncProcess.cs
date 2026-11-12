@@ -30,6 +30,8 @@ public static class AsyncProcess
         public byte[] StdOut = Empty;
         public string StdErr = "";
         public string Error = "";
+        // K-14：stdout 超过上限时只保留前 N 字节并置位，调用方据此判失败而不是解半张图。
+        public bool StdOutTruncated;
 
         public string StdOutText => StdOut is null || StdOut.Length == 0 ? "" : Encoding.UTF8.GetString(StdOut);
     }
@@ -39,11 +41,15 @@ public static class AsyncProcess
     /// <summary>Kill 之后等读取任务收尾的上限；正常几十毫秒内就结束。</summary>
     const int DrainMs = 2000;
 
+    /// <summary>K-14：单次 stdout 的默认上限（8 MB）。超出后继续读空但丢弃，避免无界内存。</summary>
+    public const int DefaultMaxStdOutBytes = 8 * 1024 * 1024;
+
     /// <summary>
     /// 启动 exe 并等它退出。timeoutMs 是整体超时，超时返回 TimedOut = true 并已 Kill(true)。
     /// 注意：这是 async，不要在 UI 线程上同步 GetResult()——那样又会冻 UI。
     /// </summary>
-    public static async Task<Result> RunAsync(string exe, IList<string> arguments, int timeoutMs)
+    public static async Task<Result> RunAsync(string exe, IList<string> arguments, int timeoutMs,
+                                              int maxStdOutBytes = DefaultMaxStdOutBytes)
     {
         var result = new Result();
 
@@ -83,7 +89,8 @@ public static class AsyncProcess
 
             // stdout / stderr 必须同时读：只读一边，另一边管道写满会把进程卡死，
             // 于是「读的那一边」也就永远等不到 EOF —— 这正是原实现的死法。
-            Task<byte[]> outTask = ReadAllBytesAsync(process.StandardOutput.BaseStream);
+            Task<(byte[] Bytes, bool Truncated)> outTask =
+                ReadAllBytesAsync(process.StandardOutput.BaseStream, Math.Max(1, maxStdOutBytes));
             Task<string> errTask = process.StandardError.ReadToEndAsync();
 
             Task exitTask = process.WaitForExitAsync();
@@ -108,7 +115,11 @@ public static class AsyncProcess
 
             if (all.IsCompleted && !all.IsFaulted)
             {
-                if (outTask.Status == TaskStatus.RanToCompletion) result.StdOut = outTask.Result;
+                if (outTask.Status == TaskStatus.RanToCompletion)
+                {
+                    result.StdOut = outTask.Result.Bytes;
+                    result.StdOutTruncated = outTask.Result.Truncated;
+                }
                 if (errTask.Status == TaskStatus.RanToCompletion) result.StdErr = errTask.Result;
             }
             else
@@ -133,12 +144,28 @@ public static class AsyncProcess
         }
     }
 
-    static async Task<byte[]> ReadAllBytesAsync(Stream stream)
+    static async Task<(byte[] Bytes, bool Truncated)> ReadAllBytesAsync(Stream stream, int limit)
     {
         using (var memory = new MemoryStream())
         {
-            await stream.CopyToAsync(memory).ConfigureAwait(false);
-            return memory.ToArray();
+            byte[] buffer = new byte[81920];
+            int total = 0;
+            bool truncated = false;
+            while (true)
+            {
+                int read = await stream.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false);
+                if (read <= 0) break;
+
+                int keep = Math.Min(read, limit - total);
+                if (keep > 0)
+                {
+                    memory.Write(buffer, 0, keep);
+                    total += keep;
+                }
+                if (keep < read) truncated = true;
+            }
+            if (truncated) Log.Warn($"进程 stdout 超过上限 {limit} 字节，已截断（继续读空以免子进程阻塞）");
+            return (memory.ToArray(), truncated);
         }
     }
 }

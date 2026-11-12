@@ -55,6 +55,9 @@ public sealed class OverlaySurface : Border
 
     BitmapImage _image;
     string _imagePath;
+    // G-7：路径 + 最后写入时间 + 长度做缓存键；失败不再永久缓存（30s 后重试）。
+    string _imageKey;
+    DateTime _imageNextStat = DateTime.MinValue;
 
     public OverlaySurface()
     {
@@ -614,6 +617,21 @@ public sealed class OverlaySurface : Border
 
     // ==================== 背景图片 ====================
 
+    /// <summary>G-7：同一路径换图 / 重写后也能发现；失败状态不再永久缓存。</summary>
+    static string ImageCacheKey(string path)
+    {
+        try
+        {
+            var info = new System.IO.FileInfo(path);
+            return info.Exists ? $"{path}|{info.LastWriteTimeUtc.Ticks}|{info.Length}" : $"{path}|missing";
+        }
+        catch (Exception ex)
+        {
+            Log.Debug($"读取背景图元数据失败({path}): {ex.Message}");
+            return path;
+        }
+    }
+
     void ApplyImage(StyleSettings style)
     {
         string path = (style.BackgroundImage ?? "").Trim();
@@ -623,14 +641,33 @@ public sealed class OverlaySurface : Border
             _imageLayer.Background = null;
             _image = null;
             _imagePath = null;
+            _imageKey = null;
+            _imageNextStat = DateTime.MinValue;
             return;
         }
 
-        if (!string.Equals(path, _imagePath, StringComparison.OrdinalIgnoreCase))
+        bool reload = !string.Equals(path, _imagePath, StringComparison.OrdinalIgnoreCase);
+        if (!reload && DateTime.UtcNow >= _imageNextStat)
+        {
+            _imageNextStat = DateTime.UtcNow.AddSeconds(2);
+            reload = !string.Equals(ImageCacheKey(path), _imageKey, StringComparison.Ordinal);
+        }
+
+        if (reload)
         {
             _image = LoadImage(path);
             _imagePath = path;
-            if (_image is null) Log.Warn($"背景图片无法加载: {path}");
+            if (_image is not null)
+            {
+                _imageKey = ImageCacheKey(path);
+                _imageNextStat = DateTime.UtcNow.AddSeconds(2);
+            }
+            else
+            {
+                _imageKey = null;
+                _imageNextStat = DateTime.UtcNow.AddSeconds(30);
+                Log.Warn($"背景图片无法加载: {path}");
+            }
         }
 
         if (_image is null)

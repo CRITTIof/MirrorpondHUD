@@ -152,6 +152,19 @@ public static class CommandRunner
             }
         }
 
+        // P-16：未加引号但 exe 路径含空格（C:\Program Files\...）。从最长前缀往回找
+        // 真正存在的文件，避免把 "C:\Program" 当成 exe；找不到再退回“第一个空格”。
+        for (int split = line.Length; split > 0; split--)
+        {
+            if (line[split - 1] == ' ') continue;
+            string candidate = line.Substring(0, split).TrimEnd();
+            if (candidate.Length == 0) continue;
+            if (!File.Exists(candidate)) continue;
+            executable = candidate;
+            arguments = line.Substring(split).Trim();
+            return;
+        }
+
         int space = line.IndexOf(' ');
         if (space < 0)
         {

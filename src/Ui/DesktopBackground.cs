@@ -39,6 +39,10 @@ internal static class DesktopBackground
     static readonly object Gate = new();
     static readonly BitmapImage[] CachedImage = new BitmapImage[1];
     static string _cachedPath;
+    // G-8：同路径换图 / 主题切换要能发现；最多每 2 秒 stat 一次。
+    static DateTime _cachedStamp;
+    static long _cachedLength;
+    static DateTime _nextStat;
 
     static Frame _frame;
     static long _stamp;
@@ -145,7 +149,17 @@ internal static class DesktopBackground
         lock (Gate)
         {
             if (CachedImage[0] is not null && string.Equals(_cachedPath, path, StringComparison.OrdinalIgnoreCase))
-                return CachedImage[0];
+            {
+                if (DateTime.UtcNow < _nextStat) return CachedImage[0];
+                _nextStat = DateTime.UtcNow.AddSeconds(2);
+                try
+                {
+                    var info = new FileInfo(path);
+                    if (info.LastWriteTimeUtc == _cachedStamp && info.Length == _cachedLength)
+                        return CachedImage[0];
+                }
+                catch (Exception ex) { Log.Debug($"读取壁纸元数据失败: {ex.Message}"); }
+            }
         }
 
         try
@@ -162,6 +176,14 @@ internal static class DesktopBackground
             {
                 CachedImage[0] = image;
                 _cachedPath = path;
+                try
+                {
+                    var info = new FileInfo(path);
+                    _cachedStamp = info.LastWriteTimeUtc;
+                    _cachedLength = info.Length;
+                }
+                catch (Exception ex) { Log.Debug($"记录壁纸元数据失败: {ex.Message}"); }
+                _nextStat = DateTime.UtcNow.AddSeconds(2);
             }
             return image;
         }

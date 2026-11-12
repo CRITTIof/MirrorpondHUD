@@ -354,11 +354,31 @@ public static class Json
                 return null;
             }
 
-            foreach (var f in target.GetFields(BindingFlags.Public | BindingFlags.Instance))
+            FieldInfo[] fields = target.GetFields(BindingFlags.Public | BindingFlags.Instance);
+            var known = new HashSet<string>(fields.Length, StringComparer.Ordinal);
+            foreach (var f in fields)
             {
+                known.Add(f.Name);
                 if (!map.TryGetValue(f.Name, out var raw)) continue;
                 try { f.SetValue(inst, Bind(f.FieldType, raw)); }
                 catch (Exception ex) { Log.Warn($"配置字段 {f.Name} 解析失败: {ex.Message}"); }
+            }
+
+            // C-7：未知 / 拼错的键不能完全静默；每个“类型.键”只警告一次。
+            var unknown = new List<string>();
+            foreach (string key in map.Keys)
+                if (!known.Contains(key)) unknown.Add(key);
+            if (unknown.Count > 0) WarnUnknownKeys(target, unknown);
+
+            // P-7：只有可写属性、没有公共字段的 DTO —— 绑定永远拿不到值。
+            if (fields.Length == 0)
+            {
+                foreach (var p in target.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+                {
+                    if (!p.CanWrite || p.GetIndexParameters().Length != 0) continue;
+                    Log.Warn($"配置类型 {target.Name} 只有属性没有公共字段：Json 绑定会静默丢配置（P-7）");
+                    break;
+                }
             }
             return inst;
         }
@@ -367,6 +387,25 @@ public static class Json
         // 以前静默 return null，字段悄悄归零。留一条日志，不再隐瞒。
         Log.Warn($"JSON 绑定未消化：目标={target.Name}  节点={NodeTypeName(node)}");
         return null;
+    }
+
+    static readonly HashSet<string> UnknownKeyWarned = new(StringComparer.Ordinal);
+
+    /// <summary>未知键审计：同一“类型.键”只警告一次，避免每次 Load 刷屏。</summary>
+    static void WarnUnknownKeys(Type target, List<string> keys)
+    {
+        var fresh = new List<string>();
+        lock (UnknownKeyWarned)
+        {
+            foreach (string key in keys)
+                if (UnknownKeyWarned.Add((target.FullName ?? target.Name) + "|" + key)) fresh.Add(key);
+        }
+        if (fresh.Count == 0) return;
+
+        string preview = "";
+        for (int i = 0; i < fresh.Count && i < 5; i++)
+            preview += (i == 0 ? "" : "、") + fresh[i];
+        Log.Warn($"配置节点 {target.Name} 有 {fresh.Count} 个未识别字段（拼错或来自更高版本）: {preview}");
     }
 
     /// <summary>把 JSON 节点的类型翻成可读名（给绑定失败日志用）。</summary>

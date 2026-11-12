@@ -167,11 +167,24 @@ public static class CardRegistry
                 continue;
             }
 
+            ValidateIcon(module);
             modules.Add(module);
             added++;
         }
 
         return modules;
+    }
+
+    /// <summary>
+    /// C-20：ICardModule.Icon 允许任意字符串，但运行期只认 Icons 登记过的码位。
+    /// 不在表里的图标会静默落到正文字体，看起来像“卡片没图标”，这里至少留一条 Warn。
+    /// </summary>
+    static void ValidateIcon(ICardModule module)
+    {
+        string icon = module.Icon ?? "";
+        if (icon.Length == 0) return;
+        if (icon.Length != 1 || !Icons.IsIconChar(icon[0]))
+            Log.Warn($"卡片模块 {module.Kind} 的图标不在 Icons 登记表内，运行时可能回落到正文字体: U+{(int)icon[0]:X4}");
     }
 
     static Dictionary<string, ICardModule> BuildLookup(List<ICardModule> modules)
@@ -205,7 +218,11 @@ public static class CardRegistry
                 if (type.GetConstructor(Type.EmptyTypes) is null) continue;
 
                 var module = (ICardModule)Activator.CreateInstance(type);
-                if (module is not null) found.Add(module);
+                if (module is not null)
+                {
+                    ValidateIcon(module);
+                    found.Add(module);
+                }
             }
             catch (Exception ex)
             {

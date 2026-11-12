@@ -39,17 +39,17 @@ public sealed class Settings
         if (Hotkeys is null) Hotkeys = new HotkeySettings();
         if (Cards is null) Cards = new List<CardSettings>();
 
-        Style.FontSize = Clamp(Style.FontSize, 6, 96);
-        Style.BackgroundOpacity = Clamp(Style.BackgroundOpacity, 0, 1);
-        Style.Padding = Clamp(Style.Padding, 0, 80);
-        Style.LineHeight = Clamp(Style.LineHeight, 0, 120);
+        Style.FontSize = ClampLogged("Style.FontSize", Style.FontSize, 6, 96);
+        Style.BackgroundOpacity = ClampLogged("Style.BackgroundOpacity", Style.BackgroundOpacity, 0, 1);
+        Style.Padding = ClampLogged("Style.Padding", Style.Padding, 0, 80);
+        Style.LineHeight = ClampLogged("Style.LineHeight", Style.LineHeight, 0, 120);
         Style.FontFamily = string.IsNullOrWhiteSpace(Style.FontFamily) ? "Microsoft YaHei UI" : Style.FontFamily.Trim();
-        Style.OutlineThickness = Clamp(Style.OutlineThickness, 0.2, 10);
-        Style.FixedWidth = Clamp(Style.FixedWidth, 0, 4000);
-        Style.ImageOpacity = Clamp(Style.ImageOpacity, 0, 1);
-        Style.BlurRadius = (int)Clamp(Style.BlurRadius, 0, 60);
-        Style.BlurFps = (int)Clamp(Style.BlurFps, 2, 30);
-        Style.IconScale = Clamp(Style.IconScale, 0.5, 3);
+        Style.OutlineThickness = ClampLogged("Style.OutlineThickness", Style.OutlineThickness, 0.2, 10);
+        Style.FixedWidth = ClampLogged("Style.FixedWidth", Style.FixedWidth, 0, 4000);
+        Style.ImageOpacity = ClampLogged("Style.ImageOpacity", Style.ImageOpacity, 0, 1);
+        Style.BlurRadius = (int)ClampLogged("Style.BlurRadius", Style.BlurRadius, 0, 60);
+        Style.BlurFps = (int)ClampLogged("Style.BlurFps", Style.BlurFps, 2, 30);
+        Style.IconScale = ClampLogged("Style.IconScale", Style.IconScale, 0.5, 3);
         Style.CardAlign = NormalizeCardAlign(Style.CardAlign);
         Style.TextAlignment = NormalizeTextAlign(Style.TextAlignment);
         Style.GlassMode = NormalizeGlassMode(Style.GlassMode);
@@ -488,6 +488,15 @@ public sealed class Settings
         if (v < min) return min;
         if (v > max) return max;
         return v;
+    }
+
+    /// <summary>C-10：数值越界也要可见（颜色回落已有日志，数值以前全静默）。</summary>
+    static double ClampLogged(string field, double v, double min, double max)
+    {
+        double clamped = Clamp(v, min, max);
+        if (clamped != v && !(double.IsNaN(v) && double.IsNaN(clamped)))
+            Log.Warn($"设置字段 {field} 越界（{v}），已夹到 [{min}, {max}]");
+        return clamped;
     }
 
     public static bool IsHexColor(string s)
