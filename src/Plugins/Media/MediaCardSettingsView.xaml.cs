@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using MirrorpondHUD.Core;
+using MirrorpondHUD.Ui.Controls;
 using MirrorpondHUD.Ui.Controls.Media;
 
 namespace MirrorpondHUD.Cards;
@@ -19,18 +20,25 @@ namespace MirrorpondHUD.Cards;
 public partial class MediaCardSettingsView : UserControl, INotifyPropertyChanged
 {
     readonly MediaSettings _media;
-    readonly Action _onChanged;
+    readonly CardEditorNotifier _notifier;
+
+    // P-24：DecoderHint 只读这个缓存；同步 File.Exists / 启动探测都挪到显式刷新里。
+    string _decoderHint = "正在检测解码器…（完成后会自动刷新）";
+    int _decoderHintVersion;
 
     public MediaCardSettingsView(CardSettings config, Action onChanged)
     {
         InitializeComponent();
 
         _media = MediaCard.MediaOf(config);
-        _onChanged = onChanged;
+        _notifier = new CardEditorNotifier(onChanged);
         DataContext = this;
 
-        // P1-8：getter 只读缓存；后台预热完成后主动刷新一次提示，不阻塞设置页。
+        // P1-8：后台预热完成后主动刷新一次提示，不阻塞设置页。
         WarmDecodersAsync();
+
+        // P-24：自定义路径是否存在也要放在后台判断，绑定读不能触发 IO。
+        RequestDecoderHintRefresh(0);
     }
 
     async void WarmDecodersAsync()
@@ -38,8 +46,7 @@ public partial class MediaCardSettingsView : UserControl, INotifyPropertyChanged
         try
         {
             await Decoders.WarmUpAsync();
-            if (Dispatcher.CheckAccess()) Raise("DecoderHint");
-            else _ = Dispatcher.BeginInvoke(new Action(() => Raise("DecoderHint")));
+            RequestDecoderHintRefresh(0);
         }
         catch (Exception ex)
         {
@@ -199,7 +206,6 @@ public partial class MediaCardSettingsView : UserControl, INotifyPropertyChanged
             if (MediaSettings.NormalizeDecoder(_media.Decoder) == decoder) return;
             _media.Decoder = decoder;
             Raise("MediaDecoderIndex");
-            Raise("DecoderHint");
         }
     }
 
@@ -213,55 +219,91 @@ public partial class MediaCardSettingsView : UserControl, INotifyPropertyChanged
             if (string.Equals(_media.DecoderPath ?? "", text, StringComparison.OrdinalIgnoreCase)) return;
             _media.DecoderPath = text;
             Raise("MediaDecoderPath");
-            Raise("DecoderHint");
+            // P-24：逐字符输入时只做一次去抖后的后台检查，UNC 路径不会卡住 UI。
+            RequestDecoderHintRefresh(250);
         }
     }
 
-    /// <summary>探测结果：找到哪些解码器、ffmpeg 在哪。</summary>
-    public string DecoderHint
+    /// <summary>
+    /// 探测结果提示（P-24）：只返回缓存值。以前 getter 里同步 File.Exists 并可能启动探测，
+    /// 绑定每次求值都会做 IO；现在由构造、路径变更、预热 / 检测完成触发的显式刷新更新。
+    /// </summary>
+    public string DecoderHint => _decoderHint;
+
+    /// <summary>
+    /// 安排一次提示刷新。<paramref name="debounceMs"/> 用于输入路径时的去抖；
+    /// 版本号保证只有最后一次请求的结果会落到界面。
+    /// </summary>
+    void RequestDecoderHintRefresh(int debounceMs)
     {
-        get
+        int version = ++_decoderHintVersion;
+        _ = RefreshDecoderHintAsync(version, debounceMs);
+    }
+
+    async Task RefreshDecoderHintAsync(int version, int debounceMs)
+    {
+        try
         {
-            if (!string.IsNullOrWhiteSpace(_media.DecoderPath))
-            {
-                return System.IO.File.Exists(_media.DecoderPath)
-                    ? $"使用自定义解码器：{_media.DecoderPath}"
-                    : $"自定义解码器不存在：{_media.DecoderPath}";
-            }
+            if (debounceMs > 0) await Task.Delay(debounceMs);
+            if (version != _decoderHintVersion) return;
 
-            List<DecoderInfo> found = Decoders.Cached;
-            if (found.Count == 0)
-            {
-                // 审阅 §18：首启缓存为空只是“还没探测完”，不能直接报“没找到”；
-                // 预热结束后 WarmDecodersAsync 会主动刷新这个提示。
-                if (!Decoders.HasResult)
-                {
-                    if (!Decoders.IsDetecting) Decoders.WarmUp();   // 上一轮探测异常结束则重试
-                    return "正在检测解码器…（完成后会自动刷新）";
-                }
+            // 路径在 UI 线程取快照：后台只做 File.Exists 与读 Decoders 的线程安全缓存。
+            string decoderPath = _media.DecoderPath;
+            string hint = await Task.Run(() => BuildDecoderHint(decoderPath));
+            if (version != _decoderHintVersion) return;
 
-                return "没找到 ffmpeg / mpv / VLC；视频只能用 Windows 自带的 Media Foundation";
-            }
-
-            DecoderInfo ffmpeg = null;
-            var others = new System.Text.StringBuilder();
-            foreach (DecoderInfo info in found)
-            {
-                if (info.Frames && ffmpeg is null) { ffmpeg = info; continue; }
-                if (others.Length > 0) others.Append("、");
-                others.Append(info.Kind);
-            }
-
-            if (ffmpeg is null)
-                return $"找到 {others}，但没有 ffmpeg；视频仍走系统解码（可在上面指定 ffmpeg.exe）";
-
-            string label = string.IsNullOrWhiteSpace(ffmpeg.Version)
-                ? "FFmpeg"
-                : $"FFmpeg {ffmpeg.Version}";
-            string text = $"已找到 {label}（{ffmpeg.Path}）";
-            if (others.Length > 0) text += $"；另有 {others}";
-            return text;
+            string previous = _decoderHint;
+            _decoderHint = hint;
+            if (!string.Equals(previous, hint, StringComparison.Ordinal)) _notifier.Notify("DecoderHint");
         }
+        catch (Exception ex)
+        {
+            Log.Warn($"刷新解码器提示失败: {ex.Message}");
+        }
+    }
+
+    /// <summary>计算提示文案；可能包含一次 File.Exists，只允许在后台线程调用（P-24）。</summary>
+    static string BuildDecoderHint(string decoderPath)
+    {
+        if (!string.IsNullOrWhiteSpace(decoderPath))
+        {
+            return System.IO.File.Exists(decoderPath)
+                ? $"使用自定义解码器：{decoderPath}"
+                : $"自定义解码器不存在：{decoderPath}";
+        }
+
+        List<DecoderInfo> found = Decoders.Cached;
+        if (found.Count == 0)
+        {
+            // 审阅 §18：首启缓存为空只是“还没探测完”，不能直接报“没找到”；
+            // 预热结束后 WarmDecodersAsync 会主动刷新这个提示。
+            if (!Decoders.HasResult)
+            {
+                if (!Decoders.IsDetecting) Decoders.WarmUp();   // 上一轮探测异常结束则重试
+                return "正在检测解码器…（完成后会自动刷新）";
+            }
+
+            return "没找到 ffmpeg / mpv / VLC；视频只能用 Windows 自带的 Media Foundation";
+        }
+
+        DecoderInfo ffmpeg = null;
+        var others = new System.Text.StringBuilder();
+        foreach (DecoderInfo info in found)
+        {
+            if (info.Frames && ffmpeg is null) { ffmpeg = info; continue; }
+            if (others.Length > 0) others.Append("、");
+            others.Append(info.Kind);
+        }
+
+        if (ffmpeg is null)
+            return $"找到 {others}，但没有 ffmpeg；视频仍走系统解码（可在上面指定 ffmpeg.exe）";
+
+        string label = string.IsNullOrWhiteSpace(ffmpeg.Version)
+            ? "FFmpeg"
+            : $"FFmpeg {ffmpeg.Version}";
+        string text = $"已找到 {label}（{ffmpeg.Path}）";
+        if (others.Length > 0) text += $"；另有 {others}";
+        return text;
     }
 
     /// <summary>重新扫一遍 PATH（设置页的「检测」按钮）；P1-8：异步探测，不冻结设置页。</summary>
@@ -276,8 +318,7 @@ public partial class MediaCardSettingsView : UserControl, INotifyPropertyChanged
         catch (Exception ex)
         {
             Log.Warn($"重新检测解码器失败: {ex.Message}");
-            try { Raise("DecoderHint"); }
-            catch (Exception raiseEx) { Log.Warn($"刷新解码器提示失败: {raiseEx.Message}"); }
+            RequestDecoderHintRefresh(0);
         }
     }
 
@@ -285,7 +326,7 @@ public partial class MediaCardSettingsView : UserControl, INotifyPropertyChanged
     {
         List<DecoderInfo> found = await Decoders.DetectAsync(true);
         Log.Info($"手动重新检测解码器：{Decoders.Describe(found)}");
-        Raise("DecoderHint");
+        RequestDecoderHintRefresh(0);
     }
 
     // ==================== 按钮 ====================
@@ -350,11 +391,12 @@ public partial class MediaCardSettingsView : UserControl, INotifyPropertyChanged
 
     void DetectDecodersClick(object sender, RoutedEventArgs e) => RefreshDecoders();
 
-    public event PropertyChangedEventHandler PropertyChanged;
-
-    void Raise(string name)
+    public event PropertyChangedEventHandler PropertyChanged
     {
-        _onChanged?.Invoke();
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+        add => _notifier.PropertyChanged += value;
+        remove => _notifier.PropertyChanged -= value;
     }
+
+    // P-25：通知逻辑统一在 CardEditorNotifier，这里只保留旧调用点的薄封装。
+    void Raise(string name) => _notifier.Raise(name);
 }

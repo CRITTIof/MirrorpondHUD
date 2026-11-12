@@ -1,9 +1,11 @@
 using System;
+using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using MirrorpondHUD.Core;
+using MirrorpondHUD.Ui.Controls;
 
 namespace MirrorpondHUD.Cards;
 
@@ -21,7 +23,9 @@ internal static class CommandCardEditor
     public static FrameworkElement Create(CardSettings config, Action onChanged)
     {
         CommandSettings command = CommandCard.CommandOf(config);
-        var root = new StackPanel();
+        var notifier = new CardEditorNotifier(onChanged);
+        var pending = new List<Action>();
+        var root = new CommandEditorPanel(pending);
 
         var preview = new TextBlock
         {
@@ -37,7 +41,7 @@ internal static class CommandCardEditor
         {
             config.SetExtras(CommandCard.SettingsKey, command);
             preview.Text = PromptOf(command);
-            if (onChanged is not null) onChanged();
+            notifier.MarkChanged();
         };
 
         root.Children.Add(Title("命令行工具"));
@@ -131,8 +135,8 @@ internal static class CommandCardEditor
             "单条命令的输出超过这个行数就只留最后几行；面板本身可以滚动，这个值只是兜底上限");
         var timeout = NumberBox(command.TimeoutSeconds.ToString("0"), 56, "命令超过这个秒数就中止");
 
-        BindInt(maxLines, () => command.MaxLines, v => { command.MaxLines = v; commit(); });
-        BindInt(timeout, () => command.TimeoutSeconds, v => { command.TimeoutSeconds = v; commit(); });
+        BindInt(maxLines, () => command.MaxLines, v => { command.MaxLines = v; commit(); }, pending);
+        BindInt(timeout, () => command.TimeoutSeconds, v => { command.TimeoutSeconds = v; commit(); }, pending);
 
         var limits = new WrapPanel { Orientation = Orientation.Horizontal };
         limits.Children.Add(new TextBlock { Text = "输出最多保留", VerticalAlignment = VerticalAlignment.Center });
@@ -158,6 +162,25 @@ internal static class CommandCardEditor
         return root;
     }
 
+    /// <summary>
+    /// P-25：设置区块根元素顺带实现 <see cref="ICardEditorCommit"/>。
+    /// 纯代码构建的 StackPanel 没有 XAML 基类限制，可以直接把“提交数字框草稿”暴露给宿主。
+    /// </summary>
+    sealed class CommandEditorPanel : StackPanel, ICardEditorCommit
+    {
+        readonly List<Action> _pending;
+
+        public CommandEditorPanel(List<Action> pending)
+        {
+            _pending = pending;
+        }
+
+        public void CommitPendingEdits()
+        {
+            foreach (Action apply in _pending) apply();
+        }
+    }
+
     static string PromptOf(CommandSettings command)
     {
         try { return CommandRunner.BuildPrompt(command); }
@@ -178,13 +201,16 @@ internal static class CommandCardEditor
     static string ShellFromIndex(int index) => index == 1 ? "powershell" : index == 2 ? "pwsh" : index == 3 ? "custom" : "cmd";
 
     /// <summary>数字框：回车或失焦时提交；填的不是数字就还原成当前值。</summary>
-    static void BindInt(TextBox box, Func<int> get, Action<int> set)
+    static void BindInt(TextBox box, Func<int> get, Action<int> set, List<Action> pending)
     {
         Action apply = () =>
         {
             if (int.TryParse((box.Text ?? "").Trim(), out var value)) set(value);
             else box.Text = get().ToString("0");
         };
+
+        // P-25：用户打完数字直接点「确定」时数字框可能还没失焦，保存前由宿主统一补提交。
+        pending.Add(apply);
 
         box.LostFocus += (s, e) => apply();
         box.KeyDown += (s, e) => { if (e.Key == Key.Enter) apply(); };

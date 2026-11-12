@@ -3,6 +3,10 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
+// P-27 / B-12：本文件物理上属于中转站插件（src/Plugins/DropStation），随
+// MirrorpondHUD.Cards.DropStation.dll 一起编译，不是宿主 / UiKit 的共享组件；
+// 命名空间沿用 MirrorpondHUD.Core 只是历史位置，第三方插件无法引用它。
+// 需要通用任务队列时应复制到自己的插件（或等宿主把它提升为公开契约）。
 namespace MirrorpondHUD.Core;
 
 public enum CardJobState

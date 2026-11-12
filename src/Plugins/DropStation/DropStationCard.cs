@@ -253,7 +253,7 @@ public sealed class StationState
 internal sealed class StationEditor : StackPanel
 {
     readonly CardSettings _config;
-    readonly Action _onChanged;
+    readonly CardEditorNotifier _notifier;
     readonly ComboBox _mode;
     readonly TextBox _directory;
     readonly Button _browse;
@@ -265,7 +265,7 @@ internal sealed class StationEditor : StackPanel
     public StationEditor(CardSettings config, Action onChanged)
     {
         _config = config;
-        _onChanged = onChanged;
+        _notifier = new CardEditorNotifier(onChanged);
 
         Orientation = Orientation.Vertical;
         Margin = new Thickness(0, 4, 0, 6);
@@ -399,8 +399,8 @@ internal sealed class StationEditor : StackPanel
 
         UpdateEnabled(station.Mode);
 
-        Action handler = _onChanged;
-        if (handler is not null) handler();
+        // P-25：通知 / 标脏统一走 CardEditorNotifier。
+        _notifier.MarkChanged();
     }
 
     void UpdateEnabled(string mode)

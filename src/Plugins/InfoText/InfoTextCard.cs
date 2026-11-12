@@ -22,6 +22,21 @@ public sealed class InfoTextPreset
 }
 
 /// <summary>
+/// 信息卡自己的设置（P-23），存在 <c>CardSettings.Extras["infotext"]</c>。
+///
+/// 为什么需要它：<see cref="CardSettings.Preset"/> 是带默认值 "metrics" 的公共字段，
+/// 旧 JSON 里没有这个键时会被默认值填上，无法区分“用户明确选了系统信息”和
+/// “字段根本不存在”。这里记一份显式预设：旧配置没有这一项时只按内容兜底推断一次，
+/// 之后用户手改内容不会再静默换预设。
+///
+/// 必须是 public 实例字段：Json.cs 只反射 public 字段（AGENTS §4.1）。
+/// </summary>
+public sealed class InfoTextExtras
+{
+    public string Preset = "";
+}
+
+/// <summary>
 /// 信息与文本卡：把原来的系统信息 / 时钟 / 按键 / 文本四种文字卡合并成一种，
 /// 用卡片自己的 `Preset` 选择预设。四种预设都是模板渲染，所以内容、占位符、
 /// 图标倍率、描边等文字能力完全一致。
@@ -29,6 +44,9 @@ public sealed class InfoTextPreset
 public sealed class InfoTextCard : CardModuleBase, ICardSettingsModule,
                                 ICardPresetSource, ICardSelfTest, ICardDefaultProvider
 {
+    /// <summary>信息卡设置存在 <see cref="CardSettings.Extras"/> 里的键名。</summary>
+    public const string SettingsKey = "infotext";
+
     static readonly List<InfoTextPreset> PresetList = new()
     {
         new InfoTextPreset("metrics", "系统信息",
@@ -99,13 +117,30 @@ public sealed class InfoTextCard : CardModuleBase, ICardSettingsModule,
     // ==================== 模块自己的设置 ====================
 
     /// <summary>
-    /// 预设归一化：内容恰好等于某个预设的默认内容时，把预设纠回那一个；
-    /// 未知 / 空值归到系统信息。
+    /// 预设归一化（P-23）：Extras 里有显式记录就以它为准；旧配置没有记录时，
+    /// 才按内容兜底推断一次并写回，之后手改内容不会再换预设。
     /// </summary>
     public void InitializeCard(CardSettings config)
     {
         if (config is null) return;
-        config.Preset = InferPreset(config.Preset, config.Content);
+
+        InfoTextExtras extras = config.ExtrasAs<InfoTextExtras>(SettingsKey);
+        string stored = (extras.Preset ?? "").Trim();
+        if (IsKnownPreset(stored))
+        {
+            // 用户切换过预设：内容只当模板，绝不反推预设。
+            config.Preset = NormalizePreset(stored);
+            return;
+        }
+
+        // 旧配置（2.45.1 之前没有 Extras["infotext"].Preset）：兜底推断一次并写回。
+        string inferred = InferPreset(config.Preset, config.Content);
+        if (!string.Equals(inferred, NormalizePreset(config.Preset), StringComparison.Ordinal))
+            Log.Info($"信息卡预设按内容兜底推断并写回: {config.Id} {config.Preset} → {inferred}");
+
+        config.Preset = inferred;
+        extras.Preset = inferred;
+        config.SetExtras(SettingsKey, extras);
     }
 
     public override string Render(CardRenderContext context)
@@ -133,6 +168,11 @@ public sealed class InfoTextCard : CardModuleBase, ICardSettingsModule,
         string id = NormalizePreset(presetId);
         config.Preset = id;
         config.Content = DefaultFor(id);
+
+        // P-23：用户切换预设是唯一会改写显式 Preset 的入口。
+        InfoTextExtras extras = config.ExtrasAs<InfoTextExtras>(SettingsKey);
+        extras.Preset = id;
+        config.SetExtras(SettingsKey, extras);
     }
 
     public string RunSelfTest()
@@ -141,7 +181,44 @@ public sealed class InfoTextCard : CardModuleBase, ICardSettingsModule,
         if (InferPreset("clock", DefaultFor("metrics")) != "metrics") return "默认内容没有纠正预设";
         if (DefaultFor("keys") != "KEY {keys}") return "按键预设默认内容不一致";
         if (ContractPresets.Count != 4) return "预设契约数量不是 4";
+
+        // P-23：显式记录存在时，内容撞上别的预设默认文本也不能改预设。
+        var explicitCard = new CardSettings
+        {
+            Id = "selftest-preset-explicit",
+            Kind = "infotext",
+            Preset = "clock",
+            Content = DefaultFor("clock")
+        };
+        ApplyPreset(explicitCard, "clock");                 // 模拟用户切换过预设
+        explicitCard.Content = DefaultFor("keys");          // 之后手改内容
+        InitializeCard(explicitCard);
+        if (explicitCard.Preset != "clock") return "显式预设被内容兜底覆盖";
+
+        // 旧配置（没有 Extras 记录）只兜底推断一次：内容就是按键模板时落到 keys。
+        var legacyCard = new CardSettings
+        {
+            Id = "selftest-preset-legacy",
+            Kind = "infotext",
+            Preset = "metrics",
+            Content = DefaultFor("keys")
+        };
+        InitializeCard(legacyCard);
+        if (legacyCard.Preset != "keys") return "旧配置没有按内容兜底推断预设";
+        if (legacyCard.ExtrasAs<InfoTextExtras>(SettingsKey).Preset != "keys") return "兜底推断没有写回显式 Preset";
+
         return null;
+    }
+
+    /// <summary>判断是不是四个合法预设之一（用于区分“显式记录”和“空 / 未知”）。</summary>
+    static bool IsKnownPreset(string value)
+    {
+        string key = (value ?? "").Trim().ToLowerInvariant();
+        foreach (InfoTextPreset preset in PresetList)
+        {
+            if (preset.Id == key) return true;
+        }
+        return false;
     }
 
     /// <summary>未知 / 空的预设一律归到系统信息。</summary>
@@ -156,8 +233,8 @@ public sealed class InfoTextCard : CardModuleBase, ICardSettingsModule,
     }
 
     /// <summary>
-    /// 预设归一化：内容恰好等于某个预设的默认内容时，把预设纠回那一个；
-    /// 未知 / 空值归到系统信息。
+    /// 旧配置的兜底推断（P-23）：内容恰好等于某个预设的默认内容时返回那一个；
+    /// 未知 / 空预设归到系统信息。只应在 Extras 里没有显式 Preset 时调用。
     /// </summary>
     public static string InferPreset(string preset, string content)
     {

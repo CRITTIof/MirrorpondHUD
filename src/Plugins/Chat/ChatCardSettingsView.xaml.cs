@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using MirrorpondHUD.Core;
+using MirrorpondHUD.Ui.Controls;
 
 namespace MirrorpondHUD.Cards;
 
@@ -16,7 +17,7 @@ namespace MirrorpondHUD.Cards;
 public partial class ChatCardSettingsView : UserControl, INotifyPropertyChanged, ICardEditorCommit, ICardEditorPendingEdits
 {
     readonly ChatSettings _chat;
-    readonly Action _onChanged;
+    readonly CardEditorNotifier _notifier;
     string _apiKeyDraft = "";
 
     public ChatCardSettingsView(CardSettings config, Action onChanged)
@@ -24,7 +25,7 @@ public partial class ChatCardSettingsView : UserControl, INotifyPropertyChanged,
         InitializeComponent();
 
         _chat = ChatCard.ChatOf(config);
-        _onChanged = onChanged;
+        _notifier = new CardEditorNotifier(onChanged);
         DataContext = this;
     }
 
@@ -185,11 +186,12 @@ public partial class ChatCardSettingsView : UserControl, INotifyPropertyChanged,
 
     void ClearChatApiKeyClick(object sender, RoutedEventArgs e) => ClearChatApiKey();
 
-    public event PropertyChangedEventHandler PropertyChanged;
-
-    void Raise(string name)
+    public event PropertyChangedEventHandler PropertyChanged
     {
-        _onChanged?.Invoke();
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+        add => _notifier.PropertyChanged += value;
+        remove => _notifier.PropertyChanged -= value;
     }
+
+    // P-25：通知逻辑统一在 CardEditorNotifier，这里只保留旧调用点的薄封装。
+    void Raise(string name) => _notifier.Raise(name);
 }

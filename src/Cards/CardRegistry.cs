@@ -22,7 +22,21 @@ public static class CardRegistry
     static List<ICardModule> _builtins;
     static readonly Dictionary<string, ICardModule> _placeholders =
         new(StringComparer.OrdinalIgnoreCase);
-    static bool _initialized;
+
+    /// <summary>
+    /// 空 Kind 的统一回退（P-20）：以前 Get / ResolveKind 各写一份字面量，容易漂移。
+    /// 有模块时优先用排序后的第一个模块，只有零模块时才需要这个 Kind 做占位文案。
+    /// </summary>
+    internal const string FallbackKind = "infotext";
+
+    /// <summary>
+    /// 零模块时的占位模块单例（P-20）：渲染路径会反复取空 Kind，不能每次 new。
+    /// </summary>
+    static readonly UnavailableCardModule NoModulesModule = new(FallbackKind);
+
+    // P-21 / L-16：双检锁的发布标志必须 volatile。项目支持 ARM64，弱内存序下
+    // 没有这个保证可能看到 _initialized == true 而 _lookup 仍是 null。
+    static volatile bool _initialized;
 
     /// <summary>全部已注册的卡片模块（按添加菜单顺序；初始化后为只读快照）。</summary>
     public static IList<ICardModule> Modules
@@ -83,7 +97,7 @@ public static class CardRegistry
 
         string key = (kind ?? "").Trim();
         if (key.Length == 0)
-            return _modules.Count == 0 ? new UnavailableCardModule("infotext") : _modules[0];
+            return _modules.Count == 0 ? NoModulesModule : _modules[0];
 
         lock (Sync)
         {
@@ -114,7 +128,7 @@ public static class CardRegistry
         string trimmed = (kind ?? "").Trim();
         if (TryGet(trimmed, out var module)) return module.Kind;
         if (trimmed.Length > 0) return trimmed;
-        return _modules.Count == 0 ? "infotext" : _modules[0].Kind;
+        return _modules.Count == 0 ? FallbackKind : _modules[0].Kind;
     }
 
     static void EnsureInitialized()
