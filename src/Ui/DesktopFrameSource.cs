@@ -135,6 +135,16 @@ internal sealed class DesktopFrameSource : IDisposable
     public bool IsDead => _dead;
 
     /// <summary>
+    /// 请求区域是否完全落在桌面复制覆盖的输出内（目前只有主屏输出）。
+    /// 越界是可预期的正常情况（卡片在副屏 / 负坐标），调用方据此继续走 GDI，
+    /// 但不能把「越界」当成源故障去释放 / 重建 D3D 设备（G-10）。
+    /// </summary>
+    public bool Covers(int left, int top, int width, int height)
+        => width > 0 && height > 0
+           && left >= 0 && top >= 0
+           && left + width <= _screenWidth && top + height <= _screenHeight;
+
+    /// <summary>
     /// 按设置里的「取图方式」（Auto / Gpu / Cpu）创建桌面复制。
     /// 失败只表示「这一轮用不了」，调用方照常退回 GDI 读屏，不会没画面。
     /// </summary>

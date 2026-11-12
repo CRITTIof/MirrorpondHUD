@@ -28,6 +28,7 @@ public sealed class OverlayController : IDisposable
     HotkeyRouter _hotkeyRouter;
     EventWaitHandle _activation;
     Thread _activationThread;
+    DispatcherTimer _topmostTimer;
     volatile bool _disposed;
     bool _overlayVisible;
 
@@ -191,9 +192,21 @@ public sealed class OverlayController : IDisposable
     }
 
     public OverlayController(Settings settings, List<string> args)
+        : this(settings, args, null)
+    {
+    }
+
+    /// <summary>
+    /// G-12：宿主把「拿到互斥后立即创建」的唤醒事件转交进来；保留上面的公开两参构造，
+    /// 不改变 OverlayController 的公共成员形状。
+    /// </summary>
+    internal OverlayController(Settings settings, List<string> args, EventWaitHandle activation)
     {
         _settings = settings;
         _args = args ?? new List<string>();
+        // 命名事件由 App 在拿到互斥后立即创建并转交（冷启动窗口期第二实例也能找到）；
+        // StartActivationListener 只负责起等待线程，句柄缺失时再补一次。
+        _activation = activation;
         _layout = new CardLayoutCoordinator(_cards, () => _settings, () => _disposed,
                                             Dispatcher.CurrentDispatcher);
         _render = new RenderScheduler(new RenderHostAdapter(this), Dispatcher.CurrentDispatcher);
@@ -253,6 +266,7 @@ public sealed class OverlayController : IDisposable
         Log.Info($"卡片已创建，数量={_cards.Count}，可见={_overlayVisible}，置顶={_settings.Overlay.Topmost}，锁定={_settings.Overlay.Locked}");
 
         _render.Start();
+        Safe("叠层置顶调度", StartTopmostScheduler);
 
         Safe("键盘钩子", StartKeyboardHook);
         Safe("采样引擎", StartEngine);
@@ -347,6 +361,7 @@ public sealed class OverlayController : IDisposable
         if (ReferenceEquals(slot, _command.Card)) _command.Reset();
 
         ReleaseContent(slot);
+        // 释放路径：卡片窗口可能已随设置重建 / 退出被关闭，Close 失败无后续影响。
         try { slot.Window.Close(); } catch { }
     }
 
@@ -648,9 +663,76 @@ public sealed class OverlayController : IDisposable
         _tray.Start();
     }
 
+    /// <summary>
+    /// G-13：全局共享一个置顶调度，2.5 秒遍历一次所有可见叠层。
+    /// 每张卡自己持有定时器时，N 张卡 = 每 2.5 秒 N 次无条件 SetWindowPos + 重摆底板；
+    /// 现在窗口只在 Z 序真的变化 / topmost 丢失时才动作。
+    /// </summary>
+    void StartTopmostScheduler()
+    {
+        _topmostTimer = new DispatcherTimer(DispatcherPriority.Background)
+        {
+            Interval = TimeSpan.FromMilliseconds(2500)
+        };
+        _topmostTimer.Tick += (s, e) => RefreshTopmost();
+        _topmostTimer.Start();
+    }
+
+    void RefreshTopmost()
+    {
+        if (_disposed) return;
+
+        bool topmost = _settings.Overlay.Topmost;
+
+        // 复制一份再遍历：遍历期间不会有卡片增删（同一 UI 线程），但显式快照更抗未来改动。
+        CardSlot[] snapshot = _cards.ToArray();
+        foreach (CardSlot slot in snapshot)
+        {
+            OverlayWindow window = slot is null ? null : slot.Window;
+            if (window is null || !window.IsVisible) continue;
+
+            if (topmost) window.RefreshTopmostIfNeeded();
+
+            // 无论是否置顶都保留“降级后的玻璃自动重试”：桌面亚克力因瞬态黑屏失败后，
+            // 冷却结束要靠这里重新尝试；正常状态该方法直接返回，不反复 Apply 材质。
+            window.RetryBackdropIfDegraded();
+        }
+    }
+
+    /// <summary>
+    /// G-12：命名唤醒事件。App 在拿到单实例互斥后立即调用它创建；
+    /// 本控制器只在这里兜底（例如单独构造控制器的测试 / 截图模式）。
+    /// </summary>
+    internal const string ActivationEventName = "Local\\MirrorpondHUD.Activate";
+
+    /// <summary>创建失败返回 null，并把原因写进 <paramref name="error"/>（调用方必须落日志）。</summary>
+    internal static EventWaitHandle CreateActivationEvent(out string error)
+    {
+        try
+        {
+            error = "";
+            return new EventWaitHandle(false, EventResetMode.AutoReset, ActivationEventName);
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+            return null;
+        }
+    }
+
     void StartActivationListener()
     {
-        _activation = new EventWaitHandle(false, EventResetMode.AutoReset, "Local\\MirrorpondHUD.Activate");
+        if (_activation is null)
+        {
+            // 句柄缺失时再补一次；仍失败就明确记录“第二实例唤不醒本进程”，不能静默跳过。
+            _activation = CreateActivationEvent(out string error);
+            if (_activation is null)
+            {
+                Log.Warn($"单实例唤醒不可用（创建命名事件失败）: {error}");
+                return;
+            }
+        }
+
         _activationThread = new Thread(() =>
         {
             while (!_disposed)
@@ -816,6 +898,16 @@ public sealed class OverlayController : IDisposable
         if (_disposed) return;
         _disposed = true;
 
+        // G-13：共享置顶调度随控制器一起停，不能留一个每 2.5 秒遍历已关闭窗口的定时器。
+        if (_topmostTimer is not null)
+        {
+            try { _topmostTimer.Stop(); } catch (Exception ex) { Log.Debug($"停止置顶调度失败: {ex.Message}"); }
+            _topmostTimer = null;
+        }
+
+        // 以下 try/catch { } 全部处在释放路径：渲染 / 主题 / 激活事件 / 采样 / 钩子 / 托盘
+        // 可能已经随窗口关闭或上一次清理释放，重复 Dispose / Close / Set 不会留下半初始化状态；
+        // 在退出流程里上报这些失败只会掩盖真正原因，因此保留空 catch。
         try { _render.Dispose(); } catch { }
         try { _intro.Dispose(); } catch { }
 

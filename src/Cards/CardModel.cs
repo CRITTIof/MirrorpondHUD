@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using MirrorpondHUD.Core;
+using MirrorpondHUD.Ui;
 
 namespace MirrorpondHUD.Cards;
 
@@ -14,6 +15,11 @@ public static class CardModel
     public static void Normalize(Settings settings)
     {
         if (settings is null) return;
+
+        // G-14：显示器持久身份改为设备名（Screen.AllScreens 的序号会随热插拔 / 驱动重排变化）。
+        // 这里是 Load / Save 都会经过的宿主归一化点：旧配置的序号在这里一次性迁移成设备名，
+        // 保存时也顺带把序号刷成当前枚举值；找不到设备则 Warn 并回退主屏，不静默钳制。
+        ScreenGeometry.Resolve(settings.Overlay);
 
         if (settings.Cards is null) settings.Cards = new List<CardSettings>();
         if (settings.Cards.Count == 0) settings.Cards = CreateDefaultCards();

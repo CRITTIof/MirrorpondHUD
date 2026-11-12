@@ -595,7 +595,10 @@ public partial class SettingsWindow
             s.Behavior.CursorStyle = CursorTag();
             s.Behavior.CursorBlink = CursorBlinkCheck.IsChecked == true;
 
-            s.Overlay.Monitor = Math.Max(0, MonitorCombo.SelectedIndex);
+            int monitor = Math.Max(0, MonitorCombo.SelectedIndex);
+            s.Overlay.Monitor = monitor;
+            // G-14：下拉框选的是当前枚举序号，落盘时同时记下设备名作为持久身份。
+            s.Overlay.MonitorDevice = ScreenGeometry.DeviceNameOf(monitor);
             s.Overlay.X = ParseDouble(XBox.Text, s.Overlay.X);
             s.Overlay.Y = ParseDouble(YBox.Text, s.Overlay.Y);
 

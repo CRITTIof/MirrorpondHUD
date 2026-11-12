@@ -136,6 +136,49 @@ internal static class GlassCapture
     // 这个缓存是进程级的，必须串行访问；注释里“只在 UI 线程”的假设不成立（G-3）。
     static readonly object FramesSync = new();
 
+    // ==================== 共享候选窗口（G-6） ====================
+    // 兼容取样每张卡各有自己的定时器（GlassRuntime），以前每张卡每个 tick 都重新
+    // EnumWindows 全表枚举一次。候选窗口与卡片矩形无关，这里按短 TTL 共享一份快照，
+    // 各卡只按自己的矩形过滤；刷新发生在采集任务里（调用方已不在 UI 线程）。
+    sealed class Candidate
+    {
+        public IntPtr Window;
+        public RECT Rect;
+    }
+
+    const int CandidatesTtlMs = 120;
+    const int MaxCandidates = 256;
+
+    static readonly List<Candidate> Candidates = new(64);
+    static readonly object CandidatesSync = new();
+    static long _candidatesStamp;
+
+    /// <summary>
+    /// 与候选窗口同一份快照的虚拟屏矩形。以前每张卡在采集任务里各调一次
+    /// <c>Screen.AllScreens</c>（WinForms 缓存并非为多线程并发调用设计），
+    /// 现在跟候选列表一起在同一把锁内刷新、读取。
+    /// </summary>
+    static RECT _virtualScreen;
+
+    static readonly LogThrottle _enumFailure = new("枚举卡片后方窗口", 60000);
+
+    // pid → 进程名缓存：截图 / 录屏工具的过滤要按进程名判断，而每帧对每个候选
+    // 开一次进程句柄在内核上是可观开销。进程名几乎不变，5 秒 TTL 足够。
+    struct ProcessNameEntry
+    {
+        public string Name;
+        public long Stamp;
+    }
+
+    const int ProcessNameTtlMs = 5000;
+
+    static readonly Dictionary<uint, ProcessNameEntry> ProcessNames = new();
+    static readonly object ProcessNamesSync = new();
+    static readonly LogThrottle _processNameFailure = new("解析窗口进程名", 60000);
+    static readonly LogThrottle _ownPidFailure = new("读取本进程 pid", 60000);
+    static readonly LogThrottle _classNameFailure = new("读取窗口类名", 60000);
+    static readonly LogThrottle _virtualScreenFailure = new("读取虚拟屏幕尺寸", 60000);
+
     // ==================== 找卡片后面的窗口 ====================
 
     /// <summary>
@@ -146,57 +189,98 @@ internal static class GlassCapture
     public static List<Layer> FindLayers(int left, int top, int width, int height)
     {
         var layers = new List<Layer>(MaxLayers);
-
-        uint self = GetOwnProcessId();
         int right = left + width;
         int bottom = top + height;
+        RECT screen;
+
+        lock (CandidatesSync)
+        {
+            RefreshCandidatesLocked();
+
+            // EnumWindows 的顺序就是从上层到下层，因此这里取到的就是盖住卡片的最上面几层。
+            // 矩形是枚举时刻的快照（最多晚一个 TTL）；窗口在这期间挪动时，PrintWindow
+            // 仍会抓到最新内容，只是命中测试可能差一帧——对模糊背景无感。
+            foreach (Candidate candidate in Candidates)
+            {
+                if (layers.Count >= MaxLayers) break;
+
+                RECT rect = candidate.Rect;
+                if (rect.Right <= left || rect.Left >= right) continue;
+                if (rect.Bottom <= top || rect.Top >= bottom) continue;
+
+                layers.Add(new Layer { Window = candidate.Window, Rect = rect });
+            }
+
+            screen = _virtualScreen;
+        }
+
+        // 最后垫一层合成出来的桌面壁纸（覆盖整个虚拟屏幕），保证卡片压在桌面上也有内容。
+        if (screen.Width > 0 && screen.Height > 0)
+            layers.Add(new Layer { Window = IntPtr.Zero, Rect = screen, Desktop = true });
+
+        return layers;
+    }
+
+    /// <summary>
+    /// 刷新共享候选窗口（调用方必须持有 <see cref="CandidatesSync"/>）。
+    /// 桌面 / 拖动影像 / 截图浮层 / 本进程窗口的过滤与卡片矩形无关，在这里做一次，
+    /// 所有卡片的 FindLayers 都只做矩形相交。
+    /// </summary>
+    static void RefreshCandidatesLocked()
+    {
+        long now = Environment.TickCount64;
+        if (_candidatesStamp != 0 && now - _candidatesStamp <= CandidatesTtlMs) return;
+
+        // 先推进时间戳：枚举本身失败时也要等一个 TTL 再重试，不能每个 tick 都刷一条 WARN。
+        _candidatesStamp = now;
+
+        uint self = GetOwnProcessId();
+        var fresh = new List<Candidate>(64);
+        bool ok = true;
 
         try
         {
             EnumWindows((hwnd, param) =>
             {
                 if (hwnd == IntPtr.Zero) return true;
+                if (fresh.Count >= MaxCandidates) return false;
                 if (!IsWindowVisible(hwnd)) return true;
                 if (DwmGetWindowAttribute(hwnd, DwmwaCloaked, out int cloaked, sizeof(int)) == 0 && cloaked != 0)
                     return true;
 
                 if (!GetWindowRect(hwnd, out var rect)) return true;
                 if (rect.Width < 16 || rect.Height < 16) return true;
-                if (rect.Right <= left || rect.Left >= right) return true;
-                if (rect.Bottom <= top || rect.Top >= bottom) return true;
+
+                GetWindowThreadProcessId(hwnd, out var pid);
+                if (pid == self) return true;
 
                 string cls = ClassNameOf(hwnd);
 
                 // 桌面（Progman / WorkerW / SHELLDLL_DefView）不再用 PrintWindow 抓：
                 // 壁纸由 DWM 绘制，抓到的经常是黑的；拖图标时还会让桌面重绘。
-                // 统一换成下面合成的壁纸层。
+                // 统一换成 FindLayers 末尾合成的壁纸层。
                 if (IsDesktopClass(cls)) return true;
 
                 // 拖动桌面图标 / 文件时，Explorer 会挂一个跟着鼠标走的拖动影像窗口，
                 // 它盖在卡片区域上时会把玻璃变成一块扭动的图标残影，直接忽略。
                 if (IsDragImageClass(cls)) return true;
 
-                if (layers.Count >= MaxLayers) return true;
-
-                GetWindowThreadProcessId(hwnd, out var pid);
-                if (pid == self) return true;
                 if (IsCaptureOverlay(cls, pid)) return true;
 
-                layers.Add(new Layer { Window = hwnd, Rect = rect });
+                fresh.Add(new Candidate { Window = hwnd, Rect = rect });
                 return true;
             }, IntPtr.Zero);
         }
         catch (Exception ex)
         {
-            Log.Warn($"枚举卡片后方窗口失败: {ex.Message}");
+            ok = false;
+            _enumFailure.Failure(ex.Message);
         }
 
-        // 最后垫一层合成出来的桌面壁纸（覆盖整个虚拟屏幕），保证卡片压在桌面上也有内容。
-        RECT screen = VirtualScreenRect();
-        if (screen.Width > 0 && screen.Height > 0)
-            layers.Add(new Layer { Window = IntPtr.Zero, Rect = screen, Desktop = true });
-
-        return layers;
+        Candidates.Clear();
+        Candidates.AddRange(fresh);
+        _virtualScreen = VirtualScreenRect();
+        if (ok) _enumFailure.Success();
     }
 
     /// <summary>所有显示器并起来的虚拟屏幕（物理像素）。</summary>
@@ -212,8 +296,11 @@ internal static class GlassCapture
 
             return new RECT { Left = union.Left, Top = union.Top, Right = union.Right, Bottom = union.Bottom };
         }
-        catch
+        catch (Exception ex)
         {
+            // 拿不到虚拟屏矩形就没有桌面壁纸层，卡片压在桌面上会取不到画面；
+            // 这是可见降级，不能静默（节流避免每帧一条）。
+            _virtualScreenFailure.Failure(ex.Message);
             return default(RECT);
         }
     }
@@ -225,7 +312,12 @@ internal static class GlassCapture
             var buffer = new StringBuilder(128);
             if (GetClassName(hwnd, buffer, 128) > 0) return buffer.ToString();
         }
-        catch { }
+        catch (Exception ex)
+        {
+            // 类名只用于过滤（桌面 / 拖动影像 / 截图浮层），取不到就会少一层过滤，
+            // 但仍能继续取样；记一条节流日志留下线索。
+            _classNameFailure.Failure($"hwnd={hwnd}: {ex.Message}");
+        }
         return "";
     }
 
@@ -276,15 +368,56 @@ internal static class GlassCapture
     static string ProcessNameOf(uint pid)
     {
         if (pid == 0) return "";
+
+        long now = Environment.TickCount64;
+        lock (ProcessNamesSync)
+        {
+            if (ProcessNames.TryGetValue(pid, out var cached) && now - cached.Stamp <= ProcessNameTtlMs)
+                return cached.Name;
+        }
+
+        string name;
         try
         {
             using (Process process = Process.GetProcessById((int)pid))
-                return (process.ProcessName ?? "").Trim().ToLowerInvariant();
+                name = (process.ProcessName ?? "").Trim().ToLowerInvariant();
         }
-        catch
+        catch (ArgumentException)
         {
-            return "";
+            // 窗口在枚举与查询之间关闭 / 进程已退出：这是正常竞态，不是故障。
+            // 负结果同样进缓存，避免每帧对同一个已退出的 pid 反复开进程句柄。
+            name = "";
         }
+        catch (InvalidOperationException)
+        {
+            // 进程在 GetProcessById 之后、读 ProcessName 之前退出：同样按竞态处理。
+            name = "";
+        }
+        catch (Exception ex)
+        {
+            _processNameFailure.Failure($"pid={pid}: {ex.Message}");
+            name = "";
+        }
+
+        lock (ProcessNamesSync)
+        {
+            // pid 会复用，缓存不能无限增长；超过上限时先清过期项，全新鲜就整体清空。
+            if (ProcessNames.Count >= 256)
+            {
+                var stale = new List<uint>();
+                foreach (KeyValuePair<uint, ProcessNameEntry> pair in ProcessNames)
+                {
+                    if (now - pair.Value.Stamp > ProcessNameTtlMs) stale.Add(pair.Key);
+                }
+
+                if (stale.Count == 0) ProcessNames.Clear();
+                else foreach (uint key in stale) ProcessNames.Remove(key);
+            }
+
+            ProcessNames[pid] = new ProcessNameEntry { Name = name, Stamp = now };
+        }
+
+        return name;
     }
 
     static uint _ownPid;
@@ -293,7 +426,13 @@ internal static class GlassCapture
     {
         if (_ownPid != 0) return _ownPid;
         try { _ownPid = (uint)Process.GetCurrentProcess().Id; }
-        catch { _ownPid = 0; }
+        catch (Exception ex)
+        {
+            // 拿不到自己的 pid 就过滤不掉本进程窗口，玻璃会把叠层自己拍进去；
+            // 只按节流记一条，且不缓存失败结果，下一轮还会重试。
+            _ownPidFailure.Failure(ex.Message);
+            _ownPid = 0;
+        }
         return _ownPid;
     }
 

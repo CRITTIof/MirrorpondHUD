@@ -109,6 +109,28 @@ internal static class GlassFeed
     static int _gdiRounds;
     static bool _pushed;
 
+    /// <summary>
+    /// 上一轮实际是不是走 DXGI 桌面复制读到的帧（G-10）。拖动补帧的最小间隔按它算：
+    /// 以前只看 <c>_frameSource is not null</c>，副屏 / 越界时源还在、每轮实际是 18ms 的 GDI，
+    /// 却仍按 16ms 允许补帧，等于把 UI 线程占掉一半。
+    /// </summary>
+    static bool _lastRoundUsedDup;
+
+    /// <summary>上一次记录过的「设备重建失败 / 不用桌面复制」原因，用来只记状态变化（G-10）。</summary>
+    static string _frameSourceReason = "";
+
+    /// <summary>D3D 设备 / 桌面复制对象重建失败：状态迁移 + 60 秒补记，避免副屏或驱动异常时刷屏。</summary>
+    static LogThrottle _frameSourceFailure = new("玻璃取图设备重建", 60000);
+
+    /// <summary>共享取样位图（DIB）创建失败：以前静默返回，表现为玻璃停在旧帧且日志为空。</summary>
+    static readonly LogThrottle _surfaceFailure = new("玻璃取图共享位图", 60000);
+
+    // G-11：熔断只在「采集层失败」时触发，并带恢复滞回——连续 30 轮（10fps 约 3 秒）
+    // 采集正常才重新武装，避免锁屏 / 越界边缘在 3s→15s 冷却之间反复降级。
+    static bool _fuseTripped;
+    static long _fuseTripHealthyRounds;
+    const int FuseClearRounds = 30;
+
     /// <summary>只增不减：给「失败后还要不要重试桌面亚克力」做环境恢复判断。</summary>
     public static long HealthyRounds => _healthyRounds;
 
@@ -158,6 +180,13 @@ internal static class GlassFeed
             {
                 if (_pump is not null) _pump.Stop();
                 ReleaseSharedSurface();
+                // G-9 / G-11：最后一张卡卸下时把熔断与「已推送」状态一起复位，
+                // 下次重新挂接不能沿用上一次环境的失败结论。
+                _blankRounds = 0;
+                _fuseTripped = false;
+                _fuseTripHealthyRounds = 0;
+                _lastRoundUsedDup = false;
+                _pushed = false;
             }
         }
 
@@ -165,6 +194,7 @@ internal static class GlassFeed
         // 会一直活着（GPU 常醒）。ReleaseFrameSource 内部自带空值判断。
         if (empty) ReleaseFrameSource();
 
+        // 释放路径：窗口可能已经关闭 / 内容层已释放，清玻璃失败没有后续影响。
         try { window.Surface.ClearGlass(); } catch { }
     }
 
@@ -191,6 +221,11 @@ internal static class GlassFeed
             ReleaseFrameSource();
             // 取图方式被用户改了：旧退避计划随旧源一起作废，新方式立刻尝试。
             _frameSourceDeadUntil = DateTime.MinValue;
+            // 用户显式换了后端，上一次环境的失败结论不再适用：重建失败日志与熔断都重新计。
+            _frameSourceReason = "";
+            _frameSourceFailure = new LogThrottle("玻璃取图设备重建", 60000);
+            _fuseTripped = false;
+            _blankRounds = 0;
         }
 
         if (lookChanged)
@@ -221,7 +256,9 @@ internal static class GlassFeed
         }
 
         DateTime now = DateTime.UtcNow;
-        double minGapMs = _frameSource is not null ? 16.0 : 55.0;
+        // G-10：按「上一轮实际走了哪条后端」算间隔。源对象在但区域越界时，真实成本仍是
+        // GDI 的约 18ms；以前这里只看 _frameSource 是否为 null，会把拖动补帧开到 16ms。
+        double minGapMs = _lastRoundUsedDup ? 16.0 : 55.0;
         if (!force && (now - _lastRequest).TotalMilliseconds < minGapMs) return false;
 
         _lastRequest = now;
@@ -366,7 +403,13 @@ internal static class GlassFeed
         PerformanceProbe.GlassFrame();
 
         // 共享图按 128 px 取整，免得开场动画每长一行字就重建一次 DIB（实际只用到左上角 width × height）。
-        if (!EnsureSharedSurface(RoundUp(width), RoundUp(height))) return;
+        if (!EnsureSharedSurface(RoundUp(width), RoundUp(height)))
+        {
+            // 位图都建不出来这一轮什么都画不了；以前完全静默，表现为玻璃冻在旧帧。
+            _surfaceFailure.Failure($"创建共享取样位图失败（{width}x{height}）");
+            return;
+        }
+        _surfaceFailure.Success();
 
         IntPtr screen = GetDC(IntPtr.Zero);
         if (screen == IntPtr.Zero)
@@ -374,11 +417,16 @@ internal static class GlassFeed
             // P1-7：GetDC 失败这一轮什么都做不了（连 GDI 位图都画不了），
             // 节流器保证这类持续性失败不会每秒刷一条日志。
             _gdiFailure.Failure("GetDC(IntPtr.Zero) 返回 null");
+            // G-11：拿不到屏幕 DC 是明确的采集失败证据，按与 BitBlt 失败相同的 3 轮熔断。
+            MaybeTripFuse(snapshot, "整叠卡片连续 3 轮拿不到屏幕 DC（GetDC 失败）");
             return;
         }
 
         System.Diagnostics.Stopwatch clock = DiagnoseRaw ? System.Diagnostics.Stopwatch.StartNew() : null;
         bool fromDuplication = false;
+        // G-11：这一轮「采集层」是不是真的失败（只有它能证明读不到屏幕）。
+        // 全黑像素不是证据——全屏黑视频 / 深色壁纸都是合法画面。
+        bool captureFailed = false;
 
         try
         {
@@ -402,6 +450,13 @@ internal static class GlassFeed
                     _frameSourceDeadUntil = now.AddMilliseconds(backoffMs);
                     Log.Info($"桌面复制源已判死并释放，{Math.Round(backoffMs / 1000)} 秒后重试重建；期间回退 GDI 读屏");
                 }
+                else if (!ok && !source.Covers(left, top, width, height))
+                {
+                    // G-10：越界不是源故障。DXGI 只覆盖主屏输出，卡片在副屏 / 负坐标时每轮都会
+                    // 走到这里；以前不刷新闲置计时 → 5 秒后释放、下一轮重建 D3D 设备并再刷日志。
+                    // 这里保鲜闲置计时，让同一个健康源继续复用（副屏内容照常走 GDI）。
+                    _frameSourceIdle = DateTime.UtcNow;
+                }
             }
 
             if (!fromDuplication)
@@ -413,6 +468,7 @@ internal static class GlassFeed
                 else
                 {
                     // P1-7：BitBlt 失败以前完全静默 —— 卡片会一直显示上一轮的旧图。
+                    captureFailed = true;
                     _gdiFailure.Failure($"BitBlt 失败（GetLastError={Marshal.GetLastWin32Error()}）");
                 }
             }
@@ -423,6 +479,8 @@ internal static class GlassFeed
         }
 
         if (fromDuplication) _gdiFailure.Success();
+        // 拖动补帧的间隔按“这一轮实际用了哪条后端”决定（G-10）。
+        _lastRoundUsedDup = fromDuplication;
 
         if (clock is not null)
         {
@@ -446,26 +504,46 @@ internal static class GlassFeed
         int black = 0;
         foreach (Target target in snapshot) Render(target, left, top, ref rendered, ref black);
 
-        // 保险丝：只有「这一轮所有能取到画面的卡片全是黑的」才计一轮，连续 3 轮才判定读不到屏幕。
-        // 以前每张卡各自累加一个全局计数器：一轮里连续三张移出屏幕的卡片就能误判成
-        // 「连续 3 帧全黑」，把第 3 张卡单独弹回系统亚克力（迭代顺序决定哪张倒霉）。
+        // G-11：保险丝判据从「平均亮度 ≤ 2」改成「采集层失败」。
+        // 全黑内容是合法画面（全屏黑视频 / 深色壁纸 / 应用黑屏过场），以前 3 轮（默认 10fps
+        // 约 300ms）就判定读不到屏幕，整叠降级后进入 3s→15s 振荡。
+        // 真正能证明读不到屏幕的只有：GetDC 失败、BitBlt 失败、DXGI 读帧失败且 GDI 也失败。
         if (rendered == 0)
         {
             _blankRounds = 0;
             return;
         }
 
-        if (black < rendered)
+        if (!captureFailed)
         {
             _blankRounds = 0;
             _healthyRounds++;
+            // 恢复滞回：熔断过一次后，要连续 30 轮（约 3 秒）采集正常才重新武装，
+            // 否则「刚恢复又失败」会立刻再降级，用户看到玻璃反复跳。
+            if (_fuseTripped && _healthyRounds - _fuseTripHealthyRounds >= FuseClearRounds)
+                _fuseTripped = false;
             return;
         }
 
+        // 已经降级过：等恢复滞回，不重复触发 ReportUnavailable（日志也只在状态迁移时记）。
+        MaybeTripFuse(snapshot, black >= rendered
+            ? "整叠卡片连续 3 轮读不到屏幕（采集 API 持续失败，画面同时全黑）：截屏被拦截 / 锁屏 / 屏幕关闭"
+            : "整叠卡片连续 3 轮读不到屏幕（采集 API 持续失败）：保留上一帧并等待恢复");
+    }
+
+    /// <summary>
+    /// G-11：采集层确认失败时累计熔断（3 轮），已熔断则等待 <see cref="FuseClearRounds"/> 轮
+    /// 正常采集后再武装。只允许在「采集 API 报错 / 拿不到屏幕」时调用，像素全黑不在此列。
+    /// </summary>
+    static void MaybeTripFuse(Target[] snapshot, string reason)
+    {
+        if (_fuseTripped) return;
         if (++_blankRounds < 3) return;
+
         _blankRounds = 0;
-        ReportUnavailable(snapshot,
-            "整叠卡片连续 3 轮取样全黑：当前环境读不到屏幕内容（截屏被拦截 / 锁屏 / 屏幕关闭）");
+        _fuseTripped = true;
+        _fuseTripHealthyRounds = _healthyRounds;
+        ReportUnavailable(snapshot, reason);
     }
 
     /// <summary>
@@ -754,11 +832,26 @@ internal static class GlassFeed
             // 新源建成了，退避计划作废。
             _frameSourceDeadUntil = DateTime.MinValue;
             _frameSourceNextTry = DateTime.MinValue;
+            _frameSourceReason = "";
+            // 之前重建一直失败时补一条“恢复”日志（节流器内部保证只在状态迁移时记）。
+            _frameSourceFailure.Success();
+            // 只有真的重建了才记一条；以前 5 秒一次的释放 / 重建循环会把这里刷满（G-10）。
             Log.Info("玻璃取图改用 DXGI 桌面复制（GPU 加速，不再用 GDI 读屏）");
         }
-        else
+        else if (!string.Equals(reason, _frameSourceReason, StringComparison.Ordinal))
         {
-            Log.Info($"玻璃取图用 GDI 读屏：{reason}");
+            // G-10：重建失败以前每 30 秒照样打一条 Info（副屏 / 驱动异常时刷屏）。
+            // 现在只在原因变化时记一条；持续失败由 LogThrottle 按 60 秒补一条“仍失败”。
+            _frameSourceReason = reason ?? "";
+            if (string.Equals(_source, "Cpu", StringComparison.Ordinal))
+            {
+                // 用户自己选了 CPU 读屏，这不是故障，按 Info 记一次即可。
+                Log.Info($"玻璃取图用 GDI 读屏：{_frameSourceReason}");
+            }
+            else
+            {
+                _frameSourceFailure.Failure(_frameSourceReason);
+            }
         }
 
         return _frameSource;
@@ -769,6 +862,8 @@ internal static class GlassFeed
         // 释放后下一次需要时允许立即重建（空闲释放是正常路径，不是失败）。
         _frameSourceNextTry = DateTime.MinValue;
         if (_frameSource is null) return;
+        // 释放路径：设备可能已随源判死释放，Dispose 失败不会留下可用状态；
+        // 引用马上被清空，下一次按需重建，因此这里不需要上报。
         try { _frameSource.Dispose(); } catch { }
         _frameSource = null;
         _frameSourceIdle = DateTime.MinValue;
@@ -840,8 +935,8 @@ internal static class GlassFeed
     // ==================== 保险 ====================
 
     /// <summary>
-    /// 这一块取样是不是全黑。整轮全黑才计入保险丝（见 <see cref="CaptureAll"/>），
-    /// 单张卡后面的内容本来就是黑的不能算环境失败。
+    /// 这一块取样是不是全黑。G-11 起只用于日志 / 诊断描述（画面确实全黑时附在降级原因里），
+    /// 不再单独作为「读不到屏幕」的判据——采集层是否失败见 <see cref="CaptureAll"/> 的 captureFailed。
     /// </summary>
     static bool IsBlackFrame(byte[] buffer, int w, int h)
     {

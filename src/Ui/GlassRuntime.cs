@@ -296,15 +296,10 @@ internal sealed class GlassRuntime : IDisposable
         // Schema 7：兼容取样与桌面取样共用同一个模糊半径（像素）。
         double blur = settings.Style.BlurRadius;
 
-        // 卡片后面可能压着好几个窗口，甚至只压着桌面：
-        // FindLayers 会按 z 序收集（桌面垫底），Grab 再逐点选最上层的那一层。
-        List<GlassCapture.Layer> layers = GlassCapture.FindLayers(left, top, width, height);
-        if (layers.Count == 0)
-        {
-            _window.Surface.ClearGlass();
-            return;
-        }
-
+        // G-6：FindLayers 会枚举全表窗口、逐候选开进程句柄，是内核级开销，不能留在 UI 线程。
+        // 以前它就在这儿同步调用，N 张卡 = 每帧 N 次全表枚举。现在和 Grab 一起丢进采集任务；
+        // 候选窗口列表由 GlassCapture 按短 TTL 共享，各卡只按自己的矩形过滤。
+        // 层列表允许晚一帧（≤120ms），对模糊背景无感。
         long gen = ++_captureGen;
         _captureStartedUtc = DateTime.UtcNow;
         _glassBusy = true;
@@ -312,9 +307,19 @@ internal sealed class GlassRuntime : IDisposable
         Task.Run(() =>
         {
             BitmapSource image = null;
+            bool noLayers = false;
             try
             {
-                image = GlassCapture.Grab(layers, left, top, width, height, blur);
+                List<GlassCapture.Layer> layers = GlassCapture.FindLayers(left, top, width, height);
+                if (layers.Count == 0)
+                {
+                    // 连桌面层都没拼出来（虚拟屏尺寸读不到）：这一轮什么都取不到。
+                    noLayers = true;
+                }
+                else
+                {
+                    image = GlassCapture.Grab(layers, left, top, width, height, blur);
+                }
             }
             catch (Exception ex)
             {
@@ -331,6 +336,12 @@ internal sealed class GlassRuntime : IDisposable
                     // 审阅 §21：Closed 只停了定时器，Start 之前投递的抓屏完成后仍会写 UI。
                     // 窗口关闭后到达的在途结果直接丢弃。
                     if (_window.GlassClosed) return;
+                    if (noLayers)
+                    {
+                        // 采集层为空：清掉旧玻璃，别停在过期画面上（与以前在 UI 线程提前返回的行为一致）。
+                        _window.Surface.ClearGlass();
+                        return;
+                    }
                     if (image is not null)
                     {
                         _window.Surface.SetGlass(image);
@@ -381,6 +392,8 @@ internal sealed class GlassRuntime : IDisposable
     {
         if (_glassTimer is not null)
         {
+            // 释放路径：Dispatcher 可能已随窗口关闭而停转，Stop 抛出的异常不影响任何状态，
+            // 定时器引用下面会被清空，因此这里的空 catch 是安全的。
             try { _glassTimer.Stop(); } catch { }
             _glassTimer = null;
         }

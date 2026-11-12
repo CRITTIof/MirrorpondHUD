@@ -8,12 +8,19 @@ internal static class Native
 {
     public const int GwlExStyle = -20;
 
+    /// <summary>GetWindow 命令：直接压在目标窗口上面的那个窗口。</summary>
+    public const int GwHwndPrev = 3;
+
+    public const int WsExTopmost = 0x00000008;
     public const int WsExTransparent = 0x00000020;
     public const int WsExToolWindow = 0x00000080;
     public const int WsExNoActivate = 0x08000000;
     public const int WsExLayered = 0x00080000;
 
     public static readonly IntPtr HwndTopmost = new(-1);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetWindow(IntPtr hWnd, int uCmd);
 
     public const uint SwpNoMove = 0x0002;
     public const uint SwpNoSize = 0x0001;

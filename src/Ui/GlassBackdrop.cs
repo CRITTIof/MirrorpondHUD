@@ -68,6 +68,14 @@ internal sealed class GlassBackdrop : IDisposable
     bool _visible;
     int _gradientColor = DefaultGradientColor;
 
+    // G-13：上一次真正摆过的几何 / 卡片句柄。常驻卡片每 2.5 秒的置顶调度会走到 Follow，
+    // 几何与「是否仍紧贴卡片下方」都没变时不重摆，消掉绝大多数 SetWindowPos。
+    IntPtr _lastCardHandle;
+    int _lastLeft;
+    int _lastTop;
+    int _lastWidth;
+    int _lastHeight;
+
     /// <summary>
     /// 亚克力的色调。本机探针结论：DWM 的 alpha 基本被忽略，
     /// 真正决定观感的是 GradientColor 的 RGB —— 玻璃的**亮度**来自这个颜色，
@@ -250,6 +258,7 @@ internal sealed class GlassBackdrop : IDisposable
     {
         if (_handle == IntPtr.Zero) return;
 
+        // 释放路径：窗口可能已被系统销毁，DestroyWindow 失败无后续影响，句柄下面立即置零。
         try { DestroyWindow(_handle); }
         catch { }
 
@@ -354,9 +363,24 @@ internal sealed class GlassBackdrop : IDisposable
 
         // 插到卡片正下方（hWndInsertAfter = 卡片），同时摆位置 / 显示，
         // 一次 SetWindowPos 把 z 序和几何都定下来，避免拖动时闪。
+        //
+        // G-13：几何没变、且底板仍然紧贴卡片下方（GW_HWNDPREV == 卡片）时不重摆。
+        // 共享置顶调度只在 Z 序真的变了才调用；即便如此，这里再用相邻性兜底：
+        // 上方若插进了别的窗口，GW_HWNDPREV 就不再是卡片，立刻重新插回卡片正下方。
+        bool sameGeometry = _visible
+                            && cardHandle == _lastCardHandle
+                            && left == _lastLeft && top == _lastTop
+                            && pixelWidth == _lastWidth && pixelHeight == _lastHeight;
+        if (sameGeometry && Native.GetWindow(_handle, Native.GwHwndPrev) == cardHandle) return;
+
         SetWindowPos(_handle, cardHandle, left, top, pixelWidth, pixelHeight,
                      SwpNoActivate | SwpNoOwnerZorder | SwpShowWindow);
         _visible = true;
+        _lastCardHandle = cardHandle;
+        _lastLeft = left;
+        _lastTop = top;
+        _lastWidth = pixelWidth;
+        _lastHeight = pixelHeight;
     }
 
     void SetShown(bool show)

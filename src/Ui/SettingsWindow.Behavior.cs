@@ -79,7 +79,16 @@ public partial class SettingsWindow
             XBox.Text = x.ToString("0", CultureInfo.InvariantCulture);
             YBox.Text = y.ToString("0", CultureInfo.InvariantCulture);
             if (MonitorCombo.Items.Count > 0)
-                MonitorCombo.SelectedIndex = Math.Max(0, Math.Min(monitor, MonitorCombo.Items.Count - 1));
+            {
+                // G-14：序号越界不能静默钳到最后一台（那是另一台显示器）。这里只是显示同步，
+                // 回退到主屏并在状态行之外留一条日志，持久身份仍由设备名决定。
+                if (monitor < 0 || monitor >= MonitorCombo.Items.Count)
+                {
+                    Log.Warn($"同步显示器下拉框时序号 {monitor} 越界（共 {MonitorCombo.Items.Count} 台），显示为主屏");
+                    monitor = 0;
+                }
+                MonitorCombo.SelectedIndex = monitor;
+            }
         }
         finally
         {

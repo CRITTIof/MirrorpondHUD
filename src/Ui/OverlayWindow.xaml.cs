@@ -15,8 +15,13 @@ namespace MirrorpondHUD.Ui;
 public partial class OverlayWindow : Window
 {
     Settings _settings;
-    DispatcherTimer _topmostTimer;
     bool _handleReady;
+
+    /// <summary>
+    /// G-13：置顶后「直接压在本窗口上面的那个窗口」。共享置顶调度每 2.5 秒比对它，
+    /// 没变就完全不碰 SetWindowPos；只有它变了（新窗口插到上方）或 topmost 标志丢了才重摆。
+    /// </summary>
+    IntPtr _lastZPrev;
     bool _closed;
     bool _commandMode;
     IntPtr _previousForeground;
@@ -142,7 +147,6 @@ public partial class OverlayWindow : Window
         Closed += (s, e) =>
         {
             _closed = true;
-            StopTimers();
             StopDragPoll();
             StopPositionMotion();
             CancelContentMotion();
@@ -159,25 +163,6 @@ public partial class OverlayWindow : Window
         _glassRuntime.UpdateGlassCapture();
         UpdateClickThrough();
         EnsureTopmost();
-
-        _topmostTimer = new DispatcherTimer(DispatcherPriority.Background)
-        {
-            Interval = TimeSpan.FromMilliseconds(2500)
-        };
-        _topmostTimer.Tick += (s, args) =>
-        {
-            if (_settings.Overlay.Topmost && IsVisible)
-            {
-                EnsureTopmost();            // 内部会重摆底板
-            }
-            else if (IsVisible && _settings.Style.Acrylic)
-            {
-                // 非置顶时也要给一次机会：桌面亚克力因瞬态黑屏失败过以后，
-                // 冷却结束靠这里自动重试，而不是等用户改设置。
-                _glassRuntime.UpdateBackdrop();
-            }
-        };
-        _topmostTimer.Start();
     }
 
     public void Apply(Settings settings, string text, CardSettings config = null)
@@ -281,6 +266,7 @@ public partial class OverlayWindow : Window
         UpdateClickThrough();
         EnsureTopmost();
 
+        // 还原前台失败只影响焦点落点，不改变本窗口状态；下面马上清空记录，因此安全。
         try
         {
             if (_previousForeground != IntPtr.Zero && _previousForeground != new WindowInteropHelper(this).Handle)
@@ -321,7 +307,8 @@ public partial class OverlayWindow : Window
 
         try
         {
-            ScreenInfo screen = ScreenGeometry.Get(_settings.Overlay.Monitor);
+            // G-14：设备名优先，避免热插拔 / 枚举顺序变化后把卡片放到另一台屏。
+            ScreenInfo screen = ScreenGeometry.Get(_settings.Overlay.Monitor, _settings.Overlay.MonitorDevice);
             if (screen is null) return;
 
             // 锚点是「目标工作区左上角起的 DIP」；物理位置必须按目标屏自己的 DPI 换算。
@@ -457,6 +444,7 @@ public partial class OverlayWindow : Window
     {
         if (_moveTimer is null) return;
 
+        // 释放路径：计时器可能已随 Dispatcher 关闭，Stop 失败无后续影响，引用下面立即清空。
         try { _moveTimer.Stop(); } catch { }
         _moveTimer = null;
     }
@@ -658,12 +646,52 @@ public partial class OverlayWindow : Window
         Native.SetWindowPos(hwnd, Native.HwndTopmost, 0, 0, 0, 0,
             Native.SwpNoMove | Native.SwpNoSize | Native.SwpNoActivate | Native.SwpNoOwnerZorder);
 
+        // G-13：记下置顶后「直接压在我们上面的窗口」，共享调度据此判断 Z 序有没有真的变化。
+        _lastZPrev = Native.GetWindow(hwnd, Native.GwHwndPrev);
+
         // 卡片重新置顶后，底板要重新插回它正下方（别的置顶窗口可能插进来）。
         _glassRuntime.UpdateBackdrop();
 
         // 置顶之后自己的子窗口（视频）会被压下去，通知内容层重新摆好。
         Action handler = RaisedTopmost;
         if (handler is not null) handler();
+    }
+
+    /// <summary>
+    /// G-13：共享置顶调度每 2.5 秒问一次「真的需要重新置顶吗」。
+    /// 绝大多数时候 Z 序没变；只有扩展样式丢了 topmost、或上方插进了新窗口时才调 SetWindowPos。
+    /// 以前每张卡每 2.5 秒无条件置顶一次，还会连带重摆底板、通知富内容子窗口，全是冗余。
+    /// </summary>
+    internal void RefreshTopmostIfNeeded()
+    {
+        if (!_handleReady || !IsVisible) return;
+        IntPtr hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero) return;
+
+        int ex = Native.GetExStyle(hwnd);
+        if ((ex & Native.WsExTopmost) == 0)
+        {
+            // 被别的程序 / 系统清掉了 topmost 标志：这是真的没置顶，必须补一次。
+            EnsureTopmost();
+            return;
+        }
+
+        // GW_HWNDPREV 是直接压在卡片上面的窗口。它没变 → Z 序没变，什么都不用做。
+        if (Native.GetWindow(hwnd, Native.GwHwndPrev) != _lastZPrev) EnsureTopmost();
+    }
+
+    /// <summary>
+    /// G-13：非置顶时原来每 2.5 秒无条件重跑一次玻璃决策（为了在瞬态黑屏失败后自动重试）。
+    /// 现在只在确实没有底板（降级到兼容取样 / 尚未启用）时才重试，正常状态不再反复 Apply 材质。
+    /// </summary>
+    internal void RetryBackdropIfDegraded()
+    {
+        if (!_settings.Style.Acrylic) return;
+
+        GlassBackdropKind kind = _glassRuntime.State.Kind;
+        if (kind == GlassBackdropKind.DesktopAcrylic || kind == GlassBackdropKind.SystemAcrylic) return;
+
+        _glassRuntime.UpdateBackdrop();
     }
 
     // ==================== 毛玻璃 ====================
@@ -676,20 +704,6 @@ public partial class OverlayWindow : Window
     /// 这个委托在 GlassBackdrops 里 attach 时按窗口类型取得，所以入口必须留在窗口上。
     /// </summary>
     internal void OnDesktopAcrylicUnavailable(string reason) => _glassRuntime.OnDesktopAcrylicUnavailable(reason);
-
-    /// <summary>
-    /// 窗口关闭时停掉置顶刷新定时器（P2-4）。原来只 ReleaseBackdrop，
-    /// 定时器仍每 2.5 秒把已关闭的窗口整棵可视树钉在 Dispatcher 上。
-    /// 玻璃取图定时器随 <see cref="GlassRuntime.Dispose"/> 一起停。
-    /// </summary>
-    void StopTimers()
-    {
-        if (_topmostTimer is not null)
-        {
-            try { _topmostTimer.Stop(); } catch { }
-            _topmostTimer = null;
-        }
-    }
 
     /// <summary>
     /// 是否允许按住卡片移动整叠。卡片内容自己处理拖动时（画板、卡片内拖拽排序）宿主把它关掉，
@@ -916,7 +930,10 @@ public partial class OverlayWindow : Window
         // 左键还按着就重新抓回来继续拖，不能把“跨屏”误判成“松手”。
         if (IsLeftButtonDown() && IsVisible)
         {
-            try { CaptureMouse(); } catch { }
+            // 跨屏丢捕获后这次重抓失败会中止拖动（状态机还停在 _dragging）；
+            // 不弹提示但必须留日志，否则用户只看到“拖到一半不动了”而无从归因。
+            try { CaptureMouse(); }
+            catch (Exception ex) { Log.Debug($"跨屏拖动重新捕获鼠标失败（拖动将结束）: {ex.Message}"); }
             return;
         }
 
