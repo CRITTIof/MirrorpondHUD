@@ -86,7 +86,11 @@ public sealed class DropStationCard : RichCardModuleBase,
     public void ApplyStyle(FrameworkElement content, CardRenderContext context)
     {
         var view = content as StationView;
-        if (view is not null && context is not null) view.ApplyStyle(context.Settings);
+        if (view is not null && context is not null)
+        {
+            view.ApplyStyle(context.Settings);
+            CardTextStyle.ApplyOutline(context.Settings?.Style, content);
+        }
     }
 
     public string RunSelfTest()

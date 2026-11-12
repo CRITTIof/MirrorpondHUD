@@ -50,6 +50,9 @@ public partial class SettingsWindow
         BindNumberBox(ContourSmoothValue, ContourSmoothSlider, "0");
         BindNumberBox(ContourMinLoopValue, ContourMinLoopSlider, "0");
         BindNumberBox(ContourSpeedValue, ContourSpeedSlider, "0.00");
+        BindNumberBox(TextParticleSizeValue, TextParticleSizeSlider, "0.0");
+        BindNumberBox(TextParticleCountValue, TextParticleCountSlider, "0");
+        BindNumberBox(TextParticleSpeedValue, TextParticleSpeedSlider, "0.0");
         BindCliBoxes();
     }
 

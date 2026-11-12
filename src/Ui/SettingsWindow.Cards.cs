@@ -7,6 +7,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using MirrorpondHUD.Cards;
 using MirrorpondHUD.Core;
 using MirrorpondHUD.Ui.Controls;
@@ -88,7 +89,7 @@ public partial class SettingsWindow
     void AddCardClick(object sender, RoutedEventArgs e)
     {
         var menu = new ContextMenu();
-        HudMenuStyle.Apply(menu);
+        HudMenuStyle.Apply(menu, _settingsDark);
 
         foreach (ICardModule module in CardRegistry.Modules)
         {
@@ -181,7 +182,7 @@ public partial class SettingsWindow
         int index = _working.Cards.IndexOf(editor.Config);
 
         var menu = new ContextMenu();
-        HudMenuStyle.Apply(menu);
+        HudMenuStyle.Apply(menu, _settingsDark);
         var up = new MenuItem { Header = "上移", IsEnabled = index > 0 };
         up.Click += (s, a) => MoveCard(editor, -1);
         var down = new MenuItem { Header = "下移", IsEnabled = index >= 0 && index < _working.Cards.Count - 1 };
@@ -258,12 +259,18 @@ public partial class SettingsWindow
 
     // ==================== 拖动排序 ====================
 
+    readonly Dictionary<string, TranslateTransform> _dragShifts = new();
+    FrameworkElement _dragSourceContainer;
+    double _dragStride;
+    int _dragInsertIndex = -1;
+
     /// <summary>只有左侧六点抓手能启动拖拽；标题栏其它区域仍然点击展开 / 折叠。</summary>
     void CardDragHandleDown(object sender, MouseButtonEventArgs e)
     {
         var element = sender as FrameworkElement;
         _dragEditor = element is null ? null : element.Tag as CardEditor;
         _dragStart = e.GetPosition(this);
+        _dragInsertIndex = -1;
 
         // 捕获鼠标，否则指针离开小抓手后 PreviewMouseMove 不再进来，拖不起来。
         if (element is not null) element.CaptureMouse();
@@ -280,15 +287,41 @@ public partial class SettingsWindow
         var element = sender as FrameworkElement;
         if (element is not null && element.IsMouseCaptured) element.ReleaseMouseCapture();
 
-        // 跟随浮层：用当前卡片容器生成 VisualBrush，拖动时贴在鼠标右下。
-        _dragAdornerLayer = AdornerLayer.GetAdornerLayer(CardList);
         var card = CardList.ItemContainerGenerator.ContainerFromItem(_dragEditor) as FrameworkElement;
-        if (_dragAdornerLayer is not null && card is not null)
+        FrameworkElement header = FindCardHeader(card);
+        if (card is not null && header is not null)
         {
-            _dragAdorner = new CardDragAdorner(CardList, card);
-            _dragAdorner.SetPosition(new Point(now.X + 14, now.Y + 14));
-            _dragAdornerLayer.Add(_dragAdorner);
-            CardList.GiveFeedback += OnCardDragGiveFeedback;
+            // 跟随层只取标题栏快照：视觉上就是一张折叠卡，不再把展开的设置项拖来拖去。
+            ImageSource ghost = CardDragAdorner.Capture(header);
+            double headerHeight = Math.Max(30, header.ActualHeight);
+            _dragSourceContainer = card;
+            _dragStride = headerHeight + 10;
+
+            _dragAdornerLayer = AdornerLayer.GetAdornerLayer(CardList);
+            Point listPoint = e.GetPosition(CardList);
+            if (_dragAdornerLayer is not null && ghost is not null)
+            {
+                _dragAdorner = new CardDragAdorner(CardList, ghost, Math.Max(96, card.ActualWidth), headerHeight);
+                _dragAdorner.SetPosition(new Point(listPoint.X + 14, listPoint.Y + 14));
+                _dragAdornerLayer.Add(_dragAdorner);
+                CardList.GiveFeedback += OnCardDragGiveFeedback;
+            }
+
+            // 源卡片收成标题栏高度：列表腾出紧凑的空位，下面的卡片平滑上移。
+            card.ClipToBounds = true;
+            var fade = new DoubleAnimation(1.0, 0.0, TimeSpan.FromMilliseconds(110))
+            {
+                FillBehavior = FillBehavior.HoldEnd
+            };
+            card.BeginAnimation(UIElement.OpacityProperty, fade);
+            var shrink = new DoubleAnimation(card.ActualHeight, headerHeight, TimeSpan.FromMilliseconds(140))
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+                FillBehavior = FillBehavior.HoldEnd
+            };
+            card.BeginAnimation(FrameworkElement.HeightProperty, shrink);
+
+            _dragInsertIndex = _working.Cards.IndexOf(_dragEditor.Config);
         }
 
         try
@@ -297,12 +330,7 @@ public partial class SettingsWindow
         }
         finally
         {
-            CardList.GiveFeedback -= OnCardDragGiveFeedback;
-            if (_dragAdornerLayer is not null && _dragAdorner is not null)
-                _dragAdornerLayer.Remove(_dragAdorner);
-            _dragAdorner = null;
-            _dragAdornerLayer = null;
-            _dragEditor = null;
+            EndDragVisual();
         }
     }
 
@@ -319,7 +347,7 @@ public partial class SettingsWindow
     {
         var element = sender as FrameworkElement;
         if (element is not null && element.IsMouseCaptured) element.ReleaseMouseCapture();
-        _dragEditor = null;
+        if (_dragAdorner is null) _dragEditor = null;
     }
 
     void CardListDragOver(object sender, DragEventArgs e)
@@ -327,22 +355,56 @@ public partial class SettingsWindow
         if (_dragEditor is null) return;
         e.Effects = DragDropEffects.Move;
         e.Handled = true;
+
+        int insert = ComputeInsertIndex(e.GetPosition(CardList));
+        if (insert == _dragInsertIndex) return;
+
+        _dragInsertIndex = insert;
+        UpdateCardShifts(insert);
+    }
+
+    void CardListDragLeave(object sender, DragEventArgs e)
+    {
+        if (_dragEditor is null) return;
+
+        // 子控件之间移动也会冒泡 DragLeave；只有真正离开列表范围才收回让位动画。
+        Point point = e.GetPosition(CardList);
+        if (point.X < 0 || point.Y < 0 || point.X > CardList.ActualWidth || point.Y > CardList.ActualHeight)
+        {
+            ResetCardShifts(true);
+            // 复位后必须让下一次 DragOver 重新计算；否则同一下标会跳过 UpdateCardShifts。
+            _dragInsertIndex = -1;
+        }
     }
 
     void CardListDrop(object sender, DragEventArgs e)
     {
         CardEditor drag = _dragEditor;
-        _dragEditor = null;
         if (drag is null) return;
 
         e.Handled = true;
-        CardEditor target = FindCardEditor(e.OriginalSource as DependencyObject);
+        int insert = _dragInsertIndex;
+
         int from = _working.Cards.IndexOf(drag.Config);
-        int to = target is null ? _working.Cards.Count : _working.Cards.IndexOf(target.Config);
-        if (from < 0) return;
+        if (from < 0)
+        {
+            EndDragVisual();
+            return;
+        }
+
+        int to = insert;
+        if (to < 0)
+        {
+            CardEditor target = FindCardEditor(e.OriginalSource as DependencyObject);
+            to = target is null ? _working.Cards.Count : _working.Cards.IndexOf(target.Config);
+        }
 
         // 放到自己身上 / 原位置后一位都不需要移动。
-        if (to == from || to == from + 1) return;
+        if (to == from || to == from + 1)
+        {
+            EndDragVisual();
+            return;
+        }
 
         _working.Cards.RemoveAt(from);
         if (to > from) to--;
@@ -350,9 +412,160 @@ public partial class SettingsWindow
         if (to > _working.Cards.Count) to = _working.Cards.Count;
         _working.Cards.Insert(to, drag.Config);
 
+        // 先按新顺序重建，再撤跟随层 / 还原源卡片：避免旧容器先展开再跳位。
         RebuildCardList();
+        EndDragVisual();
         MarkDirty();
         StatusText.Text = $"卡片「{drag.DisplayName}」已移动到第 {(to + 1)} 位";
+    }
+
+    /// <summary>按指针在未平移布局中的位置算插入下标；被拖卡自己跳过。</summary>
+    int ComputeInsertIndex(Point point)
+    {
+        int from = _dragEditor is null ? -1 : _working.Cards.IndexOf(_dragEditor.Config);
+        if (from < 0) return -1;
+
+        int last = -1;
+        foreach (CardEditor editor in DisplayedEditors())
+        {
+            int dataIndex = _working.Cards.IndexOf(editor.Config);
+            if (dataIndex < 0) continue;
+            last = Math.Max(last, dataIndex);
+
+            if (ReferenceEquals(editor, _dragEditor)) continue;
+
+            var container = CardList.ItemContainerGenerator.ContainerFromItem(editor) as FrameworkElement;
+            if (container is null) continue;
+
+            double shift = _dragShifts.TryGetValue(editor.Config.Id, out var transform) ? transform.Y : 0;
+            Point middle = container.TranslatePoint(new Point(0, container.ActualHeight / 2), CardList);
+            if (point.Y < middle.Y - shift) return dataIndex;
+        }
+
+        // 过滤状态下列表最后一张不一定是数据末尾；插到它后面即可，不能直接落到整表末尾。
+        return last >= 0 ? Math.Min(_working.Cards.Count, last + 1) : from;
+    }
+
+    /// <summary>目标下标变化时，把夹在源 / 目标之间的可见卡片平移一个"折叠卡 + 间距"的槽位。</summary>
+    void UpdateCardShifts(int insert)
+    {
+        int from = _dragEditor is null ? -1 : _working.Cards.IndexOf(_dragEditor.Config);
+        if (from < 0) return;
+
+        foreach (CardEditor editor in DisplayedEditors())
+        {
+            if (ReferenceEquals(editor, _dragEditor)) continue;
+
+            int dataIndex = _working.Cards.IndexOf(editor.Config);
+            if (dataIndex < 0) continue;
+
+            double target = 0;
+            if (insert > from && dataIndex > from && dataIndex < insert) target = -_dragStride;
+            else if (insert < from && dataIndex >= insert && dataIndex < from) target = _dragStride;
+            AnimateCardShift(editor, target);
+        }
+    }
+
+    void AnimateCardShift(CardEditor editor, double target)
+    {
+        var container = CardList.ItemContainerGenerator.ContainerFromItem(editor) as FrameworkElement;
+        if (container is null) return;
+
+        string key = editor.Config.Id;
+        if (!_dragShifts.TryGetValue(key, out var transform))
+        {
+            transform = new TranslateTransform();
+            container.RenderTransform = transform;
+            _dragShifts[key] = transform;
+        }
+
+        double current = transform.Y;
+        if (CardMotion.Enabled && CardMotion.LayoutDurationMs > 0)
+        {
+            var animation = new DoubleAnimation(current, target,
+                TimeSpan.FromMilliseconds(CardMotion.LayoutDurationMs))
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+            };
+            transform.BeginAnimation(TranslateTransform.YProperty, animation);
+        }
+        else
+        {
+            transform.BeginAnimation(TranslateTransform.YProperty, null);
+            transform.Y = target;
+        }
+    }
+
+    List<CardEditor> DisplayedEditors() =>
+        CardList.ItemsSource is IEnumerable<CardEditor> source ? source.ToList() : new List<CardEditor>(_editors);
+
+    void ResetCardShifts(bool animate)
+    {
+        foreach (KeyValuePair<string, TranslateTransform> pair in _dragShifts)
+        {
+            TranslateTransform transform = pair.Value;
+            if (animate && CardMotion.Enabled && CardMotion.LayoutDurationMs > 0)
+            {
+                var animation = new DoubleAnimation(transform.Y, 0,
+                    TimeSpan.FromMilliseconds(CardMotion.LayoutDurationMs))
+                {
+                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+                };
+                transform.BeginAnimation(TranslateTransform.YProperty, animation);
+            }
+            else
+            {
+                transform.BeginAnimation(TranslateTransform.YProperty, null);
+                transform.Y = 0;
+            }
+        }
+
+        if (!animate) _dragShifts.Clear();
+    }
+
+    /// <summary>结束 / 取消拖动时统一收尾：撤跟随层、还原源卡片、复位让位平移。</summary>
+    void EndDragVisual()
+    {
+        CardList.GiveFeedback -= OnCardDragGiveFeedback;
+
+        if (_dragAdornerLayer is not null && _dragAdorner is not null)
+            _dragAdornerLayer.Remove(_dragAdorner);
+        _dragAdorner = null;
+        _dragAdornerLayer = null;
+
+        ResetCardShifts(false);
+
+        if (_dragSourceContainer is not null)
+        {
+            _dragSourceContainer.BeginAnimation(UIElement.OpacityProperty, null);
+            _dragSourceContainer.Opacity = 1;
+            _dragSourceContainer.BeginAnimation(FrameworkElement.HeightProperty, null);
+            _dragSourceContainer.ClearValue(FrameworkElement.HeightProperty);
+            _dragSourceContainer.ClipToBounds = false;
+            _dragSourceContainer = null;
+        }
+
+        _dragShifts.Clear();
+        _dragStride = 0;
+        _dragInsertIndex = -1;
+        _dragEditor = null;
+    }
+
+    static FrameworkElement FindCardHeader(FrameworkElement container)
+    {
+        if (container is null) return null;
+
+        int count = VisualTreeHelper.GetChildrenCount(container);
+        for (int i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(container, i) as FrameworkElement;
+            if (child is null) continue;
+            if (string.Equals(child.Name, "CardHeader", StringComparison.Ordinal)) return child;
+            if (string.Equals(child.Tag as string, "CardHeader", StringComparison.Ordinal)) return child;
+            FrameworkElement nested = FindCardHeader(child);
+            if (nested is not null) return nested;
+        }
+        return null;
     }
 
     static CardEditor FindCardEditor(DependencyObject source)

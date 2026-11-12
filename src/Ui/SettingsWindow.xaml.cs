@@ -1,9 +1,11 @@
 using System;
 using System.ComponentModel;
 using System.Globalization;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Interop;
 using System.Windows.Media;
 using MirrorpondHUD.Cards;
 using MirrorpondHUD.Core;
@@ -55,6 +57,8 @@ public partial class SettingsWindow : Window
     bool _loadFailed;
     /// <summary>设置窗口当前是否暗色；只影响设置窗，随设置一起保存。</summary>
     bool _settingsDark = true;
+    /// <summary>主题缩略图的衬底色；和明暗主题分开保存，切明暗时保留用户选择。</summary>
+    string _previewBg = "#0B1020";
 
     /// <summary>
     /// 第 5 个参数读「当前实际玻璃实现」（可为 null：无头截图等没有宿主窗口的场景）。
@@ -68,7 +72,8 @@ public partial class SettingsWindow : Window
         InitializeComponent();
 
         _settingsDark = SettingsTheme.IsDark(live is null ? null : live.Behavior.SettingsTheme);
-        SettingsTheme.Apply(_settingsDark);
+        _previewBg = live is null ? "#0B1020" : live.Behavior.SettingsPreviewBg;
+        SettingsTheme.Apply(_settingsDark, _previewBg);
         UpdateThemeToggleText();
 
         BuildCollapsibleSections();
@@ -87,6 +92,77 @@ public partial class SettingsWindow : Window
     }
 
     // ==================== 初始化 ====================
+
+    /// <summary>
+    /// Windows 11 的 DWM 圆角是额外一层兜底；主圆角由透明窗 + 内层 12px 边框和几何裁切保证，
+    /// 所以 Windows 10 上也有圆角。DWM 调用失败只记日志，不影响窗口。
+    /// </summary>
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+        TryEnableDwmRoundedCorners();
+        Loaded += (s, a) => UpdateFrameClip();
+    }
+
+    protected override void OnStateChanged(EventArgs e)
+    {
+        base.OnStateChanged(e);
+        UpdateFrameClip();
+        // 最大化 / 还原时 ActualWidth 在状态切换后一帧才稳定，补一次。
+        Dispatcher.BeginInvoke(new Action(UpdateFrameClip),
+            System.Windows.Threading.DispatcherPriority.Loaded);
+    }
+
+    void FrameContentSizeChanged(object sender, SizeChangedEventArgs e) => UpdateFrameClip();
+
+    /// <summary>让标题栏 / 页签 / 底栏贴合窗口圆角，否则四角会露出直角内容。</summary>
+    void UpdateFrameClip()
+    {
+        if (WindowFrame is null || FrameContent is null) return;
+
+        bool maximized = WindowState == WindowState.Maximized;
+        WindowFrame.Margin = new Thickness(0);
+        WindowFrame.CornerRadius = new CornerRadius(maximized ? 0 : 12);
+
+        double width = FrameContent.ActualWidth;
+        double height = FrameContent.ActualHeight;
+        if (maximized || width < 1 || height < 1)
+        {
+            FrameContent.Clip = null;
+            return;
+        }
+
+        var clip = new RectangleGeometry(new Rect(0, 0, width, height), 11, 11);
+        clip.Freeze();
+        FrameContent.Clip = clip;
+    }
+
+    void TryEnableDwmRoundedCorners()
+    {
+        try
+        {
+            IntPtr handle = new WindowInteropHelper(this).Handle;
+            if (handle == IntPtr.Zero) return;
+
+            int preference = DwmWindowCornerRound;
+            int hr = DwmSetWindowAttribute(handle, DwmWindowCornerPreference, ref preference, sizeof(int));
+            if (hr != 0)
+            {
+                // Windows 10 没有这个属性；内层 Border 的圆角仍是可见的，不算失败路径。
+                Log.Info($"设置窗 DWM 圆角不可用（HRESULT=0x{hr:X8}），使用内层圆角边框");
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"设置窗 DWM 圆角调用失败: {ex.Message}");
+        }
+    }
+
+    const int DwmWindowCornerPreference = 33;
+    const int DwmWindowCornerRound = 2;
+
+    [DllImport("dwmapi.dll")]
+    static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
 
     void HookEvents()
     {
@@ -145,6 +221,14 @@ public partial class SettingsWindow : Window
         ContourSmoothSlider.ValueChanged += (s, e) => UiChanged();
         ContourMinLoopSlider.ValueChanged += (s, e) => UiChanged();
         MotionProfileCombo.SelectionChanged += (s, e) => { UiChanged(); UpdateContextUiState(); };
+        TextEffectCombo.SelectionChanged += (s, e) => { UiChanged(); UpdateTextEffectUiState(); };
+        TextParticleSizeSlider.ValueChanged += (s, e) => UiChanged();
+        TextParticleCountSlider.ValueChanged += (s, e) => UiChanged();
+        TextParticleSpeedSlider.ValueChanged += (s, e) => UiChanged();
+        TextParticleNearestCheck.Checked += (s, e) => UiChanged();
+        TextParticleNearestCheck.Unchecked += (s, e) => UiChanged();
+        TextParticleGeometryCheck.Checked += (s, e) => UiChanged();
+        TextParticleGeometryCheck.Unchecked += (s, e) => UiChanged();
         ReduceMotionCheck.Checked += (s, e) => { UiChanged(); UpdateContextUiState(); };
         ReduceMotionCheck.Unchecked += (s, e) => { UiChanged(); UpdateContextUiState(); };
         LoopEffectCombo.SelectionChanged += (s, e) => { UiChanged(); UpdateLoopUiState(); };
@@ -299,7 +383,7 @@ public partial class SettingsWindow : Window
     void ToggleSettingsThemeClick(object sender, RoutedEventArgs e)
     {
         _settingsDark = !_settingsDark;
-        SettingsTheme.Apply(_settingsDark);
+        SettingsTheme.Apply(_settingsDark, _previewBg);
         UpdateThemeToggleText();
         MarkDirty();
     }
@@ -335,7 +419,9 @@ public partial class SettingsWindow : Window
     void UpdateSettingsTheme(Settings settings)
     {
         _settingsDark = SettingsTheme.IsDark(settings is null ? null : settings.Behavior.SettingsTheme);
-        SettingsTheme.Apply(_settingsDark);
+        if (settings is not null && Settings.IsHexColor(settings.Behavior.SettingsPreviewBg))
+            _previewBg = settings.Behavior.SettingsPreviewBg;
+        SettingsTheme.Apply(_settingsDark, _previewBg);
         UpdateThemeToggleText();
     }
 

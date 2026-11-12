@@ -245,8 +245,8 @@ public sealed class CardEditor : INotifyPropertyChanged
     /// 折叠时四个角都圆，否则底部会露出直角。
     /// </summary>
     public CornerRadius HeaderCorner => _expanded
-                ? new CornerRadius(10, 10, 0, 0)
-                : new CornerRadius(10);
+                ? new CornerRadius(8, 8, 0, 0)
+                : new CornerRadius(8);
 
     public string Name
     {

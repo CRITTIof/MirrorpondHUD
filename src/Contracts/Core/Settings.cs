@@ -78,6 +78,12 @@ public sealed class Settings
         Behavior.CursorStyle = NormalizeCursor(Behavior.CursorStyle);
         Behavior.CardSlide = NormalizeCardSlide(Behavior.CardSlide);
         Behavior.SettingsTheme = NormalizeSettingsTheme(Behavior.SettingsTheme);
+        if (!IsHexColor(Behavior.SettingsPreviewBg))
+        {
+            // 只影响设置窗主题缩略图的衬底；非法值退回默认深蓝，不阻断整份设置。
+            Log.Warn($"设置窗预览底色不合法（\"{(Behavior.SettingsPreviewBg ?? "")}\"），已回落默认 #0B1020");
+            Behavior.SettingsPreviewBg = "#0B1020";
+        }
         if (Behavior.WelcomeText is null) Behavior.WelcomeText = "Welcome Back";
         if (Behavior.WelcomeText.Length > 120) Behavior.WelcomeText = Behavior.WelcomeText.Substring(0, 120);
 
@@ -92,8 +98,8 @@ public sealed class Settings
         if (!IsHexColor(Style.Foreground))
         {
             // P1-3：静默回落会让用户不知道为什么前景色没变成设置里写的值，必须留日志。
-            Log.Warn($"样式 foreground 不合法（\"{(Style.Foreground ?? "")}\"），已回落默认 #E6EDF3（只接受 7 位 #RRGGBB）");
-            Style.Foreground = "#E6EDF3";
+            Log.Warn($"样式 foreground 不合法（\"{(Style.Foreground ?? "")}\"），已回落默认 #FFFFFF（只接受 7 位 #RRGGBB）");
+            Style.Foreground = "#FFFFFF";
         }
         if (!IsHexColor(Style.Background))
         {
@@ -121,6 +127,10 @@ public sealed class Settings
         Style.ContourMinLoopArea = Clamp(Style.ContourMinLoopArea, 0, 5000);
         Style.ContourSpeed = Clamp(Style.ContourSpeed, 0.1, 4.0);
         Style.MotionProfile = NormalizeMotionProfile(Style.MotionProfile);
+        Style.TextEffect = NormalizeTextEffect(Style.TextEffect);
+        Style.TextParticleSize = Clamp(Style.TextParticleSize, 0.8, 4.0);
+        Style.TextParticleCount = (int)Clamp(Style.TextParticleCount, 200, 3000);
+        Style.TextParticleSpeed = Clamp(Style.TextParticleSpeed, 0.2, 4.0);
         Style.LoopEffect = NormalizeLoopEffect(Style.LoopEffect, Style.LoopMotion);
         Style.LoopMotion = Style.LoopEffect != "None";
         Style.LoopDurationMs = (int)Clamp(Style.LoopDurationMs, 600, 20000);
@@ -256,6 +266,41 @@ public sealed class Settings
             || string.Equals(text, "Current", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>信息文本卡文字出现动效：None / Particle；未知值回落 None。</summary>
+    public static string NormalizeTextEffect(string value)
+    {
+        switch ((value ?? "").Trim().ToLowerInvariant())
+        {
+            case "particle":
+            case "particles":
+            case "聚字":
+            case "粒子":
+            case "粒子聚字":
+                return "Particle";
+            default:
+                return "None";
+        }
+    }
+
+    /// <summary>主题文件里的 textEffect 只接受 None / Particle（含中文别名）。</summary>
+    public static bool IsTextEffect(string value)
+    {
+        switch ((value ?? "").Trim().ToLowerInvariant())
+        {
+            case "":
+            case "none":
+            case "off":
+            case "particle":
+            case "particles":
+            case "聚字":
+            case "粒子":
+            case "粒子聚字":
+                return true;
+            default:
+                return false;
+        }
+    }
+
     /// <summary>M7 循环类型：None / Breath / Scanline / Pulse。</summary>
     public static string NormalizeLoopEffect(string value, bool legacyLoopMotion)
     {
@@ -362,7 +407,7 @@ public sealed class Settings
         }
     }
 
-    /// <summary>卡片滑入滑出方向：None / Left / Right；未知值回落 None。</summary>
+    /// <summary>卡片滑入滑出方向：None / Left / Right / Follow；未知值回落 None。</summary>
     public static string NormalizeCardSlide(string value)
     {
         switch ((value ?? "").Trim().ToLowerInvariant())
@@ -377,6 +422,14 @@ public sealed class Settings
             case "右":
             case "右侧":
                 return "Right";
+            case "follow":
+            case "auto":
+            case "followalign":
+            case "跟随":
+            case "跟随对齐":
+            case "跟随卡片对齐":
+            case "对齐":
+                return "Follow";
             default:
                 return "None";
         }
@@ -472,7 +525,8 @@ public sealed class StyleSettings
     public string FontFamily = "Microsoft YaHei UI";
     public double FontSize = 15;
     public bool Bold = false;
-    public string Foreground = "#E6EDF3";
+    /// <summary>文字颜色（7 位 #RRGGBB），默认白色；粒子聚字颜色跟随它。</summary>
+    public string Foreground = "#FFFFFF";
     public string Background = "#0D1117";
     /// <summary>背景不透明度 0~1（窗口本身始终不透明，避免文字发虚）。</summary>
     public double BackgroundOpacity = 0.86;
@@ -593,9 +647,27 @@ public sealed class StyleSettings
     public string MotionProfile = "Current";
 
     /// <summary>
-    /// M7 循环动效类型：None / Breath（整卡呼吸） / Scanline（横线扫描） / Pulse（描边脉冲）。
-    /// 旧配置只有 LoopMotion 布尔时，true 会归一成 Breath。
+    /// 信息与文本卡的文字出现动效：None / Particle。
+    /// Particle = 粒子聚字；只在文字骨架变化时播放，时钟 / 指标的数字刷新不重播。
     /// </summary>
+    public string TextEffect = "None";
+
+    /// <summary>粒子大小（DIP，0.8–4.0）；Particle 动效使用。</summary>
+    public double TextParticleSize = 2.2;
+
+    /// <summary>目标粒子数（200–3000）；实际点数受字形候选点限制。</summary>
+    public int TextParticleCount = 900;
+
+    /// <summary>粒子运动速度倍率（0.2–4.0）；1.0 约 0.7 秒收敛。</summary>
+    public double TextParticleSpeed = 1.0;
+
+    /// <summary>就近分配目标点；默认开，文字只改一个字符时不会整句重新散开。</summary>
+    public bool TextParticleNearest = true;
+
+    /// <summary>几何采样：沿字形轮廓取点；关闭时按填充区域取点。</summary>
+    public bool TextParticleGeometry = false;
+
+    /// <summary>循环效果类型：None / Breath（整卡呼吸） / Scanline（横线扫描） / Pulse（描边脉冲）。</summary>
     public string LoopEffect = "None";
 
     /// <summary>循环一次的时长（毫秒），600–20000；默认 2600。</summary>
@@ -650,8 +722,12 @@ public sealed class StyleSettings
     /// <summary>最小闭合环面积（平方像素，0–5000）；小于它的闭环直接不画。</summary>
     public double ContourMinLoopArea = 26.0;
 
-    /// <summary>等高线原地形变速度（0.1–4.0）；1.0 约 4 秒走完一个形变循环。</summary>
+    /// <summary>等高线原地形变速度（0.1–4.0）；1.0 = 10 秒走完一个形变循环。</summary>
     public double ContourSpeed = 1.0;
+
+    /// <summary>给定倍率下一个等高线形变周期（秒）；1.0 → 10 秒，2.0 → 5 秒。</summary>
+    public static double ContourPeriodSeconds(double speed) =>
+        10.0 / Math.Max(0.1, Math.Min(4.0, speed));
 
 }
 
@@ -732,8 +808,14 @@ public sealed class BehaviorSettings
     /// </summary>
     public bool OverallMotion = true;
 
-    /// <summary>卡片滑入 / 滑出方向：None / Left / Right；None = 沿用原来的上下位移。</summary>
+    /// <summary>
+    /// 卡片滑入 / 滑出方向：None / Left / Right / Follow；
+    /// None = 沿用原来的上下位移，Follow = 跟随整叠卡片最终左 / 右对齐方向。
+    /// </summary>
     public string CardSlide = "None";
+
+    /// <summary>设置窗「主题」缩略图的衬底色（7 位 #RRGGBB）；只影响设置窗预览。</summary>
+    public string SettingsPreviewBg = "#0B1020";
 
     /// <summary>设置窗口明暗主题：Dark / Light；只影响设置窗口，不影响桌面叠层。</summary>
     public string SettingsTheme = "Dark";

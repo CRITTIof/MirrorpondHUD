@@ -143,6 +143,7 @@ public sealed class MediaCard : RichCardModuleBase, ICardHotkeySource, ICardHotk
         // 只改页脚模板 / M6 开关时宿主不会重建内容，换肤后必须重算铭牌。
         CardSettings card = context.Config ?? (context.Host is null ? null : context.Host.Config);
         view.SetMeta(CardMeta.Header(context.Settings, card), CardMeta.Footer(context.Settings, card));
+        CardTextStyle.ApplyOutline(context.Settings?.Style, content);
     }
 
     /// <inheritdoc />

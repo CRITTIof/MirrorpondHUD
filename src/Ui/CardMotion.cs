@@ -33,7 +33,7 @@ internal static class CardMotion
     /// <summary>“显示 / 隐藏全部”是否播放整体动效；仍受减少动效与 Off 档一票否决。</summary>
     public static bool OverallMotion => Enabled && _overallMotion;
 
-    /// <summary>卡片滑入滑出方向：None / Left / Right；None 沿用原来的上下位移。</summary>
+    /// <summary>卡片滑入滑出方向：None / Left / Right / Follow；Follow 取整叠最终左 / 右对齐。</summary>
     public static string SlideDirection => _slide;
 
     public static string Profile => _profile;

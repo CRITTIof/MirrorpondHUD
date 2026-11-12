@@ -37,13 +37,23 @@ internal static class SettingsTheme
         ["SelectedStrongBg"] = (Rgb(0x2E, 0x33, 0x13), Rgb(0xEB, 0xE6, 0xA8)),
         ["InputBg"] = (Rgb(0x0E, 0x11, 0x13), Rgb(0xFF, 0xFF, 0xFF)),
         ["PopupBg"] = (Rgb(0x12, 0x15, 0x17), Rgb(0xFF, 0xFF, 0xFF)),
-        ["PreviewBg"] = (Rgb(0x0B, 0x10, 0x20), Rgb(0x0B, 0x10, 0x20))
+        ["PreviewBg"] = (Rgb(0x0B, 0x10, 0x20), Rgb(0x0B, 0x10, 0x20)),
+        // 主行动按钮：暗色是"黑底信号黄字"，亮色才是"信号黄底黑字"；
+        // 2.40 的暗色亮黄底在深色窗里像一块灯箱，2.41 反转。
+        ["PrimaryBg"] = (Rgb(0x18, 0x1A, 0x0D), Rgb(0xF2, 0xE9, 0x00)),
+        ["PrimaryText"] = (Rgb(0xF2, 0xE9, 0x00), Rgb(0x11, 0x11, 0x11)),
+        ["PrimaryBorder"] = (Rgb(0xF2, 0xE9, 0x00), Rgb(0xD9, 0xD0, 0x00)),
+        ["PrimaryHover"] = (Rgb(0x24, 0x27, 0x0F), Rgb(0xFF, 0xF3, 0x4D)),
+        ["PrimaryPressed"] = (Rgb(0x30, 0x34, 0x14), Rgb(0xD9, 0xD0, 0x00)),
+        ["SliderTrack"] = (Rgb(0x2A, 0x2F, 0x32), Rgb(0xD8, 0xD8, 0xD0)),
+        ["Scrollbar"] = (Rgb(0x3A, 0x41, 0x45), Rgb(0xC9, 0xC9, 0xC0)),
+        ["ScrollbarHot"] = (Rgb(0x5A, 0x64, 0x6A), Rgb(0x9C, 0x9C, 0x91))
     };
 
     public static bool IsDark(string value) =>
         string.Equals(Settings.NormalizeSettingsTheme(value), "Dark", StringComparison.OrdinalIgnoreCase);
 
-    public static void Apply(bool dark)
+    public static void Apply(bool dark, string previewBg = null)
     {
         ResourceDictionary resources = Application.Current?.Resources;
         if (resources is null) return;
@@ -53,6 +63,21 @@ internal static class SettingsTheme
             Color color = dark ? pair.Value.Dark : pair.Value.Light;
             // 颜色全部走 DynamicResource；这里直接换新画刷，已打开的控件会即时刷新。
             resources[pair.Key] = new SolidColorBrush(color);
+        }
+
+        // 主题缩略图衬底允许用户单独调；非法值已在 Settings.Normalize 兜底，
+        // 这里再判一次是为了兼容设置窗打开期间的半成品输入。
+        if (!string.IsNullOrWhiteSpace(previewBg) && Settings.IsHexColor(previewBg))
+        {
+            try
+            {
+                var color = (Color)ColorConverter.ConvertFromString(previewBg.Trim());
+                resources["PreviewBg"] = new SolidColorBrush(color);
+            }
+            catch (Exception ex)
+            {
+                Log.Warn($"设置窗预览底色解析失败（{previewBg}）: {ex.Message}");
+            }
         }
     }
 

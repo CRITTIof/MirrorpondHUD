@@ -26,6 +26,16 @@
     <SolidColorBrush x:Key="InputBg" Color="#0E1113" />
     <SolidColorBrush x:Key="PopupBg" Color="#121517" />
     <SolidColorBrush x:Key="PreviewBg" Color="#0B1020" />
+    <!-- 主行动按钮 / 滑块的新令牌先给暗色基线，SettingsTheme 打开后再按明暗覆盖；
+         这样首次打开设置窗前也不会出现键缺失。 -->
+    <SolidColorBrush x:Key="PrimaryBg" Color="#181A0D" />
+    <SolidColorBrush x:Key="PrimaryText" Color="#F2E900" />
+    <SolidColorBrush x:Key="PrimaryBorder" Color="#F2E900" />
+    <SolidColorBrush x:Key="PrimaryHover" Color="#24270F" />
+    <SolidColorBrush x:Key="PrimaryPressed" Color="#303414" />
+    <SolidColorBrush x:Key="SliderTrack" Color="#2A2F32" />
+    <SolidColorBrush x:Key="Scrollbar" Color="#3A4145" />
+    <SolidColorBrush x:Key="ScrollbarHot" Color="#5A646A" />
     <SolidColorBrush x:Key="MenuBg" Color="#FFFFFF" />
     <SolidColorBrush x:Key="MenuText" Color="#111111" />
     <SolidColorBrush x:Key="MenuBorder" Color="#D8D8D0" />
@@ -163,9 +173,9 @@
     </Style>
 
     <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-        <Setter Property="Background" Value="{DynamicResource Accent}" />
-        <Setter Property="Foreground" Value="{DynamicResource AccentText}" />
-        <Setter Property="BorderBrush" Value="{DynamicResource Accent}" />
+        <Setter Property="Background" Value="{DynamicResource PrimaryBg}" />
+        <Setter Property="Foreground" Value="{DynamicResource PrimaryText}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource PrimaryBorder}" />
         <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="Template">
             <Setter.Value>
@@ -174,16 +184,16 @@
                             Background="{TemplateBinding Background}"
                             BorderBrush="{TemplateBinding BorderBrush}"
                             BorderThickness="{TemplateBinding BorderThickness}"
-                            CornerRadius="6"
+                            CornerRadius="4"
                             Padding="{TemplateBinding Padding}">
                         <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource AccentHover}" />
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PrimaryHover}" />
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
-                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource AccentPressed}" />
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PrimaryPressed}" />
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Opacity" Value="0.5" />
@@ -433,7 +443,7 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="RepeatButton">
-                    <Border Height="4" CornerRadius="2" Background="{DynamicResource Accent}"
+                    <Border Height="4" CornerRadius="1" Background="{DynamicResource Accent}"
                             VerticalAlignment="Center" />
                 </ControlTemplate>
             </Setter.Value>
@@ -446,7 +456,7 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="RepeatButton">
-                    <Border Height="4" CornerRadius="2" Background="{DynamicResource HoverBg}"
+                    <Border Height="4" CornerRadius="1" Background="{DynamicResource SliderTrack}"
                             VerticalAlignment="Center" />
                 </ControlTemplate>
             </Setter.Value>
@@ -455,17 +465,27 @@
 
     <Style x:Key="SliderThumb" TargetType="Thumb">
         <Setter Property="Focusable" Value="False" />
-        <Setter Property="Width" Value="14" />
-        <Setter Property="Height" Value="18" />
+        <Setter Property="Width" Value="16" />
+        <Setter Property="Height" Value="20" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Thumb">
+                    <!-- 信号黄方头 + 中间墨色刻线：Endfield 的"量具"感，而不是圆点。 -->
                     <Border Background="{DynamicResource Accent}"
                             BorderBrush="{DynamicResource AccentText}" BorderThickness="1"
-                            CornerRadius="2" />
+                            CornerRadius="2">
+                        <Rectangle Width="2" Height="8"
+                                   Fill="{DynamicResource AccentText}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Height" Value="22" />
+            </Trigger>
+        </Style.Triggers>
     </Style>
 
     <Style TargetType="Slider">
@@ -475,7 +495,7 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Slider">
-                    <Grid Height="24" Background="Transparent">
+                    <Grid Height="26" Background="Transparent">
                         <Track x:Name="PART_Track" VerticalAlignment="Center">
                             <Track.DecreaseRepeatButton>
                                 <RepeatButton Style="{StaticResource SliderDecreaseButton}"
@@ -493,6 +513,55 @@
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
+    </Style>
+
+    <!-- ================= 滚动条（设置页与通用滚动区域） ================= -->
+    <Style TargetType="ScrollBar">
+        <Setter Property="Width" Value="8" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ScrollBar">
+                    <Grid Background="Transparent" SnapsToDevicePixels="True">
+                        <Track x:Name="PART_Track" IsDirectionReversed="True"
+                               Orientation="{TemplateBinding Orientation}">
+                            <Track.Thumb>
+                                <Thumb MinWidth="24" MinHeight="24">
+                                    <Thumb.Template>
+                                        <ControlTemplate TargetType="Thumb">
+                                            <Border x:Name="Bd" Background="{DynamicResource Scrollbar}"
+                                                    CornerRadius="4" Margin="1" />
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="Bd" Property="Background"
+                                                            Value="{DynamicResource ScrollbarHot}" />
+                                                </Trigger>
+                                                <Trigger Property="IsDragging" Value="True">
+                                                    <Setter TargetName="Bd" Property="Background"
+                                                            Value="{DynamicResource ScrollbarHot}" />
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Thumb.Template>
+                                </Thumb>
+                            </Track.Thumb>
+                        </Track>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="Orientation" Value="Horizontal">
+                            <Setter TargetName="PART_Track" Property="IsDirectionReversed" Value="False" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+        <Style.Triggers>
+            <Trigger Property="Orientation" Value="Horizontal">
+                <Setter Property="Width" Value="Auto" />
+                <Setter Property="Height" Value="8" />
+            </Trigger>
+        </Style.Triggers>
     </Style>
 
     <!-- ================= 页签（左侧竖排） ================= -->
@@ -594,7 +663,14 @@
                     <Border Background="{TemplateBinding Background}"
                             BorderBrush="{TemplateBinding BorderBrush}"
                             BorderThickness="{TemplateBinding BorderThickness}"
-                            CornerRadius="8" Padding="{TemplateBinding Padding}">
+                            CornerRadius="4" Padding="{TemplateBinding Padding}">
+                        <Border.Resources>
+                            <!-- 菜单在 Popup 里，全局 TextBlock 样式会把字强制成 TextPrimary；
+                                 这里用更近的隐式样式覆盖，保证白底黑字 / 黑底白字始终跟着菜单令牌。 -->
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Foreground" Value="{DynamicResource MenuText}" />
+                            </Style>
+                        </Border.Resources>
                         <Border.Effect>
                             <DropShadowEffect BlurRadius="22" ShadowDepth="3" Direction="270"
                                               Opacity="0.18" Color="#000000" />
@@ -615,16 +691,19 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="MenuItem">
-                    <Border x:Name="Host" Background="Transparent" CornerRadius="5"
+                    <Border x:Name="Host" Background="Transparent" CornerRadius="3"
                             Padding="{TemplateBinding Padding}">
                         <Grid>
                             <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="3" />
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <ContentPresenter ContentSource="Header" RecognizesAccessKey="True"
+                            <Border x:Name="Rail" Width="3" Background="Transparent" CornerRadius="1"
+                                    Margin="0,1,8,1" />
+                            <ContentPresenter Grid.Column="1" ContentSource="Header" RecognizesAccessKey="True"
                                               VerticalAlignment="Center" />
-                            <TextBlock Grid.Column="1" Text="{TemplateBinding InputGestureText}"
+                            <TextBlock Grid.Column="2" Text="{TemplateBinding InputGestureText}"
                                        Foreground="{DynamicResource MenuMuted}" FontSize="12"
                                        VerticalAlignment="Center" Margin="24,0,0,0" />
                         </Grid>
@@ -632,6 +711,7 @@
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsHighlighted" Value="True">
                             <Setter TargetName="Host" Property="Background" Value="{DynamicResource MenuHover}" />
+                            <Setter TargetName="Rail" Property="Background" Value="{DynamicResource Accent}" />
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter TargetName="Host" Property="Opacity" Value="0.42" />

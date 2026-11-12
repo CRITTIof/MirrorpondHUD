@@ -403,6 +403,7 @@ internal sealed class StationView : Grid, IDisposable, IStationCopySink
         _list.SetEmptyText(EmptyText());
         _list.RefreshEmpty();
         UpdateHeader();
+        CardTextStyle.ApplyRichText(_settings.Style, _list);
     }
 
     bool Matches(StationItem item)

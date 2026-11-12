@@ -34,6 +34,7 @@ public partial class SettingsWindow
         {
             case "Left": return 1;
             case "Right": return 2;
+            case "Follow": return 3;
             default: return 0;
         }
     }

@@ -4,8 +4,9 @@
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         Title="镜潭一览 · 设置" Width="1120" Height="820" MinWidth="1000" MinHeight="700"
         WindowStyle="None" ResizeMode="CanResize"
+        AllowsTransparency="True"
         WindowStartupLocation="CenterScreen"
-        Background="{DynamicResource WindowBg}"
+        Background="Transparent"
         FontFamily="Microsoft YaHei UI" FontSize="13"
         UseLayoutRounding="True" SnapsToDevicePixels="True"
         Icon="/assets/logo.ico">
@@ -14,15 +15,22 @@
                             GlassFrameThickness="0" CornerRadius="0" />
     </shell:WindowChrome.WindowChrome>
 
+    <Grid x:Name="WindowRoot" Background="Transparent">
+    <Border x:Name="WindowFrame" Margin="0" Background="{DynamicResource WindowBg}"
+            BorderBrush="{DynamicResource BorderSoft}" BorderThickness="1" CornerRadius="12">
     <AdornerDecorator>
-    <Grid>
+    <Grid x:Name="FrameContent" SizeChanged="FrameContentSizeChanged">
         <Grid.RowDefinitions>
+            <RowDefinition Height="2" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <Border Grid.Row="0" Background="{DynamicResource CardBg}"
+        <!-- Endfield 信号条：一整条 2px 黄线压住窗顶，替代系统标题栏的存在感。 -->
+        <Border Grid.Row="0" Background="{DynamicResource Accent}" Opacity="0.9" />
+
+        <Border Grid.Row="1" Background="{DynamicResource CardBg}"
                 BorderBrush="{DynamicResource BorderSoft}" BorderThickness="0,0,0,1" Padding="18,10,10,10"
                 MouseLeftButtonDown="TitleBarMouseDown">
             <Grid>
@@ -34,7 +42,8 @@
                                Foreground="{DynamicResource Accent}" Margin="9,0,7,0" VerticalAlignment="Center" />
                     <TextBlock Text="设置" FontSize="16" FontWeight="SemiBold"
                                VerticalAlignment="Center" Foreground="{DynamicResource TextPrimary}" />
-                    <TextBlock x:Name="VersionText" FontSize="12" Foreground="{DynamicResource TextSecondary}" Margin="12,0,0,0"
+                    <TextBlock x:Name="VersionText" FontFamily="Cascadia Mono, Consolas" FontSize="11"
+                               Foreground="{DynamicResource TextSecondary}" Margin="12,0,0,0"
                                VerticalAlignment="Center" />
                 </StackPanel>
 
@@ -61,7 +70,7 @@
             </Grid>
         </Border>
 
-        <TabControl x:Name="Tabs" Grid.Row="1">
+        <TabControl x:Name="Tabs" Grid.Row="2">
 
             <!-- ==================== 内容（卡片管理） ==================== -->
             <TabItem Header="内容" Tag="&#xE0FF;">
@@ -97,15 +106,16 @@
                             <ItemsControl x:Name="CardList"
                                           AllowDrop="True"
                                           DragOver="CardListDragOver"
+                                          DragLeave="CardListDragLeave"
                                           Drop="CardListDrop">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
                                         <Border Background="{DynamicResource CardBg}"
                                                 BorderBrush="{DynamicResource BorderSoft}"
-                                                BorderThickness="1" CornerRadius="10" Margin="0,0,0,10">
+                                                BorderThickness="1" CornerRadius="8" Margin="0,0,0,10">
                                             <StackPanel>
                                                 <!-- 标题栏：图标 + 名称 + 常驻/热键摘要；右侧移动 / 删除 / 展开 -->
-                                                <Border Background="{DynamicResource HeaderBg}" BorderBrush="{DynamicResource HeaderBorder}" BorderThickness="0,0,0,1"
+                                                <Border x:Name="CardHeader" Tag="CardHeader" Background="{DynamicResource HeaderBg}" BorderBrush="{DynamicResource HeaderBorder}" BorderThickness="0,0,0,1"
                                                         CornerRadius="{Binding HeaderCorner}" Padding="12,7"
                                                         MouseLeftButtonDown="CardHeaderClick">
                                                     <Grid>
@@ -284,6 +294,25 @@
                                     </StackPanel>
                                     <TextBlock x:Name="ThemeStatusText" Foreground="{DynamicResource TextSecondary}"
                                                TextWrapping="Wrap" Margin="0,8,0,0" />
+                                    <Grid Margin="0,8,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="64" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="预览底色" VerticalAlignment="Center" />
+                                        <TextBox x:Name="ThemePreviewBgBox" Grid.Column="1" Width="92"
+                                                 TextChanged="ThemePreviewBgChanged" />
+                                        <Border Grid.Column="2" Width="18" Height="18" Margin="8,0,0,0"
+                                                CornerRadius="2" BorderThickness="1"
+                                                BorderBrush="{DynamicResource BorderSoft}"
+                                                Background="{DynamicResource PreviewBg}" />
+                                        <StackPanel Grid.Column="3" Orientation="Horizontal" Margin="8,0,0,0">
+                                            <Button Content="选择…" Click="PickThemePreviewBgClick" Padding="9,4" />
+                                            <Button Content="重置" Click="ResetThemePreviewBgClick" Padding="9,4" Margin="6,0,0,0" />
+                                        </StackPanel>
+                                    </Grid>
                                     <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
                                         <Button Content="导入主题…" Click="ImportThemeClick" Padding="12,5" Margin="0,0,8,0" />
                                         <Button Content="导出当前外观…" Click="ExportThemeClick" Padding="12,5" Margin="0,0,8,0" />
@@ -352,6 +381,22 @@
                         <CheckBox x:Name="MonoReadoutsCheck" Margin="110,0,0,12"
                                   Content="读数使用等宽数字"
                                   ToolTip="指标数字刷新时不横跳；只改 0–9 的数字串。" />
+
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="110" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="文字颜色" VerticalAlignment="Center" />
+                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <TextBox x:Name="FgBox" Width="110" />
+                                <Border x:Name="FgSwatch" Width="26" Height="26" CornerRadius="4"
+                                        BorderBrush="{DynamicResource BorderSoft}" BorderThickness="1" Margin="8,0,8,0" />
+                                <Button Content="选择…" Click="PickForegroundClick" />
+                                <TextBlock Text="默认白；粒子聚字跟随此色" Style="{StaticResource Hint}"
+                                           VerticalAlignment="Center" Margin="10,0,0,0" />
+                            </StackPanel>
+                        </Grid>
 
                         <Grid Margin="0,0,0,10">
                             <Grid.ColumnDefinitions>
@@ -463,20 +508,6 @@
                                    Text="每轮问答、每条命令都是一块小面板，各自滚动；整块超过最大高度再用外层滑块。" />
 
                         <TextBlock Text="背景" Style="{StaticResource SectionTitle}" Margin="0,18,0,6" />
-
-                        <Grid Margin="0,0,0,10">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="110" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="前景色" VerticalAlignment="Center" />
-                            <StackPanel Grid.Column="1" Orientation="Horizontal">
-                                <TextBox x:Name="FgBox" Width="110" />
-                                <Border x:Name="FgSwatch" Width="26" Height="26" CornerRadius="4"
-                                        BorderBrush="{DynamicResource BorderSoft}" BorderThickness="1" Margin="8,0,8,0" />
-                                <Button Content="选择…" Click="PickForegroundClick" />
-                            </StackPanel>
-                        </Grid>
 
                         <Grid Margin="0,0,0,10">
                             <Grid.ColumnDefinitions>
@@ -685,14 +716,76 @@
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="卡片滑入方向" VerticalAlignment="Center" />
-                            <ComboBox x:Name="CardSlideCombo" Grid.Column="1" Width="160" HorizontalAlignment="Left">
+                            <ComboBox x:Name="CardSlideCombo" Grid.Column="1" Width="180" HorizontalAlignment="Left">
                                 <ComboBoxItem Content="无" Tag="None" />
                                 <ComboBoxItem Content="从左侧" Tag="Left" />
                                 <ComboBoxItem Content="从右侧" Tag="Right" />
+                                <ComboBoxItem Content="跟随对齐" Tag="Follow" ToolTip="整叠左对齐就从左侧滑入，右对齐就从右侧滑入" />
                             </ComboBox>
                         </Grid>
                         <TextBlock Style="{StaticResource Hint}" Margin="110,0,0,8" TextWrapping="Wrap"
-                                   Text="整体动效与滑入方向都受减少动效控制。" />
+                                   Text="整体动效与滑入方向都受减少动效控制；“跟随对齐”取整叠最终左 / 右对齐方向。" />
+
+                        <Grid Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="110" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="文字动效" VerticalAlignment="Center" />
+                            <ComboBox x:Name="TextEffectCombo" Grid.Column="1" Width="180" HorizontalAlignment="Left">
+                                <ComboBoxItem Content="无" Tag="None" />
+                                <ComboBoxItem Content="粒子聚字" Tag="Particle"
+                                              ToolTip="仅信息与文本卡；文字骨架变化时粒子收拢，数字刷新不重播" />
+                            </ComboBox>
+                        </Grid>
+                        <TextBlock x:Name="TextEffectHint" Style="{StaticResource Hint}" Margin="110,0,0,8"
+                                   TextWrapping="Wrap" Visibility="Collapsed"
+                                   Text="粒子只在预设 / 文字内容变化时播放；收敛后瞬时切成普通文字，不保留等待。" />
+
+                        <StackPanel x:Name="TextParticlePanel" Margin="0,0,0,8" Visibility="Collapsed">
+                            <Grid Margin="0,0,0,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="110" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="粒子大小" VerticalAlignment="Center" />
+                                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                    <Slider x:Name="TextParticleSizeSlider" Width="260" Minimum="0.8" Maximum="4.0" />
+                                    <TextBox x:Name="TextParticleSizeValue" Width="58" Margin="10,0,0,0" TextAlignment="Right" />
+                                    <TextBlock Text="px" VerticalAlignment="Center" Margin="6,0,0,0" />
+                                </StackPanel>
+                            </Grid>
+                            <Grid Margin="0,0,0,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="110" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="粒子数量" VerticalAlignment="Center" />
+                                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                    <Slider x:Name="TextParticleCountSlider" Width="260" Minimum="200" Maximum="3000"
+                                            TickFrequency="50" IsSnapToTickEnabled="True" />
+                                    <TextBox x:Name="TextParticleCountValue" Width="58" Margin="10,0,0,0" TextAlignment="Right" />
+                                </StackPanel>
+                            </Grid>
+                            <Grid Margin="0,0,0,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="110" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="运动速度" VerticalAlignment="Center" />
+                                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                    <Slider x:Name="TextParticleSpeedSlider" Width="260" Minimum="0.2" Maximum="4.0" />
+                                    <TextBox x:Name="TextParticleSpeedValue" Width="58" Margin="10,0,0,0" TextAlignment="Right" />
+                                    <TextBlock Text="×" VerticalAlignment="Center" Margin="6,0,0,0" />
+                                </StackPanel>
+                            </Grid>
+                            <CheckBox x:Name="TextParticleNearestCheck" Content="就近分配目标"
+                                      Margin="110,0,0,6"
+                                      ToolTip="默认开；只改一个字符时，大部分粒子留在原位，不会整句重新散开" />
+                            <CheckBox x:Name="TextParticleGeometryCheck" Content="几何采样"
+                                      Margin="110,0,0,8"
+                                      ToolTip="沿字形轮廓取点；关闭时按文字填充区域取点" />
+                        </StackPanel>
 
                         <Grid Margin="0,0,0,10">
                             <Grid.ColumnDefinitions>
@@ -786,7 +879,7 @@
                                 <Slider x:Name="ContourSpeedSlider" Width="260" Minimum="0.1" Maximum="4.0" />
                                 <TextBox x:Name="ContourSpeedValue" Width="58" Margin="10,0,0,0" TextAlignment="Right" />
                                 <TextBlock Text="×" VerticalAlignment="Center" Margin="8,0,0,0" />
-                                <TextBlock Text="1.0 约 4 秒一个形变周期" VerticalAlignment="Center" Margin="8,0,0,0"
+                                <TextBlock Text="1.0 = 10 秒一个形变周期" VerticalAlignment="Center" Margin="8,0,0,0"
                                            Style="{StaticResource Hint}" />
                             </StackPanel>
                         </Grid>
@@ -1109,7 +1202,7 @@
         </TabControl>
 
         <!-- ==================== 底栏 ==================== -->
-        <Border Grid.Row="2" Background="{DynamicResource CardBg}"
+        <Border Grid.Row="3" Background="{DynamicResource CardBg}"
                 BorderBrush="{DynamicResource BorderSoft}" BorderThickness="0,1,0,0" Padding="16,10">
             <Grid>
                 <TextBlock x:Name="StatusText" VerticalAlignment="Center"
@@ -1123,4 +1216,6 @@
         </Border>
     </Grid>
     </AdornerDecorator>
+    </Border>
+    </Grid>
 </Window>

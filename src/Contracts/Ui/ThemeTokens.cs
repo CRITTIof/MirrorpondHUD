@@ -38,7 +38,7 @@ public static class ThemeResolver
     public static ThemeTokens Resolve(StyleSettings style)
     {
         StyleSettings s = style ?? new StyleSettings();
-        Color foreground = ParseColor(s.Foreground, Color.FromRgb(0xE6, 0xED, 0xF3));
+        Color foreground = ParseColor(s.Foreground, Colors.White);
         Color accent = ParseColor(s.Accent, Color.FromRgb(0x2F, 0x6F, 0xEB));
 
         return new ThemeTokens

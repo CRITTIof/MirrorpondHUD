@@ -39,6 +39,7 @@ public partial class SettingsWindow
             ThemeCombo.SelectedIndex = ThemeIndexOf(_working.Style.ThemeName);
             ThemeNameText.Text = string.IsNullOrWhiteSpace(_working.Style.ThemeName)
                 ? "自定义" : _working.Style.ThemeName;
+            ThemePreviewBgBox.Text = _working.Behavior.SettingsPreviewBg;
 
             BuildFontList();
             _selectedFont = _allFonts.FirstOrDefault(
@@ -89,6 +90,12 @@ public partial class SettingsWindow
             ContourSmoothSlider.Value = s.Style.ContourSmooth;
             ContourMinLoopSlider.Value = s.Style.ContourMinLoopArea;
             MotionProfileCombo.SelectedIndex = MotionProfileIndex(s.Style.MotionProfile);
+            TextEffectCombo.SelectedIndex = TextEffectIndex(s.Style.TextEffect);
+            TextParticleSizeSlider.Value = s.Style.TextParticleSize;
+            TextParticleCountSlider.Value = s.Style.TextParticleCount;
+            TextParticleSpeedSlider.Value = s.Style.TextParticleSpeed;
+            TextParticleNearestCheck.IsChecked = s.Style.TextParticleNearest;
+            TextParticleGeometryCheck.IsChecked = s.Style.TextParticleGeometry;
             LoopEffectCombo.SelectedIndex = LoopEffectIndex(s.Style.LoopEffect);
             ContourSpeedSlider.Value = s.Style.ContourSpeed;
             LoopDurationSlider.Value = s.Style.LoopDurationMs;
@@ -146,6 +153,7 @@ public partial class SettingsWindow
             BuildCardHotkeyPanel();
             ValidateColorBox(FgBox, false);
             ValidateColorBox(BgBox, false);
+            ValidateColorBox(ThemePreviewBgBox, false);
             ValidateColorBox(OutlineColorBox, true);
             ValidateColorBox(SuccessColorBox, true);
             ValidateColorBox(WarningColorBox, true);
@@ -239,6 +247,15 @@ public partial class SettingsWindow
         }
     }
 
+    static int TextEffectIndex(string value) =>
+        string.Equals(Settings.NormalizeTextEffect(value), "Particle", StringComparison.Ordinal) ? 1 : 0;
+
+    string TextEffectTag()
+    {
+        var item = TextEffectCombo is null ? null : TextEffectCombo.SelectedItem as ComboBoxItem;
+        return Settings.NormalizeTextEffect(item is null ? null : item.Tag as string);
+    }
+
     string LoopEffectTag()
     {
         var item = LoopEffectCombo is null ? null : LoopEffectCombo.SelectedItem as ComboBoxItem;
@@ -326,7 +343,25 @@ public partial class SettingsWindow
         bool motionUsable = !reduceMotion && !motionOff;
         if (OverallMotionCheck is not null) OverallMotionCheck.IsEnabled = motionUsable;
         if (CardSlideCombo is not null) CardSlideCombo.IsEnabled = motionUsable;
+        if (TextEffectCombo is not null) TextEffectCombo.IsEnabled = motionUsable;
+        UpdateTextEffectUiState();
         UpdateEndfieldUiState();
+    }
+
+    void UpdateTextEffectUiState()
+    {
+        if (TextEffectHint is null) return;
+        bool particle = string.Equals(TextEffectTag(), "Particle", StringComparison.OrdinalIgnoreCase);
+        TextEffectHint.Visibility = particle
+            ? System.Windows.Visibility.Visible
+            : System.Windows.Visibility.Collapsed;
+        if (TextParticlePanel is not null)
+        {
+            TextParticlePanel.Visibility = particle
+                ? System.Windows.Visibility.Visible
+                : System.Windows.Visibility.Collapsed;
+            TextParticlePanel.IsEnabled = TextEffectCombo is null || TextEffectCombo.IsEnabled;
+        }
     }
 
     /// <summary>
@@ -428,6 +463,12 @@ public partial class SettingsWindow
             s.Style.ContourMinLoopArea = Math.Round(ContourMinLoopSlider.Value);
             s.Style.ContourSpeed = Math.Round(ContourSpeedSlider.Value, 2);
             s.Style.MotionProfile = MotionProfileTag();
+            s.Style.TextEffect = TextEffectTag();
+            s.Style.TextParticleSize = Math.Round(TextParticleSizeSlider.Value, 2);
+            s.Style.TextParticleCount = (int)Math.Round(TextParticleCountSlider.Value);
+            s.Style.TextParticleSpeed = Math.Round(TextParticleSpeedSlider.Value, 2);
+            s.Style.TextParticleNearest = TextParticleNearestCheck.IsChecked == true;
+            s.Style.TextParticleGeometry = TextParticleGeometryCheck.IsChecked == true;
             s.Style.LoopEffect = LoopEffectTag();
             s.Style.LoopDurationMs = (int)Math.Round(LoopDurationSlider.Value);
             s.Style.LoopAmplitude = Math.Round(LoopAmplitudeSlider.Value, 2);
@@ -487,6 +528,7 @@ public partial class SettingsWindow
             s.Behavior.OverallMotion = OverallMotionCheck.IsChecked == true;
             s.Behavior.CardSlide = CardSlideTag();
             s.Behavior.SettingsTheme = _settingsDark ? "Dark" : "Light";
+            s.Behavior.SettingsPreviewBg = _previewBg;
             s.Behavior.WelcomeText = (WelcomeBox.Text ?? "").Trim();
             if (s.Behavior.WelcomeText.Length == 0) s.Behavior.WelcomeText = "Welcome Back";
             s.Behavior.TypeSpeedMs = Math.Max(8, ParseInt(TypeSpeedBox.Text, s.Behavior.TypeSpeedMs));

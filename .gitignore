@@ -7,18 +7,18 @@ certs/
 settings.json.bak
 settings.json.broken-*
 
-# 运行时卡片插件（用户本地安装，不跟仓库）
+# runtime card plugins (local install; not tracked)
 plugins/
-# 仓库内自带卡片插件源码：src/Plugins 不跟用户的 plugins/ 目录混淆
+# built-in plugin source lives in src/Plugins; do not mix with local plugins/
 !src/Plugins/
 !src/Plugins/**
 src/Plugins/**/bin/
 src/Plugins/**/obj/
 
-# 源码说明文档放在独立仓库里，不随主仓库发布
+# source docs live in a separate repo
 docs/source/
 
-# 毛玻璃调研笔记、探针截图与一次性 PoC 工程：只留本地，不进主仓库
+# glass research notes / probe captures / one-off PoC projects stay local
 .proto/
 docs/blockhelm-glass.md
 docs/glass-options.md
@@ -26,6 +26,18 @@ docs/liquid-glass.md
 docs/glass-system-mode.md
 docs/glass-probe-*.png
 
-# WPF 编译期临时工程与本地构建日志
+# WPF temporary projects / local build logs
 *_wpftmp.csproj
 publish-run.log
+
+# review reports
+docs/review/
+
+# live blockage notes
+blockage.md
+# temporary workspace (ledger / diagnostics), not tracked
+.superpowers/
+
+samples/ParticleToText/
+samples/EndfieldDesign/
+samples/ContourLine/

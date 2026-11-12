@@ -168,12 +168,20 @@ public sealed class CliEntryPanel : Border
     Color _foreground;
     double _fontSize;
     FontFamily _mono;
+    StyleSettings _style;
+    bool _bold;
+    double _lineHeight;
+    TextAlignment _alignment;
 
     public CliEntryPanel(StyleSettings style, CliSettings cli, Color foreground, double corner)
     {
+        _style = style ?? new StyleSettings();
         _foreground = foreground;
-        _fontSize = Math.Max(10, (style is null ? 15 : style.FontSize) - 1);
-        ThemeTokens tokens = ThemeResolver.Resolve(style);
+        _fontSize = Math.Max(10, _style.FontSize - 1);
+        _bold = _style.Bold;
+        _lineHeight = _style.LineHeight;
+        _alignment = ToTextAlignment(_style.TextAlignment);
+        ThemeTokens tokens = ThemeResolver.Resolve(_style);
         _mono = new FontFamily(tokens.MonoFont);
 
         _body = new StackPanel { Orientation = Orientation.Vertical };
@@ -207,12 +215,14 @@ public sealed class CliEntryPanel : Border
             TextWrapping = TextWrapping.Wrap,
             FontFamily = _mono,
             FontSize = _fontSize + sizeDelta,
-            LineHeight = Math.Max(_fontSize + 2, _fontSize * 1.5),
+            LineHeight = _lineHeight > 0 ? _lineHeight : Math.Max(_fontSize + 2, _fontSize * 1.5),
             Foreground = CardPalette.Brush(_foreground, alpha),
-            FontWeight = bold ? FontWeights.SemiBold : FontWeights.Normal,
+            FontWeight = (bold || _bold) ? FontWeights.SemiBold : FontWeights.Normal,
+            TextAlignment = _alignment,
             Margin = new Thickness(0, 0, 4, bottomMargin),
             Tag = new TextInfo { Alpha = alpha, SizeDelta = sizeDelta }
         };
+        CardTextStyle.ApplyToElement(block, _style);
 
         _body.Children.Add(block);
         return block;
@@ -221,10 +231,14 @@ public sealed class CliEntryPanel : Border
     /// <summary>就地换肤：面板底色 / 描边 / 滑块 / 等宽字体 / 已有文字的颜色与字号，全部按新令牌重算。</summary>
     public void ApplyStyle(StyleSettings style, Color foreground, double corner)
     {
+        _style = style ?? new StyleSettings();
         _foreground = foreground;
-        _fontSize = Math.Max(10, (style is null ? 15 : style.FontSize) - 1);
+        _fontSize = Math.Max(10, _style.FontSize - 1);
+        _bold = _style.Bold;
+        _lineHeight = _style.LineHeight;
+        _alignment = ToTextAlignment(_style.TextAlignment);
 
-        ThemeTokens tokens = ThemeResolver.Resolve(style);
+        ThemeTokens tokens = ThemeResolver.Resolve(_style);
         _mono = new FontFamily(tokens.MonoFont);
         Background = CardPalette.Brush(tokens.Panel);
         BorderBrush = CardPalette.Brush(tokens.Border);
@@ -241,9 +255,12 @@ public sealed class CliEntryPanel : Border
             double delta = info is null ? 0.0 : info.SizeDelta;
 
             block.FontSize = _fontSize + delta;
-            block.LineHeight = Math.Max(_fontSize + 2, _fontSize * 1.5);
+            block.LineHeight = _lineHeight > 0 ? _lineHeight : Math.Max(_fontSize + 2, _fontSize * 1.5);
             block.FontFamily = _mono;
+            block.FontWeight = _bold ? FontWeights.SemiBold : FontWeights.Normal;
+            block.TextAlignment = _alignment;
             block.Foreground = CardPalette.Brush(_foreground, alpha);
+            CardTextStyle.ApplyToElement(block, _style);
         }
     }
 
@@ -255,6 +272,17 @@ public sealed class CliEntryPanel : Border
 
     public double FontSize => _fontSize;
     public StackPanel Body => _body;
+
+    static TextAlignment ToTextAlignment(string value)
+    {
+        switch (Settings.NormalizeTextAlign(value))
+        {
+            case "Center": return TextAlignment.Center;
+            case "Right": return TextAlignment.Right;
+            case "Justify": return TextAlignment.Justify;
+            default: return TextAlignment.Left;
+        }
+    }
 }
 
 /// <summary>
@@ -520,6 +548,7 @@ public abstract class CliPanelView : Grid, ICliFocusTarget
         _title.Foreground = CardPalette.Brush(Foreground, 0.95);
         _title.FontSize = FontSize + 1;
         _title.FontFamily = MonoFamily;
+        _title.FontWeight = StyleSet.Bold ? FontWeights.Bold : FontWeights.SemiBold;
 
         _badge.Foreground = CardPalette.Brush(Tokens.Muted);
         _badge.FontSize = Math.Max(9, FontSize - 2);
@@ -556,6 +585,7 @@ public abstract class CliPanelView : Grid, ICliFocusTarget
         // 记录区高度上限跟着字号 / 内边距重算；页脚占一行，也要扣掉。
         double chrome = Pad * 2.4 + FontSize * 5.2 + 16;
         _recordView.MaxHeight = Math.Max(60, Cli.MaxHeight - chrome);
+        CardTextStyle.ApplyOutline(StyleSet, this);
     }
 
     /// <summary>子类自己的额外控件（如果有）在这里跟着换肤。</summary>

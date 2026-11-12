@@ -48,7 +48,7 @@
   "description": "深蓝底 + 冷白字，滑块更淡，适合深色壁纸",
   "appearance": {
     "colors": {
-      "foreground": "#E6EDF3",
+      "foreground": "#FFFFFF",
       "background": "#0D1117",
       "backgroundOpacity": 0.86,
       "accent": "#4C8DFF",
@@ -92,6 +92,12 @@
     },
     "motion": {
       "profile": "Industrial",
+      "textEffect": "Particle",
+      "textParticleSize": 2.2,
+      "textParticleCount": 900,
+      "textParticleSpeed": 1.0,
+      "textParticleNearest": true,
+      "textParticleGeometry": false,
       "effect": "Scanline",
       "loop": true,
       "durationMs": 2600,
@@ -125,6 +131,12 @@
 | `appearance.industrial.contourSmooth` | `Style.ContourSmooth` | 2.32.0；0–6，默认 2 |
 | `appearance.industrial.contourMinLoopArea` | `Style.ContourMinLoopArea` | 2.32.0；0–5000，默认 26 |
 | `appearance.motion.profile` | `Style.MotionProfile` | 2.31.0；`Current` / `Cut` / `Industrial` / `Off`，默认 `Current` |
+| `appearance.motion.textEffect` | `Style.TextEffect` | 2.42.0；`None` / `Particle`，仅信息与文本卡；默认 `None` |
+| `appearance.motion.textParticleSize` | `Style.TextParticleSize` | 2.43.0；0.8–4.0，默认 2.2 |
+| `appearance.motion.textParticleCount` | `Style.TextParticleCount` | 2.43.0；200–3000，默认 900 |
+| `appearance.motion.textParticleSpeed` | `Style.TextParticleSpeed` | 2.43.0；0.2–4.0，默认 1.0 |
+| `appearance.motion.textParticleNearest` | `Style.TextParticleNearest` | 2.43.0；默认 true |
+| `appearance.motion.textParticleGeometry` | `Style.TextParticleGeometry` | 2.43.0；默认 false |
 | `appearance.motion.loop` | `Style.LoopMotion` | 2.31.0；旧布尔兼容字段，由 `effect` 派生 |
 | `appearance.motion.effect` | `Style.LoopEffect` | 2.31.0；`None` / `Breath` / `Scanline` / `Pulse` |
 | `appearance.motion.durationMs` | `Style.LoopDurationMs` | 2.31.0；600–20000，默认 2600 |

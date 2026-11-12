@@ -290,6 +290,30 @@ public partial class SettingsWindow
 
     // ==================== 色板 / 取色 ====================
 
+    void ThemePreviewBgChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_suppress || _readingUi || _working is null) return;
+
+        string text = (ThemePreviewBgBox.Text ?? "").Trim();
+        ValidateColorBox(ThemePreviewBgBox, false);
+        if (!Settings.IsHexColor(text)) return;
+        if (string.Equals(_previewBg, text, StringComparison.OrdinalIgnoreCase)) return;
+
+        _previewBg = text;
+        _working.Behavior.SettingsPreviewBg = text;
+        SettingsTheme.Apply(_settingsDark, _previewBg);
+        MarkDirty();
+    }
+
+    void PickThemePreviewBgClick(object sender, RoutedEventArgs e)
+    {
+        string picked = PickColor(ThemePreviewBgBox.Text);
+        if (picked is not null) ThemePreviewBgBox.Text = picked;
+    }
+
+    void ResetThemePreviewBgClick(object sender, RoutedEventArgs e) =>
+        ThemePreviewBgBox.Text = "#0B1020";
+
     void PickForegroundClick(object sender, RoutedEventArgs e)
     {
         string picked = PickColor(FgBox.Text);

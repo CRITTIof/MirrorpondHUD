@@ -121,6 +121,7 @@ public sealed class CardHeader : Grid
 
         _title.FontFamily = CardPalette.ResolveFont(s.FontFamily);
         _title.FontSize = Math.Max(11, s.FontSize + 1);
+        _title.FontWeight = s.Bold ? FontWeights.Bold : FontWeights.SemiBold;
         _title.Foreground = CardPalette.Brush(foreground, 0.95);
 
         _badge.FontFamily = mono;

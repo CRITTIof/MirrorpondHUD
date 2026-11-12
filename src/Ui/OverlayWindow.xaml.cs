@@ -483,6 +483,19 @@ public partial class OverlayWindow : Window
     }
 
     /// <summary>
+    /// 实际滑入 / 滑出方向：Follow 取布局协调器已经解析出的整叠左 / 右对齐。
+    /// 没有协调器的离屏场景（截图 / 预览）退回左对齐，避免方向为空。
+    /// </summary>
+    string ResolveSlideDirection()
+    {
+        string slide = CardMotion.SlideDirection;
+        if (!string.Equals(slide, "Follow", StringComparison.OrdinalIgnoreCase)) return slide;
+
+        string resolved = Surface.ResolvedCardAlignment;
+        return string.Equals(resolved, "Right", StringComparison.OrdinalIgnoreCase) ? "Right" : "Left";
+    }
+
+    /// <summary>
     /// 呼出：窗口从目标位下方 8px 滑回目标位，同时内容淡入。
     /// 8px 由窗口位置动画完成——如果只平移 Surface，会被「窗口尺寸 = 卡片尺寸」裁掉。
     /// </summary>
@@ -511,7 +524,7 @@ public partial class OverlayWindow : Window
         double scaleX = screen is not null ? screen.ScaleX : 1.0;
         double scaleY = screen is not null ? screen.ScaleY : 1.0;
         int offset = (int)Math.Round(CardMotion.ShowOffset * scaleY);
-        string slide = CardMotion.SlideDirection;
+        string slide = ResolveSlideDirection();
         int dx = string.Equals(slide, "Left", StringComparison.OrdinalIgnoreCase) ? -offset
             : string.Equals(slide, "Right", StringComparison.OrdinalIgnoreCase) ? offset
             : 0;
@@ -573,7 +586,7 @@ public partial class OverlayWindow : Window
         double scaleX = screen is not null ? screen.ScaleX : 1.0;
         double scaleY = screen is not null ? screen.ScaleY : 1.0;
         int offset = (int)Math.Round(CardMotion.HideOffset * scaleY);
-        string slide = CardMotion.SlideDirection;
+        string slide = ResolveSlideDirection();
         int dx = string.Equals(slide, "Left", StringComparison.OrdinalIgnoreCase) ? -offset
             : string.Equals(slide, "Right", StringComparison.OrdinalIgnoreCase) ? offset
             : 0;

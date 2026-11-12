@@ -160,6 +160,7 @@ public sealed class CommandCard : RichCardModuleBase, ICardSettingsModule, ICard
         // 只改页脚模板 / M6 开关时宿主不会重建内容，换肤后必须重算铭牌。
         view.SetMeta(CardMeta.Header(context.Settings, context.Config),
                      CardMeta.Footer(context.Settings, context.Config));
+        CardTextStyle.ApplyOutline(context.Settings.Style, content);
     }
 }
 

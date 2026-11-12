@@ -376,7 +376,7 @@ internal static class SelfTest
             bool defaultOk = defaults.Accent == System.Windows.Media.Color.FromRgb(0x2F, 0x6F, 0xEB)
                           && defaults.Danger == System.Windows.Media.Color.FromRgb(0xD1, 0x43, 0x43);
 
-            System.Windows.Media.Color fg = System.Windows.Media.Color.FromRgb(0xE6, 0xED, 0xF3);
+            System.Windows.Media.Color fg = System.Windows.Media.Color.FromRgb(0xFF, 0xFF, 0xFF);
             bool mutedOk = defaults.Muted.A == (byte)Math.Round(0.45 * 255)
                         && defaults.Muted.R == fg.R && defaults.Muted.G == fg.G && defaults.Muted.B == fg.B;
 
@@ -424,7 +424,10 @@ internal static class SelfTest
                      && contourStyle.ContourRelief == 4.0
                      && contourStyle.ContourSmooth == 6
                      && contourStyle.ContourMinLoopArea == 0
-                     && contourStyle.DecorationDensity == 2;
+                     && contourStyle.DecorationDensity == 2
+                     // 2.41.0：1.0x = 10 秒一个等高线形变周期，2.0x = 5 秒。
+                     && Math.Abs(StyleSettings.ContourPeriodSeconds(1.0) - 10.0) < 1e-9
+                     && Math.Abs(StyleSettings.ContourPeriodSeconds(2.0) - 5.0) < 1e-9;
 
             // M7：四档动效参数是纯数据，Cut 必须零位移、90ms 补位。
             var cutMotion = new Settings();
@@ -445,8 +448,40 @@ internal static class SelfTest
             motionOk = motionOk
                     && Settings.NormalizeCardSlide("左") == "Left"
                     && Settings.NormalizeCardSlide("whatever") == "None"
+                    && Settings.NormalizeCardSlide("follow") == "Follow"
+                    && Settings.NormalizeCardSlide("跟随对齐") == "Follow"
                     && CardMotion.SlideDirection == "Right";
             CardMotion.ApplySettings(new Settings());
+
+            // 2.41.0：主题预览底色非法值回落到默认深蓝，不能把整份设置带坏。
+            var previewSettings = new Settings();
+            previewSettings.Behavior.SettingsPreviewBg = "not-a-color";
+            previewSettings.Normalize();
+            bool previewOk = previewSettings.Behavior.SettingsPreviewBg == "#0B1020"
+                          && new Settings().Behavior.SettingsPreviewBg == "#0B1020";
+
+            // 2.42.0：粒子聚字只在文字骨架变化时播；数字变化必须归一到同一个骨架。
+            bool textEffectOk = Settings.NormalizeTextEffect("particle") == "Particle"
+                             && Settings.NormalizeTextEffect("粒子聚字") == "Particle"
+                             && Settings.NormalizeTextEffect("whatever") == "None"
+                             && OverlaySurface.TextSkeleton("CPU 12.4%") == OverlaySurface.TextSkeleton("CPU 88.8%")
+                             && OverlaySurface.TextSkeleton("CPU 12") != OverlaySurface.TextSkeleton("GPU 12");
+
+            var particleStyle = new StyleSettings
+            {
+                TextParticleSize = 99,
+                TextParticleCount = 9999,
+                TextParticleSpeed = 0,
+                TextParticleNearest = false,
+                TextParticleGeometry = true
+            };
+            new Settings { Style = particleStyle }.Normalize();
+            textEffectOk = textEffectOk
+                        && Math.Abs(particleStyle.TextParticleSize - 4.0) < 1e-9
+                        && particleStyle.TextParticleCount == 3000
+                        && Math.Abs(particleStyle.TextParticleSpeed - 0.2) < 1e-9
+                        && !particleStyle.TextParticleNearest
+                        && particleStyle.TextParticleGeometry;
 
             bool alignOk = Settings.NormalizeTextAlign("follow") == "Card"
                         && Settings.NormalizeTextAlign("CENTER") == "Center"
@@ -535,9 +570,33 @@ internal static class SelfTest
             bool loopThicknessOk = loopStyle.LoopPulseThickness == 8
                                && loopStyle.LoopScanlineThickness == 1;
 
+            // 2.43.0：富内容文字补丁（描边 / 加粗 / 行高）必须能加也能撤。
+            var richStyle = new StyleSettings
+            {
+                TextOutline = true,
+                OutlineThickness = 1.5,
+                OutlineColor = "#112233",
+                Bold = true,
+                LineHeight = 22
+            };
+            var richProbe = new TextBlock { Text = "富内容" };
+            CardTextStyle.ApplyToElement(richProbe, richStyle);
+            bool richStyleOk = richProbe.Effect is System.Windows.Media.Effects.DropShadowEffect
+                            && richProbe.FontWeight == FontWeights.SemiBold
+                            && Math.Abs(richProbe.LineHeight - 22) < 0.01;
+            richStyle.TextOutline = false;
+            richStyle.Bold = false;
+            richStyle.LineHeight = 0;
+            CardTextStyle.ApplyToElement(richProbe, richStyle);
+            richStyleOk = richStyleOk
+                       && richProbe.Effect is null
+                       && richProbe.FontWeight == FontWeights.Normal
+                       && double.IsNaN(richProbe.LineHeight);
+
             themeOk = defaultOk && mutedOk && scrollOk && statusOk && cornerOk && contourOk && motionOk
                    && validateOk && normalizeOk && codeOk && fallbackOk && endfieldOk
-                   && settingsThemeOk && motionAliasOk && loopThicknessOk;
+                   && settingsThemeOk && motionAliasOk && loopThicknessOk && previewOk && textEffectOk
+                   && richStyleOk;
         }
         catch (Exception ex)
         {
@@ -604,6 +663,12 @@ internal static class SelfTest
             ContourMinLoopArea = 55,
             ContourSpeed = 1.6,
             MotionProfile = "Industrial",
+            TextEffect = "Particle",
+            TextParticleSize = 2.6,
+            TextParticleCount = 1200,
+            TextParticleSpeed = 1.4,
+            TextParticleNearest = false,
+            TextParticleGeometry = true,
             LoopEffect = "Scanline",
             LoopDurationMs = 3200,
             LoopAmplitude = 0.18
@@ -699,6 +764,12 @@ internal static class SelfTest
             && Math.Abs(applied.Style.ContourMinLoopArea - source.Style.ContourMinLoopArea) < 1e-9
             && Math.Abs(applied.Style.ContourSpeed - source.Style.ContourSpeed) < 1e-9
             && applied.Style.MotionProfile == source.Style.MotionProfile
+            && applied.Style.TextEffect == source.Style.TextEffect
+            && Math.Abs(applied.Style.TextParticleSize - source.Style.TextParticleSize) < 1e-9
+            && applied.Style.TextParticleCount == source.Style.TextParticleCount
+            && Math.Abs(applied.Style.TextParticleSpeed - source.Style.TextParticleSpeed) < 1e-9
+            && applied.Style.TextParticleNearest == source.Style.TextParticleNearest
+            && applied.Style.TextParticleGeometry == source.Style.TextParticleGeometry
             && applied.Style.LoopEffect == source.Style.LoopEffect
             && applied.Style.LoopDurationMs == source.Style.LoopDurationMs
             && Math.Abs(applied.Style.LoopAmplitude - source.Style.LoopAmplitude) < 1e-9
@@ -731,6 +802,9 @@ internal static class SelfTest
             bool badMotion = !ThemeFile.TryParse(
                 "{\"schema\":1,\"appearance\":{\"motion\":{\"profile\":\"warp\"}}}", out doc, out error)
                 && error is not null && error.Contains("profile");
+            bool badTextEffect = !ThemeFile.TryParse(
+                "{\"schema\":1,\"appearance\":{\"motion\":{\"textEffect\":\"sparkle\"}}}", out doc, out error)
+                && error is not null && error.Contains("textEffect");
             bool noAppearance = !ThemeFile.TryParse("{\"schema\":1}", out doc, out error);
             bool malformed = !ThemeFile.TryParse("{oops", out doc, out error);
 
@@ -757,7 +831,7 @@ internal static class SelfTest
             try { File.Delete(temp); } catch { }
             try { File.Delete(big); } catch { }
 
-            themeRejectOk = future && badColor && badRange && badDecoration && badMotion && noAppearance && malformed
+            themeRejectOk = future && badColor && badRange && badDecoration && badMotion && badTextEffect && noAppearance && malformed
                          && rejectedOk && importedOk && bigOk;
         }
         catch (Exception ex)
@@ -890,8 +964,9 @@ internal static class SelfTest
                          && legacyStatus.Kind == CardStatusKind.Normal;
 
             // 2.37.0：托盘 / 卡片右键菜单共用样式；只保留四个可见入口。
+            // 2.41.0：设置窗菜单随明暗切换，且 Popup 内文字不能再被全局 TextBlock 染成白色。
             var menu = new ContextMenu();
-            HudMenuStyle.Apply(menu);
+            HudMenuStyle.Apply(menu, false);
             menu.Items.Add(new MenuItem { Header = "隐藏叠层", InputGestureText = "F9" });
             menu.Items.Add(new MenuItem { Header = "打开设置", InputGestureText = "F10" });
             menu.Items.Add(new MenuItem { Header = "解锁", InputGestureText = "F8" });
@@ -901,15 +976,37 @@ internal static class SelfTest
                 if (entry is MenuItem item) item.ApplyTemplate();
             menu.Measure(new Size(320, 220));
             menu.Arrange(new Rect(0, 0, 320, 220));
-            var menuBg = Application.Current?.TryFindResource("MenuBg") as SolidColorBrush;
-            var menuText = Application.Current?.TryFindResource("MenuText") as SolidColorBrush;
+
+            bool lightMenuOk = MenuContrast(menu, dark: false);
+            bool hasTextStyle = menu.Resources[typeof(TextBlock)] is Style;
+            HudMenuStyle.Apply(menu, true);
+            bool darkMenuOk = MenuContrast(menu, dark: true);
             var accentText = Application.Current?.TryFindResource("AccentText") as SolidColorBrush;
             bool menuOk = menu.Items.Count == 4
                        && menu.Style is not null
                        && menu.ItemContainerStyle is not null
-                       && menuBg is not null && menuBg.Color == Colors.White
-                       && menuText is not null && menuText.Color.R < 50
+                       && lightMenuOk && darkMenuOk && hasTextStyle
                        && accentText is not null && accentText.Color.R < 50;
+
+            // 2.42.0：菜单项加入集合时就把字符串标题换成带本地 MenuText 的 TextBlock；
+            // 自定义标题树里的普通文字也写本地前景色，图标/快捷键的显式颜色保留。
+            var headerMenu = new ContextMenu();
+            HudMenuStyle.Apply(headerMenu, false);
+            var headerItem = new MenuItem { Header = "菜单文字测试" };
+            headerMenu.Items.Add(headerItem);
+            bool stringHeaderOk = headerItem.Header is TextBlock stringBlock
+                               && stringBlock.ReadLocalValue(TextBlock.ForegroundProperty) != DependencyProperty.UnsetValue;
+
+            var headerPanel = new StackPanel();
+            var headerLabel = new TextBlock { Text = "自定义标题" };
+            var headerIcon = new TextBlock { Text = "图标", Foreground = Brushes.Gold };
+            headerPanel.Children.Add(headerLabel);
+            headerPanel.Children.Add(headerIcon);
+            var panelItem = new MenuItem { Header = headerPanel };
+            headerMenu.Items.Add(panelItem);
+            bool customHeaderOk = headerLabel.ReadLocalValue(TextBlock.ForegroundProperty) != DependencyProperty.UnsetValue
+                               && headerIcon.ReadLocalValue(TextBlock.ForegroundProperty) is SolidColorBrush;
+            menuOk = menuOk && stringHeaderOk && customHeaderOk;
 
             widgetsOk = emptyOk && countOk && selectOk && busyOk && errorOk && legacyOk && menuOk;
         }
@@ -918,6 +1015,19 @@ internal static class SelfTest
             Log.Error("共享控件自检异常", ex);
         }
         return widgetsOk;
+    }
+
+    /// <summary>菜单背景 / 文字的明暗必须成对：暗色黑底白字、亮色白底黑字。</summary>
+    static bool MenuContrast(ContextMenu menu, bool dark)
+    {
+        if (menu is null) return false;
+        var background = menu.Resources["MenuBg"] as SolidColorBrush;
+        var foreground = menu.Resources["MenuText"] as SolidColorBrush;
+        if (background is null || foreground is null) return false;
+
+        double bg = (background.Color.R + background.Color.G + background.Color.B) / 3.0 / 255.0;
+        double fg = (foreground.Color.R + foreground.Color.G + foreground.Color.B) / 3.0 / 255.0;
+        return dark ? bg < 0.25 && fg > 0.75 : bg > 0.75 && fg < 0.25;
     }
 
     /// <summary>共享控件（2.10.1）：Header 按钮可点、Input 回车提交、DropOverlay 显隐。</summary>

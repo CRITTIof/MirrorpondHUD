@@ -81,6 +81,13 @@ public sealed class ThemeMotion
     public string Profile;
     public bool? Loop;
     public string Effect;
+    /// <summary>信息文本卡文字出现动效：None / Particle。</summary>
+    public string TextEffect;
+    public double? TextParticleSize;
+    public int? TextParticleCount;
+    public double? TextParticleSpeed;
+    public bool? TextParticleNearest;
+    public bool? TextParticleGeometry;
     public double? DurationMs;
     public double? Amplitude;
     /// <summary>Pulse 描边粗细（1–8px）。</summary>
@@ -171,6 +178,12 @@ public sealed class ThemeDocument
         if (Industrial.ContourMinLoopArea.HasValue) style.ContourMinLoopArea = Industrial.ContourMinLoopArea.Value;
 
         if (Motion.Profile is not null) style.MotionProfile = Settings.NormalizeMotionProfile(Motion.Profile);
+        if (Motion.TextEffect is not null) style.TextEffect = Settings.NormalizeTextEffect(Motion.TextEffect);
+        if (Motion.TextParticleSize.HasValue) style.TextParticleSize = Motion.TextParticleSize.Value;
+        if (Motion.TextParticleCount.HasValue) style.TextParticleCount = Motion.TextParticleCount.Value;
+        if (Motion.TextParticleSpeed.HasValue) style.TextParticleSpeed = Motion.TextParticleSpeed.Value;
+        if (Motion.TextParticleNearest.HasValue) style.TextParticleNearest = Motion.TextParticleNearest.Value;
+        if (Motion.TextParticleGeometry.HasValue) style.TextParticleGeometry = Motion.TextParticleGeometry.Value;
         if (Motion.Effect is not null)
             style.LoopEffect = Settings.NormalizeLoopEffect(Motion.Effect, false);
         else if (Motion.Loop.HasValue)
@@ -483,6 +496,12 @@ public static class ThemeFile
 
         var motion = new Dictionary<string, object>();
         motion["profile"] = Settings.NormalizeMotionProfile(style.MotionProfile);
+        motion["textEffect"] = Settings.NormalizeTextEffect(style.TextEffect);
+        motion["textParticleSize"] = style.TextParticleSize;
+        motion["textParticleCount"] = style.TextParticleCount;
+        motion["textParticleSpeed"] = style.TextParticleSpeed;
+        motion["textParticleNearest"] = style.TextParticleNearest;
+        motion["textParticleGeometry"] = style.TextParticleGeometry;
         motion["effect"] = Settings.NormalizeLoopEffect(style.LoopEffect, style.LoopMotion);
         motion["loop"] = style.LoopEffect != "None";
         motion["durationMs"] = style.LoopDurationMs;
@@ -718,6 +737,28 @@ public static class ThemeFile
                 }
             }
             doc.Motion.Loop = motion.Bool("loop");
+
+            string textEffect = motion.String("textEffect");
+            if (textEffect is not null)
+            {
+                if (!Settings.IsTextEffect(textEffect))
+                {
+                    motion.Fail("textEffect", "必须是 None / Particle");
+                }
+                else
+                {
+                    doc.Motion.TextEffect = Settings.NormalizeTextEffect(textEffect);
+                }
+            }
+
+            doc.Motion.TextParticleSize = motion.Number("textParticleSize");
+            motion.Range(doc.Motion.TextParticleSize, "textParticleSize", 0.8, 4.0);
+            doc.Motion.TextParticleCount = motion.Int("textParticleCount");
+            motion.Range(doc.Motion.TextParticleCount, "textParticleCount", 200, 3000);
+            doc.Motion.TextParticleSpeed = motion.Number("textParticleSpeed");
+            motion.Range(doc.Motion.TextParticleSpeed, "textParticleSpeed", 0.2, 4.0);
+            doc.Motion.TextParticleNearest = motion.Bool("textParticleNearest");
+            doc.Motion.TextParticleGeometry = motion.Bool("textParticleGeometry");
 
             string effect = motion.String("effect");
             if (effect is not null)

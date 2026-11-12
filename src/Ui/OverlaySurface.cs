@@ -30,6 +30,7 @@ public sealed class OverlaySurface : Border
     readonly Border _loopBand;
     readonly Border _contentLayer;
     readonly TextCanvas _canvas;
+    readonly ParticleTextLayer _particleLayer;
     readonly ContourDecoration _contourLayer;
     readonly Border _contourHost;
     readonly TextBlock _metaTop;
@@ -44,6 +45,12 @@ public sealed class OverlaySurface : Border
     Settings _lastSettings;
     string _resolvedCardAlign;
     string _lastCardAlignSetting;
+    string _particleSkeleton;
+    string _lastTextEffect = "None";
+    Color _particleColor = Colors.White;
+    bool _particlePending;
+    int _particleRetries;
+    DateTime _lastParticlePlayUtc = DateTime.MinValue;
 
     BitmapImage _image;
     string _imagePath;
@@ -51,6 +58,7 @@ public sealed class OverlaySurface : Border
     public OverlaySurface()
     {
         _canvas = new TextCanvas();
+        _particleLayer = new ParticleTextLayer();
         _tintLayer = new Border { IsHitTestVisible = false };
         _glassLayer = new Border
         {
@@ -124,10 +132,14 @@ public sealed class OverlaySurface : Border
         _root.Children.Add(_loopLayer);
         _root.Children.Add(_loopBand);
         _root.Children.Add(_canvas);
+        _root.Children.Add(_particleLayer);
         _root.Children.Add(_contentLayer);
         _root.Children.Add(_metaTop);
         _root.Children.Add(_metaBottom);
         Unloaded += (s, e) => StopContourLoop();
+        Unloaded += (s, e) => _particleLayer.Stop();
+        Loaded += OnSurfaceLoaded;
+        IsVisibleChanged += OnSurfaceVisibleChanged;
 
 
         Child = _root;
@@ -139,10 +151,73 @@ public sealed class OverlaySurface : Border
 
     public TextCanvas Canvas => _canvas;
 
+    void OnSurfaceLoaded(object sender, RoutedEventArgs e) => FlushParticlePending();
+
+    void OnSurfaceVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        if (IsVisible) FlushParticlePending();
+        else
+        {
+            _particlePending = false;
+            _particleRetries = 0;
+            _particleLayer.Stop();
+            // 文本没变就保持骨架；重新呼出同一句不再空等一次粒子。
+        }
+    }
+
+    void FlushParticlePending()
+    {
+        if (!_particlePending) return;
+        if (!ParticleEnabled())
+        {
+            _particlePending = false;
+            _particleRetries = 0;
+            return;
+        }
+
+        if (_particleRetries++ > 8)
+        {
+            // 画布一直没量好（例如卡片刚创建就被折叠）：放弃这次，等下一次 SetText。
+            _particlePending = false;
+            _particleRetries = 0;
+            return;
+        }
+
+        _particleLayer.Margin = _canvas.Margin;
+        if (_particleLayer.SchedulePlay(_canvas, _particleColor, _lastSettings.Style))
+        {
+            _particleSkeleton = TextSkeleton(_canvas.Text);
+            _lastParticlePlayUtc = DateTime.UtcNow;
+            _particlePending = false;
+            _particleRetries = 0;
+            return;
+        }
+
+        // 首次显示时 IsVisibleChanged 往往早于布局，ActualWidth 还是 0；等下一轮布局再试。
+        Dispatcher.BeginInvoke(new Action(FlushParticlePending),
+            System.Windows.Threading.DispatcherPriority.Background);
+    }
+
+    bool ParticleEnabled()
+    {
+        if (_lastSettings is null || _metaConfig is null) return false;
+        if (!string.Equals(_metaConfig.Kind, "infotext", StringComparison.OrdinalIgnoreCase)) return false;
+        if (!CardMotion.Enabled) return false;
+        return string.Equals(Settings.NormalizeTextEffect(_lastSettings.Style.TextEffect),
+            "Particle", StringComparison.Ordinal);
+    }
+
     /// <summary>纯文字卡的 M6 编号 / 页脚；富内容卡由各自控件画，传 null 即隐藏。</summary>
     public void SetCardMeta(CardSettings config)
     {
+        bool kindChanged = !string.Equals(_metaConfig?.Kind, config?.Kind, StringComparison.OrdinalIgnoreCase);
         _metaConfig = config;
+        if (kindChanged)
+        {
+            _particleLayer.Stop();
+            _particleSkeleton = null;
+            _particlePending = false;
+        }
         UpdateMeta();
     }
 
@@ -171,6 +246,7 @@ public sealed class OverlaySurface : Border
         {
             _canvas.Margin = _textMargin;
         }
+        _particleLayer.Margin = _canvas.Margin;
     }
 
     /// <summary>装饰层是否为等高线且首帧几何已就绪；截图等离屏路径用。</summary>
@@ -195,6 +271,9 @@ public sealed class OverlaySurface : Border
         _resolvedCardAlign = normalized;
         UpdateTextAlignment();
     }
+
+    /// <summary>最近一次布局协调器解析出的整叠对齐；卡片滑入“跟随对齐”用。</summary>
+    public string ResolvedCardAlignment => _resolvedCardAlign;
 
     /// <summary>
     /// 文字对齐：Left / Center / Right / Justify 直接映射；Card 跟随整叠对齐。
@@ -294,6 +373,77 @@ public sealed class OverlaySurface : Border
 
     public void SetText(string text, bool cursor) => SetText(text, cursor, -1);
 
+    /// <summary>
+    /// 文字骨架：数字统一换成 #，空白折叠。指标 / 时钟只有数字变化时骨架不变，
+    /// 不触发粒子重播；预设、星期、按键名这类真正的文字变化才触发。
+    /// </summary>
+    internal static string TextSkeleton(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return "";
+
+        var builder = new System.Text.StringBuilder(text.Length);
+        bool lastSpace = false;
+        foreach (char c in text)
+        {
+            if (char.IsDigit(c))
+            {
+                builder.Append('#');
+                lastSpace = false;
+            }
+            else if (char.IsWhiteSpace(c))
+            {
+                if (!lastSpace) builder.Append(' ');
+                lastSpace = true;
+            }
+            else
+            {
+                builder.Append(c);
+                lastSpace = false;
+            }
+        }
+        return builder.ToString();
+    }
+
+    void MaybePlayParticle(string text, bool cursor)
+    {
+        if (_lastSettings is null) return;
+
+        string skeleton = TextSkeleton(text);
+        if (!ParticleEnabled())
+        {
+            _particleLayer.Stop();
+            _particleSkeleton = skeleton;
+            _particlePending = false;
+            return;
+        }
+
+        // 启动打字动画 / CLI 光标逐字刷新不播粒子，只更新骨架，避免每敲一个字炸一次。
+        if (cursor)
+        {
+            _particleSkeleton = skeleton;
+            return;
+        }
+
+        if (string.Equals(skeleton, _particleSkeleton, StringComparison.Ordinal)) return;
+
+        if (!IsLoaded || !IsVisible)
+        {
+            _particlePending = true;
+            _particleRetries = 0;
+            return;
+        }
+
+        // 按键卡会频繁换字；最快 1.2 秒一次，避免连续重启动画。
+        if ((DateTime.UtcNow - _lastParticlePlayUtc).TotalMilliseconds < 1200) return;
+
+        _particleLayer.Margin = _canvas.Margin;
+        if (_particleLayer.SchedulePlay(_canvas, _particleColor, _lastSettings.Style))
+        {
+            _particleSkeleton = skeleton;
+            _lastParticlePlayUtc = DateTime.UtcNow;
+        }
+    }
+
     /// <summary>当前文字层内容（只重画底层时用来原样恢复）。</summary>
     public string Text => _canvas.Text;
 
@@ -302,6 +452,7 @@ public sealed class OverlaySurface : Border
         _canvas.Text = text ?? "";
         _canvas.CursorIndex = cursorIndex;
         _canvas.CursorVisible = cursor;
+        MaybePlayParticle(_canvas.Text, cursor);
     }
 
     /// <summary>重新按当前内容量尺寸（切换命令行时用）。</summary>
@@ -403,6 +554,17 @@ public sealed class OverlaySurface : Border
         }
 
         UpdateMeta();
+
+        _particleColor = ParseColor(style.Foreground, Colors.White);
+        string textEffect = Settings.NormalizeTextEffect(style.TextEffect);
+        if (!string.Equals(textEffect, _lastTextEffect, StringComparison.Ordinal))
+        {
+            _lastTextEffect = textEffect;
+            // 从“无”切到“粒子”时强制下一次播放，不能因为文字没变就看不到效果。
+            _particleSkeleton = null;
+        }
+        _particleLayer.Margin = _canvas.Margin;
+        MaybePlayParticle(_canvas.Text, cursor);
     }
 
     // ==================== 背景图片 ====================
@@ -583,7 +745,7 @@ public sealed class OverlaySurface : Border
         if (_contourHost.Visibility != Visibility.Visible) return;
 
         // 原地形变：phase 只改变两套固定地形场的混合权重，不移动噪声坐标。
-        // 速度 1.0 ≈ 4 秒一个形变周期；2.0 约 2 秒，0.5 约 8 秒。
+        // 速度 1.0 = 10 秒一个形变周期；2.0 约 5 秒，0.5 约 20 秒。
         _contourSpeed = Math.Max(0.1, Math.Min(4.0, styleSpeed));
 
         if (_contourTimer is null)
@@ -602,7 +764,7 @@ public sealed class OverlaySurface : Border
                 if (elapsed < 0) elapsed = 0;
                 if (elapsed > 100) elapsed = 100;
 
-                _contourPhase += (2.0 * Math.PI * elapsed / 4000.0) * _contourSpeed;
+                _contourPhase += (2.0 * Math.PI * elapsed / ContourBasePeriodMs) * _contourSpeed;
                 if (_contourPhase > 2.0 * Math.PI) _contourPhase -= 2.0 * Math.PI;
                 _contourLayer.SetPhase(_contourPhase);
             };
@@ -613,6 +775,9 @@ public sealed class OverlaySurface : Border
             _contourTimer.Start();
         }
     }
+
+    /// <summary>1.0x 的等高线形变周期（毫秒）；与 StyleSettings.ContourPeriodSeconds 保持一致。</summary>
+    const double ContourBasePeriodMs = 10000.0;
 
     void StopContourLoop()
     {
