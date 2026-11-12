@@ -77,6 +77,7 @@ public static class CardOverlaySelfTest
             Check(failures, modal.IsOpen, "CardModal.Show 后 IsOpen 应为 true");
             Check(failures, host.Children.Contains(modal), "CardModal.Show 后应加入宿主面板");
             Render(host, "CardModal");
+            CheckContrast(failures, modal, "CardModal");
 
             modal.Close();
             Check(failures, !modal.IsOpen, "CardModal.Close 后 IsOpen 应为 false");
@@ -99,6 +100,7 @@ public static class CardOverlaySelfTest
             Check(failures, dialogTask is not null, "CardDialog.ShowAsync 应返回 Task<bool>");
             Check(failures, ReferenceEquals(dialog.ShowAsync(host), dialogTask), "CardDialog 重复 Show 不应叠加");
             Render(host, "CardDialog");
+            CheckContrast(failures, dialog, "CardDialog");
 
             dialog.CloseWith(true);
             Check(failures, dialog.DialogResult, "CardDialog.CloseWith(true) 的 DialogResult 应为 true");
@@ -133,6 +135,7 @@ public static class CardOverlaySelfTest
             popover.ShowAt(target);
             Check(failures, popover.IsOpen, "CardPopover.ShowAt 后应打开（目标未 Loaded 也不应抛异常）");
             Render((Visual)popover.Child, "CardPopover");
+            CheckContrast(failures, popover.Child as FrameworkElement, "CardPopover");
 
             popover.Close();
             Check(failures, !popover.IsOpen, "CardPopover.Close 后应关闭");
@@ -142,6 +145,7 @@ public static class CardOverlaySelfTest
             tooltip.ApplyStyle(style, 12);
             tooltip.Attach(target);
             Render((Visual)tooltip.Child, "CardTooltip");
+            CheckContrast(failures, tooltip.Child as FrameworkElement, "CardTooltip");
             tooltip.Detach();
             Check(failures, !tooltip.IsOpen, "CardTooltip.Detach 后应关闭");
 
@@ -169,6 +173,7 @@ public static class CardOverlaySelfTest
             bool toastClosed = false;
             if (toast is not null) toast.Closed += (s, e) => toastClosed = true;
             Render(host, "CardToast");
+            CheckContrast(failures, toast, "CardToast");
 
             toast.Dismiss();
             Check(failures, !host.Children.Contains(toast), "CardToast.Dismiss 后应从宿主移除");
@@ -197,16 +202,16 @@ public static class CardOverlaySelfTest
         finally
         {
             // 所有独立 HWND / 定时器 / 动画都必须在这里关掉，测试进程里不能留浮层。
-            Try(() => { if (modal is not null) modal.Close(); });
-            Try(() => { if (dialog is not null) dialog.Close(); });
-            Try(() => { if (cancelDialog is not null) cancelDialog.Close(); });
-            Try(() => { if (popover is not null) popover.Close(); });
-            Try(() => { if (tooltip is not null) tooltip.Dispose(); });
-            Try(() => { if (menu is not null) menu.IsOpen = false; });
+            Try(failures, "CardModal", () => { if (modal is not null) modal.Close(); });
+            Try(failures, "CardDialog", () => { if (dialog is not null) dialog.Close(); });
+            Try(failures, "CardDialog(取消)", () => { if (cancelDialog is not null) cancelDialog.Close(); });
+            Try(failures, "CardPopover", () => { if (popover is not null) popover.Close(); });
+            Try(failures, "CardTooltip", () => { if (tooltip is not null) tooltip.Dispose(); });
+            Try(failures, "CardContextMenu", () => { if (menu is not null) menu.IsOpen = false; });
             foreach (CardToast toast in toasts)
             {
                 CardToast current = toast;
-                Try(() => current.Dismiss());
+                Try(failures, "CardToast", () => current.Dismiss());
             }
         }
 
@@ -218,10 +223,105 @@ public static class CardOverlaySelfTest
         if (!ok) failures.Add(message);
     }
 
-    static void Try(Action action)
+    static void Try(List<string> failures, string what, Action action)
     {
         try { action(); }
-        catch (InvalidOperationException) { }
+        catch (Exception ex)
+        {
+            // K-42：清理路径原来只吞 InvalidOperationException，其它异常会从 finally 逃逸、
+            // 或者被静默忽略。这里把每一处收尾失败都记成自检失败，不再假装干净。
+            failures.Add($"{what} 清理失败：{ex.GetType().Name}：{ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// K-42：自检原来只验“不崩 / 尺寸”，配色错了照样通过。这里在渲染后的可视树里找
+    /// 第一组“文字 + 最近的实底祖先”，把两边 alpha 合成成屏幕上的实际颜色，再算 WCAG 对比度。
+    /// 门槛 3.0：浮层里最小也是 12px 级文字，低于 3.0 已经属于看不清。
+    /// </summary>
+    static void CheckContrast(List<string> failures, FrameworkElement root, string name, double minimum = 3.0)
+    {
+        if (root is null) return;
+
+        root.ApplyTemplate();
+        if (!TryFindTextAndBackground(root, out Color text, out Color background))
+        {
+            failures.Add($"{name} 找不到可校验的文字 / 背景颜色，对比度断言无法执行");
+            return;
+        }
+
+        double ratio = ContrastRatio(text, background);
+        if (ratio < minimum)
+            failures.Add($"{name} 前景 / 背景对比度为 {ratio:0.00}，低于 {minimum:0.0}（前景 {text}，背景 {background}）");
+    }
+
+    static bool TryFindTextAndBackground(DependencyObject node, out Color text, out Color background)
+    {
+        text = Colors.Transparent;
+        background = Colors.Transparent;
+
+        if (node is TextBlock block && !string.IsNullOrEmpty(block.Text) &&
+            block.Foreground is SolidColorBrush foreground)
+        {
+            Color? backdrop = FindOpaqueBackground(node);
+            if (backdrop.HasValue)
+            {
+                text = foreground.Color;
+                background = backdrop.Value;
+                return true;
+            }
+        }
+
+        int count = VisualTreeHelper.GetChildrenCount(node);
+        for (int i = 0; i < count; i++)
+        {
+            if (TryFindTextAndBackground(VisualTreeHelper.GetChild(node, i), out text, out background)) return true;
+        }
+        return false;
+    }
+
+    /// <summary>向上找最近的、alpha 接近满值的纯色背景；半透明层的合成结果不确定，跳过。</summary>
+    static Color? FindOpaqueBackground(DependencyObject node)
+    {
+        DependencyObject current = node;
+        while (current is not null)
+        {
+            if (current is Border border && border.Background is SolidColorBrush borderBrush && borderBrush.Color.A >= 200)
+                return borderBrush.Color;
+            if (current is Panel panel && panel.Background is SolidColorBrush panelBrush && panelBrush.Color.A >= 200)
+                return panelBrush.Color;
+            if (current is Control control && control.Background is SolidColorBrush controlBrush && controlBrush.Color.A >= 200)
+                return controlBrush.Color;
+
+            current = VisualTreeHelper.GetParent(current);
+        }
+        return null;
+    }
+
+    /// <summary>WCAG 2.1 对比度；前景 alpha 先与背景合成，避免“半透明文字看着还行”的假通过。</summary>
+    static double ContrastRatio(Color foreground, Color background)
+    {
+        double alpha = foreground.A / 255.0;
+        var mixed = Color.FromRgb(
+            (byte)Math.Round(foreground.R * alpha + background.R * (1 - alpha)),
+            (byte)Math.Round(foreground.G * alpha + background.G * (1 - alpha)),
+            (byte)Math.Round(foreground.B * alpha + background.B * (1 - alpha)));
+
+        double high = RelativeLuminance(mixed);
+        double low = RelativeLuminance(background);
+        if (low > high) (high, low) = (low, high);
+        return (high + 0.05) / (low + 0.05);
+    }
+
+    static double RelativeLuminance(Color color)
+    {
+        static double Channel(byte value)
+        {
+            double c = value / 255.0;
+            return c <= 0.03928 ? c / 12.92 : Math.Pow((c + 0.055) / 1.055, 2.4);
+        }
+
+        return 0.2126 * Channel(color.R) + 0.7152 * Channel(color.G) + 0.0722 * Channel(color.B);
     }
 
     /// <summary>Measure / Arrange + RenderTargetBitmap（320×180）；只验证不崩，不比较像素。</summary>

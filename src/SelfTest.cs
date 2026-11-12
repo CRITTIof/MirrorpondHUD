@@ -971,10 +971,9 @@ internal static class SelfTest
         {
             // 2.10.0 共享控件：列表的空状态 / 计数 / 选中，状态行的忙碌 / 进度 / 错误态。
             var style = new StyleSettings { FontSize = 15, Foreground = "#E6EDF3" };
-            var cli = new CliSettings();
 
             var list = new CardList();
-            list.ApplyStyle(style, cli);
+            list.ApplyStyle(style);
             bool emptyOk = list.IsEmpty;
 
             list.Items.Add("a");

@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using MirrorpondHUD.Core;
 
 namespace MirrorpondHUD.Ui.Controls;
@@ -52,6 +54,27 @@ public static class CardChartSelfTest
         spark.Add(4);
         if (spark.Values.Count != 6)
             return $"CardSparkline.Add 后数量为 {spark.Values.Count}，应为 6";
+
+        // K-36：集合是只读视图，改数据必须走 Add / RemoveAt / Clear 才会重绘。
+        if (spark.Values is List<double>)
+            return "CardSparkline.Values 不应直接暴露内部 List";
+        spark.SetValues(new double[] { 1, 2, 3 });
+        if (!spark.RemoveAt(1) || spark.Values.Count != 2)
+            return "CardSparkline.RemoveAt 没有生效";
+        spark.Clear();
+        if (spark.Values.Count != 0)
+            return "CardSparkline.Clear 后数量不为 0";
+
+        // K-34：非法格式串必须回退默认格式，不能再抛 FormatException。
+        // “X2” 是整数专用的标准格式说明符，对 double 会抛 FormatException。
+        string fallback = ChartDraw.FormatValue(12.5, "X2");
+        if (fallback != 12.5.ToString("0.##", CultureInfo.CurrentCulture))
+            return $"非法数值格式没有回退默认格式（得到 “{fallback}”）";
+
+        // K-42：图表配色必须来自主题令牌，不能悄悄退回硬编码色。
+        if (ChartDraw.Foreground(style) != Color.FromRgb(0xE6, 0xED, 0xF3))
+            return "ChartDraw.Foreground 没有取到主题前景色令牌";
+
         Render(spark, 240, 40);                                       // NaN / Infinity 安全
 
         spark.AutoScale = true;
@@ -83,6 +106,25 @@ public static class CardChartSelfTest
         line.ShowXLabels = true;
         line.Fill = true;
         Render(line, 400, 220);
+
+        // K-36：Series / Labels 是只读视图，改数据必须走 AddSeries / AddLabel（会重绘）。
+        if (line.Series is List<CardChartSeries>)
+            return "CardLineChart.Series 不应直接暴露内部 List";
+        if (line.Labels is List<string>)
+            return "CardLineChart.Labels 不应直接暴露内部 List";
+
+        line.AddSeries(new CardChartSeries("新增") { Values = new List<double> { 1, 2, 3 } });
+        if (line.Series.Count != 3)
+            return $"CardLineChart.AddSeries 后数量为 {line.Series.Count}，应为 3";
+        line.RemoveSeries(line.Series[2]);
+        if (line.Series.Count != 2)
+            return "CardLineChart.RemoveSeries 没有移除序列";
+        line.AddLabel("25");
+        if (line.Labels.Count != 6)
+            return $"CardLineChart.AddLabel 后标签数为 {line.Labels.Count}，应为 6";
+        line.ClearLabels();
+        if (line.Labels.Count != 0)
+            return "CardLineChart.ClearLabels 后标签数不为 0";
 
         line.Series = new List<CardChartSeries>
         {
@@ -157,6 +199,8 @@ public static class CardChartSelfTest
         Render(tree, 320, 220);
 
         tree.SelectedItem = first;
+        // K-32：选中改成了 Dispatcher 延后执行，自检必须把队列里的回调放行后再断言。
+        PumpDispatcher();
         tree.UpdateLayout();
         if (!ReferenceEquals(tree.SelectedItem, first)) return "CardTree.SelectedItem 没有选中目标节点";
         if (!selectionRaised) return "CardTree.SelectionChanged 没有随选中触发";
@@ -186,6 +230,15 @@ public static class CardChartSelfTest
         Render(timeline, 360, 200);
 
         return null;
+    }
+
+    /// <summary>K-32：把 Dispatcher 队列跑到空闲，让延后的选中回调有机会执行。</summary>
+    static void PumpDispatcher()
+    {
+        var frame = new DispatcherFrame();
+        Dispatcher.CurrentDispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle,
+            new Action(() => frame.Continue = false));
+        Dispatcher.PushFrame(frame);
     }
 
     /// <summary>测量 / 排布 / 渲染到离屏位图；控件小于 2px 也不能抛异常。</summary>

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -22,6 +23,17 @@ public static class CardTextStyle
     static readonly DependencyProperty LineAppliedProperty =
         DependencyProperty.RegisterAttached("LineApplied", typeof(bool), typeof(CardTextStyle),
             new PropertyMetadata(false));
+
+    // K-40：描边效果按（颜色 + 模糊半径）缓存并冻结。冻结的 Freezable 是线程安全的，
+    // 所以可以跨控件、跨线程共享；以前每个 TextBlock、每次换肤都会 new 一个等价 Effect。
+    static readonly Dictionary<string, DropShadowEffect> EffectCache = new(StringComparer.Ordinal);
+
+    // 记录“这个元素当前贴的是哪个参数的效果”，参数没变就完全跳过赋值。
+    static readonly DependencyProperty OutlineKeyProperty =
+        DependencyProperty.RegisterAttached("OutlineKey", typeof(string), typeof(CardTextStyle),
+            new PropertyMetadata(null));
+
+    const int EffectCacheCapacity = 32;
 
     public static void ApplyOutline(StyleSettings style, DependencyObject root)
         => ApplyRichText(style, root);
@@ -47,11 +59,41 @@ public static class CardTextStyle
         if (node is TextBlock || node is TextBox)
         {
             ApplyOne((FrameworkElement)node, style, outline);
+            // K-40：文本控件内部的 Inline / ScrollViewer 不会再有需要补样式的 TextBlock，
+            // 走到这里就停，避免在大段流式文本的整棵子树上来回遍历。
+            return;
         }
 
         int count = VisualTreeHelper.GetChildrenCount(node);
         for (int i = 0; i < count; i++)
             Walk(VisualTreeHelper.GetChild(node, i), style, outline);
+    }
+
+    /// <summary>K-40：同一组（颜色、模糊半径）的描边效果只建一次，冻结后全局复用。</summary>
+    static DropShadowEffect OutlineEffect(Color color, double blurRadius)
+    {
+        string key = $"{CardTemplates.Hex(color)}|{Math.Round(blurRadius, 3)}";
+        lock (EffectCache)
+        {
+            if (EffectCache.TryGetValue(key, out var cached)) return cached;
+        }
+
+        var effect = new DropShadowEffect
+        {
+            Color = color,
+            ShadowDepth = 0,
+            Direction = 0,
+            BlurRadius = blurRadius,
+            Opacity = 0.9
+        };
+        effect.Freeze();
+
+        lock (EffectCache)
+        {
+            if (EffectCache.Count >= EffectCacheCapacity) EffectCache.Clear();
+            EffectCache[key] = effect;
+        }
+        return effect;
     }
 
     static void ApplyOne(FrameworkElement element, StyleSettings style, bool outline)
@@ -64,21 +106,23 @@ public static class CardTextStyle
             {
                 element.Effect = null;
                 element.SetValue(OutlineAppliedProperty, false);
+                element.ClearValue(OutlineKeyProperty);
             }
         }
         else
         {
             Color color = CardPalette.TryColor(style.OutlineColor, Colors.Black);
-            var effect = new DropShadowEffect
+            double blur = Math.Max(1.0, style.OutlineThickness * 2.2);
+            string key = $"{CardTemplates.Hex(color)}|{Math.Round(blur, 3)}";
+            DropShadowEffect effect = OutlineEffect(color, blur);
+
+            // 参数没变就不重贴：换肤 / 流式追加文本时完全不碰效果对象。
+            if (!ReferenceEquals(element.Effect, effect) ||
+                !string.Equals(element.GetValue(OutlineKeyProperty) as string, key, StringComparison.Ordinal))
             {
-                Color = color,
-                ShadowDepth = 0,
-                Direction = 0,
-                BlurRadius = Math.Max(1.0, style.OutlineThickness * 2.2),
-                Opacity = 0.9
-            };
-            effect.Freeze();
-            element.Effect = effect;
+                element.Effect = effect;
+                element.SetValue(OutlineKeyProperty, key);
+            }
             element.SetValue(OutlineAppliedProperty, true);
         }
 

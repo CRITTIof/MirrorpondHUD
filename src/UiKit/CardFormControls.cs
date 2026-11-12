@@ -163,7 +163,8 @@ public sealed class CardSlider : Grid, ICardFormControl
 
     void RefreshValueText() => UpdateValueText();
 
-    void UpdateValueText() => _valueText.Text = _slider.Value.ToString(ValueFormat, CultureInfo.CurrentCulture);
+    // K-34：格式串来自设置，非法格式不能让 ToString 抛 FormatException（旧实现会直接崩 UI）。
+    void UpdateValueText() => _valueText.Text = CardFormat.Number(_slider.Value, ValueFormat);
 
     void RaiseValueChanged(double value)
     {
@@ -192,7 +193,11 @@ public sealed class CardSlider : Grid, ICardFormControl
             "<Border Background=\"Transparent\"/></ControlTemplate></RepeatButton.Template>" +
             "</RepeatButton></Track.IncreaseRepeatButton>" +
             "</Track></Grid></ControlTemplate>";
-        return (ControlTemplate)XamlReader.Parse(xaml);
+
+        // K-29：模板只由这三个颜色决定，按颜色缓存，换肤不重解析。
+        return CardTemplates.Get(
+            $"CardForm.Slider|{CardTemplates.KeyOf(track)}|{CardTemplates.KeyOf(accent)}|{CardTemplates.KeyOf(border)}",
+            () => (ControlTemplate)XamlReader.Parse(xaml), "滑块模板");
     }
 }
 
@@ -253,7 +258,10 @@ public sealed class CardToggle : CheckBox, ICardFormControl
             "</Trigger>" +
             "</ControlTemplate.Triggers>" +
             "</ControlTemplate>";
-        return (ControlTemplate)XamlReader.Parse(xaml);
+        // K-29：勾选框模板只由四个颜色决定。
+        return CardTemplates.Get(
+            $"CardForm.Toggle|{CardTemplates.KeyOf(border)}|{CardTemplates.KeyOf(accent)}|{CardTemplates.KeyOf(accentBg)}|{CardTemplates.KeyOf(hover)}",
+            () => (ControlTemplate)XamlReader.Parse(xaml), "开关模板");
     }
 }
 
@@ -384,7 +392,10 @@ public sealed class CardSelect : Grid, ICardFormControl
             "<Trigger Property=\"IsDropDownOpen\" Value=\"True\"><Setter TargetName=\"Toggle\" Property=\"Focusable\" Value=\"False\"/></Trigger>" +
             "</ControlTemplate.Triggers>" +
             "</ControlTemplate>";
-        return (ControlTemplate)XamlReader.Parse(xaml);
+        // K-29：下拉框模板只由这五个颜色决定。
+        return CardTemplates.Get(
+            $"CardForm.Combo|{CardTemplates.KeyOf(background)}|{CardTemplates.KeyOf(border)}|{CardTemplates.KeyOf(panel)}|{CardTemplates.KeyOf(foreground)}|{CardTemplates.KeyOf(accent)}",
+            () => (ControlTemplate)XamlReader.Parse(xaml), "下拉框模板");
     }
 }
 
@@ -443,7 +454,7 @@ public sealed class CardNumberInput : Grid, ICardFormControl
 
     public double Value
     {
-        get => Parse(_box.Text); set => _box.Text = Math.Max(Minimum, Math.Min(Maximum, value)).ToString(ValueFormat, CultureInfo.CurrentCulture);
+        get => Parse(_box.Text); set => _box.Text = CardFormat.Number(Math.Max(Minimum, Math.Min(Maximum, value)), ValueFormat);
     }
 
     public string ValueFormat { get; set; } = "0.##";
@@ -467,7 +478,7 @@ public sealed class CardNumberInput : Grid, ICardFormControl
     {
         double value = Parse(_box.Text);
         value = Math.Max(Minimum, Math.Min(Maximum, value));
-        _box.Text = value.ToString(ValueFormat, CultureInfo.CurrentCulture);
+        _box.Text = CardFormat.Number(value, ValueFormat);
 
         Action<double> handler = ValueChanged;
         if (handler is not null) handler(value);
@@ -565,7 +576,7 @@ public sealed class CardColorPicker : Grid, ICardFormControl
     {
         if (TryParseColor(_box.Text, out var color))
         {
-            _preview.Background = new SolidColorBrush(color);
+            _preview.Background = CardPalette.Brush(color);
             _box.BorderBrush = CardPalette.Brush(_foreground, 0.24);
             if (!_updating) RaiseValueChanged(_box.Text ?? "");
         }

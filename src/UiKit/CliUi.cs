@@ -29,18 +29,33 @@ public static class CardPalette
         return Color.FromArgb(a, color.R, color.G, color.B);
     }
 
-    public static SolidColorBrush Brush(Color color, double alpha)
-    {
-        var brush = new SolidColorBrush(WithAlpha(color, alpha));
-        brush.Freeze();
-        return brush;
-    }
+    /// <summary>按最终颜色缓存已冻结的画刷：同一套令牌在每次换肤 / 每帧绘制里复用同一个实例（K-30）。</summary>
+    static readonly Dictionary<uint, SolidColorBrush> BrushCache = new();
+
+    // 令牌颜色是有限的几种灰阶 + 强调 / 危险 / 成功色，512 足够覆盖全部组合；
+    // 超限整表清空即可，不需要 LRU。
+    const int BrushCacheCapacity = 512;
+
+    public static SolidColorBrush Brush(Color color, double alpha) => Brush(WithAlpha(color, alpha));
 
     /// <summary>令牌通常是「已带 alpha」的最终颜色，直接刷。</summary>
     public static SolidColorBrush Brush(Color color)
     {
+        uint key = ((uint)color.A << 24) | ((uint)color.R << 16) | ((uint)color.G << 8) | color.B;
+        lock (BrushCache)
+        {
+            if (BrushCache.TryGetValue(key, out var cached)) return cached;
+        }
+
+        // 冻结是画刷复用与跨线程共享的前提；这里统一建，调用方不必再自己 Freeze。
         var brush = new SolidColorBrush(color);
         brush.Freeze();
+
+        lock (BrushCache)
+        {
+            if (BrushCache.Count >= BrushCacheCapacity) BrushCache.Clear();
+            BrushCache[key] = brush;
+        }
         return brush;
     }
 
@@ -131,8 +146,18 @@ public static class CliScrollBars
             .Replace("%THUMB%", thumb.ToString())
             .Replace("%THUMBHOT%", hot.ToString());
 
-        var dictionary = (ResourceDictionary)XamlReader.Parse(xaml);
-        style = (Style)dictionary["Bar"];
+        // K-29：模板是字符串拼的，颜色串异常就会抛 XamlParseException。失败只记日志并返回
+        // null，Apply 会保留系统滚动条，异常不允许逸出到调用方（换肤 / 卡片构造）的 UI 线程。
+        try
+        {
+            var dictionary = (ResourceDictionary)XamlReader.Parse(xaml);
+            style = (Style)dictionary["Bar"];
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"滚动条模板解析失败，已回退系统滚动条：{ex.GetType().Name}：{ex.Message}");
+            return null;
+        }
 
         lock (Cache)
         {
@@ -146,7 +171,10 @@ public static class CliScrollBars
     public static void Apply(FrameworkElement host, Color thumb, Color hot)
     {
         if (host is null) return;
-        host.Resources[typeof(ScrollBar)] = For(thumb, hot);
+
+        // 模板不可用（解析失败已记日志）时保留上一次 / 系统的滚动条，不把 null 塞进资源。
+        Style style = For(thumb, hot);
+        if (style is not null) host.Resources[typeof(ScrollBar)] = style;
     }
 }
 
@@ -161,6 +189,10 @@ public sealed class CliEntryPanel : Border
     {
         public double Alpha;
         public double SizeDelta;
+
+        // K-33：调用方逐条指定过加粗（流式回答的小标题等）。换肤时若只按全局 _bold 重排，
+        // 这些单条加粗会一起丢；原始参数必须连同加粗意图一起存下来。
+        public bool Bold;
     }
 
     readonly ScrollViewer _scroller;
@@ -220,7 +252,7 @@ public sealed class CliEntryPanel : Border
             FontWeight = (bold || _bold) ? FontWeights.SemiBold : FontWeights.Normal,
             TextAlignment = _alignment,
             Margin = new Thickness(0, 0, 4, bottomMargin),
-            Tag = new TextInfo { Alpha = alpha, SizeDelta = sizeDelta }
+            Tag = new TextInfo { Alpha = alpha, SizeDelta = sizeDelta, Bold = bold }
         };
         CardTextStyle.ApplyToElement(block, _style);
 
@@ -253,11 +285,13 @@ public sealed class CliEntryPanel : Border
             var info = block.Tag as TextInfo;
             double alpha = info is null ? 1.0 : info.Alpha;
             double delta = info is null ? 0.0 : info.SizeDelta;
+            // K-33：逐条加粗意图 + 全局加粗，两者取或，与 AddText 的判定保持一致。
+            bool bold = info is null ? _bold : info.Bold || _bold;
 
             block.FontSize = _fontSize + delta;
             block.LineHeight = _lineHeight > 0 ? _lineHeight : Math.Max(_fontSize + 2, _fontSize * 1.5);
             block.FontFamily = _mono;
-            block.FontWeight = _bold ? FontWeights.SemiBold : FontWeights.Normal;
+            block.FontWeight = bold ? FontWeights.SemiBold : FontWeights.Normal;
             block.TextAlignment = _alignment;
             block.Foreground = CardPalette.Brush(_foreground, alpha);
             CardTextStyle.ApplyToElement(block, _style);
@@ -329,10 +363,12 @@ public abstract class CliPanelView : Grid, ICliFocusTarget
         HostSettings = settings;
         Cli = cli ?? new CliSettings();
         Cli.Normalize();
-        StyleSet = settings is null ? new StyleSettings() : settings.Style;
+        // K-33：settings 与 settings.Style / Overlay 都可能是 null（宿主还没加载完设置），
+        // 这里必须兜底，否则构造阶段就是 NRE。
+        StyleSet = settings?.Style ?? new StyleSettings();
         Tokens = ThemeResolver.Resolve(StyleSet);
         MonoFamily = new FontFamily(Tokens.MonoFont);
-        Corner = settings is null ? 10 : settings.Overlay.CornerRadius;
+        Corner = settings?.Overlay?.CornerRadius ?? 10;
         Foreground = CardPalette.TryColor(StyleSet.Foreground, Color.FromRgb(0xE6, 0xED, 0xF3));
         FontSize = Math.Max(10, StyleSet.FontSize - 1);
         Pad = Math.Max(10, StyleSet.Padding * 0.85);
