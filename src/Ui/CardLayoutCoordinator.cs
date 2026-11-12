@@ -33,6 +33,7 @@ internal sealed class CardLayoutCoordinator
     double _lastAnchorX = double.NaN;
     int _lastCardCount = -1;
     string _lastAlign;
+    bool _widthsComplete;
     /// <summary>每张卡上一次的 X。显隐动画期间保留它，只更新 Y，避免整排横向移动。</summary>
     readonly Dictionary<CardSlot, double> _knownX = new();
 
@@ -126,37 +127,46 @@ internal sealed class CardLayoutCoordinator
         // 显隐期间保持同一条右边缘；非常驻的临时卡片只在显示时参与。
         double visibleWidth = 0;
         double stackWidth = 0;
+        bool widthsComplete = true;
         foreach (CardSlot slot in _cards)
         {
             double width = slot.Window.CardWidth;
+            bool resident = slot.Config is not null && slot.Config.Resident;
+            bool relevant = slot.Shown || resident;
+            if (relevant && width <= 0) widthsComplete = false;
             if (width <= 0) continue;
 
             if (slot.Shown) visibleWidth = Math.Max(visibleWidth, width);
-            bool resident = slot.Config is not null && slot.Config.Resident;
-            if (slot.Shown || resident) stackWidth = Math.Max(stackWidth, width);
+            if (relevant) stackWidth = Math.Max(stackWidth, width);
         }
 
         if (stackWidth <= 0) stackWidth = visibleWidth;
 
         string align = ResolveAlign(settings, visibleWidth > 0 ? visibleWidth : stackWidth);
+        bool alignChanged = !string.Equals(_lastAlign, align, StringComparison.Ordinal);
+        bool anchorChanged = double.IsNaN(_lastAnchorX)
+                             || Math.Abs(settings.Overlay.X - _lastAnchorX) > 0.5;
+        bool cardsChanged = _lastCardCount != _cards.Count;
+        if (alignChanged || anchorChanged || cardsChanged) _knownX.Clear();
 
         // 右对齐固定右边缘而不是“锚点 + 会变的整叠宽度”：
         // 指标卡宽度变化、整体显隐时，卡片只向左长 / 缩，不会整排向右滑。
         if (string.Equals(align, "Right", StringComparison.Ordinal))
         {
-            if (_lastCardCount != _cards.Count
-                || !string.Equals(_lastAlign, align, StringComparison.Ordinal)
-                || double.IsNaN(_lastAnchorX)
-                || Math.Abs(settings.Overlay.X - _lastAnchorX) > 0.5
-                || _rightEdge <= 0)
-            {
+            // 首帧只显示了第一张卡时，其余常驻卡宽度还是 0；此时定型会把右边缘钉死。
+            // 先沿用当前估算，等所有相关宽度到齐后再补一次。
+            if (_rightEdge <= 0)
                 _rightEdge = settings.Overlay.X + stackWidth;
-            }
+
+            bool reset = alignChanged || anchorChanged || cardsChanged || !_widthsComplete;
+            if (widthsComplete && reset)
+                _rightEdge = settings.Overlay.X + stackWidth;
         }
         else
         {
             _rightEdge = 0;
         }
+        _widthsComplete = widthsComplete;
         _lastAnchorX = settings.Overlay.X;
         _lastCardCount = _cards.Count;
         _lastAlign = align;

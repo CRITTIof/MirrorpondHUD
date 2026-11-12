@@ -460,17 +460,14 @@ internal static class SelfTest
             bool previewOk = previewSettings.Behavior.SettingsPreviewBg == "#0B1020"
                           && new Settings().Behavior.SettingsPreviewBg == "#0B1020";
 
-            // 2.42.0：粒子聚字只在文字骨架变化时播；数字变化必须归一到同一个骨架。
-            // 2.43.1：数字串整体折叠（含小数 / 千分位），位数变化与秒数刷新都不该触发重播。
+            // 2.44.0：粒子按字符差异工作，不再用“文字骨架”过滤；等长逐字比较、增删用前后缀。
+            int[] clockDiff = OverlaySurface.ChangedIndices("11:08:21", "11:08:23");
+            int[] appendDiff = OverlaySurface.ChangedIndices("KEY", "KEY A");
             bool textEffectOk = Settings.NormalizeTextEffect("particle") == "Particle"
                              && Settings.NormalizeTextEffect("粒子聚字") == "Particle"
                              && Settings.NormalizeTextEffect("whatever") == "None"
-                             && OverlaySurface.TextSkeleton("CPU 12.4%") == OverlaySurface.TextSkeleton("CPU 88.8%")
-                             && OverlaySurface.TextSkeleton("CPU 9.9%") == OverlaySurface.TextSkeleton("CPU 100%")
-                             && OverlaySurface.TextSkeleton("1.3 MB/s") == OverlaySurface.TextSkeleton("386 MB/s")
-                             && OverlaySurface.TextSkeleton("1.3 MB/s") == OverlaySurface.TextSkeleton("98 B/s")
-                             && OverlaySurface.TextSkeleton("11:08:21 2026-11-12") == OverlaySurface.TextSkeleton("11:08:23 2026-11-12")
-                             && OverlaySurface.TextSkeleton("CPU 12") != OverlaySurface.TextSkeleton("GPU 12");
+                             && clockDiff.Length == 1 && clockDiff[0] == 7
+                             && appendDiff.Length > 0;
 
             var particleStyle = new StyleSettings
             {

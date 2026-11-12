@@ -91,6 +91,21 @@ public partial class SettingsWindow : Window
         BindNumberBoxes();
         BuildThemeList();
         LoadUi(live);
+        NavList.SelectedIndex = Math.Max(0, Tabs.SelectedIndex);
+    }
+
+    void NavSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (Tabs is null || NavList is null) return;
+        int index = NavList.SelectedIndex;
+        if (index >= 0 && Tabs.SelectedIndex != index) Tabs.SelectedIndex = index;
+    }
+
+    void TabSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (Tabs is null || NavList is null) return;
+        int index = Tabs.SelectedIndex;
+        if (index >= 0 && NavList.SelectedIndex != index) NavList.SelectedIndex = index;
     }
 
     // ==================== 初始化 ====================
@@ -124,7 +139,7 @@ public partial class SettingsWindow : Window
 
         bool maximized = WindowState == WindowState.Maximized;
         WindowFrame.Margin = new Thickness(0);
-        WindowFrame.CornerRadius = new CornerRadius(maximized ? 0 : 12);
+        WindowFrame.CornerRadius = new CornerRadius(maximized ? 0 : 22);
 
         double width = FrameContent.ActualWidth;
         double height = FrameContent.ActualHeight;
@@ -134,7 +149,7 @@ public partial class SettingsWindow : Window
             return;
         }
 
-        var clip = new RectangleGeometry(new Rect(0, 0, width, height), 11, 11);
+        var clip = new RectangleGeometry(new Rect(0, 0, width, height), 21, 21);
         clip.Freeze();
         FrameContent.Clip = clip;
     }
@@ -416,7 +431,8 @@ public partial class SettingsWindow : Window
     void UpdateThemeToggleText()
     {
         if (ThemeModeText is null) return;
-        ThemeModeText.Text = _settingsDark ? "暗" : "亮";
+        ThemeModeText.Text = _settingsDark ? "暗黑模式" : "明亮模式";
+        if (ThemeIcon is not null) ThemeIcon.Text = _settingsDark ? "\uE11E" : "\uE178";
     }
 
     void UpdateSettingsTheme(Settings settings)
@@ -433,7 +449,7 @@ public partial class SettingsWindow : Window
     void UpdateBrandLogo()
     {
         if (BrandLogo is null) return;
-        string asset = _settingsDark ? "assets/logo-endfield.ico" : "assets/logo.ico";
+        string asset = _settingsDark ? "assets/logo-yellow.png" : "assets/logo-black.png";
         try
         {
             var image = new BitmapImage();

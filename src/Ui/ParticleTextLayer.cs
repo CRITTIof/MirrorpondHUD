@@ -59,6 +59,7 @@ internal sealed class ParticleTextLayer : FrameworkElement
     double _sampleHeight;
     bool _nearest = true;
     bool _geometry;
+    HashSet<int> _targetChars;
 
     public ParticleTextLayer()
     {
@@ -79,17 +80,26 @@ internal sealed class ParticleTextLayer : FrameworkElement
 
     public bool IsPlaying => _playing;
 
+    /// <summary>是否已经建立过完整粒子池；首池只落点，不做可见位移动画。</summary>
+    public bool HasPool => _hasParticles;
+
+    /// <summary>这一轮粒子收敛结束；宿主据此恢复普通文字。</summary>
+    public event Action Finished;
+
     /// <summary>排一次播放；真正的采样与上屏等布局完成后再做。返回 false 表示画布还没量好。</summary>
-    public bool SchedulePlay(TextCanvas canvas, Color color, StyleSettings style)
+    public bool SchedulePlay(TextCanvas canvas, Color color, StyleSettings style,
+                             IReadOnlyCollection<int> targetChars = null, int? countOverride = null)
     {
         if (canvas is null || canvas.ActualWidth < 2 || canvas.ActualHeight < 2) return false;
 
         double size = Math.Max(0.8, Math.Min(4.0, style is null ? 2.2 : style.TextParticleSize));
-        int count = (int)Math.Max(MinParticles, Math.Min(MaxParticles, style is null ? 900 : style.TextParticleCount));
+        int count = countOverride ?? (int)Math.Max(MinParticles, Math.Min(MaxParticles, style is null ? 900 : style.TextParticleCount));
+        count = (int)Math.Max(40, Math.Min(MaxParticles, count));
         double speed = Math.Max(0.2, Math.Min(4.0, style is null ? 1.0 : style.TextParticleSpeed));
         bool nearest = style is null || style.TextParticleNearest;
         bool geometry = style is not null && style.TextParticleGeometry;
 
+        var targetSet = targetChars is null ? null : new HashSet<int>(targetChars);
         _requestedCount = count;
         _nearest = nearest;
         _geometry = geometry;
@@ -102,7 +112,7 @@ internal sealed class ParticleTextLayer : FrameworkElement
         {
             if (version != _version || !_pending) return;
             _pending = false;
-            BeginPlay(target, color, size, count, speed, nearest, geometry, version);
+            BeginPlay(target, color, size, count, speed, nearest, geometry, targetSet, version);
         }), DispatcherPriority.Loaded);
         return true;
     }
@@ -119,6 +129,7 @@ internal sealed class ParticleTextLayer : FrameworkElement
 
         Opacity = 1;
         Visibility = Visibility.Collapsed;
+        _canvas?.ClearHiddenChars();
         ReleaseCanvas();
     }
 
@@ -128,13 +139,12 @@ internal sealed class ParticleTextLayer : FrameworkElement
         if (_canvas is null) return;
 
         _canvas.SizeChanged -= OnCanvasSizeChanged;
-        _canvas.BeginAnimation(UIElement.OpacityProperty, null);
-        _canvas.Opacity = 1;
         _canvas = null;
     }
 
     void BeginPlay(TextCanvas canvas, Color color, double size, int requestedCount,
-                   double speed, bool nearest, bool geometry, int version)
+                   double speed, bool nearest, bool geometry,
+                   HashSet<int> targetChars, int version)
     {
         if (version != _version) return;
 
@@ -153,7 +163,7 @@ internal sealed class ParticleTextLayer : FrameworkElement
             _sampling = true;
             try
             {
-                if (!SampleTargets(canvas, width, height, requestedCount, geometry, out targets))
+                if (!SampleTargets(canvas, width, height, requestedCount, geometry, targetChars, out targets))
                     return;
             }
             finally
@@ -162,6 +172,7 @@ internal sealed class ParticleTextLayer : FrameworkElement
             }
 
             bool firstPool = !_hasParticles;
+            _targetChars = targetChars;
             _size = size;
             _sampleWidth = width;
             _sampleHeight = height;
@@ -172,6 +183,7 @@ internal sealed class ParticleTextLayer : FrameworkElement
             if (firstPool)
             {
                 Log.Info($"粒子文字就位：{targets.Count} 点 / {width:0}×{height:0} DIP");
+                Finished?.Invoke();
                 return;
             }
 
@@ -182,7 +194,9 @@ internal sealed class ParticleTextLayer : FrameworkElement
             _brush.Freeze();
             _canvas = canvas;
             _canvas.SizeChanged += OnCanvasSizeChanged;
-            _canvas.Opacity = 0;
+            // 与粒子层显示放在同一个 UI 回调里：不能先由宿主藏字、再等 Loaded 出粒子，
+            // 否则 WPF 可能在两者之间合成一帧缺字画面。
+            if (targetChars is not null) _canvas.SetHiddenChars(targetChars);
             _count = targets.Count;
             _playing = true;
             Visibility = Visibility.Visible;
@@ -204,19 +218,9 @@ internal sealed class ParticleTextLayer : FrameworkElement
 
     /// <summary>采样时临时把画布恢复为不透明：粒子播放中画布 Opacity=0，直接渲染会采到空白。</summary>
     bool SampleTargets(TextCanvas canvas, double width, double height,
-                       int requestedCount, bool geometry, out List<Point> targets)
-    {
-        double restore = canvas.Opacity;
-        canvas.Opacity = 1;
-        try
-        {
-            return BuildTargets(canvas, width, height, requestedCount, geometry, out targets);
-        }
-        finally
-        {
-            canvas.Opacity = restore;
-        }
-    }
+                       int requestedCount, bool geometry,
+                       HashSet<int> targetChars, out List<Point> targets) =>
+        BuildTargets(canvas, width, height, requestedCount, geometry, targetChars, out targets);
 
     void EnsureCapacity(int count)
     {
@@ -326,21 +330,37 @@ internal sealed class ParticleTextLayer : FrameworkElement
     }
 
     static bool BuildTargets(TextCanvas canvas, double width, double height,
-                             int requestedCount, bool geometry, out List<Point> targets)
+                             int requestedCount, bool geometry,
+                             HashSet<int> targetChars, out List<Point> targets)
     {
         targets = new List<Point>();
         // 多采 1 像素：排版尺寸向上取整时，末排最右 / 最下一个字不会落在位图外。
         int pixelWidth = Math.Max(1, (int)Math.Ceiling(width) + 1);
         int pixelHeight = Math.Max(1, (int)Math.Ceiling(height) + 1);
 
+        HashSet<int> hide = null;
+        if (targetChars is not null)
+        {
+            hide = new HashSet<int>();
+            string current = canvas.Text ?? "";
+            for (int i = 0; i < current.Length; i++)
+                if (!targetChars.Contains(i)) hide.Add(i);
+        }
+
+        // 直接画到 DrawingVisual，不经过 TextCanvas 的可视缓存；否则隐藏字符后
+        // RenderTargetBitmap 仍可能采到上一帧的完整文字，一个变化数字会摊出整行粒子。
+        var visual = new DrawingVisual();
+        using (DrawingContext dc = visual.RenderOpen())
+            canvas.DrawForParticles(dc, hide);
+
         var bitmap = new RenderTargetBitmap(pixelWidth, pixelHeight, 96, 96, PixelFormats.Pbgra32);
-        bitmap.Render(canvas);
+        bitmap.Render(visual);
 
         int stride = pixelWidth * 4;
         byte[] pixels = new byte[stride * pixelHeight];
         bitmap.CopyPixels(pixels, stride, 0);
 
-        long area = (long)pixelWidth * pixelHeight;
+        long area = Math.Max(1, (long)Math.Ceiling(width) * (long)Math.Ceiling(height));
         int targetCount = Math.Max(MinParticles, Math.Min(MaxParticles, requestedCount));
 
         var candidates = new List<Point>(Math.Min(12000, targetCount * 2));
@@ -428,7 +448,7 @@ internal sealed class ParticleTextLayer : FrameworkElement
             _sampling = true;
             try
             {
-                if (!SampleTargets(canvas, w, h, _requestedCount, _geometry, out var targets))
+                if (!SampleTargets(canvas, w, h, _requestedCount, _geometry, _targetChars, out var targets))
                     return;
 
                 _sampleWidth = w;
@@ -490,6 +510,9 @@ internal sealed class ParticleTextLayer : FrameworkElement
 
     void FinishInstant()
     {
+        // 新一轮已经排队时，旧动画收尾不能清掉它刚接管的遮罩。
+        if (_pending) return;
+
         // 收敛后把粒子贴到目标位置，下一次文字变化直接从干净字形附近起步。
         for (int i = 0; i < _count; i++)
         {
@@ -504,7 +527,9 @@ internal sealed class ParticleTextLayer : FrameworkElement
         _playing = false;
         _count = 0;
         Visibility = Visibility.Collapsed;
+        _canvas?.ClearHiddenChars();
         ReleaseCanvas();
+        Finished?.Invoke();
     }
 
     protected override void OnRender(DrawingContext dc)

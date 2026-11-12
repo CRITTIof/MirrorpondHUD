@@ -60,6 +60,7 @@ public sealed class OverlaySurface : Border
     {
         _canvas = new TextCanvas();
         _particleLayer = new ParticleTextLayer();
+        _particleLayer.Finished += OnParticleFinished;
         _tintLayer = new Border { IsHitTestVisible = false };
         _glassLayer = new Border
         {
@@ -152,6 +153,8 @@ public sealed class OverlaySurface : Border
 
     public TextCanvas Canvas => _canvas;
 
+    void OnParticleFinished() => _canvas.ClearHiddenChars();
+
     void OnSurfaceLoaded(object sender, RoutedEventArgs e) => FlushParticlePending();
 
     void OnSurfaceVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
@@ -162,6 +165,7 @@ public sealed class OverlaySurface : Border
             _particlePending = false;
             _particleRetries = 0;
             _particleLayer.Stop();
+            _canvas.ClearHiddenChars();
             // 隐藏后再呼出同一句也要重新播；下次显示从当前文字重新开始。
             _lastParticleText = null;
         }
@@ -185,15 +189,8 @@ public sealed class OverlaySurface : Border
             return;
         }
 
-        _particleLayer.Margin = _canvas.Margin;
-        if (_particleLayer.SchedulePlay(_canvas, _particleColor, _lastSettings.Style))
-        {
-            _lastParticleText = _canvas.Text;
-            _lastParticlePlayUtc = DateTime.UtcNow;
-            _particlePending = false;
-            _particleRetries = 0;
-            return;
-        }
+        PlayParticle(_canvas.Text ?? "");
+        if (!_particlePending) return;
 
         // 首次显示时 IsVisibleChanged 往往早于布局，ActualWidth 还是 0；等下一轮布局再试。
         Dispatcher.BeginInvoke(new Action(FlushParticlePending),
@@ -215,6 +212,7 @@ public sealed class OverlaySurface : Border
         if (kindChanged)
         {
             _particleLayer.Stop();
+            _canvas.ClearHiddenChars();
             _lastParticleText = null;
             _particlePending = false;
         }
@@ -373,57 +371,6 @@ public sealed class OverlaySurface : Border
 
     public void SetText(string text, bool cursor) => SetText(text, cursor, -1);
 
-    /// <summary>
-    /// 文字骨架：数字串（含小数 / 千分位）折叠成一个 #，空白折叠。指标 / 时钟只有数字变化时骨架不变，
-    /// 不触发粒子重播；预设、星期、按键名这类真正的文字变化才触发。
-    /// </summary>
-    internal static string TextSkeleton(string text)
-    {
-        if (string.IsNullOrEmpty(text)) return "";
-
-        var builder = new System.Text.StringBuilder(text.Length);
-        bool lastSpace = false;
-        bool inNumber = false;
-        for (int i = 0; i < text.Length; i++)
-        {
-            char c = text[i];
-            if (char.IsDigit(c))
-            {
-                if (!inNumber) builder.Append('#');
-                inNumber = true;
-                lastSpace = false;
-                continue;
-            }
-
-            // 数字中间的小数点 / 千分位跟着数字一起折叠；句末标点仍保留。
-            if (inNumber && (c == '.' || c == ',')
-                && i + 1 < text.Length && char.IsDigit(text[i + 1]))
-            {
-                continue;
-            }
-
-            inNumber = false;
-            if (char.IsWhiteSpace(c))
-            {
-                if (!lastSpace) builder.Append(' ');
-                lastSpace = true;
-            }
-            else
-            {
-                builder.Append(c);
-                lastSpace = false;
-            }
-        }
-
-        // 速率单位在 B/s、KB/s、MB/s 之间切换只是量纲变化，不是新的文字内容；
-        // 指标卡在空闲网络附近会在 0 B/s 与 KB/s 之间抖动，不能因此反复重播粒子。
-        return builder.ToString()
-            .Replace("KB/s", "/s")
-            .Replace("MB/s", "/s")
-            .Replace("GB/s", "/s")
-            .Replace("B/s", "/s");
-    }
-
     void MaybePlayParticle(string text, bool cursor)
     {
         if (_lastSettings is null) return;
@@ -432,22 +379,22 @@ public sealed class OverlaySurface : Border
         if (!ParticleEnabled())
         {
             _particleLayer.Stop();
+            _canvas.ClearHiddenChars();
             _lastParticleText = current;
             _particlePending = false;
             return;
         }
 
-        // 启动打字动画 / CLI 光标逐字刷新不播粒子；打字动画与粒子互斥，
-        // 这里顺手停掉可能还在收敛的粒子，把画面交回普通文字。
+        // 启动打字动画 / CLI 光标逐字刷新不播粒子；打字动画与粒子互斥。
         if (cursor)
         {
             _particleLayer.Stop();
+            _canvas.ClearHiddenChars();
             _lastParticleText = current;
             _particlePending = false;
             return;
         }
 
-        // 数字刷新也要重播：不再用骨架把秒数 / 指标值过滤掉。
         if (string.Equals(current, _lastParticleText, StringComparison.Ordinal)) return;
 
         if (!IsLoaded || !IsVisible)
@@ -458,22 +405,78 @@ public sealed class OverlaySurface : Border
         }
 
         // 指标卡 120ms 刷新一次；按卡片限频，避免粒子层永远在重启动。
-        // 时钟（1000ms）与按键卡不限频，保证每次真实变化都能看到。
         bool metrics = string.Equals(_metaConfig?.Preset, "metrics", StringComparison.OrdinalIgnoreCase);
         if (metrics && (DateTime.UtcNow - _lastParticlePlayUtc).TotalMilliseconds < 800) return;
 
+        PlayParticle(current);
+    }
+
+    /// <summary>只把变化字符交给粒子层，未变字符继续由 TextCanvas 正常绘制。</summary>
+    void PlayParticle(string current)
+    {
+        int[] changed = ChangedIndices(_lastParticleText ?? "", current);
+        if (changed.Length == 0)
+        {
+            _lastParticleText = current;
+            return;
+        }
+
+        // 遮罩由粒子层在 BeginPlay 里与“显示粒子”同一回调设置；
+        // 宿主不能提前藏字，否则 WPF 可能在粒子出现前合成一帧缺字。
+        bool firstPool = !_particleLayer.HasPool;
+        int configured = (int)Math.Max(200, Math.Min(3000,
+            _lastSettings is null ? 900 : _lastSettings.Style.TextParticleCount));
+        int count = firstPool ? configured
+            : Math.Max(60, Math.Min(configured, changed.Length * 120));
+
         _particleLayer.Margin = _canvas.Margin;
-        if (_particleLayer.SchedulePlay(_canvas, _particleColor, _lastSettings.Style))
+        if (_particleLayer.SchedulePlay(_canvas, _particleColor, _lastSettings.Style, changed, count))
         {
             _lastParticleText = current;
             _lastParticlePlayUtc = DateTime.UtcNow;
+            _particlePending = false;
+            _particleRetries = 0;
         }
         else
         {
-            // 画布还没量好：等下一轮布局再试，不能把这次变化直接丢掉。
             _particlePending = true;
-            _particleRetries = 0;
+            // 不要重置 _particleRetries：否则画布长期量不出来时会在 Background 级无限自旋。
         }
+    }
+
+    /// <summary>统一换行：TextCanvas 的 Split 会把 CRLF / CR 归一成 LF，
+    /// 遮罩下标必须基于同一字符串，否则多行文本从第二行起会整体错一位。</summary>
+    static string NormalizeNewlines(string text) =>
+        (text ?? "").Replace("\r\n", "\n").Replace('\r', '\n');
+
+    /// <summary>按字符找变化位置；等长逐字比较，增删用公共前后缀。</summary>
+    internal static int[] ChangedIndices(string oldText, string newText)
+    {
+        oldText ??= "";
+        newText ??= "";
+        if (string.Equals(oldText, newText, StringComparison.Ordinal))
+            return Array.Empty<int>();
+
+        if (oldText.Length == newText.Length)
+        {
+            var changed = new List<int>();
+            for (int i = 0; i < newText.Length; i++)
+                if (oldText[i] != newText[i]) changed.Add(i);
+            return changed.ToArray();
+        }
+
+        int prefix = 0;
+        while (prefix < oldText.Length && prefix < newText.Length && oldText[prefix] == newText[prefix])
+            prefix++;
+        int suffix = 0;
+        while (suffix < oldText.Length - prefix && suffix < newText.Length - prefix
+               && oldText[oldText.Length - 1 - suffix] == newText[newText.Length - 1 - suffix])
+            suffix++;
+
+        int count = newText.Length - prefix - suffix;
+        var result = new int[count];
+        for (int i = 0; i < count; i++) result[i] = prefix + i;
+        return result;
     }
 
     /// <summary>当前文字层内容（只重画底层时用来原样恢复）。</summary>
@@ -481,7 +484,7 @@ public sealed class OverlaySurface : Border
 
     public void SetText(string text, bool cursor, int cursorIndex)
     {
-        _canvas.Text = text ?? "";
+        _canvas.Text = NormalizeNewlines(text);
         _canvas.CursorIndex = cursorIndex;
         _canvas.CursorVisible = cursor;
         MaybePlayParticle(_canvas.Text, cursor);
@@ -491,7 +494,7 @@ public sealed class OverlaySurface : Border
     public void ResetStableSize() => _canvas.ResetStableSize();
 
     /// <summary>用于计算尺寸的文本；null = 跟随显示内容。启动动画期间传完整内容。</summary>
-    public void SetLayoutText(string text) => _canvas.LayoutText = text;
+    public void SetLayoutText(string text) => _canvas.LayoutText = NormalizeNewlines(text);
 
     public void Apply(Settings settings, string text) => Apply(settings, text, false);
 
@@ -534,7 +537,7 @@ public sealed class OverlaySurface : Border
         _canvas.CursorBlink = settings.Behavior.CursorBlink;
 
         _canvas.ResetStableSize();
-        _canvas.Text = text ?? "";
+        _canvas.Text = NormalizeNewlines(text);
         _canvas.CursorVisible = cursor;
 
         Background = Brushes.Transparent;

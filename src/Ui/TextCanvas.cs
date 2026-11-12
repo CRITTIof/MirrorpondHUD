@@ -404,6 +404,27 @@ public sealed class TextCanvas : FrameworkElement
         }
     }
 
+    // ==================== 粒子遮罩 ====================
+
+    /// <summary>隐藏指定字符（仍占排版宽度），用于把变化字符交给粒子层。</summary>
+    public void SetHiddenChars(IEnumerable<int> indices)
+    {
+        _hiddenChars.Clear();
+        if (indices is not null)
+        {
+            foreach (int index in indices)
+                if (index >= 0) _hiddenChars.Add(index);
+        }
+        InvalidateVisual();
+    }
+
+    public void ClearHiddenChars()
+    {
+        if (_hiddenChars.Count == 0) return;
+        _hiddenChars.Clear();
+        InvalidateVisual();
+    }
+
     // ==================== 度量 ====================
 
     protected override Size MeasureOverride(Size availableSize)
@@ -506,12 +527,14 @@ public sealed class TextCanvas : FrameworkElement
         public readonly List<string> Lines;
         public readonly List<TextLine> Built;
         public readonly double Width;
+        public readonly List<int> LineStarts;
 
-        public TextLayout(List<string> lines, List<TextLine> built, double width)
+        public TextLayout(List<string> lines, List<TextLine> built, double width, List<int> lineStarts)
         {
             Lines = lines;
             Built = built;
             Width = width;
+            LineStarts = lineStarts;
         }
     }
 
@@ -522,6 +545,9 @@ public sealed class TextCanvas : FrameworkElement
     /// 覆盖后双方都退化成 miss，等于没优化。
     /// </summary>
     readonly Dictionary<string, TextLayout> _layoutCache = new(StringComparer.Ordinal);
+
+    /// <summary>粒子动画期间只隐藏变化字符；未变字符仍由本画布正常绘制。</summary>
+    readonly HashSet<int> _hiddenChars = new();
 
     /// <summary>
     /// 键上限只是防御：正常只有「显示文本 / 布局文本 / 光标行前缀」几个键，
@@ -707,15 +733,19 @@ public sealed class TextCanvas : FrameworkElement
 
         List<string> lines = Split(text);
         var built = new List<TextLine>(lines.Count);
+        var starts = new List<int>(lines.Count);
         double width = 0;
+        int position = 0;
         for (int i = 0; i < lines.Count; i++)
         {
+            starts.Add(position);
+            position += lines[i].Length + 1;
             TextLine line = BuildLine(lines[i]);
             built.Add(line);
             if (line.Width > width) width = line.Width;
         }
 
-        var layout = new TextLayout(lines, built, width);
+        var layout = new TextLayout(lines, built, width, starts);
         if (_layoutCache.Count >= LayoutCacheLimit) _layoutCache.Clear();
         _layoutCache[text] = layout;
         return layout;
@@ -788,7 +818,17 @@ public sealed class TextCanvas : FrameworkElement
 
     // ==================== 绘制 ====================
 
-    protected override void OnRender(DrawingContext dc)
+    protected override void OnRender(DrawingContext dc) =>
+        DrawContent(dc, _hiddenChars, true);
+
+    /// <summary>
+    /// 粒子采样专用：把“只显示指定字符”的内容直接画进 DrawingContext，
+    /// 不依赖可视树缓存，避免 RenderTargetBitmap 采到上一次的完整文字。
+    /// </summary>
+    internal void DrawForParticles(DrawingContext dc, ISet<int> hidden) =>
+        DrawContent(dc, hidden, false);
+
+    void DrawContent(DrawingContext dc, ISet<int> hidden, bool drawCursor)
     {
         if (ActualWidth <= 0 || ActualHeight <= 0) return;
         PerformanceProbe.TextRender();
@@ -815,17 +855,56 @@ public sealed class TextCanvas : FrameworkElement
             TextLine line = built[i];
             double x = originX + AlignX(line.Width, blockWidth);
             double y = originY + i * lineHeight;
+            int runStart = layout.LineStarts[i];
 
             for (int r = 0; r < line.Runs.Count; r++)
             {
                 TextRun run = line.Runs[r];
                 // 统一基线 + 每个 run 自己的墨迹微调：正文按基线，键帽 / 图标按视觉中心。
-                DrawLine(dc, run.Text, x, y + (_refBaseline - run.Text.Baseline) + run.OffsetY);
+                double baseY = y + (_refBaseline - run.Text.Baseline) + run.OffsetY;
+                if (hidden is null || hidden.Count == 0)
+                {
+                    DrawLine(dc, run.Text, x, baseY);
+                }
+                else
+                {
+                    DrawRunWithHidden(dc, run, runStart, x, y, hidden);
+                }
                 x += run.Width;
+                runStart += run.Source.Length;
             }
         }
 
-        if (_cursorVisible) DrawCursor(dc, layout, lineHeight, originX, originY, blockWidth);
+        if (drawCursor && _cursorVisible)
+            DrawCursor(dc, layout, lineHeight, originX, originY, blockWidth);
+    }
+
+    /// <summary>把 run 按隐藏字符切成可见段；隐藏段只占宽度不绘制。</summary>
+    void DrawRunWithHidden(DrawingContext dc, TextRun run, int runStart, double x, double lineY, ISet<int> hidden)
+    {
+        string source = run.Source ?? "";
+        if (source.Length == 0) return;
+
+        int segmentStart = 0;
+        bool visible = !hidden.Contains(runStart);
+        for (int i = 1; i <= source.Length; i++)
+        {
+            bool next = i < source.Length ? !hidden.Contains(runStart + i) : !visible;
+            if (i == source.Length || next != visible)
+            {
+                string text = source.Substring(segmentStart, i - segmentStart);
+                TextRun piece = CreateRun(text, run.Kind);
+                if (visible)
+                {
+                    // 键帽 / 图标拆分后要按自己的墨迹中心重新对齐，沿用原 run 的 OffsetY 会上下偏。
+                    double pieceY = lineY + (_refBaseline - piece.Text.Baseline) + piece.OffsetY;
+                    DrawLine(dc, piece.Text, x, pieceY);
+                }
+                x += piece.Width;
+                segmentStart = i;
+                visible = next;
+            }
+        }
     }
 
     void DrawLine(DrawingContext dc, FormattedText ft, double x, double y)

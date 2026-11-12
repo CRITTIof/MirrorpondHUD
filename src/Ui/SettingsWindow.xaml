@@ -15,62 +15,189 @@
                             GlassFrameThickness="0" CornerRadius="0" />
     </shell:WindowChrome.WindowChrome>
 
+    <Window.Resources>
+        <Style x:Key="SettingsNavItem" TargetType="ListBoxItem">
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Grid Height="46">
+                            <Border x:Name="Fill" Background="{DynamicResource Accent}" Opacity="0.78"
+                                    CornerRadius="7" Margin="14,3,18,3" Visibility="Collapsed" />
+                            <Border x:Name="Bg" Background="Transparent" CornerRadius="7"
+                                    Margin="14,3,18,3" Padding="14,0,10,0">
+                                <ContentPresenter VerticalAlignment="Center" />
+                            </Border>
+                            <Border x:Name="Bar" Width="3" Height="24" CornerRadius="1.5"
+                                    HorizontalAlignment="Left" Margin="14,0,0,0"
+                                    Background="{DynamicResource Accent}" Visibility="Collapsed" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="{DynamicResource HoverBg}" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Fill" Property="Visibility" Value="Visible" />
+                                <Setter TargetName="Bar" Property="Visibility" Value="Visible" />
+                                <Setter Property="Foreground" Value="#1D1D1D" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="WindowCircleButton" TargetType="Button">
+            <Setter Property="Width" Value="30" />
+            <Setter Property="Height" Value="30" />
+            <Setter Property="Margin" Value="8,0,0,0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Background" Value="#737373" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Circle" Background="{TemplateBinding Background}" CornerRadius="15">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Circle" Property="Background" Value="#8A8A8A" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Circle" Property="Background" Value="#5E5E5E" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
     <Grid x:Name="WindowRoot" Background="Transparent">
     <Border x:Name="WindowFrame" Margin="0" Background="{DynamicResource WindowBg}"
-            BorderBrush="{DynamicResource BorderSoft}" BorderThickness="1" CornerRadius="12">
+            BorderBrush="{DynamicResource BorderSoft}" BorderThickness="1" CornerRadius="22">
     <AdornerDecorator>
     <Grid x:Name="FrameContent" SizeChanged="FrameContentSizeChanged">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="2" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
-        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="248" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
 
-        <!-- Endfield 信号条：一整条 2px 黄线压住窗顶，替代系统标题栏的存在感。 -->
-        <Border Grid.Row="0" Background="{DynamicResource Accent}" Opacity="0.9" />
+        <!-- 左栏：品牌 / 导航 / 明暗切换 -->
+        <Grid Grid.Column="0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
 
-        <Border Grid.Row="1" Background="{DynamicResource CardBg}"
-                BorderBrush="{DynamicResource BorderSoft}" BorderThickness="0,0,0,1" Padding="18,10,10,10"
-                MouseLeftButtonDown="TitleBarMouseDown">
-            <Grid>
+            <StackPanel Orientation="Horizontal" Margin="24,26,18,0" Background="Transparent"
+                        MouseLeftButtonDown="TitleBarMouseDown">
+                <Image x:Name="BrandLogo" Source="/assets/logo-black.png" Width="58" Height="58"
+                       VerticalAlignment="Center" RenderOptions.BitmapScalingMode="HighQuality" />
+                <StackPanel Margin="14,0,0,0" VerticalAlignment="Center">
+                    <TextBlock Text="Mirrorpond" FontSize="14" FontWeight="SemiBold"
+                               Foreground="{DynamicResource Accent}" />
+                    <TextBlock Text="HUD" FontSize="22" FontWeight="Bold" Margin="0,-2,0,0"
+                               Foreground="{DynamicResource Accent}" />
+                    <TextBlock x:Name="VersionText" FontFamily="Cascadia Mono, Consolas" FontSize="10"
+                               Foreground="{DynamicResource TextSecondary}" Margin="0,5,0,0" />
+                </StackPanel>
+            </StackPanel>
+
+            <ListBox x:Name="NavList" Grid.Row="1" Margin="0,34,0,0"
+                     Background="Transparent" BorderThickness="0" Padding="0"
+                     ItemContainerStyle="{StaticResource SettingsNavItem}"
+                     SelectionChanged="NavSelectionChanged">
+                <ListBoxItem>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE0FF;" FontFamily="{StaticResource LucideFont}"
+                                   Style="{x:Null}" FontSize="15" Margin="0,0,12,0" VerticalAlignment="Center" />
+                        <TextBlock Text="内容" Style="{x:Null}" FontSize="14" VerticalAlignment="Center" />
+                    </StackPanel>
+                </ListBoxItem>
+                <ListBoxItem>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE1DD;" FontFamily="{StaticResource LucideFont}"
+                                   Style="{x:Null}" FontSize="15" Margin="0,0,12,0" VerticalAlignment="Center" />
+                        <TextBlock Text="外观" Style="{x:Null}" FontSize="14" VerticalAlignment="Center" />
+                    </StackPanel>
+                </ListBoxItem>
+                <ListBoxItem>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE0AD;" FontFamily="{StaticResource LucideFont}"
+                                   Style="{x:Null}" FontSize="15" Margin="0,0,12,0" VerticalAlignment="Center" />
+                        <TextBlock Text="数据源" Style="{x:Null}" FontSize="14" VerticalAlignment="Center" />
+                    </StackPanel>
+                </ListBoxItem>
+                <ListBoxItem>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE29A;" FontFamily="{StaticResource LucideFont}"
+                                   Style="{x:Null}" FontSize="15" Margin="0,0,12,0" VerticalAlignment="Center" />
+                        <TextBlock Text="行为" Style="{x:Null}" FontSize="14" VerticalAlignment="Center" />
+                    </StackPanel>
+                </ListBoxItem>
+                <ListBoxItem>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE284;" FontFamily="{StaticResource LucideFont}"
+                                   Style="{x:Null}" FontSize="15" Margin="0,0,12,0" VerticalAlignment="Center" />
+                        <TextBlock Text="热键" Style="{x:Null}" FontSize="14" VerticalAlignment="Center" />
+                    </StackPanel>
+                </ListBoxItem>
+            </ListBox>
+
+            <Button x:Name="SettingsThemeToggle" Grid.Row="2" Margin="18,0,18,22" Width="166"
+                    HorizontalAlignment="Left" Padding="14,10" Click="ToggleSettingsThemeClick"
+                    Background="{DynamicResource CardBg}" BorderBrush="{DynamicResource BorderSoft}"
+                    ToolTip="切换明暗">
                 <StackPanel Orientation="Horizontal">
-                    <Image x:Name="BrandLogo" Source="/assets/logo.ico" Width="26" Height="26" RenderOptions.BitmapScalingMode="HighQuality" />
-                    <TextBlock Text="镜潭一览" FontSize="16" FontWeight="SemiBold" Margin="10,0,0,0"
-                               VerticalAlignment="Center" Foreground="{DynamicResource TextPrimary}" />
-                    <TextBlock Text="//" FontFamily="Cascadia Mono, Consolas" FontSize="14"
-                               Foreground="{DynamicResource Accent}" Margin="9,0,7,0" VerticalAlignment="Center" />
-                    <TextBlock Text="设置" FontSize="16" FontWeight="SemiBold"
-                               VerticalAlignment="Center" Foreground="{DynamicResource TextPrimary}" />
-                    <TextBlock x:Name="VersionText" FontFamily="Cascadia Mono, Consolas" FontSize="11"
-                               Foreground="{DynamicResource TextSecondary}" Margin="12,0,0,0"
+                    <TextBlock x:Name="ThemeIcon" Text="&#xE11E;" FontFamily="{StaticResource LucideFont}"
+                               Style="{x:Null}" FontSize="15" Foreground="{DynamicResource Accent}"
+                               VerticalAlignment="Center" />
+                    <TextBlock x:Name="ThemeModeText" Text="暗黑模式" Style="{x:Null}" FontSize="13"
+                               Foreground="{DynamicResource TextPrimary}" Margin="10,0,0,0"
                                VerticalAlignment="Center" />
                 </StackPanel>
+            </Button>
+        </Grid>
 
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                    <Button x:Name="SettingsThemeToggle"
-                            Style="{StaticResource IconButton}" Padding="9,4"
-                            Click="ToggleSettingsThemeClick" ToolTip="切换明暗">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="&#xE2B2;" FontFamily="{StaticResource LucideFont}" FontSize="15"
-                                       Foreground="{DynamicResource Accent}" VerticalAlignment="Center" />
-                            <TextBlock x:Name="ThemeModeText" Text="暗" FontSize="12" Margin="6,0,0,0"
-                                       Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" />
-                        </StackPanel>
-                    </Button>
-                    <Button Style="{StaticResource IconButton}" Padding="10,4" Click="TitleBarMinimizeClick" ToolTip="最小化">
-                        <TextBlock Text="&#xE11C;" FontFamily="{StaticResource LucideFont}" FontSize="14"
-                                   Foreground="{DynamicResource TextSecondary}" />
-                    </Button>
-                    <Button Style="{StaticResource IconButton}" Padding="10,4" Click="TitleBarCloseClick" ToolTip="关闭">
-                        <TextBlock Text="&#xE1B2;" FontFamily="{StaticResource LucideFont}" FontSize="14"
-                                   Foreground="{DynamicResource TextSecondary}" />
-                    </Button>
-                </StackPanel>
-            </Grid>
-        </Border>
+        <!-- 分隔线不触顶底 -->
+        <Border Grid.ColumnSpan="2" Width="2" HorizontalAlignment="Left" Margin="248,92,0,92"
+                Panel.ZIndex="10" Background="#737373" />
 
-        <TabControl x:Name="Tabs" Grid.Row="2">
+        <!-- 右栏：内容 + 自绘窗口按钮 + 悬浮操作区 -->
+        <Grid Grid.Column="1">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <StackPanel Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Right"
+                        Margin="0,22,24,0">
+                <Button Style="{StaticResource WindowCircleButton}" Click="TitleBarMinimizeClick" ToolTip="最小化">
+                    <TextBlock Text="&#xE11C;" FontFamily="{StaticResource LucideFont}"
+                               Style="{x:Null}" FontSize="14" Foreground="White" />
+                </Button>
+                <Button Style="{StaticResource WindowCircleButton}" Click="TitleBarCloseClick" ToolTip="退出">
+                    <TextBlock Text="&#xE1B2;" FontFamily="{StaticResource LucideFont}"
+                               Style="{x:Null}" FontSize="14" Foreground="White" />
+                </Button>
+            </StackPanel>
+
+            <TabControl x:Name="Tabs" Grid.Row="1" Margin="0,0,0,72"
+                        Background="Transparent" BorderThickness="0" Padding="0"
+                        SelectionChanged="TabSelectionChanged">
+                <TabControl.Template>
+                    <ControlTemplate TargetType="TabControl">
+                        <ContentPresenter ContentSource="SelectedContent" />
+                    </ControlTemplate>
+                </TabControl.Template>
+
 
             <!-- ==================== 内容（卡片管理） ==================== -->
             <TabItem Header="内容" Tag="&#xE0FF;">
@@ -1201,19 +1328,16 @@
 
         </TabControl>
 
-        <!-- ==================== 底栏 ==================== -->
-        <Border Grid.Row="3" Background="{DynamicResource CardBg}"
-                BorderBrush="{DynamicResource BorderSoft}" BorderThickness="0,1,0,0" Padding="16,10">
-            <Grid>
+            <Grid Grid.Row="1" VerticalAlignment="Bottom" Margin="24,0,24,22" IsHitTestVisible="True">
                 <TextBlock x:Name="StatusText" VerticalAlignment="Center"
-                           Foreground="{DynamicResource TextSecondary}" />
+                           Foreground="{DynamicResource TextSecondary}" TextTrimming="CharacterEllipsis" />
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                     <Button Content="恢复默认" Margin="0,0,8,0" Click="ResetClick" />
                     <Button Content="关闭" Margin="0,0,8,0" Click="CloseClick" />
                     <Button Content="保存并应用" Style="{StaticResource PrimaryButton}" Click="SaveClick" />
                 </StackPanel>
             </Grid>
-        </Border>
+        </Grid>
     </Grid>
     </AdornerDecorator>
     </Border>

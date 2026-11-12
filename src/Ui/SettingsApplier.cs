@@ -350,27 +350,34 @@ internal sealed class SettingsApplier
             double workHeight = work.Height / scaleY;
             if (workWidth < 40 || workHeight < 40) return;
 
-            double cardWidth = Math.Max(80, slot.Window.CardWidth);
+            double cardWidth = Math.Max(40, slot.Window.CardWidth);
+            double cardHeight = Math.Max(40, slot.Window.CardHeight);
             double visible = Math.Min(80, workWidth / 3.0);
+
+            // 右对齐时 settings.Overlay.X 是整叠左锚点，不是被抓卡片的左边缘。
+            // 以前直接夹锚点，宽卡拖到右边会被拉回屏幕中部；这里按被抓卡片的实际矩形夹取，
+            // 再把修正量回写到锚点。
+            double cardX = slot.Dialog.Overlay.X;
+            double cardY = slot.Dialog.Overlay.Y;
             double minX = visible - cardWidth;
             double maxX = workWidth - visible;
             double minY = 0;
             double maxY = Math.Max(0, workHeight - 40);
 
-            double x = settings.Overlay.X;
-            double y = settings.Overlay.Y;
-
+            double x = cardX;
+            double y = cardY;
             if (x < minX + 16) x = minX;
             else if (x > maxX - 16) x = maxX;
-
             if (y < minY + 16) y = minY;
             else if (y > maxY - 16) y = maxY;
 
-            if (Math.Abs(x - settings.Overlay.X) > 0.5 || Math.Abs(y - settings.Overlay.Y) > 0.5)
+            double dx = x - cardX;
+            double dy = y - cardY;
+            if (Math.Abs(dx) > 0.5 || Math.Abs(dy) > 0.5)
             {
-                settings.Overlay.X = x;
-                settings.Overlay.Y = y;
-                Log.Info($"叠层位置贴边吸附，锚点={Math.Round(x)},{Math.Round(y)}");
+                settings.Overlay.X += dx;
+                settings.Overlay.Y += dy;
+                Log.Info($"叠层位置贴边吸附，卡片={Math.Round(x)},{Math.Round(y)} 锚点={Math.Round(settings.Overlay.X)},{Math.Round(settings.Overlay.Y)}");
             }
         }
         catch (Exception ex)
