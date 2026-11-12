@@ -60,8 +60,10 @@ internal sealed class PdhQuery : IDisposable
         uint rc = PdhOpenQueryW(null, IntPtr.Zero, out _query);
         if (rc != 0)
         {
+            // PDH 打不开（计数器库损坏 / perfmon 被禁用 / 受限账户）是可降级条件，
+            // 不能抛异常把整个宿主升级成“启动失败”。所有 Try* 在 _query == 0 时返回 false。
             _query = IntPtr.Zero;
-            throw new InvalidOperationException($"PdhOpenQuery 失败: 0x{rc:X8}");
+            Log.Warn($"PDH 打开失败（0x{rc:X8}），指标卡将降级为「数据不可用」");
         }
     }
 

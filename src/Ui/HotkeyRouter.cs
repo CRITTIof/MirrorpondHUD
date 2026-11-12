@@ -66,7 +66,11 @@ internal sealed class HotkeyRouter : IDisposable
     /// 现在改成逐动作“先注册新键、成功后再摘旧键”（摘旧键由 HotkeyManager 内部完成），
     /// 最后再统一清理删掉的卡片和不再使用的模块动作。
     /// </summary>
-    public void Register()
+    /// <param name="persist">
+    /// true = 注册后自行落盘（启动期没有外层保存流程时用）；
+    /// false = 只改内存，由调用方统一落盘（SettingsApplier 用，避免一次保存写两次）。
+    /// </param>
+    public void Register(bool persist = true)
     {
         if (_manager is null) return;
 
@@ -118,11 +122,10 @@ internal sealed class HotkeyRouter : IDisposable
         // 不能靠 UnregisterAll——那样会误伤这一轮仍然有效的旧绑定。
         DetachStale(desired);
 
-        if (saved)
-        {
+        // persist=false 时由外层 SettingsApplier 统一落盘；这里不再 Reload——
+        // Reload 会让设置窗走一遍 LoadUi，和外层保存流程叠加成多次整树重建（S-04）。
+        if (saved && persist)
             _host.SaveSettings();
-            _host.ReloadSettings();
-        }
 
         if (changed.Count > 0)
         {

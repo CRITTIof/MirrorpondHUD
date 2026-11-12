@@ -56,6 +56,10 @@ internal sealed class GlassRuntime : IDisposable
 
     DispatcherTimer _glassTimer;
     bool _glassBusy;
+    // 采集代次与开始时刻：PrintWindow 没有超时，目标进程挂起时 _glassBusy 会永远卡在
+    // true。超时后作废旧代次并放开 busy；旧结果回来时按代次丢弃（G-5）。
+    long _captureGen;
+    DateTime _captureStartedUtc;
 
     public GlassRuntime(OverlayWindow window)
     {
@@ -263,7 +267,18 @@ internal sealed class GlassRuntime : IDisposable
         if (BackdropActive) return;                     // 系统底板接管时不抓屏
 
         Settings settings = _window.GlassSettings;
-        if (!settings.Style.Acrylic || !_window.GlassHandleReady || _glassBusy) return;
+        if (!settings.Style.Acrylic || !_window.GlassHandleReady) return;
+
+        if (_glassBusy)
+        {
+            // PrintWindow 是同步跨进程调用，没有超时参数：目标窗口挂起时采集线程
+            // 可能永远不返回。超过 2 秒作废这一代并放开 busy，让下一轮重新取，
+            // 同时留下一条可归因的日志（否则表现为玻璃永久冻结、日志 0 条）。
+            if ((DateTime.UtcNow - _captureStartedUtc).TotalSeconds < 2.0) return;
+            _captureGen++;
+            _glassBusy = false;
+            Log.Warn("兼容玻璃取样超过 2 秒未返回（目标窗口可能挂起），丢弃本次并允许下一轮重试");
+        }
         if (!_window.IsVisible || _window.WindowState == WindowState.Minimized) return;
 
         IntPtr hwnd = new WindowInteropHelper(_window).Handle;
@@ -290,6 +305,8 @@ internal sealed class GlassRuntime : IDisposable
             return;
         }
 
+        long gen = ++_captureGen;
+        _captureStartedUtc = DateTime.UtcNow;
         _glassBusy = true;
 
         Task.Run(() =>
@@ -308,6 +325,8 @@ internal sealed class GlassRuntime : IDisposable
             {
                 _window.Dispatcher.BeginInvoke(new Action(() =>
                 {
+                    // 旧代次（已被超时作废）回来时不能改新代状态，否则会把别人正在跑的采集标成空闲。
+                    if (gen != _captureGen) return;
                     _glassBusy = false;
                     // 审阅 §21：Closed 只停了定时器，Start 之前投递的抓屏完成后仍会写 UI。
                     // 窗口关闭后到达的在途结果直接丢弃。
@@ -320,9 +339,10 @@ internal sealed class GlassRuntime : IDisposable
                     }
                 }));
             }
-            catch
+            catch (Exception ex)
             {
-                _glassBusy = false;
+                if (gen == _captureGen) _glassBusy = false;
+                Log.Warn($"投递玻璃帧失败: {ex.Message}");
             }
         });
     }

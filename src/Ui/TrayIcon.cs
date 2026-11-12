@@ -33,9 +33,15 @@ public sealed class TrayIcon : IDisposable
     const uint NIIF_INFO = 0x00000001;
 
     const int WM_APP = 0x8000;
+    const int WM_USER = 0x0400;
     const int WM_CALLBACK = WM_APP + 101;
-    const int NIN_SELECT = WM_APP + 400;
-    const int NIN_KEYSELECT = WM_APP + 401;
+    // NOTIFYICON_VERSION_4：NIN_SELECT = WM_USER + 0、NIN_KEYSELECT = WM_USER + 1。
+    // 之前误写成 WM_APP + 400/401（0x8190/0x8191），switch 永不命中，托盘左键单击完全失效。
+    const int NIN_SELECT = WM_USER + 0;
+    const int NIN_KEYSELECT = WM_USER + 1;
+    // NIM_SETVERSION 失败退回 v3 时，Shell 仍发经典鼠标消息；v3 的 iconId 在 wParam。
+    const int WM_LBUTTONUP = 0x0202;
+    const int WM_RBUTTONUP = 0x0205;
     const int WM_CONTEXTMENU = 0x007B;
 
     const uint TRAY_ICON_ID = 1;
@@ -124,6 +130,14 @@ public sealed class TrayIcon : IDisposable
 
             if (m.Msg == WM_CALLBACK)
             {
+                // v3 回退：wParam 是鼠标消息本身（iconId 也放在 wParam），lParam 是坐标。
+                int wparam = m.WParam.ToInt32();
+                if (wparam == WM_LBUTTONUP || wparam == WM_RBUTTONUP)
+                {
+                    _callback(wparam, (int)TRAY_ICON_ID);
+                    return;
+                }
+
                 int lparam = m.LParam.ToInt32();
                 int message = lparam & 0xFFFF;
                 int iconId = (lparam >> 16) & 0xFFFF;
@@ -293,10 +307,12 @@ public sealed class TrayIcon : IDisposable
         {
             case NIN_SELECT:
             case NIN_KEYSELECT:
+            case WM_LBUTTONUP:
                 OpenSettings?.Invoke();
                 break;
 
             case WM_CONTEXTMENU:
+            case WM_RBUTTONUP:
                 try
                 {
                     _menu.Placement = PlacementMode.MousePoint;

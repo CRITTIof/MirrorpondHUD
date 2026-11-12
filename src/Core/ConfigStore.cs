@@ -95,7 +95,7 @@ public static class ConfigStore
                 if (readIoFailed)
                 {
                     LastLoadReadOnly = true;
-                    LastLoadWarning = $"设置文件暂时读不到（可能被占用 / 权限不足），本次只读加载默认设置；不会覆盖原文件。处理后可重启或重新保存。";
+                    LastLoadWarning = "设置文件暂时读不到（可能被占用 / 权限不足），本次只读加载默认设置；不会覆盖原文件。请先处理该文件，然后重启应用——本次会话内的保存都会被拒绝。";
                     Log.Warn($"设置文件读取失败，按只读默认设置启动（不会覆盖原文件）: {file}");
                 }
                 else
@@ -207,10 +207,54 @@ public static class ConfigStore
         {
             bool keepBackup = !recovered;
             if (migrated || recovered || corrupted || empty)
-                Save(settings, keepBackup);
+            {
+                // 恢复/迁移后的落盘失败必须让用户看见：否则下次启动会重复同一流程，
+                // 用户还以为“已经修好了”。（历史项 L-18）
+                if (!Save(settings, keepBackup))
+                {
+                    string reason = string.IsNullOrEmpty(LastSaveError) ? "原因见日志" : LastSaveError;
+                    LastLoadWarning += $" 自动写入修复后的配置失败：{reason}。";
+                    Log.Error($"配置恢复后自动落盘失败（本次仍按内存中的设置启动）: {reason}");
+                }
+            }
         }
 
+        // 损坏现场备份每次恢复都可能新增一个，必须收敛，否则会在用户目录里无限累积。
+        CleanupBrokenBackups();
+
         return settings;
+    }
+
+    /// <summary>
+    /// 损坏现场备份（settings.json.broken-*）只保留最近 3 个。
+    /// 删除失败只记 DEBUG，不影响启动，也不能把“清理失败”说成“恢复失败”。
+    /// </summary>
+    static void CleanupBrokenBackups()
+    {
+        try
+        {
+            string file = Path;
+            string dir = System.IO.Path.GetDirectoryName(file);
+            if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) return;
+
+            string pattern = $"{System.IO.Path.GetFileName(file)}.broken-*";
+            string[] broken = Directory.GetFiles(dir, pattern);
+            if (broken.Length <= 3) return;
+
+            Array.Sort(broken, (a, b) =>
+                File.GetLastWriteTimeUtc(b).CompareTo(File.GetLastWriteTimeUtc(a)));
+
+            for (int i = 3; i < broken.Length; i++)
+            {
+                try { File.Delete(broken[i]); }
+                catch (Exception ex) { Log.Debug($"清理旧损坏备份失败({broken[i]}): {ex.Message}"); }
+            }
+            Log.Info($"已清理 {broken.Length - 3} 个旧的损坏配置备份");
+        }
+        catch (Exception ex)
+        {
+            Log.Debug($"清理损坏配置备份失败: {ex.Message}");
+        }
     }
 
     static bool TryReadSettings(string file, out Settings settings, out bool migrated,
@@ -364,8 +408,24 @@ public static class ConfigStore
     static string DescribeIoError(Exception ex, string prefix)
     {
         string message = string.IsNullOrEmpty(ex.Message) ? "未知错误" : ex.Message;
-        while (message.EndsWith("\r\n") || message.EndsWith("\n") || message.EndsWith("\r"))
-            message = message.Substring(0, message.Length - Environment.NewLine.Length);
+        // 三种后缀长度不同：\r\n 是 2、孤立的 \n / \r 是 1。统一减 Environment.NewLine.Length
+        // 会多删一个真实字符；消息恰好只有 "\n" 时 Substring(0,-1) 还会抛异常，
+        // 而这里正是 Save 的 catch 内，异常会一路逸出到 UI 线程。
+        while (true)
+        {
+            if (message.EndsWith("\r\n", StringComparison.Ordinal))
+            {
+                message = message.Substring(0, message.Length - 2);
+                continue;
+            }
+            if (message.EndsWith("\n", StringComparison.Ordinal) ||
+                message.EndsWith("\r", StringComparison.Ordinal))
+            {
+                message = message.Substring(0, message.Length - 1);
+                continue;
+            }
+            break;
+        }
 
         if (ex is UnauthorizedAccessException)
             return $"{prefix}：访问被拒绝（配置目录或文件只读 / 被更高权限进程占用）";

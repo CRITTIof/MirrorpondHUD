@@ -1349,7 +1349,7 @@
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                     <Button Content="恢复默认" Margin="0,0,8,0" Click="ResetClick" />
                     <Button Content="关闭" Margin="0,0,8,0" Click="CloseClick" />
-                    <Button Content="保存并应用" Style="{StaticResource PrimaryButton}" Click="SaveClick" />
+                    <Button x:Name="SaveButton" Content="保存并应用" Style="{StaticResource PrimaryButton}" Click="SaveClick" />
                 </StackPanel>
             </Grid>
         </Grid>

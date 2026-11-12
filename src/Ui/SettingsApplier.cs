@@ -145,11 +145,14 @@ internal sealed class SettingsApplier
                         settings.Data.MaxKeyChars);
         CardMotion.ApplySettings(settings);
 
+        _host.UpdateEngine();
+        // 先注册热键：注册失败会改写内存里的回退组合键，统一在下面一次落盘。
+        // 旧顺序是“先存盘、再让路由器存第二次并 Reload”，LastSaveError 会被后一次覆盖，
+        // 保存状态可能说反（S-02），并且整棵卡片列表会被重建三次（S-04）。
+        _host.RebuildHotkeys();
+
         // 内存里的设置已经生效；落盘失败时必须如实告诉窗口，不能谎报成功（P0-2）。
         bool saved = SaveSettings();
-
-        _host.UpdateEngine();
-        _host.RebuildHotkeys();
         ApplyAutoStart();
         _host.RefreshTray();
         _host.UpdateCommandInfo();
@@ -391,10 +394,19 @@ internal sealed class SettingsApplier
     /// <summary>写设置文件并如实记录失败；调用方（设置窗 / 卡片宿主）按返回值提示（P0-2）。</summary>
     public bool SaveSettings()
     {
-        bool saved = ConfigStore.Save(_host.Settings);
-        if (!saved)
-            Log.Warn($"设置仅内存生效，写入磁盘失败: {(ConfigStore.LastSaveError ?? "原因未知")}");
-        return saved;
+        try
+        {
+            bool saved = ConfigStore.Save(_host.Settings);
+            if (!saved)
+                Log.Warn($"设置仅内存生效，写入磁盘失败: {(ConfigStore.LastSaveError ?? "原因未知")}");
+            return saved;
+        }
+        catch (Exception ex)
+        {
+            // ConfigStore.Save 设计上不抛；这里兜底，避免“保存失败”升级成 UI 线程未捕获异常。
+            Log.Error("保存设置时出现未预期异常", ex);
+            return false;
+        }
     }
 
     public void ApplyAutoStart()

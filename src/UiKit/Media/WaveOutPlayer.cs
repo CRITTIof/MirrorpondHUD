@@ -299,7 +299,16 @@ internal sealed class WaveOutPlayer : IDisposable
                 _resume.Wait();
                 if (_stop) break;
 
-                int read = pcm.Read(buffer, 0, buffer.Length);
+                // 管道短读是常态，不是 EOF：只读一次会把尾部补零，等于周期性插入静音，
+                // 还会让音频总长被拉长、与视频时钟漂移。读满一整块，只有真正的尾块
+                // （read < buffer.Length）才补零。
+                int read = 0;
+                while (read < buffer.Length)
+                {
+                    int n = pcm.Read(buffer, read, buffer.Length - read);
+                    if (n <= 0) break;
+                    read += n;
+                }
 
                 // Read 会因为 ffmpeg 管道堵塞而阻塞很久；返回时 Stop 可能已经置了
                 // _stop 并把收尾权交给本线程。这里必须立刻复检，否则下面会往已经
@@ -514,6 +523,15 @@ internal sealed class WaveOutPlayer : IDisposable
             _handle = IntPtr.Zero;
         }
 
+        // 自然 EOF 时缓冲区可能仍在播放队列里：先 Reset 把它们全部打回 DONE，
+        // 否则下面的 Unprepare 会因 WAVERR_STILLPLAYING 失败（K-2）。
+        if (handle != IntPtr.Zero)
+        {
+            int resetCode = waveOutReset(handle);
+            if (resetCode != 0)
+                Log.Warn($"音频自然结束前 waveOutReset 失败: {MmsysErrorName(resetCode)}");
+        }
+
         ClaimCleanup(handle);
         Log.Info("音频自然播放结束，已释放音频设备与缓冲");
     }
@@ -536,23 +554,38 @@ internal sealed class WaveOutPlayer : IDisposable
             for (int i = 0; i < BufferCount; i++)
             {
                 IntPtr header = _headers[i];
+                bool release = true;
                 if (header != IntPtr.Zero)
                 {
                     // 只有拿到有效设备句柄时才能 Unprepare；句柄已经关掉时
                     // header 只能直接释放（进程即将退出，winmm 会跟着回收）。
                     if (handle != IntPtr.Zero)
                     {
-                        try { waveOutUnprepareHeader(handle, header, headerSize); } catch { }
+                        int rc = waveOutUnprepareHeader(handle, header, headerSize);
+                        // WAVERR_STILLPLAYING(33)：等驱动把最后一块播完再重试；
+                        // 仍失败说明设备/驱动异常，此时释放会被驱动继续读，宁可泄漏。
+                        for (int retry = 0; rc == 33 && retry < 20; retry++)
+                        {
+                            Thread.Sleep(5);
+                            rc = waveOutUnprepareHeader(handle, header, headerSize);
+                        }
+                        if (rc != 0)
+                        {
+                            release = false;
+                            Log.Warn($"音频缓冲 Unprepare 失败（{MmsysErrorName(rc)}），保留缓冲不释放以避免驱动仍在使用");
+                        }
                     }
+
                     _headers[i] = IntPtr.Zero;
-                    try { Marshal.FreeHGlobal(header); } catch { }
+                    if (release) { try { Marshal.FreeHGlobal(header); } catch { } }
                 }
 
                 IntPtr buffer = _buffers[i];
                 if (buffer != IntPtr.Zero)
                 {
                     _buffers[i] = IntPtr.Zero;
-                    try { Marshal.FreeHGlobal(buffer); } catch { }
+                    // 与 header 同步：header 没回收时数据缓冲也不能释放。
+                    if (release) { try { Marshal.FreeHGlobal(buffer); } catch { } }
                 }
 
                 _queued[i] = false;
@@ -564,7 +597,13 @@ internal sealed class WaveOutPlayer : IDisposable
         {
             if (handle != IntPtr.Zero)
             {
-                try { waveOutClose(handle); } catch { }
+                try
+                {
+                    int closeCode = waveOutClose(handle);
+                    if (closeCode != 0)
+                        Log.Warn($"waveOutClose 失败: {MmsysErrorName(closeCode)}");
+                }
+                catch (Exception ex) { Log.Warn($"waveOutClose 异常: {ex.Message}"); }
             }
 
             Volatile.Write(ref _resources, 0);

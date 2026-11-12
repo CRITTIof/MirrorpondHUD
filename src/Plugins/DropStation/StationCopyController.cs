@@ -16,6 +16,8 @@ internal interface IStationCopySink
     bool IsDisposed { get; }
     void CopyStatus(string text, CardStatusKind kind);
     void CopyItemRemoved(StationItem item);
+    /// <summary>这一项是否仍在视图列表里；复制完成时用来识别“期间被移除”的条目（P-3）。</summary>
+    bool HasItem(StationItem item);
     void CopyPersistAndRebuild();
     void CopyStateChanged();
 }
@@ -105,7 +107,7 @@ internal sealed class StationCopyController : IDisposable
                     _store.MergeCompletedAfterDispose(item, job, context.Target);
                     return;
                 }
-                CompleteCopy(item, job, context.Target);
+                CompleteCopy(item, job, context);
             }));
         });
     }
@@ -152,12 +154,46 @@ internal sealed class StationCopyController : IDisposable
 
             CopyEntries(context, plan, total, token, progress);
             if (total == 0) progress.Report(1.0);
+
+            // Move 模式：删源与目标大小计算都留在工作线程。回到 UI 线程递归删除
+            // 几万个文件会把整个叠层冻住，而且“取消”按钮此时已经无效（P-2）。
+            context.TargetSize = context.IsDirectory ? 0 : StationFiles.SafeSize(context.Target);
+            if (_station.Mode == "Move") TryDeleteSource(context, token);
         }
         catch
         {
             // 失败 / 取消：把写了一半的目标文件 / 文件夹删掉，别留半成品。
             CleanupPartial(context.Directory, context.Target);
             throw;
+        }
+    }
+
+    /// <summary>Move 模式的删源：只在工作线程执行，失败只记录不回滚已复制的目标。</summary>
+    void TryDeleteSource(CopyContext context, CancellationToken token)
+    {
+        if (StationFiles.IsRootPath(context.Source))
+        {
+            context.SourceDeleteError = "源是盘符根 / 共享根，拒绝删除";
+            Log.Warn($"中转站移动模式拒绝删除根路径源: {context.Source}");
+            return;
+        }
+
+        try
+        {
+            // 取消时保留源：宁可留一份重复数据，也不要在用户已经取消后继续删。
+            token.ThrowIfCancellationRequested();
+            if (context.IsDirectory) Directory.Delete(context.Source, true);
+            else File.Delete(context.Source);
+            context.SourceDeleted = true;
+        }
+        catch (OperationCanceledException)
+        {
+            context.SourceDeleteError = "已取消，保留源";
+        }
+        catch (Exception ex)
+        {
+            context.SourceDeleteError = ex.Message;
+            Log.Warn($"中转站移动模式删除源失败（目标保留）  源={context.Source}  原因={ex.Message}");
         }
     }
 
@@ -294,10 +330,12 @@ internal sealed class StationCopyController : IDisposable
     }
 
     /// <summary>在 UI 线程回填完成结果：写回 StoredPath、移动模式删源、失败 / 取消移除条目。</summary>
-    void CompleteCopy(StationItem item, CardJob job, string target)
+    void CompleteCopy(StationItem item, CardJob job, CopyContext context)
     {
         // P1-6：销毁后迟到的完成回调一律忽略（被取消的复制任务也可能走到这里）。
         if (_sink.IsDisposed) return;
+
+        string target = context.Target;
 
         _copyDone++;
         _activeName = null;
@@ -306,34 +344,45 @@ internal sealed class StationCopyController : IDisposable
 
         if (job.State == CardJobState.Succeeded && !string.IsNullOrEmpty(target))
         {
+            if (!_sink.HasItem(item))
+            {
+                // 用户在复制期间把这一项移除 / 清空：目标已经落盘，必须把记录合并回
+                // items.json，否则接收目录里会出现“列表里没有”的孤儿文件（P-3）。
+                _store.MergeCompletedAfterDispose(item, job, target);
+                _sink.CopyStatus($"已收纳 {Path.GetFileName(target)}，但该项已被移出列表（已记入列表文件）",
+                                 CardStatusKind.Warning);
+                Log.Warn($"中转站在途项被移除后完成，已合并记录  文件={target}");
+                if (_copyDone >= _copyTotal)
+                {
+                    _copyTotal = 0;
+                    _copyDone = 0;
+                    _cancelRequested = false;
+                }
+                _sink.CopyStateChanged();
+                return;
+            }
+
             item.StoredPath = target;
             item.Name = Path.GetFileName(target);
-            item.Size = item.IsDirectory ? 0 : StationFiles.SafeSize(target);
+            item.Size = context.TargetSize;
             item.Missing = false;
 
             if (_station.Mode == "Move")
             {
-                try
+                // 删源已在工作线程完成（RunCopy）。这里只把结果翻成状态行，
+                // 绝不能在 UI 线程再删一次（P-2）。
+                if (StationFiles.IsRootPath(item.Path))
                 {
-                    // 盘符根 / 共享根绝不能进 Move 的删源分支；正常入口已拒收，
-                    // 这里再守一次，防止手改 items.json 后点“移动”。
-                    if (StationFiles.IsRootPath(item.Path))
-                    {
-                        Log.Warn($"中转站移动模式拒绝删除根路径源: {item.Path}");
-                        _sink.CopyStatus("已收纳，但源是根路径，未删除", CardStatusKind.Warning);
-                    }
-                    else if (item.IsDirectory) Directory.Delete(item.Path, true);
-                    else File.Delete(item.Path);
-
-                    if (!StationFiles.IsRootPath(item.Path))
-                        _sink.CopyStatus($"已移动 {item.Name}", CardStatusKind.Success);
+                    _sink.CopyStatus("已收纳，但源是根路径，未删除", CardStatusKind.Warning);
                 }
-                catch (Exception ex)
+                else if (context.SourceDeleted)
                 {
-                    // 复制已经成功，目标文件 / 文件夹保留；源删不掉只提示，不回滚目标。
-                    _sink.CopyStatus($"已收纳，但删除源失败：{ex.Message}", CardStatusKind.Warning);
-                    // P1-5：源删除失败意味着磁盘上留了一份重复数据，必须让日志知道。
-                    Log.Warn($"中转站移动模式删除源失败（目标保留）  源={item.Path}  原因={ex.Message}");
+                    _sink.CopyStatus($"已移动 {item.Name}", CardStatusKind.Success);
+                }
+                else
+                {
+                    _sink.CopyStatus($"已收纳，但删除源失败：{context.SourceDeleteError ?? "未知原因"}",
+                                     CardStatusKind.Warning);
                 }
             }
             else
@@ -375,5 +424,9 @@ internal sealed class StationCopyController : IDisposable
         public string FileName;
         public bool IsDirectory;
         public string Target;
+        // Move 模式在工作线程删源后回填；完成回调只读，不再碰文件系统（P-2）。
+        public bool SourceDeleted;
+        public string SourceDeleteError;
+        public long TargetSize;
     }
 }

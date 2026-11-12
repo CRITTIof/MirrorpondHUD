@@ -165,11 +165,22 @@ public sealed class KeyboardHook : IDisposable
 
         Thread thread = _thread;
         _thread = null;
+        bool joined = true;
         if (thread is not null && thread.IsAlive)
         {
-            try { thread.Join(1500); } catch { }
+            try { joined = thread.Join(1500); } catch { joined = false; }
         }
 
-        try { _ready.Dispose(); } catch { }
+        if (joined)
+        {
+            try { _ready.Dispose(); } catch { }
+        }
+        else
+        {
+            // 线程仍卡在 SetWindowsHookEx / 消息循环里。此时 Dispose 会让它恢复执行后
+            // 在 _ready.Set() 上抛 ObjectDisposedException；裸线程没有 Dispatcher 兜底，
+            // 异常会直接终止进程。宁可泄漏一个事件对象，也不要在退出时崩。
+            Log.Warn("键盘钩子线程 1.5s 内未退出，放弃释放 _ready（避免退出时崩溃）");
+        }
     }
 }

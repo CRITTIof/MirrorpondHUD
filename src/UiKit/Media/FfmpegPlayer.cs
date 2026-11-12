@@ -213,7 +213,12 @@ internal sealed class FfmpegPlayer : IDisposable
         psi.ArgumentList.Add("-sn");
         psi.ArgumentList.Add("-dn");
         psi.ArgumentList.Add("-vf");
-        psi.ArgumentList.Add($"scale={_width}:{_height}:force_original_aspect_ratio=decrease");
+        // force_original_aspect_ratio=decrease 只保证“装进 W×H 盒子”，不保证输出正好 W×H；
+        // 读帧线程却按 _width*_height*4 切帧，宽高比稍有差异整段画面就会错位。
+        // pad 把输出强制补到 W×H（多出的部分是黑边），保证每帧字节数固定。
+        psi.ArgumentList.Add(
+            $"scale={_width}:{_height}:force_original_aspect_ratio=decrease," +
+            $"pad={_width}:{_height}:(ow-iw)/2:(oh-ih)/2:color=black");
         psi.ArgumentList.Add("-r");
         psi.ArgumentList.Add(_fps.ToString("0.###", CultureInfo.InvariantCulture));
         psi.ArgumentList.Add("-f");

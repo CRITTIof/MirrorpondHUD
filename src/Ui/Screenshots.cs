@@ -95,7 +95,7 @@ public static class Screenshots
         return keys;
     }
 
-    public static void CaptureCards(string path)
+    public static bool CaptureCards(string path)
     {
         try
         {
@@ -193,7 +193,7 @@ public static class Screenshots
             if (count == 0)
             {
                 Log.Warn("没有可截图的卡片");
-                return;
+                return false;
             }
 
             stack.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
@@ -231,14 +231,16 @@ public static class Screenshots
 
             SavePng(rtb, path);
             Log.Info($"已生成卡片组截图: {path}（{count} 张）");
+            return count > 0;
         }
         catch (Exception ex)
         {
             Log.Error("生成卡片组截图失败", ex);
+            return false;
         }
     }
 
-    public static void CaptureOverlay(string path)
+    public static bool CaptureOverlay(string path)
     {
         try
         {
@@ -307,10 +309,12 @@ public static class Screenshots
 
             SavePng(rtb, path);
             Log.Info($"已生成叠层截图: {path}");
+            return true;
         }
         catch (Exception ex)
         {
             Log.Error("生成截图失败", ex);
+            return false;
         }
     }
 
@@ -371,7 +375,7 @@ public static class Screenshots
 
     static double SurfaceSizeHeight(OverlaySurface surface) => Math.Max(40, surface.DesiredSize.Height);
 
-    public static void CaptureWidgets(string path)
+    public static bool CaptureWidgets(string path)
     {
         try
         {
@@ -518,10 +522,12 @@ public static class Screenshots
 
             SavePng(rtb, path);
             Log.Info($"已生成共享控件截图: {path}");
+            return true;
         }
         catch (Exception ex)
         {
             Log.Error("生成共享控件截图失败", ex);
+            return false;
         }
     }
 
@@ -566,7 +572,7 @@ public static class Screenshots
     }
 
     /// <summary>四种中转站显示方式的验收样张：每个视图一份，共用同一批假文件。</summary>
-    public static void CaptureStationViews(string path)
+    public static bool CaptureStationViews(string path)
     {
         try
         {
@@ -575,7 +581,7 @@ public static class Screenshots
             if (module is null)
             {
                 Log.Warn("中转站插件不可用，跳过显示方式截图");
-                return;
+                return false;
             }
 
             var host = new ScreenshotCardHost();
@@ -670,10 +676,12 @@ public static class Screenshots
 
             SavePng(rtb, path);
             Log.Info($"已生成中转站视图截图: {path}");
+            return true;
         }
         catch (Exception ex)
         {
             Log.Error("生成中转站视图截图失败", ex);
+            return false;
         }
     }
 
@@ -736,7 +744,7 @@ public static class Screenshots
         public void RevealPath(string path) { }
     }
 
-    public static void CaptureSettings(string path)
+    public static bool CaptureSettings(string path)
     {
         try
         {
@@ -769,7 +777,7 @@ public static class Screenshots
             {
                 Log.Warn("设置窗口没有内容");
                 window.CloseForReal();
-                return;
+                return false;
             }
 
             if (Environment.GetEnvironmentVariable("MIRRORPOND_SETTINGS_COLLAPSE") == "1")
@@ -782,6 +790,7 @@ public static class Screenshots
             string dir = Path.GetDirectoryName(basePath);
             string stem = Path.GetFileNameWithoutExtension(basePath);
 
+            bool wrote = false;
             for (int tab = 0; tab < window.Tabs.Items.Count; tab++)
             {
                 window.Tabs.SelectedIndex = tab;
@@ -797,6 +806,7 @@ public static class Screenshots
                     ? basePath
                     : Path.Combine(dir, $"{stem}-tab{tab}.png");
                 SavePng(rtb, target);
+                wrote = true;
                 Log.Info($"已生成设置界面截图: {target}");
 
                 // MIRRORPOND_SETTINGS_SCROLL=1：把这一页滚到底再拍一张，长页面（外观页）的下半部分才看得到。
@@ -818,14 +828,16 @@ public static class Screenshots
             }
 
             window.CloseForReal();
+            return wrote;
         }
         catch (Exception ex)
         {
             Log.Error("生成设置界面截图失败", ex);
+            return false;
         }
     }
 
-    static void SavePng(BitmapSource source, string path)
+    static bool SavePng(BitmapSource source, string path)
     {
         string dir = Path.GetDirectoryName(Path.GetFullPath(path));
         if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
@@ -834,5 +846,6 @@ public static class Screenshots
         encoder.Frames.Add(BitmapFrame.Create(source));
         using (var stream = File.Create(path))
             encoder.Save(stream);
+        return true;
     }
 }

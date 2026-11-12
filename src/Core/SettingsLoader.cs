@@ -258,8 +258,14 @@ internal static class SettingsLoader
         version = 0;
         hasVersion = false;
 
-        if (root is null || !root.TryGetValue("SchemaVersion", out var raw) || raw is null)
+        // 大小写必须与其它字段一致地忽略（FindKey 的注释说明手改配置可能改了大小写）。
+        // 这里曾直接用字典精确取键：键写成 "schemaversion" 时 hasVersion=false，
+        // 会绕过「更高版本只读」保护，随后被自动落盘重写成当前版本。
+        string key = FindKey(root, "SchemaVersion");
+        if (key is null || root[key] is null)
             return true;
+
+        object raw = root[key];
 
         hasVersion = true;
         try

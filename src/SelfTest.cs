@@ -244,6 +244,12 @@ internal static class SelfTest
 
             templateOk = text == "CPU 23.4% {ok}   5 {nope}";
             unknownOk = unknown.Count == 1 && unknown[0] == "nope";
+
+            // C-4：对齐参数来自用户模板，极值必须被夹取，不能抛 OverflowException 或申请 GB 级内存。
+            string minAlign = TemplateEngine.Render("{n,-2147483648}", vars);
+            string maxAlign = TemplateEngine.Render("{n,2147483647}", vars);
+            bool alignOk = minAlign.Length == 1024 && maxAlign.Length == 1024;
+            templateOk = templateOk && alignOk;
         }
         catch (Exception ex)
         {
@@ -1323,6 +1329,11 @@ internal static class SelfTest
                                                    out needsSave, out corrupted, out futureFlag);
         bool overflowOk = corrupted && !needsSave;
 
+        // C-1：版本键大小写不一致也必须识别为“更高版本”，不能被当成“缺版本”自动落盘覆盖。
+        Settings caseVersion = SettingsLoader.Load("{\"schemaversion\":999,\"Cards\":[]}",
+                                                   out needsSave, out corrupted, out var caseFuture);
+        bool caseVersionOk = !corrupted && caseFuture && !needsSave && caseVersion is not null;
+
         // Schema 7（2.24.0）：v6 一次性迁移——玻璃模糊字段合并、GlassMode 的 Dwm 更名 DesktopFeed、
         // Chat 模式别名改写 Context；迁移后必须需要落盘（needsSave）且不能再按损坏处理。
         const string legacyV6 =
@@ -1373,7 +1384,7 @@ internal static class SelfTest
                           && unknownSettings.Cards[0].Extras.ContainsKey("plugin");
 
         return brokenOk && oldOk && unversionedOk && futureOk && overflowOk
-            && v6Ok && v6CompatOk && unknownKindOk;
+            && caseVersionOk && v6Ok && v6CompatOk && unknownKindOk;
     }
 
     /// <summary>状态存储：原子写、损坏回退 .bak、拒绝路径穿越、删除；清理逻辑保持原 try/finally。</summary>

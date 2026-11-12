@@ -934,8 +934,9 @@ public sealed class CardSettings
 
     /// <summary>
     /// 读模块自己的设置；缺省或解析失败都回落到 <typeparamref name="T"/> 的默认值，调用方不用判空。
-    /// 从磁盘读进来时值是原始 JSON 节点，这里做一次强类型绑定；返回的可能是副本，
-    /// 改完要用 <see cref="SetExtras{T}"/> 写回。
+    /// 键存在时返回的是**活引用**：从磁盘读入的原始 JSON 节点会在第一次读取时绑定并缓存回
+    /// <see cref="Extras"/>。这样“读→改”与“读→SetExtras”两条路径语义一致，不会出现同一会话里
+    /// 第一次是副本、之后是活引用的时好时坏（C-6）。
     /// </summary>
     public T ExtrasAs<T>(string key) where T : class, new()
     {
@@ -949,7 +950,10 @@ public sealed class CardSettings
         try
         {
             T parsed = Json.BindNode<T>(raw);
-            return parsed ?? new T();
+            if (parsed is null) return new T();
+            // 原地缓存绑定结果：之后同一键的读取都返回同一个对象。
+            if (Extras is not null) Extras[key] = parsed;
+            return parsed;
         }
         catch (Exception ex)
         {

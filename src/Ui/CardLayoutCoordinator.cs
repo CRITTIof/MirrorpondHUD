@@ -30,6 +30,8 @@ internal sealed class CardLayoutCoordinator
     /// 锚点 / 对齐 / 卡片数量变化时才重新取一次。
     /// </summary>
     double _rightEdge;
+    /// <summary>最近一次布局算出的整叠最大宽度；EndDrag 用它重算右边缘（不能用 slot.Dialog 的副本）。</summary>
+    double _stackWidth;
     double _lastAnchorX = double.NaN;
     int _lastCardCount = -1;
     string _lastAlign;
@@ -96,9 +98,10 @@ internal sealed class CardLayoutCoordinator
         _alignOverride = resolvedAlign;
         _suspended = false;
         SyncHeights();
-        // 拖动结束后以被抓卡片的当前右边缘作为新的锚点，避免松手后再横向回跳。
+        // 拖动只更新宿主锚点；slot.Dialog.Overlay 是 BuildDialog 的副本，拖动期间不会更新。
+        // 用最近一次布局的整叠宽度重算右边缘，避免松手后按旧坐标回跳。
         if (slot is not null && string.Equals(resolvedAlign, "Right", StringComparison.OrdinalIgnoreCase))
-            _rightEdge = slot.Dialog.Overlay.X + slot.Window.CardWidth;
+            _rightEdge = _settings().Overlay.X + _stackWidth;
         _lastAnchorX = _settings().Overlay.X;
         LayoutCore(true, null, false);
     }
@@ -141,6 +144,7 @@ internal sealed class CardLayoutCoordinator
         }
 
         if (stackWidth <= 0) stackWidth = visibleWidth;
+        _stackWidth = stackWidth;
 
         string align = ResolveAlign(settings, visibleWidth > 0 ? visibleWidth : stackWidth);
         bool alignChanged = !string.Equals(_lastAlign, align, StringComparison.Ordinal);

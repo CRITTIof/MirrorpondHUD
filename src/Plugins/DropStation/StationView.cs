@@ -270,6 +270,8 @@ internal sealed class StationView : Grid, IDisposable, IStationCopySink
 
     public void CopyItemRemoved(StationItem item) => _items.Remove(item);
 
+    public bool HasItem(StationItem item) => _items.Contains(item);
+
     public void CopyPersistAndRebuild() => PersistAndRebuild();
 
     public void CopyStateChanged() => RefreshCopyStatus();
@@ -591,6 +593,8 @@ internal sealed class StationView : Grid, IDisposable, IStationCopySink
         List<StationItem> selected = _selection.SelectedItems();
         if (selected.Count == 0) return;
 
+        // 先取消在途复制，避免“列表里已删、磁盘上还在写”（P-3 的竞态）。
+        if (_copy.IsBusy) CancelCopies();
         foreach (StationItem item in selected) _items.Remove(item);
         _selection.Anchor = null;
         Persist();
@@ -603,6 +607,8 @@ internal sealed class StationView : Grid, IDisposable, IStationCopySink
     {
         if (_items.Count == 0) return;
 
+        // 清空列表必须先停在途复制：否则目标文件会继续落盘，而列表里已经没有记录。
+        if (_copy.IsBusy) CancelCopies();
         _items.Clear();
         _selection.Anchor = null;
         Persist();

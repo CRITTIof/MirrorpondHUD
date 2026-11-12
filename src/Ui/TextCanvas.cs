@@ -67,8 +67,10 @@ public sealed class TextCanvas : FrameworkElement
                     _keycapFamily = new FontFamily(new Uri("pack://application:,,,/"),
                                                    "./assets/keycaps/#ReiconFont");
                 }
-                catch
+                catch (Exception ex)
                 {
+                    // 字体加载失败会让键帽 PUA 字符显示成方框，是最难排查的显示问题之一。
+                    Log.Warn($"键帽字体加载失败，回退 Microsoft YaHei UI: {ex.Message}");
                     _keycapFamily = new FontFamily("Microsoft YaHei UI");
                 }
             }
@@ -664,8 +666,11 @@ public sealed class TextCanvas : FrameworkElement
             Geometry geometry = ft.BuildGeometry(new Point(0, 0));
             bounds = geometry is not null && !geometry.IsEmpty() ? geometry.Bounds : Rect.Empty;
         }
-        catch
+        catch (Exception ex)
         {
+            // 几何构建失败只影响图标基线的微调，按空墨迹继续排版；
+            // 用 Debug 而不是 Warn，避免每个字形/每次布局刷一条日志。
+            Log.Debug($"文字墨迹几何构建失败，按空墨迹排版: {ex.Message}");
             bounds = Rect.Empty;
         }
 
@@ -800,7 +805,11 @@ public sealed class TextCanvas : FrameworkElement
             double dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
             if (dpi > 0.1 && dpi < 10) return dpi;
         }
-        catch { }
+        catch (Exception ex)
+        {
+            // DPI 读不到时按 1.0 排版会与屏上字形有差；至少留下一条线索。
+            Log.Warn($"读取 PixelsPerDip 失败，按 1.0 排版: {ex.Message}");
+        }
         return 1.0;
     }
 

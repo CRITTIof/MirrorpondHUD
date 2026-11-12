@@ -20,6 +20,22 @@ namespace MirrorpondHUD.Ui;
 internal static class CommandLineMode
 {
     /// <summary>
+    /// 是否包含“跑完即退出”的参数（--selftest / --screenshot*）。
+    /// App 在单实例检查里用它区分“普通第二实例”与“验证命令”，后者不能静默返回 0。
+    /// </summary>
+    internal static bool HasImmediateMode(IEnumerable<string> args)
+    {
+        if (args is null) return false;
+        foreach (string arg in args)
+        {
+            if (string.Equals(arg, "--selftest", StringComparison.OrdinalIgnoreCase) ||
+                arg.StartsWith("--screenshot", StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>
     /// 尝试执行「跑完即退出」的模式。命中时 exitCode 为进程退出码并由调用方 Shutdown；
     /// 未命中返回 false，调用方继续正常启动。
     /// </summary>
@@ -43,35 +59,35 @@ internal static class CommandLineMode
         string shotCards = GetOption(args, "--screenshot-cards");
         if (shotCards is not null)
         {
-            Screenshots.CaptureCards(shotCards);
+            exitCode = Screenshots.CaptureCards(shotCards) ? 0 : 1;
             return true;
         }
 
         string shot = GetOption(args, "--screenshot");
         if (shot is not null)
         {
-            Screenshots.CaptureOverlay(shot);
+            exitCode = Screenshots.CaptureOverlay(shot) ? 0 : 1;
             return true;
         }
 
         string shotSettings = GetOption(args, "--screenshot-settings");
         if (shotSettings is not null)
         {
-            Screenshots.CaptureSettings(shotSettings);
+            exitCode = Screenshots.CaptureSettings(shotSettings) ? 0 : 1;
             return true;
         }
 
         string shotWidgets = GetOption(args, "--screenshot-widgets");
         if (shotWidgets is not null)
         {
-            Screenshots.CaptureWidgets(shotWidgets);
+            exitCode = Screenshots.CaptureWidgets(shotWidgets) ? 0 : 1;
             return true;
         }
 
         string shotStation = GetOption(args, "--screenshot-station");
         if (shotStation is not null)
         {
-            Screenshots.CaptureStationViews(shotStation);
+            exitCode = Screenshots.CaptureStationViews(shotStation) ? 0 : 1;
             return true;
         }
 

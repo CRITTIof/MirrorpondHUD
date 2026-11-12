@@ -85,7 +85,8 @@ internal static class GlassFeed
     static int _sharedHeight;
 
     static DesktopFrameSource _frameSource;
-    static bool _frameSourceTried;
+    // 失败后按时间退避重试，而不是“一次失败终身放弃”：改设置也不该只能靠重启救回来。
+    static DateTime _frameSourceNextTry = DateTime.MinValue;
     static DateTime _frameSourceIdle = DateTime.MinValue;
 
     // P1-7：桌面复制源被判死后，按 30s → 60s → 2min 封顶退避重建；退避期内一律走 GDI，
@@ -170,6 +171,8 @@ internal static class GlassFeed
         bool lookChanged = radius != _blurRadius || shadow != _shadow;
 
         _source = mode;
+        // 改设置后立即允许重新尝试，不必重启进程（G-2）。
+        _frameSourceNextTry = DateTime.MinValue;
         _blurPixels = Math.Max(0, blurPixels);
         _blurRadius = radius;
         _fps = frameRate;
@@ -271,7 +274,16 @@ internal static class GlassFeed
         catch { return; }
         if (hwnd == IntPtr.Zero) return;
 
-        try { SetWindowDisplayAffinity(hwnd, exclude ? WdaExcludeFromCapture : WdaNone); }
+        try
+        {
+            // WDA_EXCLUDEFROMCAPTURE 需要 Win10 2004+，旧系统/拦截类软件会返回 FALSE。
+            // 这里必须看返回值：失败后桌面取样会拍到卡片自身，形成拖影且没有其它线索。
+            if (SetWindowDisplayAffinity(hwnd, exclude ? WdaExcludeFromCapture : WdaNone) == 0)
+            {
+                int err = Marshal.GetLastWin32Error();
+                Log.Warn($"设置截屏排除失败（hwnd={hwnd} err={err}）；桌面取样可能拍到自身并产生拖影");
+            }
+        }
         catch (Exception ex) { Log.Warn($"设置截屏排除失败: {ex.Message}"); }
 
         ExcludeOwnedWindows(hwnd, exclude);
@@ -295,11 +307,18 @@ internal static class GlassFeed
             return;
         }
 
+        int failed = 0;
         foreach (IntPtr hwnd in owned)
         {
-            try { SetWindowDisplayAffinity(hwnd, exclude ? WdaExcludeFromCapture : WdaNone); }
-            catch { }
+            try
+            {
+                if (SetWindowDisplayAffinity(hwnd, exclude ? WdaExcludeFromCapture : WdaNone) == 0)
+                    failed++;
+            }
+            catch (Exception ex) { Log.Warn($"设置子窗口截屏排除失败({hwnd}): {ex.Message}"); }
         }
+        if (failed > 0)
+            Log.Warn($"{failed} 个卡片子窗口未能排除出截屏，桌面取样可能出现残影");
     }
 
     // ==================== 一轮取样 ====================
@@ -712,8 +731,13 @@ internal static class GlassFeed
         // P1-7：上一轮源被判死 → 退避期内一律走 GDI，不碰重建（重建一次要几十 ms）。
         if (_frameSource is null && DateTime.UtcNow < _frameSourceDeadUntil) return null;
 
-        if (_frameSource is not null || _frameSourceTried) return _frameSource;
-        _frameSourceTried = true;
+        if (_frameSource is not null) return _frameSource;
+
+        // 创建失败后按时间退避重试（避免每帧重建 D3D 设备），但不会永久钉死。
+        // 旧实现用 bool _frameSourceTried，失败一次后 ReleaseFrameSource 又因早退
+        // 永远复位不了，只能重启进程。
+        if (DateTime.UtcNow < _frameSourceNextTry) return null;
+        _frameSourceNextTry = DateTime.UtcNow.AddSeconds(30);
 
         if (DesktopFrameSource.TryCreate(_source, out var source, out var reason))
         {
@@ -721,6 +745,7 @@ internal static class GlassFeed
             _frameSourceIdle = DateTime.UtcNow;
             // 新源建成了，退避计划作废。
             _frameSourceDeadUntil = DateTime.MinValue;
+            _frameSourceNextTry = DateTime.MinValue;
             Log.Info("玻璃取图改用 DXGI 桌面复制（GPU 加速，不再用 GDI 读屏）");
         }
         else
@@ -733,10 +758,11 @@ internal static class GlassFeed
 
     static void ReleaseFrameSource()
     {
+        // 释放后下一次需要时允许立即重建（空闲释放是正常路径，不是失败）。
+        _frameSourceNextTry = DateTime.MinValue;
         if (_frameSource is null) return;
         try { _frameSource.Dispose(); } catch { }
         _frameSource = null;
-        _frameSourceTried = false;
         _frameSourceIdle = DateTime.MinValue;
         // P1-7：这里不清 _frameSourceDeadUntil —— 死源的释放方（CaptureAll）
         // 会在释放后按“上一次的退避时间 × 2”续算退避，不能被这里抹掉。
@@ -971,7 +997,7 @@ internal static class GlassFeed
     [DllImport("user32.dll")]
     static extern IntPtr GetWindow(IntPtr hwnd, int command);
 
-    [DllImport("user32.dll")]
+    [DllImport("user32.dll", SetLastError = true)]
     static extern int SetWindowDisplayAffinity(IntPtr hwnd, uint affinity);
 
     [DllImport("user32.dll")]

@@ -126,6 +126,9 @@ internal static class GlassCapture
     }
 
     static readonly List<Frame> Frames = new(6);
+    // 兼容取样每组卡片各起一个 Task，N 张卡会并发进出 Grab/GetFramePixels。
+    // 这个缓存是进程级的，必须串行访问；注释里“只在 UI 线程”的假设不成立（G-3）。
+    static readonly object FramesSync = new();
 
     // ==================== 找卡片后面的窗口 ====================
 
@@ -440,29 +443,35 @@ internal static class GlassCapture
     {
         long now = Environment.TickCount64;
 
-        for (int i = 0; i < Frames.Count; i++)
+        lock (FramesSync)
         {
-            Frame cached = Frames[i];
-            if (cached.Window != window) continue;
-            if (cached.Width != width || cached.Height != height) continue;
-            if (now - cached.Stamp > cacheMs) continue;
-            return cached.Blank ? null : cached.Pixels;
+            for (int i = 0; i < Frames.Count; i++)
+            {
+                Frame cached = Frames[i];
+                if (cached.Window != window) continue;
+                if (cached.Width != width || cached.Height != height) continue;
+                if (now - cached.Stamp > cacheMs) continue;
+                return cached.Blank ? null : cached.Pixels;
+            }
         }
 
         byte[] fresh = PrintWindowPixels(window, width, height);
         bool blank = fresh is null || IsBlank(fresh);
 
-        Frames.RemoveAll(f => f.Window == window);
-        Frames.Add(new Frame
+        lock (FramesSync)
         {
-            Window = window,
-            Stamp = now,
-            Width = width,
-            Height = height,
-            Pixels = fresh,
-            Blank = blank
-        });
-        if (Frames.Count > 8) Frames.RemoveAt(0);
+            Frames.RemoveAll(f => f.Window == window);
+            Frames.Add(new Frame
+            {
+                Window = window,
+                Stamp = now,
+                Width = width,
+                Height = height,
+                Pixels = fresh,
+                Blank = blank
+            });
+            if (Frames.Count > 8) Frames.RemoveAt(0);
+        }
 
         return blank ? null : fresh;
     }
@@ -501,7 +510,7 @@ internal static class GlassCapture
 
             if (!PrintWindow(window, memoryDc, PW_RENDERFULLCONTENT))
             {
-                Frames.RemoveAll(f => f.Window == window);
+                lock (FramesSync) { Frames.RemoveAll(f => f.Window == window); }
                 return null;
             }
 

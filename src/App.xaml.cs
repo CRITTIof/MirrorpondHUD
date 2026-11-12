@@ -72,6 +72,15 @@ public partial class App : Application
         _mutex = new Mutex(true, "Local\\MirrorpondHUD.SingleInstance", out var createdNew);
         if (!createdNew)
         {
+            // 立即模式（自检 / 截图）必须是“真跑过”才算通过。已有实例在运行时走唤醒分支
+            // 再 Shutdown(0)，会让 --selftest 一项没跑却返回 0，等于伪造绿灯。
+            if (CommandLineMode.HasImmediateMode(e.Args))
+            {
+                Log.Error("检测到已有实例在运行，拒绝执行 --selftest / --screenshot；请先退出正在运行的窗口");
+                Shutdown(2);
+                return;
+            }
+
             // 首实例要加载插件 / 配置后才会创建唤醒事件；冷启动窗口期第二次双击
             // 不能只写一条 WARN 就退出。这里做一次短重试（30 × 100ms），
             // 仍等不到才认为首实例确实异常。

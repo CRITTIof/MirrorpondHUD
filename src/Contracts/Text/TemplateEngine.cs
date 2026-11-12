@@ -115,7 +115,12 @@ public static class TemplateEngine
             text = Convert.ToString(value, CultureInfo.InvariantCulture) ?? "";
 
         if (alignment == 0) return text;
-        int pad = Math.Abs(alignment);
+        // 对齐宽度来自用户可编辑的模板文本，必须夹取：Math.Abs(int.MinValue) 会抛
+        // OverflowException，PadLeft(int.MaxValue) 会尝试申请约 2 GB。
+        const int MaxAlignment = 1024;
+        int pad = alignment == int.MinValue
+            ? MaxAlignment
+            : Math.Min(Math.Abs(alignment), MaxAlignment);
         if (text.Length >= pad) return text;
         return alignment > 0 ? text.PadLeft(pad) : text.PadRight(pad);
     }

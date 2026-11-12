@@ -165,6 +165,18 @@ public partial class SettingsWindow
 
             PathText.Text = ConfigStore.Path;
             StatusText.Text = "";
+
+            // 只读加载（更高版本 / 本次读取失败）时，整个会话内的保存都会被 ConfigStore 拒绝。
+            // 必须在进入界面时就说明并禁用保存，否则用户会改完一整轮才发现全丢。
+            if (ConfigStore.LastLoadReadOnly)
+            {
+                if (SaveButton is not null) SaveButton.IsEnabled = false;
+                StatusText.Text = "配置为只读加载：本次会话内的保存都会被拒绝。请先处理设置文件，然后重启应用。";
+            }
+            else if (SaveButton is not null)
+            {
+                SaveButton.IsEnabled = true;
+            }
         }
         finally
         {

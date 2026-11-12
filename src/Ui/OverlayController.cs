@@ -180,7 +180,7 @@ public sealed class OverlayController : IDisposable
         public void FinishIntro() => _owner._intro.Finish();
         public void RefreshVisibility() => _owner.RefreshVisibility();
         public void UpdateCommandInfo() => _owner.UpdateCommandInfo();
-        public void RebuildHotkeys() { if (_owner._hotkeyRouter is not null) _owner._hotkeyRouter.Register(); }
+        public void RebuildHotkeys() { if (_owner._hotkeyRouter is not null) _owner._hotkeyRouter.Register(persist: false); }
         public void UpdateEngine() { if (_owner._engine is not null) _owner._engine.UpdateSettings(_owner._settings); }
         public void RefreshTray() { if (_owner._tray is not null) _owner._tray.Update(); }
 

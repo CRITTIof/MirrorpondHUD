@@ -79,6 +79,12 @@ public partial class SettingsWindow
             return false;
         }
 
+        if (ConfigStore.LastLoadReadOnly)
+        {
+            StatusText.Text = "配置为只读加载：请先处理设置文件并重启应用（本次改动不会写入磁盘）";
+            return false;
+        }
+
         Settings s;
         try
         {

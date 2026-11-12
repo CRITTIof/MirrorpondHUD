@@ -142,7 +142,6 @@ internal sealed class DesktopFrameSource : IDisposable
     {
         source = null;
 
-        int build = Environment.OSVersion.Version.Build;
         string mode = Settings.NormalizeGlassSource(preferred);
 
         // 环境变量还是最高优先级：留着做 A/B 对比（不用改设置就能复现某一侧）。
@@ -150,19 +149,15 @@ internal sealed class DesktopFrameSource : IDisposable
         if (string.Equals(env, "gdi", StringComparison.OrdinalIgnoreCase)) mode = "Cpu";
         else if (string.Equals(env, "dup", StringComparison.OrdinalIgnoreCase)) mode = "Gpu";
 
-        bool force = mode == "Gpu";
-
         if (mode == "Cpu")
         {
             reason = "设置里选的是「CPU 读屏」（GDI BitBlt）";
             return false;
         }
 
-        if (build < 26200 && !force)
-        {
-            reason = $"Windows 生成号 {build} 的 DXGI 桌面复制 vtable 布局没实测过（取图方式选「GPU 加速」可以强制尝试）";
-            return false;
-        }
+        // 不再按 OS 生成号直接拒绝 Auto：CreateDuplication 会依次尝试两个 vtable 下标，
+        // 并用 GetDesc 校验宽高；两个都失败才退回 GDI。这样 Win10 / 24H2 不再被
+        // “没实测过”永久钉死在 18ms 的 GDI 读屏上（G-1）。
 
         var instance = new DesktopFrameSource();
         if (!instance.Initialize(out reason))
@@ -227,44 +222,53 @@ internal sealed class DesktopFrameSource : IDisposable
             hr = Marshal.QueryInterface(output, ref iidOutput1, out output1);
             if (hr < 0 || output1 == IntPtr.Zero) { reason = "取 IDXGIOutput1 失败"; return false; }
 
-            // 26200 实测在 22；老布局在 19。先试本机实测值，验收不了就整体放弃。
-            int slot = Environment.OSVersion.Version.Build >= 26200
-                ? SlotOutputDuplicateOutputNew
-                : SlotOutputDuplicateOutputOld;
+            // vtable 下标随 dxgi.dll 版本变化：先试本机生成号对应值，再试另一个。
+            // 每次都拿 GetDesc 校验宽高；猜错时宁可释放对象退回 GDI，也不能继续用。
+            int[] slots = Environment.OSVersion.Version.Build >= 26200
+                ? new[] { SlotOutputDuplicateOutputNew, SlotOutputDuplicateOutputOld }
+                : new[] { SlotOutputDuplicateOutputOld, SlotOutputDuplicateOutputNew };
 
-            _duplicateOutput = Fn<DuplicateOutputFn>(output1, slot);
-            hr = _duplicateOutput(output1, _device, out _duplication);
-            if (hr < 0 || _duplication == IntPtr.Zero)
+            string last = "";
+            foreach (int slot in slots)
             {
-                reason = $"DuplicateOutput（vtable 下标 {slot}）失败：0x{hr:X8}";
-                return false;
-            }
-
-            // 验收：先问一下这块复制对象的模式，宽高必须和屏幕一致。
-            // 下标猜错时它会返回垃圾，这条检查能把「读不了」变成「退回 GDI」而不是画一屏黑。
-            _duplicationDesc = Fn<GetDuplicationDescFn>(_duplication, SlotDupGetDesc);
-            var buffer = new byte[64];
-            IntPtr desc = Marshal.AllocHGlobal(buffer.Length);
-            try
-            {
-                hr = _duplicationDesc(_duplication, desc);
-                int width = Marshal.ReadInt32(desc, 0);
-                int height = Marshal.ReadInt32(desc, 4);
-                if (hr < 0 || width != _screenWidth || height != _screenHeight)
+                _duplicateOutput = Fn<DuplicateOutputFn>(output1, slot);
+                hr = _duplicateOutput(output1, _device, out _duplication);
+                if (hr < 0 || _duplication == IntPtr.Zero)
                 {
-                    reason = $"桌面复制的模式对不上（hr=0x{hr:X8}，{width}x{height}，屏幕 {_screenWidth}x{_screenHeight}）";
-                    return false;
+                    _duplication = IntPtr.Zero;
+                    last = $"DuplicateOutput（vtable 下标 {slot}）失败：0x{hr:X8}";
+                    continue;
                 }
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(desc);
+
+                // 验收：先问一下这块复制对象的模式，宽高必须和屏幕一致。
+                // 下标猜错时它会返回垃圾，这条检查能把「读不了」变成「退回 GDI」而不是画一屏黑。
+                _duplicationDesc = Fn<GetDuplicationDescFn>(_duplication, SlotDupGetDesc);
+                IntPtr desc = Marshal.AllocHGlobal(64);
+                try
+                {
+                    hr = _duplicationDesc(_duplication, desc);
+                    int width = Marshal.ReadInt32(desc, 0);
+                    int height = Marshal.ReadInt32(desc, 4);
+                    if (hr >= 0 && width == _screenWidth && height == _screenHeight)
+                    {
+                        _acquire = Fn<AcquireNextFrameFn>(_duplication, SlotDupAcquireNextFrame);
+                        _release = Fn<ReleaseFrameFn>(_duplication, SlotDupReleaseFrame);
+                        reason = "";
+                        return true;
+                    }
+                    last = $"桌面复制的模式对不上（vtable 下标 {slot}，hr=0x{hr:X8}，{width}x{height}，屏幕 {_screenWidth}x{_screenHeight}）";
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(desc);
+                }
+
+                Marshal.Release(_duplication);
+                _duplication = IntPtr.Zero;
             }
 
-            _acquire = Fn<AcquireNextFrameFn>(_duplication, SlotDupAcquireNextFrame);
-            _release = Fn<ReleaseFrameFn>(_duplication, SlotDupReleaseFrame);
-            reason = "";
-            return true;
+            reason = string.IsNullOrEmpty(last) ? "桌面复制初始化失败" : last;
+            return false;
         }
         finally
         {
