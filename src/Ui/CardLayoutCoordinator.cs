@@ -203,6 +203,7 @@ internal sealed class CardLayoutCoordinator
             slot.Dialog.Overlay.X = x;
             slot.Dialog.Overlay.Y = settings.Overlay.Y + top;
             slot.Dialog.Overlay.Monitor = settings.Overlay.Monitor;
+            slot.Dialog.Overlay.MonitorDevice = settings.Overlay.MonitorDevice;
             slot.Dialog.Overlay.Locked = settings.Overlay.Locked;
             // “跟随卡片对齐”的文字需要知道整叠最终选了哪一边；由布局统一告知，
             // 避免每张卡按自己的中心各猜一个方向。
@@ -256,7 +257,7 @@ internal sealed class CardLayoutCoordinator
 
         try
         {
-            ScreenInfo screen = ScreenGeometry.Get(settings.Overlay.Monitor);
+            ScreenInfo screen = ScreenGeometry.Get(settings.Overlay.Monitor, settings.Overlay.MonitorDevice);
             if (screen is null) return "Left";
 
             double scaleX = screen.ScaleX > 0.1 ? screen.ScaleX : 1.0;

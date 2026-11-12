@@ -307,7 +307,7 @@ public sealed class OverlaySurface : Border
     {
         try
         {
-            ScreenInfo screen = ScreenGeometry.Get(_lastSettings.Overlay.Monitor);
+            ScreenInfo screen = ScreenGeometry.Get(_lastSettings.Overlay.Monitor, _lastSettings.Overlay.MonitorDevice);
             if (screen is null) return "Left";
 
             double scaleX = screen.ScaleX > 0.1 ? screen.ScaleX : 1.0;

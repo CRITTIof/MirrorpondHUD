@@ -97,6 +97,9 @@ internal sealed class SettingsApplier
             X = source.X,
             Y = source.Y,
             Monitor = source.Monitor,
+            // G-14：显示器身份是设备名；对话框复制设置时必须一起带上，否则应用设置时
+            // 会把旧序号当成新选择。
+            MonitorDevice = source.MonitorDevice,
             Locked = source.Locked,
             Topmost = source.Topmost,
             CornerRadius = source.CornerRadius,
@@ -115,6 +118,7 @@ internal sealed class SettingsApplier
         settings.Overlay.X = current.Overlay.X;
         settings.Overlay.Y = current.Overlay.Y;
         settings.Overlay.Monitor = current.Overlay.Monitor;
+        settings.Overlay.MonitorDevice = current.Overlay.MonitorDevice;
         settings.Overlay.Locked = current.Overlay.Locked;
 
         _host.FinishIntro();
@@ -211,6 +215,8 @@ internal sealed class SettingsApplier
         settings.Overlay.X = x;
         settings.Overlay.Y = y;
         settings.Overlay.Monitor = monitor;
+        // G-14：序号只是运行时缓存，持久身份是设备名（设置窗下拉框给的是当前枚举序号）。
+        settings.Overlay.MonitorDevice = ScreenGeometry.DeviceNameOf(monitor);
 
         if (!_host.OverlayVisible)
         {
@@ -321,6 +327,8 @@ internal sealed class SettingsApplier
             : landedX;
 
         settings.Overlay.Monitor = monitor;
+        // G-14：被拖到哪台显示器，就把那台的设备名一起落盘，之后枚举顺序变化也能找回来。
+        settings.Overlay.MonitorDevice = ScreenGeometry.DeviceNameOf(monitor);
 
         ClampAnchorToWorkArea(slot, settings, landedX, landedY);
 
@@ -344,20 +352,16 @@ internal sealed class SettingsApplier
 
         try
         {
-            System.Windows.Forms.Screen[] screens = System.Windows.Forms.Screen.AllScreens;
-            if (screens.Length == 0) return;
-
-            int index = Math.Max(0, Math.Min(settings.Overlay.Monitor, screens.Length - 1));
-            System.Drawing.Rectangle work = screens[index].WorkingArea;
-
-            ScreenInfo screen = ScreenGeometry.Get(index);
+            // G-14：按设备名优先解析目标屏；序号越界时 Get 会 Warn 并回退主屏，
+            // 不再像旧实现那样用 AllScreens 的序号静默钳到最后一台。
+            ScreenInfo screen = ScreenGeometry.Get(settings.Overlay.Monitor, settings.Overlay.MonitorDevice);
             if (screen is null) return;
 
             double scaleX = screen.ScaleX > 0.1 ? screen.ScaleX : 1.0;
             double scaleY = screen.ScaleY > 0.1 ? screen.ScaleY : 1.0;
 
-            double workWidth = work.Width / scaleX;
-            double workHeight = work.Height / scaleY;
+            double workWidth = screen.WorkWidth / scaleX;
+            double workHeight = screen.WorkHeight / scaleY;
             if (workWidth < 40 || workHeight < 40) return;
 
             double cardWidth = Math.Max(40, slot.Window.CardWidth);

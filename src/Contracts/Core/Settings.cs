@@ -520,8 +520,15 @@ public sealed class OverlaySettings
     /// <summary>叠层锚点坐标（DIP，相对所在显示器工作区左上角），第一张卡片放在这里。</summary>
     public double X = 48;
     public double Y = 48;
-    /// <summary>0-based 显示器序号。</summary>
+    /// <summary>0-based 显示器序号，仅作向下兼容与运行时缓存；持久身份见 <see cref="MonitorDevice"/>。</summary>
     public int Monitor = 0;
+
+    /// <summary>
+    /// 显示器设备名（例如 <c>\\.\DISPLAY1</c>）。G-14：<c>Screen.AllScreens</c> 的枚举顺序会随
+    /// 驱动 / 热插拔 / 重启变化，不能当持久身份；找不到该设备时由宿主 Warn 并回退主屏。
+    /// 旧配置没有这个字段，由宿主归一化钩子按旧序号做一次迁移。
+    /// </summary>
+    public string MonitorDevice = "";
     /// <summary>true = 鼠标穿透（锁定），false = 可拖动。</summary>
     public bool Locked = true;
     public bool Topmost = true;

@@ -13,6 +13,12 @@ public partial class App : Application
 {
     Mutex _mutex;
     OverlayController _controller;
+
+    /// <summary>
+    /// G-12：单实例唤醒事件。拿到互斥后立即创建（早于插件加载 / 配置读取），
+    /// 走出启动 try 时转交给控制器；启动失败时由 OnExit 兜底释放。
+    /// </summary>
+    EventWaitHandle _activation;
     IList<CardPluginHandle> _plugins;
 
     /// <summary>UI 线程异常的最大容忍次数：超过后即使类型在白名单里也不再吞掉。</summary>
@@ -83,35 +89,34 @@ public partial class App : Application
                 return;
             }
 
-            // 首实例要加载插件 / 配置后才会创建唤醒事件；冷启动窗口期第二次双击
-            // 不能只写一条 WARN 就退出。这里做一次短重试（30 × 100ms），
-            // 仍等不到才认为首实例确实异常。
+            // 首实例现在在拿到互斥后立刻创建唤醒事件（见下面），冷启动窗口期第二次双击
+            // 基本不会再遇到“事件还没建好”。这里仍保留短重试（2 秒），覆盖首实例刚起来、
+            // 事件对象正在创建 / 被杀毒软件短暂延迟的极端情况。
             Log.Info("已有实例在运行，等待唤醒句柄");
             EventWaitHandle activation = null;
             Exception lastError = null;
-            for (int attempt = 0; attempt < 30; attempt++)
+            for (int attempt = 0; attempt < 20; attempt++)
             {
                 try
                 {
-                    activation = EventWaitHandle.OpenExisting("Local\\MirrorpondHUD.Activate");
-                    lastError = null;
-                    break;
-                }
-                catch (WaitHandleCannotBeOpenedException ex)
-                {
-                    lastError = ex;
-                    Thread.Sleep(100);
+                    if (EventWaitHandle.TryOpenExisting(OverlayController.ActivationEventName, out activation))
+                    {
+                        lastError = null;
+                        break;
+                    }
                 }
                 catch (Exception ex)
                 {
+                    // UnauthorizedAccessException 等：继续等也没用，但至少要留下原因。
                     lastError = ex;
                     break;
                 }
+                Thread.Sleep(100);
             }
 
             if (activation is null)
             {
-                Log.Warn($"唤醒已有实例失败: {(lastError is null ? "等待超时（首实例可能仍在启动）" : lastError.Message)}");
+                Log.Warn($"唤醒已有实例失败: {(lastError is null ? "2 秒内没有找到唤醒事件（首实例可能启动失败或事件创建失败）" : lastError.Message)}");
             }
             else
             {
@@ -121,6 +126,13 @@ public partial class App : Application
             Shutdown(0);
             return;
         }
+
+        // G-12：拿到互斥后立即创建唤醒事件，不再等 OverlayController.Start() 的最后一步。
+        // 冷启动窗口期（插件加载 / 读配置 / 建卡片 / 装钩子）里第二实例双击图标时，
+        // OpenExisting 必须能马上找到它；创建失败也不能静默——那会让第二实例永远唤不醒本进程。
+        _activation = OverlayController.CreateActivationEvent(out string activationError);
+        if (_activation is null)
+            Log.Warn($"创建单实例唤醒事件失败，第二实例将无法唤起本进程: {activationError}");
 
         List<string> args = e.Args.ToList();
         Settings settings;
@@ -175,7 +187,7 @@ public partial class App : Application
 
         try
         {
-            _controller = new OverlayController(settings, args);
+            _controller = new OverlayController(settings, args, _activation);
             _controller.Start();
 
         }
@@ -217,6 +229,15 @@ public partial class App : Application
         // 插件卸载探针前必须断开 App 对控制器的强引用，否则 _cards[].Module 会
         // 稳定把 6 个模块全判成“未回收”（P-5）。
         finally { _controller = null; }
+
+        // G-12：事件句柄的所有权已经转交控制器（正常路径由它释放）；这里只兜底
+        // “控制器构造 / 启动失败”的路径，重复 Dispose 对 WaitHandle 是安全的。
+        if (_activation is not null)
+        {
+            try { _activation.Dispose(); }
+            catch (Exception ex) { Log.Debug($"唤醒事件释放失败: {ex.Message}"); }
+            _activation = null;
+        }
 
         // 先把注册表里的插件模块引用摘掉，再请求卸载 ALC；否则静态注册表会一直钉住旧程序集。
         // 第二实例在互斥检查处就会退出，此时 _plugins 还是 null，不能走这里的清理日志。
