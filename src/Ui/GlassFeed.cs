@@ -60,11 +60,18 @@ internal static class GlassFeed
         public int LastHeight;
 
         /// <summary>
+        /// G-17：复用位图（尺寸变化才重建）。
+        /// 旧实现每帧 <c>BitmapSource.Create</c>：分配一块原生像素缓冲、再整块拷入一次，
+        /// 与 <see cref="CaptureBuffer"/> 的复用叠加后仍有每帧一份大对象。
+        /// WriteableBitmap 只能在创建它的线程上写、且不可 Freeze —— 本类的写路径全在 UI 线程
+        /// （DispatcherTimer / RequestFrame / 拖动补帧），消费者 OverlaySurface 也不能冻结它。
+        /// </summary>
+        public WriteableBitmap Bitmap;
+
+        /// <summary>
         /// P-2：这张卡复用的取样缓冲，只有尺寸变化才重分配。
         /// 以前每帧 new byte[w * h * 4]：600x400 的卡缩到 1/2 后是 240KB，
         /// 已经超过 85KB 的 LOH 门槛，每卡每帧一块大对象。
-        /// 复用是安全的：<c>BitmapSource.Create</c> 在建图时就把像素复制进它自己的原生缓冲
-        /// （依据见 Render 里的注释），下一帧覆写这块数组不会改到已经交给卡片的那张位图。
         /// </summary>
         public byte[] CaptureBuffer;
     }
@@ -194,8 +201,8 @@ internal static class GlassFeed
         // 会一直活着（GPU 常醒）。ReleaseFrameSource 内部自带空值判断。
         if (empty) ReleaseFrameSource();
 
-        // 释放路径：窗口可能已经关闭 / 内容层已释放，清玻璃失败没有后续影响。
-        try { window.Surface.ClearGlass(); } catch { }
+        // 释放路径：窗口可能已经关闭 / 内容层已释放，清玻璃失败交给 SafeRelease 记录（X-9）。
+        SafeRelease.Run(window.Surface.ClearGlass, "玻璃层清理");
     }
 
     /// <summary>同步设置：取图方式、模糊强度、刷新帧率、是否留投影边。</summary>
@@ -233,11 +240,16 @@ internal static class GlassFeed
             // 模糊半径变了但背景没变时，「和上一帧一样就不更新」会把新半径挡在门外，这里先清掉缓存。
             lock (Live)
             {
-                foreach (Target target in Live) target.LastFrame = null;
+                foreach (Target target in Live) ResetFrameCache(target);
             }
         }
 
-        if (_pump is not null) _pump.Interval = Interval();
+        if (_pump is not null)
+        {
+            _pump.Interval = Interval();
+            // G-19：隐藏期间 Configure 仍会被可见性变化触发；这里只在确实有可见卡片时恢复泵。
+            WakePump();
+        }
     }
 
     static TimeSpan Interval() => TimeSpan.FromMilliseconds(1000.0 / Math.Max(2, Math.Min(30, _fps)));
@@ -254,6 +266,9 @@ internal static class GlassFeed
         {
             if (Live.Count == 0) return false;
         }
+
+        // G-19：可见性恢复后第一次补帧也要把泵叫醒（隐藏期间它被暂停了）。
+        WakePump();
 
         DateTime now = DateTime.UtcNow;
         // G-10：按「上一轮实际走了哪条后端」算间隔。源对象在但区域越界时，真实成本仍是
@@ -288,8 +303,17 @@ internal static class GlassFeed
 
     static bool IsRemoteSession()
     {
-        try { return GetSystemMetrics(SmRemoteSession) != 0; }
-        catch { return false; }
+        try
+        {
+            return GetSystemMetrics(SmRemoteSession) != 0;
+        }
+        catch (Exception ex)
+        {
+            // 取不到系统指标时按「非远程」继续：真正的采集失败会由 _gdiFailure / 采集层兜住，
+            // 这里再报一次只会重复，留 Debug 线索即可。
+            Log.Debug($"读取远程会话标志失败，按非远程处理: {ex.Message}");
+            return false;
+        }
     }
 
     static void EnsurePump()
@@ -304,6 +328,42 @@ internal static class GlassFeed
         CaptureAll();
     }
 
+    /// <summary>
+    /// G-19：没有任何可见卡片时暂停取样泵。旧实现隐藏后仍按设定帧率 tick，
+    /// 每轮对每张卡做一次 IsVisible / 窗口状态检查再空转 —— 叠层收起后纯浪费。
+    /// </summary>
+    static void PausePump(string reason)
+    {
+        if (_pump is null || !_pump.IsEnabled) return;
+
+        _pump.Stop();
+        Log.Debug($"玻璃取样泵已暂停：{reason}（卡片重新可见时自动恢复）");
+    }
+
+    /// <summary>G-19：有卡片重新可见时恢复取样泵；不可见状态下被唤醒则保持暂停。</summary>
+    static void WakePump()
+    {
+        if (_pump is null || _pump.IsEnabled) return;
+        if (!AnyVisibleTarget()) return;
+
+        _pump.Start();
+        Log.Debug("玻璃取样泵已恢复");
+    }
+
+    /// <summary>至少有一张卡片在屏上可见（最小化不算）。</summary>
+    static bool AnyVisibleTarget()
+    {
+        lock (Live)
+        {
+            foreach (Target target in Live)
+            {
+                if (target.Window is null) continue;
+                if (target.Window.IsVisible && target.Window.WindowState != WindowState.Minimized) return true;
+            }
+        }
+        return false;
+    }
+
     // ==================== 排除截屏 ====================
 
     /// <summary>
@@ -315,8 +375,16 @@ internal static class GlassFeed
         if (card is null) return;
 
         IntPtr hwnd;
-        try { hwnd = new WindowInteropHelper(card).Handle; }
-        catch { return; }
+        try
+        {
+            hwnd = new WindowInteropHelper(card).Handle;
+        }
+        catch (Exception ex)
+        {
+            // 窗口还没建好 / 正在关闭：这一轮没有句柄可排除，下一次 Apply 会重新走这里。
+            Log.Debug($"读取卡片窗口句柄失败（跳过截屏排除）: {ex.Message}");
+            return;
+        }
         if (hwnd == IntPtr.Zero) return;
 
         try
@@ -394,6 +462,9 @@ internal static class GlassFeed
         if (count == 0)
         {
             _blankRounds = 0;
+            // G-19：只有「确实没有可见卡片」才停泵。count == 0 也可能只是窗口刚创建、
+            // 尺寸还没就绪，或卡片被拖到屏幕外 —— 那些情况仍然需要按帧继续取样。
+            if (!AnyVisibleTarget()) PausePump("全部卡片不可见（收起 / 最小化）");
             return;
         }
 
@@ -572,7 +643,12 @@ internal static class GlassFeed
         {
             if (!card.IsVisible || card.WindowState == WindowState.Minimized) return false;
         }
-        catch { return false; }
+        catch (Exception ex)
+        {
+            // 卡片窗口正在释放：这一轮没有可取样区域，跳过即可（下一轮会自然恢复）。
+            Log.Debug($"读取卡片可见性失败（本轮跳过取样）: {ex.Message}");
+            return false;
+        }
 
         double inset = _shadow ? ShadowInset : 0.0;
         double w = card.ActualWidth - inset * 2.0;
@@ -586,7 +662,13 @@ internal static class GlassFeed
             origin = card.PointToScreen(new Point(inset, inset));
             dpi = VisualTreeHelper.GetDpi(card);
         }
-        catch { return false; }
+        catch (Exception ex)
+        {
+            // 布局 / 合成源尚未就绪（窗口刚创建或正在跨屏重建）：这一帧取不到位置，
+            // 下一帧再试；每帧都会发生时才值得关注，因此保持 Debug。
+            Log.Debug($"计算卡片屏幕区域失败（本轮跳过取样）: {ex.Message}");
+            return false;
+        }
 
         double scaleX = dpi.DpiScaleX > 0 ? dpi.DpiScaleX : 1.0;
         double scaleY = dpi.DpiScaleY > 0 ? dpi.DpiScaleY : 1.0;
@@ -649,33 +731,45 @@ internal static class GlassFeed
         // 和上一次真正画出去的那一帧几乎一样就不动 WPF：静置时背景没变，重画只是白费。
         if (SameAsLastFrame(target, buffer, w, h)) return;
 
-        // Bgr32 = 忽略 alpha：从屏幕 DC 拷出来的数据 alpha 全是 0，用 Bgra32 建图会整块透明
+        // Bgr32 = 忽略 alpha：从屏幕 DC 拷出来的数据 alpha 全是 0，用 Bgra32 建图会整块透明。
         //
-        // P-2：这里可以直接传复用的 CaptureBuffer，因为 BitmapSource.Create 在**建图时**
-        // 就把 pixels 复制进 CachedBitmap 自己的原生缓冲（PresentationCore 的
-        // CachedBitmap 构造会走一次像素拷贝），位图不持有调用方数组。
-        // 依据（本机 net8.0-windows 实测）：建图后立刻把源数组整体清零，
-        // 再 CopyPixels 回来仍然是原来的 BGR 值；Freeze 后在另一线程 CopyPixels 也一样。
-        // 所以下一帧覆写同一块数组是安全的，不需要为每张卡保留「位图专属」的副本。
-        // LastFrame 是另一件事：它是「上一次真正推送出去的帧」的独立快照，
-        // 给 SameAsLastFrame 的跳过重画优化用 —— 因为 buffer 下一帧就会被覆写，
-        // 没有这份快照就没法比较。它同时也在尺寸变化时被清掉。
-        PerformanceProbe.GlassBitmap();
-        BitmapSource image = BitmapSource.Create(w, h, 96, 96, PixelFormats.Bgr32, null, buffer, w * 4);
-        image.Freeze();
+        // G-17：复用同一块 WriteableBitmap，只把新像素写进它的原生缓冲；
+        // 尺寸变化（卡片缩放 / DPI 变化）时 EnsureBitmap 才重建。
+        // 推送成功后才记录「上一帧」：SetGlass 失败时下一轮必须重推，否则画面会停在旧帧。
+        WriteableBitmap bitmap = EnsureBitmap(target, w, h);
+        bitmap.WritePixels(new Int32Rect(0, 0, w, h), buffer, w * 4, 0);
 
         try
         {
-            target.Surface.SetGlass(image);
+            target.Surface.SetGlass(bitmap);
             if (!_pushed)
             {
                 _pushed = true;
                 Log.Info($"玻璃画面已画进卡片：{w}x{h}（模糊半径 {_blurRadius}px，取图后端 {(_frameSource is not null ? "DXGI 桌面复制" : "GDI 读屏")}）");
             }
+
+            KeepFrame(target, buffer, w, h);
         }
         catch (Exception ex) { Log.Warn($"设置卡片玻璃失败: {ex.Message}"); }
 
         TraceFrame(buffer, w, h);
+    }
+
+    /// <summary>
+    /// G-17：取这张卡复用的位图。尺寸没变就原样返回，每帧只有一次 WritePixels；
+    /// 尺寸变了才重建（旧位图随引用替换交给 GC，由卡片内容层自行释放旧画刷引用）。
+    /// WPF 的 WriteableBitmap 有线程归属：本方法只能在 UI 线程调用（Render 的唯一调用路径）。
+    /// </summary>
+    static WriteableBitmap EnsureBitmap(Target target, int w, int h)
+    {
+        WriteableBitmap bitmap = target.Bitmap;
+        if (bitmap is not null && bitmap.PixelWidth == w && bitmap.PixelHeight == h) return bitmap;
+
+        bitmap = new WriteableBitmap(w, h, 96, 96, PixelFormats.Bgr32, null);
+        target.Bitmap = bitmap;
+        // --perf 的 GlassBitmap 只在真的分配位图时 +1：尺寸稳定后这条计数应变成常数。
+        PerformanceProbe.GlassBitmap();
+        return bitmap;
     }
 
     /// <summary>
@@ -741,7 +835,9 @@ internal static class GlassFeed
 
         target.Width = w;
         target.Height = h;
-        target.LastFrame = null;
+        // G-17：取样面尺寸变了，位图与可轮换缓冲一起作废（Render 会按新尺寸重建）。
+        target.Bitmap = null;
+        ResetFrameCache(target);
         return true;
     }
 
@@ -755,34 +851,45 @@ internal static class GlassFeed
             target.Previous = IntPtr.Zero;
         }
 
-        if (target.Dib != IntPtr.Zero) { DeleteObject(target.Dib); target.Dib = IntPtr.Zero; }
-        if (target.MemoryDc != IntPtr.Zero) { DeleteDC(target.MemoryDc); target.MemoryDc = IntPtr.Zero; }
+        // G-18：DeleteObject / DeleteDC 失败不抛异常，但会泄漏 GDI 句柄；
+        // 只在尺寸变化 / 卡片移除时执行，直接 Warn 不会刷屏。
+        if (target.Dib != IntPtr.Zero)
+        {
+            if (!DeleteObject(target.Dib)) Log.Warn($"释放取样 DIB 失败 err={Marshal.GetLastWin32Error()}");
+            target.Dib = IntPtr.Zero;
+        }
+
+        if (target.MemoryDc != IntPtr.Zero)
+        {
+            if (!DeleteDC(target.MemoryDc)) Log.Warn($"释放取样 DC 失败 err={Marshal.GetLastWin32Error()}");
+            target.MemoryDc = IntPtr.Zero;
+        }
+
         target.Bits = IntPtr.Zero;
         target.Width = 0;
         target.Height = 0;
-        target.LastFrame = null;
-        // P-2：取样缓冲跟着取样面一起丢掉，卡片移除 / 改尺寸后不把这块 LOH 对象扛到进程结束。
-        // 下次 Render 会按新尺寸重新分配（并计入 GlassBuffer 的分配计数）。
-        target.CaptureBuffer = null;
+
+        // G-17：位图与两块缓冲跟着取样面一起丢掉，卡片移除 / 改尺寸后不把 LOH 对象扛到进程结束。
+        target.Bitmap = null;
+        ResetFrameCache(target);
     }
 
     static bool SameAsLastFrame(Target target, byte[] buffer, int w, int h)
     {
-        if (target.LastFrame is null || target.LastWidth != w || target.LastHeight != h)
-        {
-            KeepFrame(target, buffer, w, h);
+        // 尺寸 / 长度变了：必然要推一帧。推送成功后由 KeepFrame 重新记账。
+        if (target.LastFrame is null || target.LastWidth != w || target.LastHeight != h
+            || target.LastFrame.Length != buffer.Length)
             return false;
-        }
 
         // 隔 4 个像素看一次。和「上一次真正画出去的帧」比，慢漂移会累积到超过阈值，不会永远跳过。
         for (int i = 0; i + 3 < buffer.Length; i += 16)
         {
             int db = buffer[i] - target.LastFrame[i];
-            if (db < -SkipTolerance || db > SkipTolerance) { KeepFrame(target, buffer, w, h); return false; }
+            if (db < -SkipTolerance || db > SkipTolerance) return false;
             int dg = buffer[i + 1] - target.LastFrame[i + 1];
-            if (dg < -SkipTolerance || dg > SkipTolerance) { KeepFrame(target, buffer, w, h); return false; }
+            if (dg < -SkipTolerance || dg > SkipTolerance) return false;
             int dr = buffer[i + 2] - target.LastFrame[i + 2];
-            if (dr < -SkipTolerance || dr > SkipTolerance) { KeepFrame(target, buffer, w, h); return false; }
+            if (dr < -SkipTolerance || dr > SkipTolerance) return false;
         }
 
         return true;
@@ -791,14 +898,34 @@ internal static class GlassFeed
     /// <summary>模糊图上差 2 以内看不出来 —— 低于这个就当作「没变」。</summary>
     const int SkipTolerance = 2;
 
+    /// <summary>
+    /// G-17：不再整块 <c>Buffer.BlockCopy</c>。把刚推送出去的数组转成「上一帧」，
+    /// 旧的上一次帧交回 <see cref="Target.CaptureBuffer"/> 供下一帧覆写 —— 两块缓冲轮换，
+    /// 每帧省掉一次 w×h×4 的拷贝（300×200 的卡约 240 KB/帧）。
+    /// 必须保证 LastFrame 与 CaptureBuffer 永远是两个不同实例：否则下一帧 Marshal.Copy
+    /// 会直接改掉比较基准，「和上一帧一样就跳过」的判定就失效了。
+    /// </summary>
     static void KeepFrame(Target target, byte[] buffer, int w, int h)
     {
-        if (target.LastFrame is null || target.LastFrame.Length != buffer.Length)
-            target.LastFrame = new byte[buffer.Length];
+        byte[] previous = target.LastFrame;
+        target.CaptureBuffer = previous is not null
+                               && previous.Length == buffer.Length
+                               && !ReferenceEquals(previous, buffer)
+            ? previous
+            : null;   // 没有可轮换的旧帧：下一次 EnsureCaptureBuffer 重新分配
 
-        Buffer.BlockCopy(buffer, 0, target.LastFrame, 0, buffer.Length);
+        target.LastFrame = buffer;
         target.LastWidth = w;
         target.LastHeight = h;
+    }
+
+    /// <summary>丢掉「上一帧」基准与可轮换缓冲：外观变化 / 尺寸变化后必须重推一帧。</summary>
+    static void ResetFrameCache(Target target)
+    {
+        target.LastFrame = null;
+        target.LastWidth = 0;
+        target.LastHeight = 0;
+        target.CaptureBuffer = null;
     }
 
     static int RoundUp(int value) => ((value + 127) / 128) * 128;
@@ -862,10 +989,11 @@ internal static class GlassFeed
         // 释放后下一次需要时允许立即重建（空闲释放是正常路径，不是失败）。
         _frameSourceNextTry = DateTime.MinValue;
         if (_frameSource is null) return;
-        // 释放路径：设备可能已随源判死释放，Dispose 失败不会留下可用状态；
-        // 引用马上被清空，下一次按需重建，因此这里不需要上报。
-        try { _frameSource.Dispose(); } catch { }
+        // 释放路径：设备可能已随源判死释放；Dispose 失败不会留下可用状态，
+        // 引用马上被清空，下一次按需重建。交给 SafeRelease 记录（X-9）。
+        DesktopFrameSource source = _frameSource;
         _frameSource = null;
+        SafeRelease.Run(source.Dispose, "桌面复制源");
         _frameSourceIdle = DateTime.MinValue;
         // P1-7：这里不清 _frameSourceDeadUntil —— 死源的释放方（CaptureAll）
         // 会在释放后按“上一次的退避时间 × 2”续算退避，不能被这里抹掉。

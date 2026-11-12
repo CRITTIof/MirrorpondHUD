@@ -251,13 +251,45 @@ internal sealed class GlassRuntime : IDisposable
     /// <summary>
     /// 兼容实现每画出一帧玻璃就记一条 GLAS 时间戳（MIRRORPOND_GLASS_TRACE=1）。
     /// 卡片排除在截屏之外以后没法靠截图验收，只能靠这种时间戳量刷新节奏。
+    ///
+    /// G-19：开关只在首次使用时读一次并缓存。以前每画一帧读一次环境变量（每帧一次查询），
+    /// 而且进程启动后再改环境变量本来也不会生效（环境块早已复制）。
     /// </summary>
-    bool TraceGlassFrames
+    static readonly bool TraceGlassFrames = ReadTraceSwitch();
+
+    static bool ReadTraceSwitch()
     {
-        get
+        string value = Environment.GetEnvironmentVariable("MIRRORPOND_GLASS_TRACE");
+        return value == "1" || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// G-19：按窗口可见性收口兼容取样定时器。窗口隐藏 / 最小化后 CaptureGlass 每轮都会
+    /// 在「不可见」处早退，但定时器仍在按帧率空转；这里隐藏时停表、重新可见时恢复。
+    /// 只碰定时器，不参与底板决策（那仍然只由 UpdateBackdrop / UpdateGlassCapture 负责）。
+    /// </summary>
+    public void SyncCaptureTimerToVisibility()
+    {
+        if (_window.GlassClosed) return;
+
+        bool visible = _window.IsVisible && _window.WindowState != WindowState.Minimized;
+
+        if (!visible)
         {
-            string value = Environment.GetEnvironmentVariable("MIRRORPOND_GLASS_TRACE");
-            return value == "1" || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
+            if (_glassTimer is not null && _glassTimer.IsEnabled)
+            {
+                _glassTimer.Stop();
+                Log.Debug("窗口隐藏 / 最小化，暂停兼容玻璃取样");
+            }
+            return;
+        }
+
+        // 重新可见：只有「本该跑兼容取样」时才恢复（底板接管 / 毛玻璃关闭时不启动）。
+        if (_glassTimer is not null && !_glassTimer.IsEnabled
+            && !BackdropActive && _window.GlassSettings.Style.Acrylic)
+        {
+            _glassTimer.Start();
+            Log.Debug("窗口重新可见，恢复兼容玻璃取样");
         }
     }
 
@@ -392,10 +424,10 @@ internal sealed class GlassRuntime : IDisposable
     {
         if (_glassTimer is not null)
         {
-            // 释放路径：Dispatcher 可能已随窗口关闭而停转，Stop 抛出的异常不影响任何状态，
-            // 定时器引用下面会被清空，因此这里的空 catch 是安全的。
-            try { _glassTimer.Stop(); } catch { }
+            // 释放路径：Dispatcher 可能已随窗口关闭而停转，Stop 失败交给 SafeRelease 记录（X-9）。
+            DispatcherTimer timer = _glassTimer;
             _glassTimer = null;
+            SafeRelease.Run(timer.Stop, "兼容玻璃取样定时器");
         }
 
         HideBackdrops();
