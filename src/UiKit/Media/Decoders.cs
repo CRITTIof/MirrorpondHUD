@@ -50,12 +50,16 @@ public static class Decoders
 
     // 审阅 §21：FindFfmpeg 会在 UI 线程被 Bind / TryStartVideo / LoadImage / StartPoster
     // 同步调用；PATH 里有断开的 UNC / 网络盘时每次扫 PATH 都可能卡数秒。
-    // 这里缓存“自动找到的 ffmpeg”，60s 后允许重扫（用户可能刚装好 ffmpeg），
-    // 手动「检测」和后台预热会立即刷新。
+    // K-15：首次查找也改成后台进行 —— FindFfmpeg 只读缓存，未命中就投递查找并返回旧值，
+    // 绝不在 UI 线程同步扫 PATH。调用方（CardMediaView）显示加载态并等查找完成后重试。
     static string _autoFfmpeg;
     static bool _autoFfmpegSearched;
     static DateTime _autoFfmpegAt = DateTime.MinValue;
     static readonly TimeSpan AutoFfmpegCacheFor = TimeSpan.FromSeconds(60);
+    static Task<string> _autoLookup;
+
+    /// <summary>K-15：等待后台查找的上限。超过就按"没有 ffmpeg"继续，避免卡住调用方。</summary>
+    const int AutoLookupTimeoutMs = 3000;
 
     // 单个版本进程的整体超时；超时由 AsyncProcess 直接 Kill(true)。
     const int VersionTimeoutMs = 1500;
@@ -157,7 +161,15 @@ public static class Decoders
         lock (Gate)
         {
             if (_warming is not null && !_warming.IsCompleted) return _warming;
-            _warming = Task.Run(() => { try { DetectBlocking(false); } catch { } });
+            _warming = Task.Run(() =>
+            {
+                try { DetectBlocking(false); }
+                catch (Exception ex)
+                {
+                    // 后台预热失败不能让设置页永远显示"检测中"；记日志并保留旧缓存。
+                    Log.Warn($"后台解码器探测失败: {ex.Message}");
+                }
+            });
             return _warming;
         }
     }
@@ -213,7 +225,13 @@ public static class Decoders
                 string exe = found[index];
                 tasks[index] = Task.Run(() => { versions[index] = ReadVersion(exe); });
             }
-            try { Task.WaitAll(tasks); } catch { }
+            try { Task.WaitAll(tasks); }
+            catch (Exception ex)
+            {
+                // ReadVersion 自己会兜住单个进程的失败；这里兜的是 Task 自身的异常
+                // （例如线程池拒绝）。版本号只是展示信息，但失败原因仍要留痕。
+                Log.Warn($"读取解码器版本号失败: {ex.Message}");
+            }
 
             var list = new List<DecoderInfo>(found.Count);
             for (int i = 0; i < found.Count; i++)
@@ -257,8 +275,13 @@ public static class Decoders
     }
 
     /// <summary>
-    /// 取用于解码的 ffmpeg：配置里填了路径就先用它，否则自动找。
-    /// 返回 null = 这台机器没有 ffmpeg，只能用系统自带的 Media Foundation。
+    /// 取用于解码的 ffmpeg：配置里填了路径就先用它，否则用自动查找的缓存。
+    /// 返回 null = 这一刻还没有可用的 ffmpeg（不等于这台机器没有）。
+    ///
+    /// K-15：这个方法在 UI 线程被调用，所以**绝不允许同步扫 PATH**：
+    /// 缓存命中直接返回；未命中就投递后台查找并返回旧值（首次为 null）。
+    /// 需要"等一会"的调用方用 <see cref="WaitForFfmpegAsync"/>；需要重试的用
+    /// <see cref="EnsureFfmpegLookup"/> 挂 ContinueWith。
     /// </summary>
     public static string FindFfmpeg(MediaSettings settings)
     {
@@ -269,8 +292,6 @@ public static class Decoders
             Log.Warn($"自定义解码器不存在：{custom}，改回自动查找");
         }
 
-        // 自动查找结果做短缓存：这个方法是 UI 线程同步调用的，PATH 有断开的网络盘时
-        // 每扫一次都可能卡数秒（审阅 §21）。60s 允许重扫，手动「检测」/ 预热会立即刷新。
         string cached;
         bool fresh;
         lock (Gate)
@@ -280,32 +301,93 @@ public static class Decoders
         }
         if (fresh) return cached;
 
-        string found = Find("ffmpeg.exe", null);
+        // 未命中：后台查找 + 缓存刷新都投递出去，本次先返回旧缓存（可能是 null）。
+        EnsureFfmpegLookup();
+        WarmUp();
+        return cached;
+    }
+
+    /// <summary>
+    /// K-15：确保 ffmpeg 自动查找在后台进行，返回同一个任务（可重复调用）。
+    /// 缓存有效时返回已完成任务，因此 ContinueWith 不会立刻触发重试。
+    /// </summary>
+    public static Task<string> EnsureFfmpegLookup()
+    {
         lock (Gate)
         {
-            _autoFfmpeg = found;
-            _autoFfmpegSearched = true;
-            _autoFfmpegAt = DateTime.UtcNow;
+            if (_autoFfmpegSearched && DateTime.UtcNow - _autoFfmpegAt < AutoFfmpegCacheFor)
+                return Task.FromResult(_autoFfmpeg);
+            if (_autoLookup is not null && !_autoLookup.IsCompleted) return _autoLookup;
+
+            // 先查固定候选目录（本地、快），再扫 PATH（断网盘会卡，但在后台线程不冻 UI）。
+            _autoLookup = Task.Run(() => LookupFfmpeg());
+            return _autoLookup;
+        }
+    }
+
+    /// <summary>后台查找本体：结果写入缓存，成功/失败/未找到都留日志。</summary>
+    static string LookupFfmpeg()
+    {
+        try
+        {
+            string found = Find("ffmpeg.exe", null);
+            lock (Gate)
+            {
+                _autoFfmpeg = found;
+                _autoFfmpegSearched = true;
+                _autoFfmpegAt = DateTime.UtcNow;
+            }
+
+            if (found is null)
+                Log.Warn("后台查找 ffmpeg 完成：固定候选目录与 PATH 里都没有 ffmpeg.exe，按系统解码处理");
+            else
+                Log.Info($"后台查找 ffmpeg 完成：{found}");
+            return found;
+        }
+        catch (Exception ex)
+        {
+            // 扫描本身失败（PATH 解析异常等）：记下原因并按"没找到"缓存，避免反复重试。
+            lock (Gate)
+            {
+                _autoFfmpeg = null;
+                _autoFfmpegSearched = true;
+                _autoFfmpegAt = DateTime.UtcNow;
+            }
+            Log.Warn($"后台查找 ffmpeg 失败: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// K-15：等待后台查找结果（带超时）。给"必须用 ffmpeg 才能进行"的路径用：
+    /// 例如第一张 webp 图片；超时按没有 ffmpeg 处理并写日志（原因可见）。
+    /// </summary>
+    public static async Task<string> WaitForFfmpegAsync(int timeoutMs = AutoLookupTimeoutMs)
+    {
+        Task<string> lookup = EnsureFfmpegLookup();
+        if (lookup.IsCompleted) return await lookup.ConfigureAwait(false);
+
+        Task completed = await Task.WhenAny(lookup, Task.Delay(Math.Max(1, timeoutMs))).ConfigureAwait(false);
+        if (!ReferenceEquals(completed, lookup))
+        {
+            Log.Warn($"查找 ffmpeg 超时（{timeoutMs}ms）：PATH 里可能有不可达的网络盘，本轮按无 ffmpeg 处理");
+            return null;
         }
 
-        // 顺手预热解码器缓存（后台线程，不阻塞）：设置页的 DecoderHint 是属性 getter，
-        // 只要缓存已经就绪就不会出现“没找到解码器”的假提示。
-        WarmUp();
-        return found;
+        return await lookup.ConfigureAwait(false);
     }
 
     /// <summary>只在 PATH 与常见目录里找，不看用户设置。</summary>
     public static string Find(string name) => Find(name, null);
 
-    /// <summary>按「自定义路径 → PATH → 常见目录」的顺序找一个可执行文件。</summary>
+    /// <summary>按「自定义路径 → 固定候选目录 → PATH」的顺序找一个可执行文件。</summary>
     public static string Find(string name, string preferred)
     {
         if (!string.IsNullOrWhiteSpace(preferred) && File.Exists(preferred))
             return preferred;
 
-        string fromPath = SearchPath(name);
-        if (fromPath is not null) return fromPath;
-
+        // K-15：固定候选目录先查 —— 都是本地已知路径，不会像 PATH 里断开的
+        // UNC / 网络盘那样一卡几秒；PATH 放最后当兜底，而且它只会在后台线程被扫。
         foreach (string raw in CommonPaths)
         {
             if (!string.Equals(Path.GetFileName(raw), name, StringComparison.OrdinalIgnoreCase)) continue;
@@ -314,7 +396,7 @@ public static class Decoders
             if (expanded is not null && File.Exists(expanded)) return expanded;
         }
 
-        return null;
+        return SearchPath(name);
     }
 
     static string SearchPath(string name)
@@ -332,7 +414,16 @@ public static class Decoders
                 string candidate = Path.Combine(dir, name);
                 if (File.Exists(candidate)) return candidate;
             }
-            catch { }
+            catch (ArgumentException)
+            {
+                // 良性：PATH 里某个目录含非法字符，Path.Combine 会抛。跳过它继续扫
+                // （其它目录仍可能命中），所以不需要 Warn 刷屏。
+            }
+            catch (Exception ex)
+            {
+                // 其余异常（例如长路径 / 权限）不是常态，记一次便于排查找不到解码器的原因。
+                Log.Warn($"扫描 PATH 目录失败（{dir}）: {ex.Message}");
+            }
         }
 
         return null;
@@ -345,7 +436,13 @@ public static class Decoders
             string text = Environment.ExpandEnvironmentVariables(raw);
             return text.IndexOf('%') >= 0 ? null : text;   // 变量没展开 = 这台机器没有
         }
-        catch { return null; }
+        catch (Exception ex)
+        {
+            // 环境变量格式异常（很少见）：按"这个候选路径不存在"处理，但要留痕，
+            // 否则用户会只看到"没找到 ffmpeg"而不知道为什么候选目录被跳过。
+            Log.Warn($"展开候选路径失败（{raw}）: {ex.Message}");
+            return null;
+        }
     }
 
     static string KindName(string exe)
@@ -379,8 +476,10 @@ public static class Decoders
             if (line.Length == 0) line = FirstLine(result.StdErr);
             return Shorten(line);
         }
-        catch
+        catch (Exception ex)
         {
+            // 版本号只是展示信息：拿不到不影响能不能用，但原因要可见（X-9）。
+            Log.Warn($"读取 {exe} 版本号失败: {ex.Message}");
             return "";
         }
     }

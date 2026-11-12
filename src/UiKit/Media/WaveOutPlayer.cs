@@ -109,8 +109,24 @@ internal sealed class WaveOutPlayer : IDisposable
     bool _deviceVolumeSaved;
     uint _deviceVolumeSavedValue;
 
+    /// <summary>
+    /// K-6：运行期音频失败（设备热拔、驱动重置、waveOutWrite 失败、PCM 流读取异常）时触发，
+    /// 参数是可读原因。和启动期的 <see cref="LastErrorName"/> 分开：
+    ///  · LastErrorName 只描述"没打开"；
+    ///  · 这个事件描述"打开后死掉"——上层据此把状态行从"正常播放"改成"音频中断"，
+    ///    否则用户会以为是自己按了静音（审阅 K-6 的核心症状）。
+    /// </summary>
+    public event Action<string> AudioFailed;
+
     public bool IsOpen => _handle != IntPtr.Zero;
     public bool IsPaused => !_resume.IsSet;
+
+    /// <summary>
+    /// 本轮播放的结束原因：空 = 正常 EOF（PCM 流读到头）；非空 = 运行期失败。
+    /// 只由 Feed 线程在 break 前写、收尾时读，引用赋值本身原子，volatile 足够。
+    /// </summary>
+    public string ExitReason => _exitReason;
+    volatile string _exitReason;
 
     /// <summary>0–100；0 = 静音。</summary>
     public int Volume
@@ -131,6 +147,9 @@ internal sealed class WaveOutPlayer : IDisposable
     public bool Start(Stream pcm)
     {
         _lastErrorName = "";
+        // K-6：新一轮播放必须清掉上一轮的结束原因，否则本轮的"正常 EOF"会被
+        // 上一轮的失败原因污染，状态行永远显示"音频中断"。
+        _exitReason = null;
         if (pcm is null)
         {
             _lastErrorName = "没有音频流";
@@ -270,7 +289,17 @@ internal sealed class WaveOutPlayer : IDisposable
             }
 
             uint level = (uint)Math.Round(_volume / 100.0 * 0xFFFF);
-            try { waveOutSetVolume(handle, level | (level << 16)); } catch { }
+            // X-9：原来 try/swallow 把"设音量失败"吞掉（P/Invoke 正常不抛，但驱动异常码
+            // 一样会返回非 0）；音量是用户可感知的状态，失败必须留痕。
+            try
+            {
+                int code = waveOutSetVolume(handle, level | (level << 16));
+                if (code != 0) Log.Warn($"设置音频设备音量失败: {MmsysErrorName(code)}");
+            }
+            catch (Exception ex)
+            {
+                Log.Warn($"设置音频设备音量失败: {ex.Message}");
+            }
         }
     }
 
@@ -283,7 +312,16 @@ internal sealed class WaveOutPlayer : IDisposable
 
             _deviceVolumeSaved = false;
             if (handle == IntPtr.Zero) return;
-            try { waveOutSetVolume(handle, _deviceVolumeSavedValue); } catch { }
+            // X-9：恢复用户原音量失败必须可见——否则用户的系统音量停在我们改过的值上。
+            try
+            {
+                int code = waveOutSetVolume(handle, _deviceVolumeSavedValue);
+                if (code != 0) Log.Warn($"恢复系统波形音量失败: {MmsysErrorName(code)}");
+            }
+            catch (Exception ex)
+            {
+                Log.Warn($"恢复系统波形音量失败: {ex.Message}");
+            }
         }
     }
 
@@ -335,6 +373,10 @@ internal sealed class WaveOutPlayer : IDisposable
                 int writeCode = waveOutWrite(handle, header, headerSize);
                 if (writeCode != 0)
                 {
+                    // K-6：这是典型的"设备热拔 / 驱动重置"表现。记下原因，由 finally
+                    // 里的收尾路径统一打 Warn 并上报 UI——只写一行日志的话，视频还在播、
+                    // 状态行却仍显示音频正常，用户根本不知道发生了什么。
+                    _exitReason = $"写音频缓冲失败（{MmsysErrorName(writeCode)}）";
                     Log.Warn($"写音频缓冲失败: {MmsysErrorName(writeCode)}");
                     break;
                 }
@@ -345,7 +387,13 @@ internal sealed class WaveOutPlayer : IDisposable
         }
         catch (Exception ex)
         {
-            if (!_stop) Log.Warn($"音频播放线程结束: {ex.Message}");
+            // K-6：读 PCM 流时进程被杀属于正常停止（_stop 已置）；其余异常是真实的
+            // 运行期失败（管道断开 / 设备错误），必须记原因交给收尾路径上报。
+            if (!_stop)
+            {
+                _exitReason = $"音频播放线程异常（{ex.GetType().Name}: {ex.Message}）";
+                Log.Warn($"音频播放线程结束: {ex.Message}");
+            }
         }
         finally
         {
@@ -413,13 +461,30 @@ internal sealed class WaveOutPlayer : IDisposable
     {
         if (_handle == IntPtr.Zero) return;
         _resume.Reset();
-        try { waveOutPause(_handle); } catch { }
+        // X-9：暂停失败会直接导致"画面停了声音还在"，必须留日志。
+        try
+        {
+            int code = waveOutPause(_handle);
+            if (code != 0) Log.Warn($"暂停音频失败: {MmsysErrorName(code)}");
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"暂停音频失败: {ex.Message}");
+        }
     }
 
     public void Resume()
     {
         if (_handle == IntPtr.Zero || _stop) return;
-        try { waveOutRestart(_handle); } catch { }
+        try
+        {
+            int code = waveOutRestart(_handle);
+            if (code != 0) Log.Warn($"恢复音频失败: {MmsysErrorName(code)}");
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"恢复音频失败: {ex.Message}");
+        }
         _resume.Set();
     }
 
@@ -450,7 +515,17 @@ internal sealed class WaveOutPlayer : IDisposable
             if (thread is null) thread = _handoffThread;
         }
 
-        try { waveOutReset(handle); } catch { }
+        // X-9：Reset 失败时后面 Unprepare 可能因 STILLPLAYING 失败并保留缓冲；
+        // 这是设备异常，必须可见（调用方通常已经要扔掉播放器，日志是唯一线索）。
+        try
+        {
+            int resetCode = waveOutReset(handle);
+            if (resetCode != 0) Log.Warn($"停止音频输出失败: {MmsysErrorName(resetCode)}");
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"停止音频输出失败: {ex.Message}");
+        }
 
         if (thread is null)
         {
@@ -461,7 +536,13 @@ internal sealed class WaveOutPlayer : IDisposable
 
         // 先做一次零等待：绝大多数 Stop 时 Feed 已经因为 _stop / 管道关闭退出了。
         bool joined;
-        try { joined = thread.Join(0); } catch { joined = false; }
+        try { joined = thread.Join(0); }
+        catch (ThreadStateException)
+        {
+            // 良性竞态：线程已经终止且句柄被回收时 Join 会抛 ThreadStateException。
+            // 此时不需要也不应该再等它，直接按"已退出"收尾。
+            joined = true;
+        }
 
         if (!joined)
         {
@@ -485,7 +566,8 @@ internal sealed class WaveOutPlayer : IDisposable
     void QueueFinish(Thread thread, IntPtr handle) => ThreadPool.QueueUserWorkItem(_ =>
                                                            {
                                                                bool joined = false;
-                                                               try { joined = thread.Join(1000); } catch { }
+                                                               try { joined = thread.Join(1000); }
+                                                               catch (ThreadStateException) { joined = true; }   // 线程已终止：视为等到了
 
                                                                if (!joined)
                                                                {
@@ -533,7 +615,32 @@ internal sealed class WaveOutPlayer : IDisposable
         }
 
         ClaimCleanup(handle);
-        Log.Info("音频自然播放结束，已释放音频设备与缓冲");
+
+        // K-6：收尾日志必须和真实原因一致。旧实现无条件写"自然播放结束"，
+        // 热拔 / 写失败后同一次收尾也照样这么报，排障时会把方向带反。
+        string reason = _exitReason;
+        if (string.IsNullOrEmpty(reason))
+        {
+            Log.Info("音频自然播放结束，已释放音频设备与缓冲");
+            return;
+        }
+
+        Log.Warn($"音频非正常结束（{reason}），已释放音频设备与缓冲");
+        RaiseAudioFailed(reason);
+    }
+
+    /// <summary>K-6：把运行期音频死亡上报给上层（FfmpegPlayer → 卡片状态行）。</summary>
+    void RaiseAudioFailed(string reason)
+    {
+        Action<string> handler = AudioFailed;
+        if (handler is null) return;
+
+        try { handler(reason); }
+        catch (Exception ex)
+        {
+            // 事件订阅者（卡片视图）异常不能反过来影响音频线程收尾。
+            Log.Warn($"音频失败事件处理异常: {ex.Message}");
+        }
     }
 
     /// <summary>
@@ -577,6 +684,8 @@ internal sealed class WaveOutPlayer : IDisposable
                     }
 
                     _headers[i] = IntPtr.Zero;
+                    // 释放路径的空 catch 是合法的：FreeHGlobal 对已释放/空指针不会抛异常，
+                    // 且此处的失败已由上面的 Unprepare 日志覆盖（X-9 保留并注明）。
                     if (release) { try { Marshal.FreeHGlobal(header); } catch { } }
                 }
 
@@ -585,6 +694,7 @@ internal sealed class WaveOutPlayer : IDisposable
                 {
                     _buffers[i] = IntPtr.Zero;
                     // 与 header 同步：header 没回收时数据缓冲也不能释放。
+                    // 释放路径的空 catch 同上：失败原因已由 Unprepare 的 Warn 记录。
                     if (release) { try { Marshal.FreeHGlobal(buffer); } catch { } }
                 }
 

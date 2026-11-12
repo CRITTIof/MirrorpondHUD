@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
@@ -57,6 +58,35 @@ public sealed class CardMediaView : Grid, IDisposable
     // 每次开始一次「探测 + 启动」就递增；await 回来时代号变了说明用户已经换了文件 /
     // 释放了视频，本次探测结果必须丢弃（否则会给新视频启动一个旧 player）。
     int _videoRun;
+
+    // K-12：图片解码代次独立于视频；后台解完回来先校验代次与路径，旧代结果直接丢弃。
+    int _imageRun;
+    // K-16：逐帧复用同一张 WriteableBitmap，只有帧尺寸变化才重建（避免每帧 GC）。
+    WriteableBitmap _frameBitmap;
+    // K-7：非循环视频是否已自然播完；状态行显示"已结束"，播放键可从头重播。
+    bool _mediaEnded;
+    // K-10：分层合成不支持时只降级一次，避免每次布局都重启媒体。
+    bool _videoOpacityFallback;
+
+    // K-11：已应用的设置值快照。不能拿 previous 与 _settings 做引用比较 ——
+    // MediaCard.ExtrasAs<MediaSettings> 每次返回同一个实例，两个变量引用相等，
+    // 所有差量都会被判成"没变"（L-4 的修复因此被抵消）。这里比较真实值。
+    bool _appliedValid;
+    double _appliedSpeed;
+    bool _appliedMuted;
+    bool _appliedLoop;
+    bool _appliedAutoplay;
+    string _appliedDecoder = "";
+    string _appliedDecoderPath = "";
+
+    // K-15：ffmpeg 首次查找在后台进行，UI 先显示加载态，查找完成后只重试一次。
+    bool _waitingForFfmpeg;
+    Task<string> _ffmpegRetryTask;
+
+    // 每 250ms 读一次 MediaElement.Position/NaturalDuration；窗口关闭瞬间会抛，
+    // 属良性竞态但也会掩盖真实问题，用 LogThrottle 做状态转移 + 30s 节流。
+    static readonly LogThrottle MediaStateThrottle = new("读取视频状态", 30000);
+
     Size _natural = new(320, 180);
     double _cornerRadius = 10;
     double _padX = 15;
@@ -281,7 +311,6 @@ public sealed class CardMediaView : Grid, IDisposable
     {
         if (_disposed) return;
 
-        MediaSettings previous = _settings;
         _settings = settings ?? new MediaSettings();
         _host.Opacity = _settings.Opacity;
 
@@ -337,13 +366,20 @@ public sealed class CardMediaView : Grid, IDisposable
             // 保留用户按热键暂停 / 播放过的状态，不要退回设置里的 Autoplay。
             bool wasPlaying = _playing;
 
-            bool decoderChanged = previous is not null &&
-                (MediaSettings.NormalizeDecoder(previous.Decoder) != MediaSettings.NormalizeDecoder(_settings.Decoder) ||
-                 !string.Equals(previous.DecoderPath ?? "", _settings.DecoderPath ?? "",
-                                StringComparison.OrdinalIgnoreCase));
+            // K-11：用"已应用值"快照判断解码器是否真的变了；previous 与 _settings
+            // 常常是同一个对象，引用比较永远为 false（换解码器会失效）。
+            string decoder = MediaSettings.NormalizeDecoder(_settings.Decoder);
+            string decoderPath = _settings.DecoderPath ?? "";
+            bool decoderChanged =
+                !string.Equals(_appliedDecoder, decoder, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(_appliedDecoderPath, decoderPath, StringComparison.OrdinalIgnoreCase);
 
             if (video && decoderChanged)
             {
+                _appliedDecoder = decoder;
+                _appliedDecoderPath = decoderPath;
+                _videoOpacityFallback = false;
+
                 // 审阅 §19：不能先把 _pendingVideo 交给 ReleaseVideo——它内部会清空 pending
                 // 并 ++_videoRun，TryStartVideo 看到 _pendingVideo == null 就直接 return，
                 // 视频会停在最后一帧且没有任何提示。先释放旧播放器，再把待启动路径交回启动流程。
@@ -358,9 +394,10 @@ public sealed class CardMediaView : Grid, IDisposable
                 else Pause();
             }
 
-            ApplyVideoSettings(previous);
+            ApplyVideoSettings();
             ApplyFit();
             _host.Opacity = _settings.Opacity;
+            ApplyVideoOpacity();
             ApplySize();
             return;
         }
@@ -368,6 +405,20 @@ public sealed class CardMediaView : Grid, IDisposable
         _playing = _settings.Autoplay;
         _loadedPath = path;
         _message.Visibility = Visibility.Collapsed;
+
+        // K-11：新一轮媒体直接按当前设置起播，所以快照就是当前值。
+        _appliedDecoder = MediaSettings.NormalizeDecoder(_settings.Decoder);
+        _appliedDecoderPath = _settings.DecoderPath ?? "";
+        _appliedSpeed = _settings.Speed > 0 ? _settings.Speed : 1.0;
+        _appliedMuted = _settings.Muted;
+        _appliedLoop = _settings.Loop;
+        _appliedAutoplay = _settings.Autoplay;
+        _appliedValid = true;
+        _mediaEnded = false;
+        _videoOpacityFallback = false;
+        _waitingForFfmpeg = false;
+        _ffmpegRetryTask = null;
+        _frameBitmap = null;
 
         if (video)
         {
@@ -401,41 +452,34 @@ public sealed class CardMediaView : Grid, IDisposable
 
     async void LoadImage(string path)
     {
-        BitmapSource still = TryLoadBitmap(path);
-        string ffmpeg = Decoders.FindFfmpeg(_settings);
+        // K-12：解码放后台。WPF 的 BitmapDecoder 在 MTA 线程可用，Freeze() 后能跨线程
+        // 交给 UI；旧实现整张图在 UI 线程同步解，4K 图 / 长 GIF 会把整个 HUD 冻住。
+        int run = ++_imageRun;
 
-        // WPF 解不开的格式（webp / avif / heic …）交给 ffmpeg 转一帧出来。
-        // P1-8：走异步 + 整体超时 + Kill(true)，ffmpeg 卡住时不再冻住 UI。
-        if (still is null && ffmpeg is not null)
+        bool isGif = string.Equals(SafeExtension(path), ".gif", StringComparison.OrdinalIgnoreCase);
+        if (isGif && _settings.Loop)
         {
-            Log.Info($"系统解不开图片，改用 ffmpeg：{path}");
-            still = await FfmpegPlayer.ExtractImageAsync(ffmpeg, path);
-
-            // await 期间可能已经换了文件 / 卡片被删。
-            if (_disposed) return;
-            if (!string.Equals(_loadedPath, path, StringComparison.OrdinalIgnoreCase)) return;
-        }
-
-        if (still is null)
-        {
-            ShowMessage("无法解码这个文件：\n" + FileName(path) +
-                        (ffmpeg is null ? "\n（可在设置里指定 ffmpeg 解码器）" : ""));
-            return;
-        }
-
-        _natural = new Size(still.PixelWidth, still.PixelHeight);
-
-        if (_settings.Loop && string.Equals(SafeExtension(path), ".gif", StringComparison.OrdinalIgnoreCase))
-        {
-            _gif = GifAnimator.TryCreate(path, _image, true);
-            if (_gif is not null)
+            // K-12：GIF 只解一次。旧实现先用 BitmapDecoder 解首帧、再让 GifAnimator 用
+            // GDI+ 解全部帧，等于两遍全尺寸解码；现在直接交给 GifAnimator。
+            GifAnimator gif = await Task.Run(() => GifAnimator.TryLoad(path, true));
+            if (!IsCurrentImage(path, run))
             {
-                if (_gif.CanvasSize.Width > 0 && _gif.CanvasSize.Height > 0) _natural = _gif.CanvasSize;
-                _image.Stretch = ParseStretch(_settings.Fit);
-                _gif.Play();
+                if (gif is not null) gif.Dispose();
                 return;
             }
 
+            if (gif is not null)
+            {
+                if (gif.CanvasSize.Width > 0 && gif.CanvasSize.Height > 0) _natural = gif.CanvasSize;
+                gif.AttachTarget(_image);
+                _image.Stretch = ParseStretch(_settings.Fit);
+                _gif = gif;
+                _gif.Play();
+                ApplySize();
+                return;
+            }
+
+            // 超预算 / 读取失败：GifAnimator 已把原因写进 LastSkipReason，退回静态首帧。
             if (!string.IsNullOrEmpty(GifAnimator.LastSkipReason))
             {
                 _status.Visibility = Visibility.Visible;
@@ -444,12 +488,56 @@ public sealed class CardMediaView : Grid, IDisposable
             }
         }
 
+        BitmapSource still = await Task.Run(() => TryLoadBitmap(path));
+        if (!IsCurrentImage(path, run)) return;
+
+        // WPF 解不开的格式（webp / avif / heic …）交给 ffmpeg 转一帧出来。
+        // P1-8：走异步 + 整体超时 + Kill(true)，ffmpeg 卡住时不再冻住 UI。
+        if (still is null)
+        {
+            string ffmpeg = Decoders.FindFfmpeg(_settings);
+            // K-15：首次查找在后台进行；这里最多等 3 秒拿到结果，避免"刚开机第一张 webp
+            // 被误判为无法解码"。超时按没有 ffmpeg 处理（日志里已有原因）。
+            if (ffmpeg is null) ffmpeg = await Decoders.WaitForFfmpegAsync(3000);
+            if (!IsCurrentImage(path, run)) return;
+
+            if (ffmpeg is not null)
+            {
+                Log.Info($"系统解不开图片，改用 ffmpeg：{path}");
+                still = await FfmpegPlayer.ExtractImageAsync(ffmpeg, path);
+
+                // await 期间可能已经换了文件 / 卡片被删。
+                if (!IsCurrentImage(path, run)) return;
+            }
+        }
+
+        if (still is null)
+        {
+            ShowMessage("无法解码这个文件：\n" + FileName(path) +
+                        (Decoders.FindFfmpeg(_settings) is null ? "\n（可在设置里指定 ffmpeg 解码器）" : ""));
+            return;
+        }
+
+        _natural = new Size(still.PixelWidth, still.PixelHeight);
         _image.Source = still;
         _image.Stretch = ParseStretch(_settings.Fit);
+        ApplySize();
     }
 
+    /// <summary>K-12：代次 + 路径双校验；任一不符说明用户已经换了文件 / 释放了视图。</summary>
+    bool IsCurrentImage(string path, int run) =>
+        !_disposed && run == _imageRun &&
+        string.Equals(_loadedPath, path, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// K-12：后台线程解图（只允许后台调用）。按像素预算降采样：媒体卡最宽 1280，
+    /// 超过约 32MP 的源图纯属浪费内存（4K 照片 8MP 已经够用），更大的图先缩小再 Freeze，
+    /// 避免一次解码吃掉几百 MB；降采样原因写日志，不静默改行为。
+    /// </summary>
     static BitmapSource TryLoadBitmap(string path)
     {
+        const long MaxPixels = 32L * 1000 * 1000;
+
         try
         {
             using (var stream = File.OpenRead(path))
@@ -460,7 +548,18 @@ public sealed class CardMediaView : Grid, IDisposable
 
                 if (decoder.Frames.Count == 0) return null;
 
-                BitmapSource frozen = decoder.Frames[0].Clone();
+                BitmapSource frame = decoder.Frames[0];
+                long pixels = (long)frame.PixelWidth * frame.PixelHeight;
+                if (pixels > MaxPixels)
+                {
+                    double scale = Math.Sqrt((double)MaxPixels / pixels);
+                    var scaled = new TransformedBitmap(frame, new ScaleTransform(scale, scale));
+                    scaled.Freeze();
+                    Log.Warn($"图片过大（{frame.PixelWidth}×{frame.PixelHeight}），已降采样到 {scaled.PixelWidth}×{scaled.PixelHeight} 以控制内存");
+                    return scaled;
+                }
+
+                BitmapSource frozen = frame.Clone();
                 frozen.Freeze();
                 return frozen;
             }
@@ -488,10 +587,36 @@ public sealed class CardMediaView : Grid, IDisposable
         string decoder = MediaSettings.NormalizeDecoder(_settings.Decoder);
         string path = _pendingVideo;
 
+        // K-15：首次查找 ffmpeg 已改成后台进行（FindFfmpeg 不再同步扫 PATH）。
+        // 用户明确选了「仅 ffmpeg」时必须等它查完：此时落到系统解码基本放不了，
+        // 表现就是"选了 ffmpeg 却打不开"。先显示加载态，查完自动重试一次。
         if (decoder == "FFmpeg" && ffmpeg is null)
         {
-            Log.Warn("选择了 ffmpeg 解码，但 PATH 里找不到 ffmpeg.exe，改回系统解码");
+            Task<string> lookup = Decoders.EnsureFfmpegLookup();
+            if (lookup.IsCompleted)
+            {
+                // 已经查完确实没有：明确告知，而不是永远停在"正在查找…"。
+                // 必须清掉 _pendingVideo，否则 LayoutUpdated 会反复触发 TryStartVideo → 死循环。
+                Log.Warn("选择了 ffmpeg 解码，但机器上找不到 ffmpeg.exe");
+                _pendingVideo = null;
+                ShowMessage("找不到 ffmpeg 解码器：\n请在设置里指定 ffmpeg.exe 路径");
+                _waitingForFfmpeg = false;
+                return;
+            }
+
+            if (!_waitingForFfmpeg)
+            {
+                _waitingForFfmpeg = true;
+                Log.Warn("选择了 ffmpeg 解码，正在后台查找 ffmpeg.exe（首次查找不阻塞 UI）");
+                _status.Visibility = Visibility.Visible;
+                _status.SetText("正在查找 ffmpeg 解码器…", CardStatusKind.Normal);
+            }
+
+            RetryWhenFfmpegReady(path);
+            return;
         }
+
+        _waitingForFfmpeg = false;
 
         // 「自动」= 先让系统解（能硬解、有声音），解不开再在 OnVideoFailed 里换 ffmpeg；
         // 用户明确选了「仅 ffmpeg」才一开始就走外部解码。
@@ -517,13 +642,16 @@ public sealed class CardMediaView : Grid, IDisposable
             // 日志顺序不该先说成功；原来的 INFO 还把文件路径写进了“创建”那条，语义含混。
             Log.Info($"视频已交给系统解码器打开：{path}");
             ApplyFit();
+            ApplyVideoOpacity();   // K-10：把卡片不透明度同步到独立视频窗
             StartProgress();
 
             if (card.IsVisible) UpdateVideoPlacement();
         }
         catch (Exception ex)
         {
+            // 打开失败是终态：清掉待启动路径，避免 LayoutUpdated 每次布局都重试出错。
             Log.Warn($"打开视频失败: {ex.Message}");
+            _pendingVideo = null;
             ShowMessage("无法打开视频：\n" + ex.Message);
         }
     }
@@ -612,15 +740,10 @@ public sealed class CardMediaView : Grid, IDisposable
             _natural = new Size(info.Width > 0 ? info.Width : 1280, info.Height > 0 ? info.Height : 720);
 
             _player = new FfmpegPlayer();
-            _player.FrameReady += frame =>
-            {
-                Dispatcher.BeginInvoke(new Action(() =>
-                {
-                    if (_disposed || _player is null) return;
-                    _image.Source = frame;
-                    _message.Visibility = Visibility.Collapsed;
-                }), DispatcherPriority.Render);
-            };
+            // K-16：解码器只发"有新帧"的合并通知（同一时刻最多一次），这里用 Render
+            // 优先级回调取最新帧写进复用的 WriteableBitmap，Dispatcher 队列不会堆积。
+            _player.FrameAvailable += () =>
+                Dispatcher.BeginInvoke(new Action(DisplayFrame), DispatcherPriority.Render);
             _player.Failed += message =>
             {
                 Dispatcher.BeginInvoke(new Action(() =>
@@ -639,7 +762,34 @@ public sealed class CardMediaView : Grid, IDisposable
                     UpdateStatus();
                 }));
             };
+            // K-6：运行期音频死亡（热拔 / 写失败）与"起不来"分开提示，否则用户只会
+            // 看到视频继续播、状态行毫无变化。
+            _player.AudioFailed += message =>
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    if (_disposed || _player is null) return;
+                    _audioNote = string.IsNullOrEmpty(message) ? "音频中断" : $"音频中断（{message}）";
+                    UpdateStatus();
+                }));
+            };
+            // K-7：非循环视频自然播完：播放器状态机已收尾，卡片按钮 / 状态行也要跟上。
+            _player.Completed += () =>
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    if (_disposed || _player is null) return;
+                    _playing = false;
+                    _mediaEnded = true;
+                    // 播完不需要每 250ms 再刷一次进度；下次 Play 会重新启动计时器。
+                    if (_progressTimer is not null) _progressTimer.Stop();
+                    UpdateStatus();
+                }), DispatcherPriority.Background);
+            };
+
             _audioNote = null;   // 新一轮播放重置上一轮的音频备注
+            _mediaEnded = false;
+            _frameBitmap = null; // 换播放器/换文件：帧缓冲必须重建（尺寸可能不同）
 
             ApplySize();
 
@@ -659,6 +809,15 @@ public sealed class CardMediaView : Grid, IDisposable
             if (_playing) _player.Resume();
             else _player.Pause();
 
+            // K-11：起播用的就是当前设置值，记进"已应用"快照，之后同路径 Bind 才能正确求差。
+            _appliedValid = true;
+            _appliedSpeed = _speed;
+            _appliedMuted = _settings.Muted;
+            _appliedLoop = _settings.Loop;
+            _appliedAutoplay = _settings.Autoplay;
+            _appliedDecoder = DecoderKey();
+            _appliedDecoderPath = _settings.DecoderPath ?? "";
+
             Log.Info($"ffmpeg 解码：{FileName(path)} {width}×{height} {info.Fps:0.##}fps");
             StartProgress();
         }
@@ -672,7 +831,12 @@ public sealed class CardMediaView : Grid, IDisposable
     int DecodeWidth(double aspect)
     {
         double dpi = 1;
-        try { dpi = VisualTreeHelper.GetDpi(this).DpiScaleX; } catch { }
+        try { dpi = VisualTreeHelper.GetDpi(this).DpiScaleX; }
+        catch (Exception ex)
+        {
+            // 取不到 DPI 按 100% 处理即可（解码宽度只是视觉尺寸），留痕便于排查显示异常。
+            Log.Warn($"读取卡片 DPI 失败，解码宽度按 100% 计算: {ex.Message}");
+        }
 
         double mediaWidth = _settings.Width > 0 ? _settings.Width : 320;
         int width = (int)Math.Round(mediaWidth * (dpi > 0.1 ? dpi : 1));
@@ -680,6 +844,53 @@ public sealed class CardMediaView : Grid, IDisposable
         width = (int)Math.Max(160, Math.Min(1280, width));
         return width - width % 2;
     }
+
+    /// <summary>
+    /// K-16：把 ffmpeg 的最新一帧写进复用缓冲。只有帧尺寸变化才重建 WriteableBitmap，
+    /// 中间帧由解码器的"最新一帧"槽位直接丢弃，所以这里永远是当前最新画面。
+    /// </summary>
+    void DisplayFrame()
+    {
+        FfmpegPlayer player = _player;
+        if (_disposed || player is null) return;
+
+        VideoFrame frame = player.TakeFrame();
+        if (frame is null)
+        {
+            // 这一代已经被替换 / 停止：复位通知标志，避免后续帧再也通知不到。
+            player.SkipFrame();
+            return;
+        }
+
+        try
+        {
+            if (_frameBitmap is null ||
+                _frameBitmap.PixelWidth != frame.Width ||
+                _frameBitmap.PixelHeight != frame.Height)
+            {
+                _frameBitmap = new WriteableBitmap(frame.Width, frame.Height, 96, 96,
+                                                   PixelFormats.Bgra32, null);
+                _image.Source = _frameBitmap;
+            }
+
+            _frameBitmap.WritePixels(new Int32Rect(0, 0, frame.Width, frame.Height),
+                                     frame.Buffer, frame.Width * 4, 0);
+            _message.Visibility = Visibility.Collapsed;
+            _image.Stretch = ParseStretch(_settings.Fit);
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"显示视频帧失败: {ex.Message}");
+        }
+        finally
+        {
+            // 无论成功与否都要归还缓冲，否则帧池（3 块）很快耗尽，画面会停住。
+            player.ReleaseFrame(frame);
+        }
+    }
+
+    /// <summary>当前解码器设置的归一化键（K-11 差量用，避免依赖对象同一性）。</summary>
+    string DecoderKey() => MediaSettings.NormalizeDecoder(_settings.Decoder);
 
     void OnVideoOpened(object sender, RoutedEventArgs e)
     {
@@ -714,6 +925,21 @@ public sealed class CardMediaView : Grid, IDisposable
         string ffmpeg = Decoders.FindFfmpeg(_settings);
         string decoder = MediaSettings.NormalizeDecoder(_settings.Decoder);
 
+        // K-15：系统解码失败时 ffmpeg 可能还在后台查找中；不要直接报"没解码器"，
+        // 显示加载态并等查找完成后再试一次（否则第一张 mkv 会假失败）。
+        if (ffmpeg is null && decoder != "BuiltIn" && _pendingVideo is not null)
+        {
+            Task<string> lookup = Decoders.EnsureFfmpegLookup();
+            if (!lookup.IsCompleted)
+            {
+                Log.Info("系统解码失败，后台仍在查找 ffmpeg，待查找完成后重试");
+                _status.Visibility = Visibility.Visible;
+                _status.SetText("正在查找 ffmpeg 解码器…", CardStatusKind.Normal);
+                RetryWhenFfmpegReady(_pendingVideo);
+                return;
+            }
+        }
+
         // 「自动」模式：系统放不了就换 ffmpeg，用户不用自己判断格式。
         if (ffmpeg is not null && decoder != "BuiltIn" && _pendingVideo is not null)
         {
@@ -722,75 +948,113 @@ public sealed class CardMediaView : Grid, IDisposable
             return;
         }
 
+        // 给了最终提示：清掉待启动路径，别让 LayoutUpdated 反复重试（用户已经看到失败原因）。
+        _pendingVideo = null;
         ShowMessage("无法播放这个视频：\n" + reason +
                     (ffmpeg is null ? "\n（可在设置里指定 ffmpeg 解码器）" : ""));
     }
 
     void OnVideoEnded(object sender, RoutedEventArgs e)
     {
-        if (_videoWindow is null || !_settings.Loop) return;
-        try
+        if (_videoWindow is null) return;
+
+        // K-7（系统解码路径）：循环就重播；非循环要把卡片状态收尾成"已结束"，
+        // 否则状态行一直显示 ▶，播放键按下去的第一次是"暂停"而不是重播。
+        if (_settings.Loop)
         {
-            _videoWindow.Video.Position = TimeSpan.Zero;
-            _videoWindow.Video.Play();
+            try
+            {
+                _videoWindow.Video.Position = TimeSpan.Zero;
+                _videoWindow.Video.Play();
+            }
+            catch (Exception ex)
+            {
+                Log.Warn($"系统解码视频循环重播失败: {ex.Message}");
+            }
+            return;
         }
-        catch { }
+
+        _playing = false;
+        _mediaEnded = true;
+        if (_progressTimer is not null) _progressTimer.Stop();
+        UpdateStatus();
     }
 
-    void ApplyVideoSettings(MediaSettings previous)
+    /// <summary>
+    /// 把设置里的静音 / 速度 / 循环 / 自动播放同步到当前播放器。
+    ///
+    /// K-11：这里绝对不能拿 "previous vs _settings" 的引用差量来判变化 ——
+    /// MediaCard 用 <c>ExtrasAs&lt;MediaSettings&gt;</c> 取设置，每次返回同一个实例，
+    /// previous 与 _settings 引用相等，所有差量都会判成"没变"，L-4 的修复被完全抵消。
+    /// 改为与"已应用值"快照比较：快照是真实的 bool/double/string 值，不依赖对象同一性。
+    /// </summary>
+    void ApplyVideoSettings()
     {
+        double speed = _settings.Speed > 0 ? _settings.Speed : 1.0;
+        bool speedChanged = !_appliedValid || Math.Abs(_appliedSpeed - speed) > 0.001;
+        bool mutedChanged = !_appliedValid || _appliedMuted != _settings.Muted;
+        bool loopChanged = !_appliedValid || _appliedLoop != _settings.Loop;
+        bool autoplayChanged = !_appliedValid || _appliedAutoplay != _settings.Autoplay;
+
         // ffmpeg 路径没有 _videoWindow；设置页改静音 / 速度 / 循环 / 自动播放时，
         // 以前这里直接 return，用户看到“保存成功”但播放行为完全没变（L-4）。
         if (_videoWindow is null)
         {
-            if (_player is null) return;
+            if (_player is not null)
+            {
+                try
+                {
+                    if (speedChanged)
+                    {
+                        _speed = speed;
+                        _player.SetSpeed(speed);
+                    }
 
+                    if (mutedChanged) _player.SetMuted(_settings.Muted);
+                    if (loopChanged) _player.SetLoop(_settings.Loop);
+
+                    if (autoplayChanged)
+                    {
+                        if (_settings.Autoplay) Play();
+                        else Pause();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Warn($"更新 ffmpeg 视频设置失败: {ex.Message}");
+                }
+            }
+        }
+        else
+        {
             try
             {
-                double speed = _settings.Speed > 0 ? _settings.Speed : 1.0;
-                if (previous is null || Math.Abs(previous.Speed - speed) > 0.001)
+                _videoWindow.Video.IsMuted = _settings.Muted;
+                _videoWindow.Video.Volume = _settings.Muted ? 0 : 1;
+                _videoWindow.Video.SpeedRatio = speed;
+
+                if (speedChanged) _speed = speed;
+
+                if (autoplayChanged)
                 {
-                    _speed = speed;
-                    _player.SetSpeed(speed);
-                }
-
-                if (previous is null || previous.Muted != _settings.Muted)
-                    _player.SetMuted(_settings.Muted);
-
-                if (previous is null || previous.Loop != _settings.Loop)
-                    _player.SetLoop(_settings.Loop);
-
-                if (previous is not null && previous.Autoplay != _settings.Autoplay)
-                {
+                    // 走 Play / Pause 而不是直接动 Video：_playing 和底部状态行要一起更新，
+                    // 否则「设置里改了自动播放」之后按钮显示的状态会和画面不一致。
                     if (_settings.Autoplay) Play();
                     else Pause();
                 }
             }
             catch (Exception ex)
             {
-                Log.Warn($"更新 ffmpeg 视频设置失败: {ex.Message}");
-            }
-            return;
-        }
-
-        try
-        {
-            _videoWindow.Video.IsMuted = _settings.Muted;
-            _videoWindow.Video.Volume = _settings.Muted ? 0 : 1;
-            _videoWindow.Video.SpeedRatio = _settings.Speed > 0 ? _settings.Speed : 1.0;
-
-            if (previous is not null && previous.Autoplay != _settings.Autoplay)
-            {
-                // 走 Play / Pause 而不是直接动 Video：_playing 和底部状态行要一起更新，
-                // 否则「设置里改了自动播放」之后按钮显示的状态会和画面不一致。
-                if (_settings.Autoplay) Play();
-                else Pause();
+                Log.Warn($"更新视频设置失败: {ex.Message}");
             }
         }
-        catch (Exception ex)
-        {
-            Log.Warn($"更新视频设置失败: {ex.Message}");
-        }
+
+        // 记录"已应用值"：即使当前没有播放器也记下来（StartFfmpeg 会按 _settings 起播）。
+        _appliedSpeed = speed;
+        _appliedMuted = _settings.Muted;
+        _appliedLoop = _settings.Loop;
+        _appliedAutoplay = _settings.Autoplay;
+        _appliedValid = true;
     }
 
     /// <summary>把视频子窗口贴到媒体区域在屏幕上的位置（卡片拖动、换排布时都会重新算）。</summary>
@@ -816,6 +1080,76 @@ public sealed class CardMediaView : Grid, IDisposable
         {
             Log.Warn($"定位视频窗失败: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// K-15：ffmpeg 首次查找在后台进行，查完后重试一次启动。
+    /// 只挂一次 ContinueWith，避免 LayoutUpdated 反复触发时堆出一串重试。
+    /// </summary>
+    void RetryWhenFfmpegReady(string path)
+    {
+        Task<string> lookup = Decoders.EnsureFfmpegLookup();
+        if (lookup.IsCompleted) return;   // 已经查完还是没找到：不再重试（否则会死循环）
+        if (ReferenceEquals(_ffmpegRetryTask, lookup)) return;
+
+        _ffmpegRetryTask = lookup;
+        _ = lookup.ContinueWith(_ =>
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (_disposed) return;
+                if (!string.Equals(_pendingVideo, path, StringComparison.OrdinalIgnoreCase)) return;
+                _waitingForFfmpeg = false;
+                TryStartVideo();
+            }));
+        }, TaskScheduler.Default);
+    }
+
+    /// <summary>
+    /// K-10：把媒体不透明度同步到独立视频子窗口（系统解码路径）。
+    /// 优先分层窗口整窗 alpha；不支持时降级到 WPF 合成路径（ffmpeg 逐帧 / 静态封面），
+    /// 并把原因写日志 + 状态行 —— 不允许"视频永远不透明"这种静默不一致。
+    /// 需真机验证：不同 GPU / 远程桌面下分层窗口与 MediaElement 的合成表现。
+    /// </summary>
+    void ApplyVideoOpacity()
+    {
+        if (_videoWindow is null || _disposed) return;
+
+        double opacity = _settings is null ? 1 : _settings.Opacity;
+        bool supported = _videoWindow.SetOpacity(opacity);
+        if (supported || opacity >= 0.999)
+        {
+            _videoOpacityFallback = false;
+            return;
+        }
+
+        if (_videoOpacityFallback) return;
+        _videoOpacityFallback = true;
+        Log.Warn($"系统解码的视频窗不支持半透明合成（不透明度 {opacity:0.##}），改用 WPF 合成路径");
+        FallbackForOpacity();
+    }
+
+    /// <summary>
+    /// K-10 降级：独立视频子窗口无法半透明时，改走"帧画在卡片里"的 ffmpeg 路径
+    /// （帧由 WPF 合成，跟随 _host.Opacity）；没有 ffmpeg 则退成静态封面并明确提示。
+    /// </summary>
+    void FallbackForOpacity()
+    {
+        string path = _loadedPath;
+        if (string.IsNullOrEmpty(path)) return;
+
+        string ffmpeg = Decoders.FindFfmpeg(_settings);
+        if (ffmpeg is not null && DecoderKey() != "BuiltIn" && File.Exists(path))
+        {
+            Log.Info("为保持不透明度一致，视频改用 ffmpeg 逐帧合成");
+            StartFfmpeg(ffmpeg, path);
+            return;
+        }
+
+        // 没有可用的 ffmpeg：系统解码做不到半透明，宁可显示半透明封面也不要显示全不透明视频。
+        ReleaseVideo();
+        ShowMessage("系统解码不支持半透明视频\n已降级为静态封面");
+        StartPoster(path);
     }
 
     // ==================== 进度条 ====================
@@ -874,8 +1208,14 @@ public sealed class CardMediaView : Grid, IDisposable
                 position = _videoWindow.Video.Position.TotalSeconds;
                 Duration natural = _videoWindow.Video.NaturalDuration;
                 if (natural.HasTimeSpan) duration = natural.TimeSpan.TotalSeconds;
+                MediaStateThrottle.Success();
             }
-            catch { }
+            catch (Exception ex)
+            {
+                // 与 UpdateStatus 共用节流器：窗口关闭 / 换源瞬间抛异常是良性的，
+                // 但持续失败必须能从日志看出来（X-9）。
+                MediaStateThrottle.Failure(ex.Message);
+            }
         }
 
         double fraction = duration > 0.05 ? Math.Min(1, Math.Max(0, position / duration)) : 0;
@@ -977,13 +1317,32 @@ public sealed class CardMediaView : Grid, IDisposable
         try
         {
             if (_gif is not null) _gif.Play();
-            if (_player is not null) _player.Resume();
+
+            if (_player is not null)
+            {
+                // K-7：已播完时 FfmpegPlayer.Resume 会从头重开一代，播放键因此恢复可用；
+                // 进度计时器在 Completed 时被停掉，这里重新启动。
+                _player.Resume();
+                _mediaEnded = false;
+                RestartProgressTimer();
+            }
+
             if (_videoWindow is not null)
             {
+                // K-7（系统解码路径）：自然播完后 Position 停在末尾，直接 Play() 不会动。
+                if (_mediaEnded)
+                {
+                    try { _videoWindow.Video.Position = TimeSpan.Zero; }
+                    catch (Exception ex) { Log.Warn($"重播前重置视频位置失败: {ex.Message}"); }
+                    _mediaEnded = false;
+                    RestartProgressTimer();
+                }
+
                 UpdateVideoPlacement();
                 _videoWindow.Play();
                 UpdateVideoPlacement();
             }
+
             _playing = true;
             UpdateStatus();
         }
@@ -991,6 +1350,12 @@ public sealed class CardMediaView : Grid, IDisposable
         {
             Log.Warn($"媒体播放失败: {ex.Message}");
         }
+    }
+
+    /// <summary>播完后进度计时器会被停掉；再次播放时按需恢复（K-7）。</summary>
+    void RestartProgressTimer()
+    {
+        if (_progressTimer is not null && !_progressTimer.IsEnabled) _progressTimer.Start();
     }
 
     public void Pause()
@@ -1047,13 +1412,40 @@ public sealed class CardMediaView : Grid, IDisposable
         {
             if (_player is not null)
             {
-                if (_player.IsPaused) { _player.Resume(); _playing = true; }
-                else { _player.Pause(); _playing = false; }
+                // K-7：已播完时 Resume 是"从头重播"，不是"置一个没人等的事件"。
+                if (_player.IsEnded || _player.IsPaused)
+                {
+                    _player.Resume();
+                    _playing = true;
+                    _mediaEnded = false;
+                    RestartProgressTimer();
+                }
+                else
+                {
+                    _player.Pause();
+                    _playing = false;
+                }
             }
             else if (_videoWindow is not null)
             {
-                if (_playing) { _videoWindow.Pause(); _playing = false; }
-                else { _videoWindow.Play(); _playing = true; }
+                if (_playing)
+                {
+                    _videoWindow.Pause();
+                    _playing = false;
+                }
+                else
+                {
+                    if (_mediaEnded)
+                    {
+                        try { _videoWindow.Video.Position = TimeSpan.Zero; }
+                        catch (Exception ex) { Log.Warn($"重播前重置视频位置失败: {ex.Message}"); }
+                        _mediaEnded = false;
+                        RestartProgressTimer();
+                    }
+
+                    _videoWindow.Play();
+                    _playing = true;
+                }
             }
             else if (_gif is not null)
             {
@@ -1090,12 +1482,20 @@ public sealed class CardMediaView : Grid, IDisposable
                     Duration natural = video.NaturalDuration;
                     if (natural.HasTimeSpan) duration = natural.TimeSpan.TotalSeconds;
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    // 拿不到时长时按"没有上限"跳转即可（位置仍会被 MediaElement 自己夹断），
+                    // 但读取失败的原因要留痕（X-9）。
+                    Log.Warn($"读取视频时长失败，跳转不做上限夹取: {ex.Message}");
+                }
 
                 double target = video.Position.TotalSeconds + seconds;
                 if (target < 0) target = 0;
                 if (duration > 0 && target > duration - 0.1) target = Math.Max(0, duration - 0.1);
                 video.Position = TimeSpan.FromSeconds(target);
+
+                // K-7：用户主动跳转说明不想再停在"已结束"，清掉状态并让播放键接着当前位置走。
+                _mediaEnded = false;
             }
         }
         catch (Exception ex)
@@ -1152,11 +1552,20 @@ public sealed class CardMediaView : Grid, IDisposable
                 position = _videoWindow.Video.Position.TotalSeconds;
                 Duration natural = _videoWindow.Video.NaturalDuration;
                 if (natural.HasTimeSpan) duration = natural.TimeSpan.TotalSeconds;
+                MediaStateThrottle.Success();
             }
-            catch { }
+            catch (Exception ex)
+            {
+                // 卡片关闭 / 视频源切换瞬间会抛，属良性竞态；用节流器记状态转移，
+                // 既不刷屏也不静默（X-9：不能吞掉真正的状态读取失败）。
+                MediaStateThrottle.Failure(ex.Message);
+            }
         }
 
-        string text = (_playing ? "▶ " : "❚❚ ") + Clock(position) + " / " + Clock(duration);
+        string text = (_mediaEnded ? "■ " : (_playing ? "▶ " : "❚❚ ")) +
+                      Clock(position) + " / " + Clock(duration);
+
+        if (_mediaEnded) text += " · 已结束";
 
         if (Math.Abs(_speed - 1) > 0.001)
             text += $" · {_speed.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}×";
@@ -1188,6 +1597,13 @@ public sealed class CardMediaView : Grid, IDisposable
 
     void Unload()
     {
+        // K-12：作废正在后台解码的图片，旧结果回来会被 IsCurrentImage 丢掉。
+        _imageRun++;
+        _frameBitmap = null;
+        _mediaEnded = false;
+        _waitingForFfmpeg = false;
+
+        // 释放路径：GifAnimator.Dispose 只停表 / 清帧，异常没有可补救动作。
         try { if (_gif is not null) _gif.Dispose(); } catch { }
         _gif = null;
 
@@ -1201,6 +1617,10 @@ public sealed class CardMediaView : Grid, IDisposable
     {
         _pendingVideo = null;
         _audioNote = null;
+        _mediaEnded = false;
+        _waitingForFfmpeg = false;
+        _ffmpegRetryTask = null;
+        _frameBitmap = null;
 
         // 让正在 await 的 StartFfmpeg 探测作废（否则它回来时会重新起一个 player）。
         _videoRun++;
@@ -1211,6 +1631,8 @@ public sealed class CardMediaView : Grid, IDisposable
 
         if (_player is not null)
         {
+            // 释放路径：播放器 Dispose 内部已做有界收尾，异常无处上报；
+            // 下面把引用置 null，保证不会继续用半损坏的实例。
             try { _player.Dispose(); } catch { }
             _player = null;
         }
@@ -1224,7 +1646,11 @@ public sealed class CardMediaView : Grid, IDisposable
             _videoWindow.Video.MediaEnded -= OnVideoEnded;
             _videoWindow.Dispose();
         }
-        catch { }
+        catch (Exception ex)
+        {
+            // 关闭子窗口失败可能留下一个孤儿视频窗（盖在桌面上），必须可见。
+            Log.Warn($"关闭视频子窗失败: {ex.Message}");
+        }
 
         _videoWindow = null;
     }
