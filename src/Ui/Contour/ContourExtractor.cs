@@ -14,17 +14,19 @@ public struct ContourSegment
     public double Y1;
 }
 
-/// <summary>串联后的折线。Closed 表示首尾同点、可以闭合描边。</summary>
+/// <summary>
+/// 串联后的折线。Closed 表示首尾同点、可以闭合描边。
+///
+/// T-14：这里刻意**不带**层级字段。串联本身只认识"线段"，同一份线段集合可能来自任意高度，
+/// 级别是调用方循环里的变量（见 <see cref="ContourGeometryBuilder.BuildGeometry"/> 的
+/// <c>foreach (double level in levels.Values)</c>）。原先把 Level / LevelIndex 钉成 0 只是
+/// 留了两个永远读不到真值的坑：以后拿它做注记或分层着色会静默用 0，所以直接删掉，
+/// 需要层级的调用方在自己那一层维护。
+/// </summary>
 public sealed class ContourPath
 {
     public Point[] Points;
     public bool Closed;
-
-    /// <summary>这条线代表的高度（归一化）。</summary>
-    public double Level;
-
-    /// <summary>属于第几级（从 0 开始）；只用于调试，不再区分计曲线。</summary>
-    public int LevelIndex;
 
     /// <summary>折线总长（像素）。</summary>
     public double Length;
@@ -73,9 +75,9 @@ public sealed class ContourPath
 /// <summary>
 /// Marching squares 等值线提取 + 折线串联 + Chaikin 平滑。
 ///
-/// 为什么不用现成库：仓库零第三方依赖；这里的实现不到 300 行，
-/// 还能顺手拿到"每条线属于哪一级、有多少顶点"这类统计，
-/// 面板底部的自证信息就是靠它。
+/// 为什么不用现成库：仓库零第三方依赖；这里的实现不到 300 行。
+/// 提取是"按一个等值高度取一遍"（<see cref="Extract"/> 的 level 参数），
+/// 所以层级天然属于调用方的循环，不在 <see cref="ContourPath"/> 上重复存一份（T-14）。
 /// </summary>
 public static class ContourExtractor
 {
@@ -557,8 +559,6 @@ public static class ContourExtractor
         ContourPath path = scratch.RentPath();
         path.Points = smoothed;
         path.Closed = closed;
-        path.Level = 0.0;
-        path.LevelIndex = 0;
         path.Measure();
         scratch.Paths.Add(path);
     }

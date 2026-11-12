@@ -96,9 +96,12 @@ public sealed class TextCanvas : FrameworkElement
     static FontFamily _keycapFamily;
 
     /// <summary>
-    /// 内嵌的键帽字体 Reicon（只用 U+E000–U+E052 这 83 个键帽字形，图标码位不映射）。
-    /// 源码里的 `{keys}` 会先被 <see cref="MirrorpondHUD.Core.Keycaps"/> 换成这些 PUA 字符，
+    /// 内嵌的键帽字体 Reicon（只用 <see cref="Keycaps.First"/>–<see cref="Keycaps.Last"/> 这一段键帽字形，
+    /// 图标码位不映射）。源码里的 `{keys}` 会先被 <see cref="MirrorpondHUD.Core.Keycaps"/> 换成这些 PUA 字符，
     /// 再在这里按 run 单独用这个字体绘制，所以可以和普通文字混排。
+    ///
+    /// T-16：注释不再手写码位与字形个数。原来这里写「U+E000–U+E052 这 83 个」，实现与
+    /// <see cref="Keycaps"/> 都是到 U+E056，按 83 个裁字体子集会让末尾 4 个键帽缺字形。
     /// </summary>
     static FontFamily KeycapFamily
     {
@@ -123,12 +126,13 @@ public sealed class TextCanvas : FrameworkElement
     }
 
     static bool IsKeycapChar(char c) =>
-        // 键帽 U+E000–U+E056（{keys} 里的按键字形）。
-        c >= '\uE000' && c <= '\uE056';
+        // 键帽码位区间（{keys} 里的按键字形）。边界取自 Keycaps.First/Last，不再手写数字：
+        // 手写数字曾经和实现差 4 个码位（T-16），而字体子集与 <see cref="Keycaps"/> 都以那里为准。
+        c >= Keycaps.First && c <= Keycaps.Last;
 
     /// <summary>
     /// 图标字形：只认 <see cref="Icons"/> 登记过的 Lucide 码位。不能按 U+E100–U+E3FF 整段判断：
-    /// Lucide 和键帽字体共用 PUA，整段判断会把键帽（U+E000–U+E056）误当图标。
+    /// Lucide 和键帽字体共用 PUA，整段判断会把键帽（<see cref="Keycaps.First"/>–<see cref="Keycaps.Last"/>）误当图标。
     /// </summary>
     static bool IsIconChar(char c) => Icons.IsIconChar(c);
 
@@ -626,15 +630,31 @@ public sealed class TextCanvas : FrameworkElement
     /// </summary>
     readonly Dictionary<string, TextLayout> _layoutCache = new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// 主缓存的键顺序，用于满了以后逐个淘汰最旧键（T-21）。8 个键上的 List 操作足够便宜，
+    /// 换来的是"正在显示的文本不会被整表清空"。
+    /// </summary>
+    readonly List<string> _layoutCacheOrder = new();
+
+    /// <summary>
+    /// T-21：光标行前缀的**独立单槽**。光标每移动一次就是一个新字符串键
+    /// （<c>line.Substring(0, column)</c>），命令行连续输入十几个字符就会把主缓存反复撑满；
+    /// 原先满 12 个键整表清空，`_text` 与 `LayoutText` 的排版被前缀键挤掉，
+    /// 命令行卡上 P-1 的收益直接归零。前缀只需要"上一次那一个"，单槽足矣。
+    /// </summary>
+    string _cursorLayoutKey;
+    TextLayout _cursorLayout;
+
     /// <summary>粒子动画期间只隐藏变化字符；未变字符仍由本画布正常绘制。</summary>
     readonly HashSet<int> _hiddenChars = new();
 
     /// <summary>
-    /// 键上限只是防御：正常只有「显示文本 / 布局文本 / 光标行前缀」几个键，
-    /// 但指标卡每 125ms 换一次文本，会不断产生新字符串；到上限整表清空，
-    /// 宁可重建一次（最坏每十几次刷新一次），也不让字典无限增长。
+    /// 主缓存键上限（T-21）。正常只有「显示文本 / 布局文本」两个键；指标卡每 125ms 换一次文本
+    /// 会不断产生新键，所以仍需上限。淘汰策略是**按使用顺序淘汰最旧键**（<see cref="TouchLayoutCache"/>
+    /// 命中即刷新），不是原来的整表清空——清空会让正在显示的文本在下一帧立刻重新 Split + BuildLine，
+    /// 那正是 T-21 要避免的退化。光标前缀不计入本缓存（见 <see cref="_cursorLayout"/>）。
     /// </summary>
-    const int LayoutCacheLimit = 12;
+    const int LayoutCacheLimit = 8;
 
     /// <summary>
     /// 建缓存时的样式快照。setter 改动都会主动清表，这里兜的是两类漏网情况：
@@ -831,8 +851,38 @@ public sealed class TextCanvas : FrameworkElement
         text = text ?? "";
         EnsureLayoutCache();
 
-        if (_layoutCache.TryGetValue(text, out var cached)) return cached;
+        if (_layoutCache.TryGetValue(text, out var cached))
+        {
+            TouchLayoutCache(text);
+            return cached;
+        }
 
+        TextLayout layout = BuildLayout(text);
+        StoreLayoutCache(text, layout);
+        return layout;
+    }
+
+    /// <summary>
+    /// 光标行前缀专用排版（T-21）：容量 1 的单槽，绝不写进主缓存，也不参与主缓存的淘汰。
+    /// 前缀键每移动一次光标就换一个，混进主缓存只会把正式文本挤出去。
+    /// </summary>
+    TextLayout GetCursorLayout(string prefix)
+    {
+        prefix = prefix ?? "";
+
+        // 先过一遍样式快照校验：换屏 / 换字号时主缓存与单槽必须一起作废。
+        EnsureLayoutCache();
+        if (_cursorLayout is not null && string.Equals(_cursorLayoutKey, prefix, StringComparison.Ordinal))
+            return _cursorLayout;
+
+        _cursorLayoutKey = prefix;
+        _cursorLayout = BuildLayout(prefix);
+        return _cursorLayout;
+    }
+
+    /// <summary>真正的排版（Split + 逐行 BuildLine）。缓存命中路径不走这里。</summary>
+    TextLayout BuildLayout(string text)
+    {
         List<string> lines = Split(text);
         var built = new List<TextLine>(lines.Count);
         var starts = new List<int>(lines.Count);
@@ -847,10 +897,33 @@ public sealed class TextCanvas : FrameworkElement
             if (line.Width > width) width = line.Width;
         }
 
-        var layout = new TextLayout(lines, built, width, starts);
-        if (_layoutCache.Count >= LayoutCacheLimit) _layoutCache.Clear();
+        return new TextLayout(lines, built, width, starts);
+    }
+
+    /// <summary>
+    /// 写主缓存。满了先淘汰最旧键而不是整表清空（T-21）：清空会让下一帧把正在显示的文本
+    /// 重新排一遍，正好抵消缓存的意义；逐个淘汰则只丢掉指标卡的历史文本。
+    /// </summary>
+    void StoreLayoutCache(string text, TextLayout layout)
+    {
+        while (_layoutCacheOrder.Count >= LayoutCacheLimit && _layoutCacheOrder.Count > 0)
+        {
+            string oldest = _layoutCacheOrder[0];
+            _layoutCacheOrder.RemoveAt(0);
+            _layoutCache.Remove(oldest);
+        }
+
         _layoutCache[text] = layout;
-        return layout;
+        _layoutCacheOrder.Add(text);
+    }
+
+    /// <summary>缓存命中即把键挪到队尾，近似 LRU：热点文本不会因为插入早而被挤掉。</summary>
+    void TouchLayoutCache(string text)
+    {
+        int index = _layoutCacheOrder.IndexOf(text);
+        if (index < 0 || index == _layoutCacheOrder.Count - 1) return;
+        _layoutCacheOrder.RemoveAt(index);
+        _layoutCacheOrder.Add(text);
     }
 
     /// <summary>
@@ -875,6 +948,9 @@ public sealed class TextCanvas : FrameworkElement
         }
 
         _layoutCache.Clear();
+        _layoutCacheOrder.Clear();
+        _cursorLayoutKey = null;
+        _cursorLayout = null;
         _layoutCacheFamily = _fontFamily;
         _layoutCacheMonoFamily = _monoFamily;
         _layoutCacheMonoNumbers = _monoNumbers;
@@ -892,6 +968,10 @@ public sealed class TextCanvas : FrameworkElement
     void InvalidateLayoutCache()
     {
         _layoutCache.Clear();
+        _layoutCacheOrder.Clear();
+        // T-21：光标前缀单槽与主缓存同寿命，样式一换必须一起作废。
+        _cursorLayoutKey = null;
+        _cursorLayout = null;
         _cachedLineHeight = double.NaN;
     }
 
@@ -1140,9 +1220,9 @@ public sealed class TextCanvas : FrameworkElement
 
         string prefix = line.Substring(0, Math.Max(0, column));
         // 整行宽度直接取缓存里排好的结果；前缀是光标移动才变的短字符串，
-        // 同样走排版缓存（命中就零分配，未命中与原来一样只排这一小段）。
+        // 走专用单槽（T-21）：命中零分配，也不会把正式文本挤出主缓存。
         double lineWidth = layout.Built[lineIndex].Width;
-        double prefixWidth = GetLayout(prefix).Width;
+        double prefixWidth = GetCursorLayout(prefix).Width;
         double x = originX + AlignX(lineWidth, blockWidth) + prefixWidth;
         double y = originY + lineIndex * lineHeight;
 

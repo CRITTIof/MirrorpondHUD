@@ -301,7 +301,11 @@ public partial class SettingsWindow
             Point listPoint = e.GetPosition(CardList);
             if (_dragAdornerLayer is not null && ghost is not null)
             {
-                _dragAdorner = new CardDragAdorner(CardList, ghost, Math.Max(96, card.ActualWidth), headerHeight);
+                // T-17：拖动层的颜色/圆角走当前工作设置里的主题令牌，不再用浮层内的硬编码颜色。
+                // _working 在列表重建时就已就位；万一为空则交给 ThemeResolver 的默认派生。
+                double cornerRadius = _working?.Overlay is null ? 8 : _working.Overlay.CornerRadius;
+                _dragAdorner = new CardDragAdorner(CardList, ghost, Math.Max(96, card.ActualWidth), headerHeight,
+                                                   _working?.Style, cornerRadius);
                 _dragAdorner.SetPosition(new Point(listPoint.X + 14, listPoint.Y + 14));
                 _dragAdornerLayer.Add(_dragAdorner);
                 CardList.GiveFeedback += OnCardDragGiveFeedback;

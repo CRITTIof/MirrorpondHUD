@@ -59,7 +59,6 @@ internal sealed class ContourFrame
 internal sealed class ContourGeometryBuilder
 {
     const int Seed = 20261111;
-    const int MaxCellsPerAxis = 140;
     const double BaseScale = 0.0034;
     const int HistogramBins = 1024;
 
@@ -129,12 +128,11 @@ internal sealed class ContourGeometryBuilder
             return;
         }
 
-        // T-12：尺寸推导只走 ScalarGrid.ComputeSize。生产路径原来在这里内联了一份，
-        // 与可测 API 的 512 上限各写一个数，已经漂移过；统一入口后改上限只改一处。
-        // 单元格下限 6 DIP 与上限 140 是本路径的预算（12 级全网格提取 + 平滑），
-        // 与 ScalarGrid 的通用默认值（512）刻意不同，所以显式传 maxCellsPerAxis。
-        double cellSize = Math.Max(6.0, Math.Max(request.Width, request.Height) / MaxCellsPerAxis);
-        (int cols, int rows) = ScalarGrid.ComputeSize(request.Width, request.Height, cellSize, MaxCellsPerAxis);
+        // T-12/T-15：尺寸推导只走 ScalarGrid 的单一入口。生产路径原来在这里内联了一份，
+        // 与可测 API 的 512 上限各写一个数，已经漂移过；现在 cell 下限（MinCellSize）与
+        // 每轴格数上限（MaxCellsPerAxis=140）都只有 ScalarGrid 那一份定义，
+        // 调整上限时不会再出现"截图与真机网格不同"的隐性差异。
+        (int cols, int rows) = ScalarGrid.ComputeProductionSize(request.Width, request.Height);
 
         // Relief 变了才需要新的 scale（噪声种子与采样顺序保持不变）。
         if (_terrain is null || _terrainRelief != request.Relief)

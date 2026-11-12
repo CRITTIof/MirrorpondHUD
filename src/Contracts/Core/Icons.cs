@@ -8,7 +8,8 @@ namespace MirrorpondHUD.Core;
 /// 字形高度都是 1em，可以直接和正文、键帽混排；卡片内容里用 {cpu_icon} 之类的占位符引用。
 ///
 /// 2.26.0 起图标统一改用 Lucide：设置页页签、卡片模块图标、媒体播放状态和硬件占位符都走这里。
-/// 键帽仍用 Reicon（U+E000–U+E056），两套字体的 PUA 码位有重叠，因此文本画布不能按整段
+/// 键帽仍用 Reicon（码位区间见 <see cref="Keycaps.First"/>–<see cref="Keycaps.Last"/>，T-16：不再手写数字），
+/// 两套字体的 PUA 码位有重叠，因此文本画布不能按整段
 /// 码位区间判断，只能按本类登记过的图标字符分流（见 <see cref="IsIconChar"/>）。
 /// </summary>
 public static class Icons
@@ -96,7 +97,8 @@ public static class Icons
 
     /// <summary>
     /// 是否是本类登记过的 Lucide 图标码位。只认已知字符而不是整个 PUA 区间：
-    /// Lucide 也有 U+E000–U+E056 的图标，按区间判断会把键帽字形抢走。
+    /// Lucide 也有落在键帽区间（<see cref="Keycaps.First"/>–<see cref="Keycaps.Last"/>）的字形，
+    /// 按区间判断会把键帽字形抢走。
     /// </summary>
     public static bool IsIconChar(char c) => IconChars.Contains(c);
 }

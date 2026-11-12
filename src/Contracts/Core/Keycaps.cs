@@ -5,7 +5,7 @@ using System.Text;
 namespace MirrorpondHUD.Core;
 
 /// <summary>
-/// 按键名 → Reicon 字体的键帽字符（PUA U+E000–U+E056）。
+/// 按键名 → Reicon 字体的键帽字符（PUA 区间就是 <see cref="First"/>–<see cref="Last"/>，T-16：唯一来源）。
 ///
 /// 这里只负责「换显示形态」：字符数截断仍由 <see cref="KeyHistory.Render"/> 按按键名计算，
 /// 所以改用键帽显示后，「最多显示多少个字符」的判定与原来完全一致。
