@@ -33,6 +33,15 @@ internal static class CardMotion
     /// <summary>“显示 / 隐藏全部”是否播放整体动效；仍受减少动效与 Off 档一票否决。</summary>
     public static bool OverallMotion => Enabled && _overallMotion;
 
+    /// <summary>
+    /// 粒子聚字是否生效：文字动效选了粒子，且动效没有被减少动效 / Off 档 / 截图模式关掉。
+    /// 启动打字动画与粒子聚字互斥，OverlayIntro 先用这里判断要不要整段跳过。
+    /// </summary>
+    public static bool ParticleTextEnabled(Settings settings) =>
+        settings is not null && Enabled
+        && string.Equals(Settings.NormalizeTextEffect(settings.Style.TextEffect),
+            "Particle", StringComparison.Ordinal);
+
     /// <summary>卡片滑入滑出方向：None / Left / Right / Follow；Follow 取整叠最终左 / 右对齐。</summary>
     public static string SlideDirection => _slide;
 

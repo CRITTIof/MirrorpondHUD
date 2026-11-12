@@ -73,6 +73,20 @@ internal sealed class OverlayIntro : IDisposable
     public void Begin()
     {
         Settings settings = _settings();
+
+        // 粒子聚字与启动打字动画互斥：粒子启用时整段跳过逐字动画，
+        // 否则欢迎语和卡片内容会先被打字动画占住，粒子要等动画结束才播。
+        if (CardMotion.ParticleTextEnabled(settings))
+        {
+            StopTimer();
+            _card = null;
+            _phase = Phase.Live;
+            _shownText = "";
+            Log.Info("粒子聚字已启用，跳过启动打字动画");
+            _renderNow();
+            return;
+        }
+
         _card = FirstLiveCard();
         if (_card is null || !settings.Behavior.IntroEnabled)
         {

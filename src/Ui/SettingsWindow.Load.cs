@@ -256,6 +256,9 @@ public partial class SettingsWindow
         return Settings.NormalizeTextEffect(item is null ? null : item.Tag as string);
     }
 
+    bool ParticleTextSelected() =>
+        string.Equals(TextEffectTag(), "Particle", StringComparison.OrdinalIgnoreCase);
+
     string LoopEffectTag()
     {
         var item = LoopEffectCombo is null ? null : LoopEffectCombo.SelectedItem as ComboBoxItem;
@@ -305,8 +308,16 @@ public partial class SettingsWindow
             ImageOptionsRow.Visibility = !string.IsNullOrWhiteSpace(ImagePathBox is null ? null : ImagePathBox.Text)
                 ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
 
+        // 粒子聚字与启动打字动画互斥：选了粒子就把打字动画入口整段收起，
+        // 不留下“勾着却不生效”的控件；切回“无”后原值和入口都回来。
+        bool reduceMotionNow = ReduceMotionCheck is not null && ReduceMotionCheck.IsChecked == true;
+        bool motionOffNow = string.Equals(MotionProfileTag(), "Off", StringComparison.OrdinalIgnoreCase);
+        bool particleText = ParticleTextSelected() && !reduceMotionNow && !motionOffNow;
+        if (IntroCheck is not null)
+            IntroCheck.Visibility = particleText
+                ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
         if (IntroOptionsPanel is not null)
-            IntroOptionsPanel.Visibility = IntroCheck is not null && IntroCheck.IsChecked == true
+            IntroOptionsPanel.Visibility = !particleText && IntroCheck is not null && IntroCheck.IsChecked == true
                 ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
 
         // 托盘关闭时“启动后最小化到托盘”无处可去，直接禁用；值保留，重新开托盘即可复用。
@@ -351,7 +362,7 @@ public partial class SettingsWindow
     void UpdateTextEffectUiState()
     {
         if (TextEffectHint is null) return;
-        bool particle = string.Equals(TextEffectTag(), "Particle", StringComparison.OrdinalIgnoreCase);
+        bool particle = ParticleTextSelected();
         TextEffectHint.Visibility = particle
             ? System.Windows.Visibility.Visible
             : System.Windows.Visibility.Collapsed;

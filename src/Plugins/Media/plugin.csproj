@@ -5,7 +5,7 @@
     <OutputType>Library</OutputType>
     <AssemblyName>MirrorpondHUD.Cards.Media</AssemblyName>
     <RootNamespace>MirrorpondHUD.Cards</RootNamespace>
-    <Version>2.43.0</Version>
+    <Version>2.43.1</Version>
     <Product>镜潭一览 (MirrorpondHUD) 内置卡片插件</Product>
     <NoWarn>$(NoWarn);WFAC010</NoWarn>
   </PropertyGroup>

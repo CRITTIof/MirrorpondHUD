@@ -740,7 +740,7 @@
                         </Grid>
                         <TextBlock x:Name="TextEffectHint" Style="{StaticResource Hint}" Margin="110,0,0,8"
                                    TextWrapping="Wrap" Visibility="Collapsed"
-                                   Text="粒子只在预设 / 文字内容变化时播放；收敛后瞬时切成普通文字，不保留等待。" />
+                                   Text="粒子只在预设 / 文字内容变化时播放；变化时直接重新收拢，收敛后瞬时切成普通文字。粒子生效时跳过启动打字动画。" />
 
                         <StackPanel x:Name="TextParticlePanel" Margin="0,0,0,8" Visibility="Collapsed">
                             <Grid Margin="0,0,0,8">

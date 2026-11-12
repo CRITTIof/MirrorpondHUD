@@ -10,14 +10,16 @@ using MirrorpondHUD.Core;
 namespace MirrorpondHUD.Ui;
 
 /// <summary>
-/// 信息与文本卡的粒子聚字层：把当前文字快照采样成点集，粒子从旧位置/外侧收拢，
+/// 信息与文本卡的粒子聚字层：把当前文字快照采样成点集，粒子从旧位置收拢，
 /// 收敛后直接切回真正的 <see cref="TextCanvas"/>（瞬时凝固）并停表。
 ///
-/// 性能取舍：
+/// 性能与手感取舍：
+///  · 无惯性：位置直接指数逼近目标，不存速度、不冲过头；文字变化时立即重新配对；
 ///  · 粒子位置跨播放保留，文字只改一个字符时大部分粒子不需要重新散开；
 ///  · 默认按 x 排序就近配对目标（近似最近邻，避免 O(n²)）；
+///  · 画布尺寸变化（首次布局未完成、卡片长高）会重新采样，避免末排目标缺失；
 ///  · 点数 / 大小 / 速度 / 轮廓采样 / 是否就近都可配，点数和采样步长有硬上限；
-///  · 30fps，收敛后立即停；截图 / 减少动效 / 非信息文本卡由宿主直接不调用。
+///  · 30fps，凝固后立即停；截图 / 减少动效 / 非信息文本卡由宿主直接不调用。
 /// </summary>
 internal sealed class ParticleTextLayer : FrameworkElement
 {
@@ -25,8 +27,9 @@ internal sealed class ParticleTextLayer : FrameworkElement
     const int MinParticles = 200;
     const int MaxParticles = 3000;
     const byte AlphaThreshold = 24;
-    const double Stiffness = 34.0;
-    const double Damping = 0.82;
+    const double SnapDistance = 0.6;
+    const double BaseSettleMs = 220.0;
+    const double Responsiveness = 24.0;
 
     readonly DispatcherTimer _timer;
     readonly Stopwatch _clock = new();
@@ -34,8 +37,6 @@ internal sealed class ParticleTextLayer : FrameworkElement
 
     double[] _x = Array.Empty<double>();
     double[] _y = Array.Empty<double>();
-    double[] _vx = Array.Empty<double>();
-    double[] _vy = Array.Empty<double>();
     double[] _tx = Array.Empty<double>();
     double[] _ty = Array.Empty<double>();
 
@@ -43,17 +44,27 @@ internal sealed class ParticleTextLayer : FrameworkElement
     TextCanvas _canvas;
     int _count;
     int _residentCount;
+    int _requestedCount = 900;
     bool _hasParticles;
     bool _playing;
     bool _pending;
+    bool _resampling;
+    bool _sampling;
     int _version;
     double _size = 2.2;
-    double _settleMs = 700;
+    double _speed = 1.0;
+    double _settleMs = BaseSettleMs;
+    double _settleElapsedMs;
+    double _sampleWidth;
+    double _sampleHeight;
+    bool _nearest = true;
+    bool _geometry;
 
     public ParticleTextLayer()
     {
         IsHitTestVisible = false;
-        ClipToBounds = true;
+        // 窗口本身会裁，粒子层不再多裁一层：末排粒子可以稍微压到卡片边缘外。
+        ClipToBounds = false;
         Visibility = Visibility.Collapsed;
         SnapsToDevicePixels = false;
 
@@ -79,13 +90,19 @@ internal sealed class ParticleTextLayer : FrameworkElement
         bool nearest = style is null || style.TextParticleNearest;
         bool geometry = style is not null && style.TextParticleGeometry;
 
+        _requestedCount = count;
+        _nearest = nearest;
+        _geometry = geometry;
+
         int version = ++_version;
         _pending = true;
+        _resampling = false;
+        TextCanvas target = canvas;
         Dispatcher.BeginInvoke(new Action(() =>
         {
             if (version != _version || !_pending) return;
             _pending = false;
-            BeginPlay(canvas, color, size, count, speed, nearest, geometry, version);
+            BeginPlay(target, color, size, count, speed, nearest, geometry, version);
         }), DispatcherPriority.Loaded);
         return true;
     }
@@ -94,21 +111,26 @@ internal sealed class ParticleTextLayer : FrameworkElement
     {
         _version++;
         _pending = false;
+        _resampling = false;
         _timer.Stop();
         _clock.Stop();
         _playing = false;
         _count = 0;
 
-        BeginAnimation(OpacityProperty, null);
         Opacity = 1;
         Visibility = Visibility.Collapsed;
+        ReleaseCanvas();
+    }
 
-        if (_canvas is not null)
-        {
-            _canvas.BeginAnimation(UIElement.OpacityProperty, null);
-            _canvas.Opacity = 1;
-            _canvas = null;
-        }
+    /// <summary>把画布恢复成不透明并断开尺寸监听；不动粒子位置，下次播放继续用。</summary>
+    void ReleaseCanvas()
+    {
+        if (_canvas is null) return;
+
+        _canvas.SizeChanged -= OnCanvasSizeChanged;
+        _canvas.BeginAnimation(UIElement.OpacityProperty, null);
+        _canvas.Opacity = 1;
+        _canvas = null;
     }
 
     void BeginPlay(TextCanvas canvas, Color color, double size, int requestedCount,
@@ -127,19 +149,33 @@ internal sealed class ParticleTextLayer : FrameworkElement
         try
         {
             long started = Stopwatch.GetTimestamp();
-            if (!BuildTargets(canvas, width, height, requestedCount, geometry, out var targets))
-                return;
+            List<Point> targets;
+            _sampling = true;
+            try
+            {
+                if (!SampleTargets(canvas, width, height, requestedCount, geometry, out targets))
+                    return;
+            }
+            finally
+            {
+                _sampling = false;
+            }
 
             EnsureParticles(targets.Count, width, height);
             AssignTargets(targets, nearest);
 
             _size = size;
-            _settleMs = Math.Max(160, Math.Min(2800, 700.0 / speed));
+            _speed = speed;
+            _settleMs = Math.Max(80.0, Math.Min(1000.0, BaseSettleMs / speed));
+            _settleElapsedMs = 0;
             _brush = new SolidColorBrush(Color.FromArgb(232, color.R, color.G, color.B));
             _brush.Freeze();
             _canvas = canvas;
+            _canvas.SizeChanged += OnCanvasSizeChanged;
             _canvas.Opacity = 0;
             _count = targets.Count;
+            _sampleWidth = width;
+            _sampleHeight = height;
             _playing = true;
             Visibility = Visibility.Visible;
             Opacity = 1;
@@ -158,6 +194,22 @@ internal sealed class ParticleTextLayer : FrameworkElement
         }
     }
 
+    /// <summary>采样时临时把画布恢复为不透明：粒子播放中画布 Opacity=0，直接渲染会采到空白。</summary>
+    bool SampleTargets(TextCanvas canvas, double width, double height,
+                       int requestedCount, bool geometry, out List<Point> targets)
+    {
+        double restore = canvas.Opacity;
+        canvas.Opacity = 1;
+        try
+        {
+            return BuildTargets(canvas, width, height, requestedCount, geometry, out targets);
+        }
+        finally
+        {
+            canvas.Opacity = restore;
+        }
+    }
+
     void EnsureParticles(int count, double width, double height)
     {
         if (_x.Length < count)
@@ -165,8 +217,6 @@ internal sealed class ParticleTextLayer : FrameworkElement
             int capacity = Math.Max(count, Math.Max(64, _x.Length * 2));
             Array.Resize(ref _x, capacity);
             Array.Resize(ref _y, capacity);
-            Array.Resize(ref _vx, capacity);
-            Array.Resize(ref _vy, capacity);
             Array.Resize(ref _tx, capacity);
             Array.Resize(ref _ty, capacity);
         }
@@ -181,8 +231,6 @@ internal sealed class ParticleTextLayer : FrameworkElement
                 double radius = Math.Max(width, height) * (0.38 + _random.NextDouble() * 0.32);
                 _x[i] = width * 0.5 + Math.Cos(angle) * radius;
                 _y[i] = height * 0.5 + Math.Sin(angle) * radius;
-                _vx[i] = 0;
-                _vy[i] = 0;
             }
             return;
         }
@@ -211,14 +259,10 @@ internal sealed class ParticleTextLayer : FrameworkElement
             {
                 _x[i] = cx + (_random.NextDouble() - 0.5) * 60;
                 _y[i] = cy + (_random.NextDouble() - 0.5) * 60;
-                _vx[i] = 0;
-                _vy[i] = 0;
             }
         }
 
         _residentCount = count;
-        Array.Clear(_vx, 0, count);
-        Array.Clear(_vy, 0, count);
     }
 
     void AssignTargets(List<Point> targets, bool nearest)
@@ -264,8 +308,9 @@ internal sealed class ParticleTextLayer : FrameworkElement
                              int requestedCount, bool geometry, out List<Point> targets)
     {
         targets = new List<Point>();
-        int pixelWidth = Math.Max(1, (int)Math.Ceiling(width));
-        int pixelHeight = Math.Max(1, (int)Math.Ceiling(height));
+        // 多采 1 像素：排版尺寸向上取整时，末排最右 / 最下一个字不会落在位图外。
+        int pixelWidth = Math.Max(1, (int)Math.Ceiling(width) + 1);
+        int pixelHeight = Math.Max(1, (int)Math.Ceiling(height) + 1);
 
         var bitmap = new RenderTargetBitmap(pixelWidth, pixelHeight, 96, 96, PixelFormats.Pbgra32);
         bitmap.Render(canvas);
@@ -334,44 +379,112 @@ internal sealed class ParticleTextLayer : FrameworkElement
         return true;
     }
 
+    /// <summary>
+    /// 首次布局还没量完就采样会漏掉最后一行；卡片长高时目标也要补。
+    /// 尺寸变化后按新画布重新采样，粒子位置保留，只换目标。
+    /// </summary>
+    void OnCanvasSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (!_playing || _sampling || _canvas is null || _resampling) return;
+
+        double width = _canvas.ActualWidth;
+        double height = _canvas.ActualHeight;
+        if (Math.Abs(width - _sampleWidth) < 0.5 && Math.Abs(height - _sampleHeight) < 0.5) return;
+
+        _resampling = true;
+        int version = _version;
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            _resampling = false;
+            if (version != _version || !_playing || _canvas is null || _sampling) return;
+
+            TextCanvas canvas = _canvas;
+            double w = canvas.ActualWidth;
+            double h = canvas.ActualHeight;
+            if (w < 2 || h < 2) return;
+            if (Math.Abs(w - _sampleWidth) < 0.5 && Math.Abs(h - _sampleHeight) < 0.5) return;
+
+            _sampling = true;
+            try
+            {
+                if (!SampleTargets(canvas, w, h, _requestedCount, _geometry, out var targets))
+                    return;
+
+                EnsureParticles(targets.Count, w, h);
+                AssignTargets(targets, _nearest);
+                _count = targets.Count;
+                _sampleWidth = w;
+                _sampleHeight = h;
+                _settleElapsedMs = 0;
+                InvalidateVisual();
+                Log.Info($"粒子文字重新采样：{_count} 点 / {w:0}×{h:0} DIP");
+            }
+            catch (Exception ex)
+            {
+                Log.Warn($"粒子文字重新采样失败: {ex.Message}");
+            }
+            finally
+            {
+                _sampling = false;
+            }
+        }), DispatcherPriority.Loaded);
+    }
+
     void OnTick(object sender, EventArgs e)
     {
         if (!_playing) return;
 
         double dt = _clock.Elapsed.TotalSeconds;
         _clock.Restart();
-        if (dt < 0.004) dt = 0.004;
-        if (dt > 0.05) dt = 0.05;
+        if (dt <= 0) return;
+        if (dt > 0.1) dt = 0.1;
+
+        // 单独的凝固计时：_clock 每帧都在重启，不能拿它判断是否到点。
+        _settleElapsedMs += dt * 1000.0;
+
+        // 指数逼近：没有速度项，也不会冲过头。factor 按本帧时长求，掉帧时一步追上。
+        double factor = 1.0 - Math.Exp(-Responsiveness * _speed * dt);
+        bool allSnapped = true;
 
         for (int i = 0; i < _count; i++)
         {
-            _vx[i] += (_tx[i] - _x[i]) * Stiffness * dt;
-            _vy[i] += (_ty[i] - _y[i]) * Stiffness * dt;
-            _vx[i] *= Damping;
-            _vy[i] *= Damping;
-            _x[i] += _vx[i] * dt;
-            _y[i] += _vy[i] * dt;
+            double dx = _tx[i] - _x[i];
+            double dy = _ty[i] - _y[i];
+            if (Math.Abs(dx) <= SnapDistance && Math.Abs(dy) <= SnapDistance)
+            {
+                _x[i] = _tx[i];
+                _y[i] = _ty[i];
+                continue;
+            }
+
+            _x[i] += dx * factor;
+            _y[i] += dy * factor;
+            allSnapped = false;
         }
 
         InvalidateVisual();
 
-        if (_clock.Elapsed.TotalMilliseconds >= _settleMs)
+        if (allSnapped || _settleElapsedMs >= _settleMs)
             FinishInstant();
     }
 
     void FinishInstant()
     {
-        // 不保留 1 秒粒子静止帧，也不做淡出：到点直接切回清晰文字。
+        // 收敛后把粒子贴到目标位置，下一次文字变化直接从干净字形附近起步。
+        for (int i = 0; i < _count; i++)
+        {
+            _x[i] = _tx[i];
+            _y[i] = _ty[i];
+        }
+
+        _version++;
+        _pending = false;
         _timer.Stop();
+        _clock.Stop();
         _playing = false;
         _count = 0;
         Visibility = Visibility.Collapsed;
-        if (_canvas is not null)
-        {
-            _canvas.BeginAnimation(UIElement.OpacityProperty, null);
-            _canvas.Opacity = 1;
-            _canvas = null;
-        }
+        ReleaseCanvas();
     }
 
     protected override void OnRender(DrawingContext dc)

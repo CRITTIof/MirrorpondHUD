@@ -221,7 +221,7 @@ public partial class SettingsWindow : Window
         ContourSmoothSlider.ValueChanged += (s, e) => UiChanged();
         ContourMinLoopSlider.ValueChanged += (s, e) => UiChanged();
         MotionProfileCombo.SelectionChanged += (s, e) => { UiChanged(); UpdateContextUiState(); };
-        TextEffectCombo.SelectionChanged += (s, e) => { UiChanged(); UpdateTextEffectUiState(); };
+        TextEffectCombo.SelectionChanged += (s, e) => { UiChanged(); UpdateContextUiState(); };
         TextParticleSizeSlider.ValueChanged += (s, e) => UiChanged();
         TextParticleCountSlider.ValueChanged += (s, e) => UiChanged();
         TextParticleSpeedSlider.ValueChanged += (s, e) => UiChanged();

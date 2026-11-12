@@ -51,7 +51,6 @@ public sealed class OverlaySurface : Border
     Color _particleColor = Colors.White;
     bool _particlePending;
     int _particleRetries;
-    DateTime _lastParticlePlayUtc = DateTime.MinValue;
 
     BitmapImage _image;
     string _imagePath;
@@ -188,7 +187,6 @@ public sealed class OverlaySurface : Border
         if (_particleLayer.SchedulePlay(_canvas, _particleColor, _lastSettings.Style))
         {
             _particleSkeleton = TextSkeleton(_canvas.Text);
-            _lastParticlePlayUtc = DateTime.UtcNow;
             _particlePending = false;
             _particleRetries = 0;
             return;
@@ -203,9 +201,7 @@ public sealed class OverlaySurface : Border
     {
         if (_lastSettings is null || _metaConfig is null) return false;
         if (!string.Equals(_metaConfig.Kind, "infotext", StringComparison.OrdinalIgnoreCase)) return false;
-        if (!CardMotion.Enabled) return false;
-        return string.Equals(Settings.NormalizeTextEffect(_lastSettings.Style.TextEffect),
-            "Particle", StringComparison.Ordinal);
+        return CardMotion.ParticleTextEnabled(_lastSettings);
     }
 
     /// <summary>纯文字卡的 M6 编号 / 页脚；富内容卡由各自控件画，传 null 即隐藏。</summary>
@@ -375,7 +371,7 @@ public sealed class OverlaySurface : Border
     public void SetText(string text, bool cursor) => SetText(text, cursor, -1);
 
     /// <summary>
-    /// 文字骨架：数字统一换成 #，空白折叠。指标 / 时钟只有数字变化时骨架不变，
+    /// 文字骨架：数字串（含小数 / 千分位）折叠成一个 #，空白折叠。指标 / 时钟只有数字变化时骨架不变，
     /// 不触发粒子重播；预设、星期、按键名这类真正的文字变化才触发。
     /// </summary>
     internal static string TextSkeleton(string text)
@@ -384,14 +380,27 @@ public sealed class OverlaySurface : Border
 
         var builder = new System.Text.StringBuilder(text.Length);
         bool lastSpace = false;
-        foreach (char c in text)
+        bool inNumber = false;
+        for (int i = 0; i < text.Length; i++)
         {
+            char c = text[i];
             if (char.IsDigit(c))
             {
-                builder.Append('#');
+                if (!inNumber) builder.Append('#');
+                inNumber = true;
                 lastSpace = false;
+                continue;
             }
-            else if (char.IsWhiteSpace(c))
+
+            // 数字中间的小数点 / 千分位跟着数字一起折叠；句末标点仍保留。
+            if (inNumber && (c == '.' || c == ',')
+                && i + 1 < text.Length && char.IsDigit(text[i + 1]))
+            {
+                continue;
+            }
+
+            inNumber = false;
+            if (char.IsWhiteSpace(c))
             {
                 if (!lastSpace) builder.Append(' ');
                 lastSpace = true;
@@ -402,7 +411,14 @@ public sealed class OverlaySurface : Border
                 lastSpace = false;
             }
         }
-        return builder.ToString();
+
+        // 速率单位在 B/s、KB/s、MB/s 之间切换只是量纲变化，不是新的文字内容；
+        // 指标卡在空闲网络附近会在 0 B/s 与 KB/s 之间抖动，不能因此反复重播粒子。
+        return builder.ToString()
+            .Replace("KB/s", "/s")
+            .Replace("MB/s", "/s")
+            .Replace("GB/s", "/s")
+            .Replace("B/s", "/s");
     }
 
     void MaybePlayParticle(string text, bool cursor)
@@ -418,10 +434,13 @@ public sealed class OverlaySurface : Border
             return;
         }
 
-        // 启动打字动画 / CLI 光标逐字刷新不播粒子，只更新骨架，避免每敲一个字炸一次。
+        // 启动打字动画 / CLI 光标逐字刷新不播粒子；打字动画与粒子互斥，
+        // 这里顺手停掉可能还在收敛的粒子，把画面交回普通文字。
         if (cursor)
         {
+            _particleLayer.Stop();
             _particleSkeleton = skeleton;
+            _particlePending = false;
             return;
         }
 
@@ -434,14 +453,10 @@ public sealed class OverlaySurface : Border
             return;
         }
 
-        // 按键卡会频繁换字；最快 1.2 秒一次，避免连续重启动画。
-        if ((DateTime.UtcNow - _lastParticlePlayUtc).TotalMilliseconds < 1200) return;
-
         _particleLayer.Margin = _canvas.Margin;
         if (_particleLayer.SchedulePlay(_canvas, _particleColor, _lastSettings.Style))
         {
             _particleSkeleton = skeleton;
-            _lastParticlePlayUtc = DateTime.UtcNow;
         }
     }
 
