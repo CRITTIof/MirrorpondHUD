@@ -312,7 +312,7 @@ internal sealed class SettingsApplier
 
         settings.Overlay.Monitor = monitor;
 
-        ClampAnchorToWorkArea(slot, settings);
+        ClampAnchorToWorkArea(slot, settings, landedX, landedY);
 
         // 松手后才重排：把本次解析出的左 / 右对齐交给协调器，其余卡片用 180ms ease-out
         // 跟过去；被拖卡按公式已经落在落点。CardMotion.Enabled=false 时直接落位。
@@ -328,7 +328,7 @@ internal sealed class SettingsApplier
     /// 拖动松手后把锚点钳在目标显示器工作区内：至少保留一部分卡片可见，
     /// 并在离边缘 16px 内吸附。只影响锚点，不改变卡片顺序 / 间距。
     /// </summary>
-    void ClampAnchorToWorkArea(CardSlot slot, Settings settings)
+    void ClampAnchorToWorkArea(CardSlot slot, Settings settings, double landedX, double landedY)
     {
         if (slot is null || slot.Window is null) return;
 
@@ -357,8 +357,10 @@ internal sealed class SettingsApplier
             // 右对齐时 settings.Overlay.X 是整叠左锚点，不是被抓卡片的左边缘。
             // 以前直接夹锚点，宽卡拖到右边会被拉回屏幕中部；这里按被抓卡片的实际矩形夹取，
             // 再把修正量回写到锚点。
-            double cardX = slot.Dialog.Overlay.X;
-            double cardY = slot.Dialog.Overlay.Y;
+            // 拖动过程中 Dialog.Overlay.X/Y 仍是旧锚点，不能用；落点由 OnCardMoved
+            // 按目标屏 WorkLeft 反算成 DIP 后传进来。多显示器时这正是旧实现会算错的地方。
+            double cardX = landedX;
+            double cardY = landedY;
             double minX = visible - cardWidth;
             double maxX = workWidth - visible;
             double minY = 0;

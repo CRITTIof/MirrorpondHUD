@@ -11,8 +11,8 @@
         UseLayoutRounding="True" SnapsToDevicePixels="True"
         Icon="/assets/logo.ico">
     <shell:WindowChrome.WindowChrome>
-        <shell:WindowChrome CaptionHeight="0" ResizeBorderThickness="6"
-                            GlassFrameThickness="0" CornerRadius="0" />
+        <shell:WindowChrome CaptionHeight="60" ResizeBorderThickness="6"
+                            GlassFrameThickness="0" CornerRadius="22" />
     </shell:WindowChrome.WindowChrome>
 
     <Window.Resources>
@@ -41,8 +41,17 @@
                             <Trigger Property="IsSelected" Value="True">
                                 <Setter TargetName="Fill" Property="Visibility" Value="Visible" />
                                 <Setter TargetName="Bar" Property="Visibility" Value="Visible" />
+                                <Setter TargetName="Bg" Property="Background" Value="Transparent" />
                                 <Setter Property="Foreground" Value="#1D1D1D" />
                             </Trigger>
+                            <MultiTrigger>
+                                <MultiTrigger.Conditions>
+                                    <Condition Property="IsMouseOver" Value="True" />
+                                    <Condition Property="IsSelected" Value="True" />
+                                </MultiTrigger.Conditions>
+                                <Setter TargetName="Bg" Property="Background" Value="Transparent" />
+                                <Setter TargetName="Fill" Property="Opacity" Value="0.88" />
+                            </MultiTrigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
@@ -55,21 +64,25 @@
             <Setter Property="Margin" Value="8,0,0,0" />
             <Setter Property="Padding" Value="0" />
             <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Background" Value="#737373" />
-            <Setter Property="Foreground" Value="White" />
+            <Setter Property="Background" Value="{DynamicResource CardBg}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderSoft}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="Circle" Background="{TemplateBinding Background}" CornerRadius="15">
+                        <Border x:Name="Circle" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="15">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Circle" Property="Background" Value="#8A8A8A" />
+                                <Setter TargetName="Circle" Property="Background" Value="{DynamicResource HoverBg}" />
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="Circle" Property="Background" Value="#5E5E5E" />
+                                <Setter TargetName="Circle" Property="Background" Value="{DynamicResource PressedBg}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -80,11 +93,11 @@
 
     <Grid x:Name="WindowRoot" Background="Transparent">
     <Border x:Name="WindowFrame" Margin="0" Background="{DynamicResource WindowBg}"
-            BorderBrush="{DynamicResource BorderSoft}" BorderThickness="1" CornerRadius="22">
+            BorderThickness="0" CornerRadius="22">
     <AdornerDecorator>
     <Grid x:Name="FrameContent" SizeChanged="FrameContentSizeChanged">
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="248" />
+            <ColumnDefinition Width="220" />
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
 
@@ -98,7 +111,7 @@
 
             <StackPanel Orientation="Horizontal" Margin="24,26,18,0" Background="Transparent"
                         MouseLeftButtonDown="TitleBarMouseDown">
-                <Image x:Name="BrandLogo" Source="/assets/logo-black.png" Width="58" Height="58"
+                <Image x:Name="BrandLogo" Source="/assets/logo-lightmode.png" Width="58" Height="58"
                        VerticalAlignment="Center" RenderOptions.BitmapScalingMode="HighQuality" />
                 <StackPanel Margin="14,0,0,0" VerticalAlignment="Center">
                     <TextBlock Text="Mirrorpond" FontSize="14" FontWeight="SemiBold"
@@ -167,7 +180,7 @@
         </Grid>
 
         <!-- 分隔线不触顶底 -->
-        <Border Grid.ColumnSpan="2" Width="2" HorizontalAlignment="Left" Margin="248,92,0,92"
+        <Border Grid.ColumnSpan="2" Width="2" HorizontalAlignment="Left" Margin="220,64,0,64"
                 Panel.ZIndex="10" Background="#737373" />
 
         <!-- 右栏：内容 + 自绘窗口按钮 + 悬浮操作区 -->
@@ -179,17 +192,19 @@
 
             <StackPanel Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Right"
                         Margin="0,22,24,0">
-                <Button Style="{StaticResource WindowCircleButton}" Click="TitleBarMinimizeClick" ToolTip="最小化">
+                <Button Style="{StaticResource WindowCircleButton}" Click="TitleBarMinimizeClick" ToolTip="最小化"
+                        shell:WindowChrome.IsHitTestVisibleInChrome="True">
                     <TextBlock Text="&#xE11C;" FontFamily="{StaticResource LucideFont}"
-                               Style="{x:Null}" FontSize="14" Foreground="White" />
+                               Style="{x:Null}" FontSize="14" Foreground="{DynamicResource TextPrimary}" />
                 </Button>
-                <Button Style="{StaticResource WindowCircleButton}" Click="TitleBarCloseClick" ToolTip="退出">
+                <Button Style="{StaticResource WindowCircleButton}" Click="TitleBarCloseClick" ToolTip="退出"
+                        shell:WindowChrome.IsHitTestVisibleInChrome="True">
                     <TextBlock Text="&#xE1B2;" FontFamily="{StaticResource LucideFont}"
-                               Style="{x:Null}" FontSize="14" Foreground="White" />
+                               Style="{x:Null}" FontSize="14" Foreground="{DynamicResource TextPrimary}" />
                 </Button>
             </StackPanel>
 
-            <TabControl x:Name="Tabs" Grid.Row="1" Margin="0,0,0,72"
+            <TabControl x:Name="Tabs" Grid.Row="1" Margin="0,0,12,72"
                         Background="Transparent" BorderThickness="0" Padding="0"
                         SelectionChanged="TabSelectionChanged">
                 <TabControl.Template>

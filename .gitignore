@@ -44,3 +44,4 @@ samples/ContourLine/
 
 # Affinity source files for logo drafts
 assets/*.af
+assets/*.af~lock~

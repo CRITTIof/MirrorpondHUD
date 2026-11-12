@@ -449,7 +449,7 @@ public partial class SettingsWindow : Window
     void UpdateBrandLogo()
     {
         if (BrandLogo is null) return;
-        string asset = _settingsDark ? "assets/logo-yellow.png" : "assets/logo-black.png";
+        string asset = _settingsDark ? "assets/logo-yellow.png" : "assets/logo-lightmode.png";
         try
         {
             var image = new BitmapImage();

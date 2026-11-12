@@ -28,11 +28,11 @@
     <SolidColorBrush x:Key="PreviewBg" Color="#0B1020" />
     <!-- 主行动按钮 / 滑块的新令牌先给暗色基线，SettingsTheme 打开后再按明暗覆盖；
          这样首次打开设置窗前也不会出现键缺失。 -->
-    <SolidColorBrush x:Key="PrimaryBg" Color="#181A0D" />
-    <SolidColorBrush x:Key="PrimaryText" Color="#F2E900" />
+    <SolidColorBrush x:Key="PrimaryBg" Color="#F2E900" />
+    <SolidColorBrush x:Key="PrimaryText" Color="#111111" />
     <SolidColorBrush x:Key="PrimaryBorder" Color="#F2E900" />
-    <SolidColorBrush x:Key="PrimaryHover" Color="#24270F" />
-    <SolidColorBrush x:Key="PrimaryPressed" Color="#303414" />
+    <SolidColorBrush x:Key="PrimaryHover" Color="#FFF34D" />
+    <SolidColorBrush x:Key="PrimaryPressed" Color="#D9D000" />
     <SolidColorBrush x:Key="SliderTrack" Color="#2A2F32" />
     <SolidColorBrush x:Key="Scrollbar" Color="#3A4145" />
     <SolidColorBrush x:Key="ScrollbarHot" Color="#5A646A" />
@@ -517,7 +517,7 @@
 
     <!-- ================= 滚动条（设置页与通用滚动区域） ================= -->
     <Style TargetType="ScrollBar">
-        <Setter Property="Width" Value="8" />
+        <Setter Property="Width" Value="10" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="Focusable" Value="False" />
         <Setter Property="Template">
@@ -531,7 +531,7 @@
                                     <Thumb.Template>
                                         <ControlTemplate TargetType="Thumb">
                                             <Border x:Name="Bd" Background="{DynamicResource Scrollbar}"
-                                                    CornerRadius="4" Margin="1" />
+                                                    CornerRadius="5" Margin="2" />
                                             <ControlTemplate.Triggers>
                                                 <Trigger Property="IsMouseOver" Value="True">
                                                     <Setter TargetName="Bd" Property="Background"
@@ -559,7 +559,7 @@
         <Style.Triggers>
             <Trigger Property="Orientation" Value="Horizontal">
                 <Setter Property="Width" Value="Auto" />
-                <Setter Property="Height" Value="8" />
+                <Setter Property="Height" Value="10" />
             </Trigger>
         </Style.Triggers>
     </Style>
