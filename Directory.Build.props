@@ -8,6 +8,8 @@
     - 输出路径 / 符号 / 文档文件统一，各 csproj 不再重复这些属性。
   -->
   <PropertyGroup>
+    <!-- X-4：版本号唯一来源；6 个 manifest 由构建生成。 -->
+    <Version>2.45.1</Version>
     <TargetFramework>net8.0-windows</TargetFramework>
     <LangVersion>12.0</LangVersion>
     <Nullable>disable</Nullable>

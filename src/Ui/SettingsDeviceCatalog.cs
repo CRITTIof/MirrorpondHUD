@@ -17,6 +17,14 @@ namespace MirrorpondHUD.Ui;
 /// </summary>
 internal static class SettingsDeviceCatalog
 {
+    /// <summary>
+    /// S-05：本轮设备枚举是否失败。失败时设置窗保留原选择，不能用回退项覆盖配置。
+    /// 由 SettingsWindow.LoadUi 在 Fill* 之前清零、之后读取。
+    /// </summary>
+    internal static bool DeviceEnumerationFailed;
+
+    internal static void BeginDeviceEnumeration() => DeviceEnumerationFailed = false;
+
     /// <summary>采样间隔候选（毫秒）；「行为」页下拉框与 ReadUi 的下标映射共用这一份。</summary>
     internal static readonly int[] RefreshOptions = { 200, 300, 500, 800, 1000, 2000 };
 
@@ -36,8 +44,11 @@ internal static class SettingsDeviceCatalog
         }
         catch (Exception ex)
         {
+            DeviceEnumerationFailed = true;
             Log.Warn($"枚举 GPU 数量失败，GPU 下拉框只显示汇总项: {ex.Message}");
         }
+        // 0 张 GPU 在正常桌面上极罕见；按“枚举不可信”处理，避免把用户的独立显卡选择改回汇总。
+        if (count <= 0) DeviceEnumerationFailed = true;
 
         var items = new List<string> { "汇总（所有 GPU）" };
         for (int i = 0; i < count; i++) items.Add($"GPU {i}（独立统计）");
@@ -75,8 +86,11 @@ internal static class SettingsDeviceCatalog
         }
         catch (Exception ex)
         {
+            DeviceEnumerationFailed = true;
             Log.Warn($"枚举网卡失败，网卡下拉框只显示自动选择: {ex.Message}");
         }
+        // 只剩“自动选择”时同样视为不可信，保留用户原选择。
+        if (items.Count <= 1) DeviceEnumerationFailed = true;
 
         comboIndex = 0;
         if (!string.IsNullOrEmpty(current))

@@ -43,6 +43,24 @@ public sealed class TextCanvas : FrameworkElement
     double _outlineThickness = 1.2;
 
     double _fixedWidth;
+    double _maxTextWidth;
+
+    /// <summary>
+    /// T-7：超宽时按省略号截断。0 = 不限制；默认取工作区宽度，避免长文本把卡片撑出屏。
+    /// </summary>
+    public double MaxTextWidth
+    {
+        get => _maxTextWidth;
+        set
+        {
+            double next = value > 0 ? value : 0;
+            if (Math.Abs(next - _maxTextWidth) < 0.01) return;
+            _maxTextWidth = next;
+            InvalidateLayoutCache();
+            InvalidateMeasure();
+            InvalidateVisual();
+        }
+    }
 
     bool _cursorVisible;
     string _cursorStyle = "Block";
@@ -90,6 +108,9 @@ public sealed class TextCanvas : FrameworkElement
 
     public TextCanvas()
     {
+        // T-7：默认不超过主屏工作区的 97%，避免单行超长内容把卡片撑出屏幕。
+        // 多显示器下可由宿主再按目标屏覆盖。
+        MaxTextWidth = Math.Max(160, SystemParameters.WorkArea.Width * 0.97);
         SnapsToDevicePixels = true;
         UseLayoutRounding = true;
 
@@ -446,6 +467,7 @@ public sealed class TextCanvas : FrameworkElement
         width = Math.Max(1, width);
 
         if (_fixedWidth > 0) width = _fixedWidth;
+        if (_maxTextWidth > 0) width = Math.Min(width, _maxTextWidth);
 
         // 只增不减：数据从 "5%" 变成 "100%" 时窗口会长大一次，
         // 之后即使数值变短也不会缩回去，位置就不会来回跳。
@@ -455,6 +477,7 @@ public sealed class TextCanvas : FrameworkElement
             height = Math.Max(height, _stableHeight);
         }
 
+        if (_maxTextWidth > 0) width = Math.Min(width, _maxTextWidth);
         _stableWidth = width;
         _stableHeight = height;
         _hasStable = true;
@@ -853,11 +876,16 @@ public sealed class TextCanvas : FrameworkElement
         // 整块位置必须跟对齐方式走：左对齐时贴左、居中时居中、右对齐时贴右。
         // 之前无论选哪种都先把整块居中，导致「左对齐 / 右对齐」只剩下多行行宽差，
         // 单行时看起来完全没生效。
-        double blockWidth = layout.Width;
+        // T-7：超宽时把对齐块夹到上限，并在下面 push clip + 画省略号。
+        bool clipped = _maxTextWidth > 0 && layout.Width > _maxTextWidth;
+        double blockWidth = clipped ? _maxTextWidth : layout.Width;
 
         double blockHeight = built.Count * lineHeight;
         double originX = AlignBlockX(blockWidth);
         double originY = Math.Max(0, (ActualHeight - blockHeight) / 2);
+
+        if (clipped)
+            dc.PushClip(new RectangleGeometry(new Rect(0, 0, _maxTextWidth, ActualHeight)));
 
         for (int i = 0; i < built.Count; i++)
         {
@@ -882,6 +910,16 @@ public sealed class TextCanvas : FrameworkElement
                 x += run.Width;
                 runStart += run.Source.Length;
             }
+        }
+
+        if (clipped)
+        {
+            dc.Pop();
+            TextRun ellipsis = CreateRun("…", RunKind.Text);
+            double x = Math.Max(0, _maxTextWidth - ellipsis.Width);
+            double y = originY + Math.Max(0, built.Count - 1) * lineHeight;
+            double baseY = y + (_refBaseline - ellipsis.Text.Baseline);
+            DrawLine(dc, ellipsis.Text, x, baseY);
         }
 
         if (drawCursor && _cursorVisible)

@@ -213,6 +213,9 @@ internal static class CardPluginLoader
     }
 
     /// <summary>扫描插件目录并返回成功实例化的句柄；失败只记录，不阻止宿主启动。</summary>
+    /// <summary>P-9：最近一次加载报告；设置窗据此显示“有插件没加载”的横幅。</summary>
+    internal static CardPluginLoadReport LastLoadReport { get; private set; }
+
     public static CardPluginLoadReport LoadAll()
     {
         var handles = new List<CardPluginHandle>();
@@ -288,7 +291,9 @@ internal static class CardPluginLoader
         else
             Log.Info($"运行时插件加载完成：成功 {handles.Count} 个，失败 {errors.Count} 个{(handles.Count == 0 ? "" : $"（{string.Join("、", handles.ConvertAll(h => h.Id).ToArray())}）")}");
 
-        return new CardPluginLoadReport(handles, errors);
+        var report = new CardPluginLoadReport(handles, errors);
+        LastLoadReport = report;
+        return report;
     }
 
     static IEnumerable<string> ExistingRoots()

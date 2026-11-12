@@ -219,10 +219,23 @@
                 <Grid Margin="18,14,18,14">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
-                    <Grid Grid.Row="0" Margin="0,0,0,12">
+                    <!-- P-9：插件加载失败的可见入口（设置页顶部横幅）。 -->
+                    <Border x:Name="PluginErrorBanner" Grid.Row="0" Visibility="Collapsed"
+                            Background="{DynamicResource BadgeBg}" BorderBrush="{DynamicResource Danger}"
+                            BorderThickness="1" CornerRadius="6" Padding="10,7" Margin="0,0,0,10">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE1C4;" FontFamily="{StaticResource LucideFont}"
+                                       Foreground="{DynamicResource Danger}" VerticalAlignment="Center" />
+                            <TextBlock x:Name="PluginErrorText" Margin="8,0,0,0" TextWrapping="Wrap"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Border>
+
+                    <Grid Grid.Row="1" Margin="0,0,0,12">
                         <StackPanel Orientation="Horizontal">
                             <Button x:Name="AddCardButton" Click="AddCardClick" Padding="12,6"
                                     ToolTip="选择一种卡片添加到列表末尾">
@@ -242,7 +255,7 @@
                         </StackPanel>
                     </Grid>
 
-                    <Grid Grid.Row="1">
+                    <Grid Grid.Row="2">
                         <ScrollViewer x:Name="CardScroll" VerticalScrollBarVisibility="Auto"
                                       HorizontalScrollBarVisibility="Disabled" Padding="0,0,6,0">
                             <ItemsControl x:Name="CardList"

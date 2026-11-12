@@ -23,6 +23,9 @@ internal static class SelfTest
 {
     const byte VkF13 = 0x7C;
 
+    /// <summary>C-17：隔离模式只跑不依赖真实桌面 / 全局输入的段，避免读写用户配置。</summary>
+    internal static bool Isolated;
+
     [StructLayout(LayoutKind.Sequential)]
     struct KeybdInput
     {
@@ -123,56 +126,62 @@ internal static class SelfTest
             Log.Error("自检采样异常", ex);
         }
 
-        try
+        if (!Isolated)
         {
-            var history = new KeyHistory();
-            history.Configure(14, 3);
-
-            var hook = new KeyboardHook(history) { AllowInjected = true };
-            bool ok = hook.Start();
-
-            if (ok)
+            try
             {
-                Thread.Sleep(250);
-                SendKey(VkF13);
-                Thread.Sleep(600);
+                var history = new KeyHistory();
+                history.Configure(14, 3);
+
+                var hook = new KeyboardHook(history) { AllowInjected = true };
+                bool ok = hook.Start();
+
+                if (ok)
+                {
+                    Thread.Sleep(250);
+                    SendKey(VkF13);
+                    Thread.Sleep(600);
+                }
+
+                bool captured = history.Total > 0;
+                hook.Dispose();
+
+                if (!ok) failures++;
+
+                Fix(sb, "键盘钩子", !ok
+                    ? "安装失败"
+                    : captured
+                        ? $"正常（回环捕获到 {history.Render()}）"
+                        : "已安装；本环境未放行模拟按键，请用真实按键确认");
             }
-
-            bool captured = history.Total > 0;
-            hook.Dispose();
-
-            if (!ok) failures++;
-
-            Fix(sb, "键盘钩子", !ok
-                ? "安装失败"
-                : captured
-                    ? $"正常（回环捕获到 {history.Render()}）"
-                    : "已安装；本环境未放行模拟按键，请用真实按键确认");
-        }
-        catch (Exception ex)
-        {
-            failures++;
-            Log.Error("自检键盘钩子异常", ex);
-        }
-
-        try
-        {
-            using (var hotkeys = new HotkeyManager())
+            catch (Exception ex)
             {
-                bool a = RegisterIfSet(hotkeys, HotkeyManager.ActionToggleOverlay, settings.Hotkeys.ToggleOverlay);
-                bool b = RegisterIfSet(hotkeys, HotkeyManager.ActionOpenSettings, settings.Hotkeys.OpenSettings);
-                bool c = RegisterIfSet(hotkeys, HotkeyManager.ActionToggleLock, settings.Hotkeys.ToggleLock);
-                string commandHotkey = CommandHotkey(settings);
-                bool d = RegisterIfSet(hotkeys, HotkeyManager.CardAction("selftest-command"), commandHotkey);
-
-                Fix(sb, "热键",
-                    $"{Show(settings.Hotkeys.ToggleOverlay, a)}  {Show(commandHotkey, d)}  {Show(settings.Hotkeys.OpenSettings, b)}  {Show(settings.Hotkeys.ToggleLock, c)}");
+                failures++;
+                Log.Error("自检键盘钩子异常", ex);
             }
         }
-        catch (Exception ex)
+
+        if (!Isolated)
         {
-            failures++;
-            Log.Error("自检热键异常", ex);
+            try
+            {
+                using (var hotkeys = new HotkeyManager())
+                {
+                    bool a = RegisterIfSet(hotkeys, HotkeyManager.ActionToggleOverlay, settings.Hotkeys.ToggleOverlay);
+                    bool b = RegisterIfSet(hotkeys, HotkeyManager.ActionOpenSettings, settings.Hotkeys.OpenSettings);
+                    bool c = RegisterIfSet(hotkeys, HotkeyManager.ActionToggleLock, settings.Hotkeys.ToggleLock);
+                    string commandHotkey = CommandHotkey(settings);
+                    bool d = RegisterIfSet(hotkeys, HotkeyManager.CardAction("selftest-command"), commandHotkey);
+
+                    Fix(sb, "热键",
+                        $"{Show(settings.Hotkeys.ToggleOverlay, a)}  {Show(commandHotkey, d)}  {Show(settings.Hotkeys.OpenSettings, b)}  {Show(settings.Hotkeys.ToggleLock, c)}");
+                }
+            }
+            catch (Exception ex)
+            {
+                failures++;
+                Log.Error("自检热键异常", ex);
+            }
         }
 
         try
@@ -875,6 +884,20 @@ internal static class SelfTest
                           && catalog.TrueForAll(p => p.Document is not null && !string.IsNullOrWhiteSpace(p.Name));
             if (!themeCatalogOk)
                 Log.Warn($"内置主题数量不足或解析失败: {catalog.Count}");
+
+            // X-10：SettingsTheme 的每个键都必须在 Theme.xaml 里存在，否则切明暗会丢色。
+            bool paletteOk = true;
+            if (Application.Current is not null)
+            {
+                foreach (string key in SettingsTheme.PaletteKeys)
+                {
+                    if (Application.Current.TryFindResource(key) is SolidColorBrush) continue;
+                    paletteOk = false;
+                    Log.Warn($"主题调色板键在 Theme.xaml 中缺失: {key}");
+                    break;
+                }
+            }
+            themeCatalogOk = themeCatalogOk && paletteOk;
         }
         catch (Exception ex)
         {

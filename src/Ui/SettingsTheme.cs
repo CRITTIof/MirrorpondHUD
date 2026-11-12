@@ -50,6 +50,9 @@ internal static class SettingsTheme
         ["ScrollbarHot"] = (Rgb(0x5A, 0x64, 0x6A), Rgb(0x9C, 0x9C, 0x91))
     };
 
+    /// <summary>X-10：调色板键集合；自检用它断言 Theme.xaml 没有漏键。</summary>
+    internal static IEnumerable<string> PaletteKeys => Palette.Keys;
+
     public static bool IsDark(string value) =>
         string.Equals(Settings.NormalizeSettingsTheme(value), "Dark", StringComparison.OrdinalIgnoreCase);
 
@@ -61,8 +64,12 @@ internal static class SettingsTheme
         foreach (KeyValuePair<string, (Color Dark, Color Light)> pair in Palette)
         {
             Color color = dark ? pair.Value.Dark : pair.Value.Light;
-            // 颜色全部走 DynamicResource；这里直接换新画刷，已打开的控件会即时刷新。
-            resources[pair.Key] = new SolidColorBrush(color);
+            // X-10：优先改已有画刷的 Color —— StaticResource 与 DynamicResource 消费者都会刷新。
+            // 只有资源缺失或画刷被冻结时才替换实例。
+            if (resources[pair.Key] is SolidColorBrush brush && !brush.IsFrozen)
+                brush.Color = color;
+            else
+                resources[pair.Key] = new SolidColorBrush(color);
         }
 
         // 主题缩略图衬底允许用户单独调；非法值已在 Settings.Normalize 兜底，

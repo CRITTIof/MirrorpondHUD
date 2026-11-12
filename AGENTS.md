@@ -16,6 +16,9 @@
 ```bat
 dotnet build -c Release          :: 必须做到 0 警告 0 错误
 bin\Release\MirrorpondHUD.exe --selftest   :: 自检，退出码=失败数，必须为 0
+bin\Release\MirrorpondHUD.exe --selftest --isolated  :: 隔离自检（临时配置、跳过输入注入）
+dotnet test tests\MirrorpondHUD.Tests\MirrorpondHUD.Tests.csproj -c Release  :: 纯逻辑单元测试
+dotnet run --project tests\TestRunner\TestRunner.csproj -c Release          :: 受限环境的进程内测试入口
 run.bat                          :: 编译（如需要）并从 bin\Release 直接运行
 build.bat / publish.bat          :: 构建 / 发布（publish 默认单文件）
 ```
@@ -34,6 +37,7 @@ build.bat / publish.bat          :: 构建 / 发布（publish 默认单文件）
 | `src/Contracts/**` | `MirrorpondHUD.Contracts.csproj` | 契约与基础设施：`Settings`、`Json`、`Log`、`LogThrottle`、ConfigStore 相关契约、各 `ICard*` 接口 |
 | `src/UiKit/**` | `MirrorpondHUD.UiKit.csproj` | 主题化控件库 + `Media`（FfmpegPlayer / WaveOutPlayer / VideoWindow / CardMediaView） |
 | `src/Plugins/<Name>/**` | 各自的 `plugin.csproj` | **6 张内置卡本身就是运行时 DLL 插件**（`builtin.*`），与用户插件走同一条 `CardPluginLoader` 路径 |
+| `tests/**` | `MirrorpondHUD.Tests` + `TestRunner` | 纯逻辑 xUnit 测试；不编进宿主，主程序仍零 NuGet 依赖 |
 
 约束：
 - 契约程序集被宿主、UiKit、所有插件引用；它**不得**反向引用任何一方。
@@ -103,6 +107,8 @@ build.bat / publish.bat          :: 构建 / 发布（publish 默认单文件）
 ## 7. 自检（`src/SelfTest.cs`）
 
 - `SelfTest.Run()` 汇总各段结论，失败数即进程退出码。各段独立 try，异常也算失败。
+- 纯逻辑（JSON / 设置加载 / 模板 / 原子写 / 主题解析）优先写 `tests/MirrorpondHUD.Tests`；自检只承担环境与互操作冒烟。
+- `--selftest --isolated` 用于不碰用户配置的回归：配置/卡片状态走临时目录，跳过 SendInput 与全局热键。
 - 给存储/解析/竞态类改动**加对应断言**（已有范例：设置损坏恢复、主题校验、HigherSchema 只读、DPAPI Key 往返）。新增"上次修过 vX 就可能回退"的检查优先落在这里，而不是只靠手工验证。
 - 颜色严格 7 位断言在 `validateOk` 段（`Settings.IsHexColor` 系列）；主题解析错误文案改动要同步检查相关断言。
 
@@ -115,7 +121,7 @@ build.bat / publish.bat          :: 构建 / 发布（publish 默认单文件）
 | manifest / 插件 API | `DLL-CARD-PLUGIN-GUIDE.md` |
 | 主题文件字段与校验规则 | `docs/theme-system.md` |
 | 设置 / 卡片架构 | `docs/cards-architecture.md`、`docs/runtime-card-extensions.md` |
-| 大版本行为变化 | `docs/version-history.md`（版本号也在各 csproj 的 `<Version>`，一起升） |
+| 大版本行为变化 | `docs/version-history.md`（版本号唯一来源是 `Directory.Build.props` 的 `<Version>`；6 个 manifest 由 `tools/write-manifests.ps1` 在构建时生成，不要手改 version） |
 
 ## 9. 提交纪律
 

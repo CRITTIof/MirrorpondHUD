@@ -29,9 +29,18 @@ internal sealed class NvidiaSmi
     DateTime _nextTryUtc = DateTime.UtcNow.AddSeconds(6);
     NvidiaSample _current = new();
     Task _probe;
+    // P-18：多卡时按设置里的 GpuIndex 选行；-1 = 汇总（保持旧行为，取第一张）。
+    int _gpuIndex = -1;
+    bool _indexWarned;
 
     // §6：失败日志节流（状态转移记一条 + 60s 最小间隔的「仍失败」，恢复时记一条）。
     readonly LogThrottle _probeThrottle = new("nvidia-smi 采样", 60000);
+
+    public int GpuIndex
+    {
+        get { lock (_gate) { return _gpuIndex; } }
+        set { lock (_gate) { _gpuIndex = value; _indexWarned = false; } }
+    }
 
     public NvidiaSample Current
     {
@@ -118,7 +127,20 @@ internal sealed class NvidiaSmi
     {
         if (string.IsNullOrWhiteSpace(text)) return null;
 
-        string line = text.Split('\n')[0].Trim().Trim('\r');
+        // P-18：按 GpuIndex 选择对应的 nvidia-smi 行；越界时回落第一行并告警一次。
+        string[] lines = text.Split('\n');
+        int index = _gpuIndex;
+        if (index < 0 || index >= lines.Length)
+        {
+            if (index >= 0 && !_indexWarned)
+            {
+                _indexWarned = true;
+                Log.Warn($"nvidia-smi 没有第 {index} 张卡（实际 {lines.Length} 行），已回落第一张");
+            }
+            index = 0;
+        }
+
+        string line = lines[index].Trim().Trim('\r');
         if (line.Length == 0) return null;
 
         string[] parts = line.Split(',');

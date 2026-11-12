@@ -13,7 +13,6 @@
     <PlatformTarget Condition="'$(RuntimeIdentifier)' == ''">x64</PlatformTarget>
     <PlatformTarget Condition="'$(RuntimeIdentifier)' == 'win-arm64'">arm64</PlatformTarget>
     <NoWarn>$(NoWarn);WFAC010</NoWarn>
-    <Version>2.45.1</Version>
     <Product>镜潭一览 (MirrorpondHUD)</Product>
     <AssemblyTitle>MirrorpondHUD</AssemblyTitle>
     <SatelliteResourceLanguages>en;zh-Hans</SatelliteResourceLanguages>
@@ -26,6 +25,10 @@
     <Compile Remove="samples\**\*.cs" />
     <Page Remove="samples\**\*.xaml" />
     <None Remove="samples\**\*" />
+    <!-- 测试工程独立构建，不编进宿主。 -->
+    <Compile Remove="tests\**\*.cs" />
+    <Page Remove="tests\**\*.xaml" />
+    <None Remove="tests\**\*" />
     <!-- 契约 / DTO 已在独立程序集 MirrorpondHUD.Contracts 里。 -->
     <Compile Remove="src\Contracts\**\*.cs" />
     <Page Remove="src\Contracts\**\*.xaml" />
@@ -38,6 +41,13 @@
     <Compile Remove="src\Plugins\**\*.cs" />
     <Page Remove="src\Plugins\**\*.xaml" />
     <None Remove="src\Plugins\**\*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- X-7：测试工程访问宿主内部纯逻辑（AtomicFile / SettingsTheme / CardStateStore）。 -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>MirrorpondHUD.Tests</_Parameter1>
+    </AssemblyAttribute>
   </ItemGroup>
 
   <ItemGroup>
@@ -77,30 +87,21 @@
     <BundledCardPluginFile Include="src\Plugins\DropStation\bin\$(Configuration)\MirrorpondHUD.Cards.DropStation.dll">
       <PluginId>builtin.dropstation</PluginId>
     </BundledCardPluginFile>
-    <BundledCardPluginManifest Include="src\Plugins\InfoText\manifest.json"><PluginId>builtin.infotext</PluginId></BundledCardPluginManifest>
-    <BundledCardPluginManifest Include="src\Plugins\Buttons\manifest.json"><PluginId>builtin.buttons</PluginId></BundledCardPluginManifest>
-    <BundledCardPluginManifest Include="src\Plugins\Command\manifest.json"><PluginId>builtin.command</PluginId></BundledCardPluginManifest>
-    <BundledCardPluginManifest Include="src\Plugins\Chat\manifest.json"><PluginId>builtin.chat</PluginId></BundledCardPluginManifest>
-    <BundledCardPluginManifest Include="src\Plugins\Media\manifest.json"><PluginId>builtin.media</PluginId></BundledCardPluginManifest>
-    <BundledCardPluginManifest Include="src\Plugins\DropStation\manifest.json"><PluginId>builtin.dropstation</PluginId></BundledCardPluginManifest>
   </ItemGroup>
 
   <Target Name="CopyBundledCardPlugins" AfterTargets="Build" Condition="'$(DesignTimeBuild)' != 'true'">
     <Copy SourceFiles="@(BundledCardPluginFile)"
           DestinationFiles="@(BundledCardPluginFile->'$(OutDir)plugins\cards\%(PluginId)\%(Filename)%(Extension)')"
           SkipUnchangedFiles="true" />
-    <Copy SourceFiles="@(BundledCardPluginManifest)"
-          DestinationFiles="@(BundledCardPluginManifest->'$(OutDir)plugins\cards\%(PluginId)\manifest.json')"
-          SkipUnchangedFiles="true" />
+    <!-- X-4：manifest 的 version 从 $(Version) 生成，源码 manifest 不再手写版本。 -->
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\tools\write-manifests.ps1&quot; -Version &quot;$(Version)&quot; -Source &quot;$(MSBuildProjectDirectory)\src\Plugins&quot; -Dest &quot;$(OutDir)plugins\cards&quot;" />
   </Target>
 
   <Target Name="CopyBundledCardPluginsToPublish" AfterTargets="Publish" Condition="'$(PublishDir)' != ''">
     <Copy SourceFiles="@(BundledCardPluginFile)"
           DestinationFiles="@(BundledCardPluginFile->'$(PublishDir)plugins\cards\%(PluginId)\%(Filename)%(Extension)')"
           SkipUnchangedFiles="true" />
-    <Copy SourceFiles="@(BundledCardPluginManifest)"
-          DestinationFiles="@(BundledCardPluginManifest->'$(PublishDir)plugins\cards\%(PluginId)\manifest.json')"
-          SkipUnchangedFiles="true" />
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\tools\write-manifests.ps1&quot; -Version &quot;$(Version)&quot; -Source &quot;$(MSBuildProjectDirectory)\src\Plugins&quot; -Dest &quot;$(PublishDir)plugins\cards&quot;" />
   </Target>
 
   <ItemGroup>

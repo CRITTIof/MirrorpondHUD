@@ -123,11 +123,19 @@ public partial class SettingsWindow
             RepeatBox.Text = s.Data.RepeatThreshold.ToString(CultureInfo.InvariantCulture);
             NvidiaCheck.IsChecked = s.Data.ShowNvidia;
 
-            FillGpuCombo(s.Data.GpuIndex);
+            int deviceGpuIndex = s.Data.GpuIndex;
+            string deviceAdapter = s.Data.NetworkAdapter;
+            SettingsDeviceCatalog.BeginDeviceEnumeration();
+            FillGpuCombo(deviceGpuIndex);
             FillRefreshCombo(s.Behavior.RefreshMs);
             FillNvidiaCombo(s.Data.NvidiaIntervalMs);
-            FillAdapterCombo(s.Data.NetworkAdapter);
+            FillAdapterCombo(deviceAdapter);
             FillDrives(s.Data.DiskDrives);
+            _deviceGpuIndex = deviceGpuIndex;
+            _deviceAdapter = deviceAdapter;
+            _devicesUnreliable = SettingsDeviceCatalog.DeviceEnumerationFailed;
+            if (_devicesUnreliable)
+                StatusText.Text = "设备列表暂不可用：本次保存会保留原来的 GPU / 网卡选择。";
             FillMonitors(s.Overlay.Monitor);
 
             TopmostCheck.IsChecked = s.Overlay.Topmost;
@@ -166,6 +174,26 @@ public partial class SettingsWindow
             PathText.Text = ConfigStore.Path;
             StatusText.Text = "";
 
+            // P-9：插件加载失败必须有一个用户能看到的入口，而不是只在日志里。
+            CardPluginLoadReport pluginReport = CardPluginLoader.LastLoadReport;
+            if (pluginReport is not null && pluginReport.HasErrors)
+            {
+                PluginErrorBanner.Visibility = System.Windows.Visibility.Visible;
+                string preview = "";
+                int shown = 0;
+                foreach (string error in pluginReport.Errors)
+                {
+                    if (shown >= 3) break;
+                    preview += (shown == 0 ? "" : "；") + error;
+                    shown++;
+                }
+                PluginErrorText.Text = $"有 {pluginReport.Errors.Count} 个卡片插件加载失败：{preview}（详见日志）";
+            }
+            else
+            {
+                PluginErrorBanner.Visibility = System.Windows.Visibility.Collapsed;
+            }
+
             // 只读加载（更高版本 / 本次读取失败）时，整个会话内的保存都会被 ConfigStore 拒绝。
             // 必须在进入界面时就说明并禁用保存，否则用户会改完一整轮才发现全丢。
             if (ConfigStore.LastLoadReadOnly)
@@ -193,6 +221,11 @@ public partial class SettingsWindow
         CaptureCleanSnapshot();
         return true;
     }
+
+    // S-05：枚举失败时用于回写的原值（LoadUi 记录、ReadUi 使用）。
+    int _deviceGpuIndex;
+    string _deviceAdapter;
+    bool _devicesUnreliable;
 
     // ==================== 下拉框取值辅助（LoadUi / ReadUi 使用） ====================
 
@@ -518,15 +551,19 @@ public partial class SettingsWindow
             s.Data.MaxKeyChars = Math.Max(4, ParseInt(MaxKeyCharsBox.Text, s.Data.MaxKeyChars));
             s.Data.RepeatThreshold = Math.Max(1, ParseInt(RepeatBox.Text, s.Data.RepeatThreshold));
             s.Data.ShowNvidia = NvidiaCheck.IsChecked == true;
-            s.Data.GpuIndex = Math.Max(0, GpuCombo.SelectedIndex) - 1;
+            s.Data.GpuIndex = _devicesUnreliable
+                ? _deviceGpuIndex
+                : Math.Max(0, GpuCombo.SelectedIndex) - 1;
 
             if (NvidiaIntervalCombo.SelectedIndex >= 0 &&
                 NvidiaIntervalCombo.SelectedIndex < SettingsDeviceCatalog.NvidiaOptions.Length)
                 s.Data.NvidiaIntervalMs = SettingsDeviceCatalog.NvidiaOptions[NvidiaIntervalCombo.SelectedIndex];
 
-            s.Data.NetworkAdapter = AdapterCombo.SelectedIndex <= 0
-                ? ""
-                : (AdapterCombo.SelectedItem as string ?? "");
+            s.Data.NetworkAdapter = _devicesUnreliable
+                ? _deviceAdapter
+                : (AdapterCombo.SelectedIndex <= 0
+                    ? ""
+                    : (AdapterCombo.SelectedItem as string ?? ""));
 
             var selectedDrives = new List<string>();
             var allDrives = new List<string>();

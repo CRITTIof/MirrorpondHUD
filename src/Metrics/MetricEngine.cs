@@ -100,6 +100,8 @@ public sealed class MetricEngine : IDisposable
     public void UpdateSettings(Settings settings)
     {
         _settings = settings;
+        // P-18：多卡时把设置里的 GPU 选择交给 nvidia-smi 解析。
+        _nvidia.GpuIndex = settings is null ? -1 : settings.Data.GpuIndex;
 
         // P1-9：UI 线程（OverlayController 应用设置）只投递「配置已变」标志。
         // 适配器解析、PDH 读取全部留在采样线程，避免 UI 与采样线程并发碰同一份

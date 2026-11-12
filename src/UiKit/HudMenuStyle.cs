@@ -15,10 +15,26 @@ namespace MirrorpondHUD.Ui.Controls;
 /// </summary>
 public static class HudMenuStyle
 {
-    /// <summary>亮色菜单令牌（也是全局 Theme.xaml 的默认值）。</summary>
-    static readonly (Color Bg, Color Text, Color Border, Color Hover, Color Muted) Light =
-        (Rgb(0xFF, 0xFF, 0xFF), Rgb(0x11, 0x11, 0x11), Rgb(0xD8, 0xD8, 0xD0),
-         Rgb(0xF0, 0xF0, 0xE8), Rgb(0x55, 0x55, 0x55));
+    /// <summary>
+    /// X-10：亮色菜单令牌直接取 Theme.xaml 的 Menu* 画刷，避免再维护一份重复颜色。
+    /// 资源未加载（设计期 / 单测）时回退到原默认值。
+    /// </summary>
+    static (Color Bg, Color Text, Color Border, Color Hover, Color Muted) LightPalette()
+    {
+        if (Application.Current is not null)
+        {
+            SolidColorBrush bg = Application.Current.TryFindResource("MenuBg") as SolidColorBrush;
+            SolidColorBrush text = Application.Current.TryFindResource("MenuText") as SolidColorBrush;
+            SolidColorBrush border = Application.Current.TryFindResource("MenuBorder") as SolidColorBrush;
+            SolidColorBrush hover = Application.Current.TryFindResource("MenuHover") as SolidColorBrush;
+            SolidColorBrush muted = Application.Current.TryFindResource("MenuMuted") as SolidColorBrush;
+            if (bg is not null && text is not null && border is not null && hover is not null && muted is not null)
+                return (bg.Color, text.Color, border.Color, hover.Color, muted.Color);
+        }
+
+        return (Rgb(0xFF, 0xFF, 0xFF), Rgb(0x11, 0x11, 0x11), Rgb(0xD8, 0xD8, 0xD0),
+                Rgb(0xF0, 0xF0, 0xE8), Rgb(0x55, 0x55, 0x55));
+    }
 
     /// <summary>暗色菜单令牌：黑底白字，和设置窗暗色页面同一套 Endfield 基调。</summary>
     static readonly (Color Bg, Color Text, Color Border, Color Hover, Color Muted) Dark =
@@ -44,7 +60,7 @@ public static class HudMenuStyle
         }
 
         // DynamicResource 在菜单自己的资源里先命中；后套 Style 时菜单背景 / 文字会立即取到。
-        ApplyPalette(menu, dark ? Dark : Light);
+        ApplyPalette(menu, dark ? Dark : LightPalette());
 
         // 更早一层：菜单项一加进来就把字符串标题换成带本地 MenuText 的 TextBlock。
         // 这样不依赖 Popup 打开后的视觉树，也不会先闪一帧全局白字。

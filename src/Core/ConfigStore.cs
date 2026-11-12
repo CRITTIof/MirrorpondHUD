@@ -35,10 +35,29 @@ public static class ConfigStore
     /// </summary>
     public static string LastSaveError { get; private set; } = "";
 
+    // C-17：--selftest --isolated 把配置 / 卡片状态重定向到临时目录，不碰用户文件。
+    static string _overrideDirectory;
+
+    internal static void SetDirectoryOverride(string directory)
+    {
+        _overrideDirectory = string.IsNullOrWhiteSpace(directory) ? null : directory;
+        _path = null;
+    }
+
+    internal static void ClearDirectoryOverride() => SetDirectoryOverride(null);
+
     public static string Path
     {
         get
         {
+            if (_overrideDirectory is not null)
+            {
+                if (_path is not null) return _path;
+                Directory.CreateDirectory(_overrideDirectory);
+                _path = System.IO.Path.Combine(_overrideDirectory, "settings.json");
+                return _path;
+            }
+
             if (_path is not null) return _path;
 
             string portable = System.IO.Path.Combine(AppContext.BaseDirectory, "settings.json");

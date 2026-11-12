@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Windows.Threading;
 using MirrorpondHUD.Core;
 
@@ -93,9 +94,30 @@ internal static class CommandLineMode
 
         if (args.Contains("--selftest"))
         {
-            // SelfTest 自己负责收集失败并返回失败数，不在这里包 finally：
-            // 让它内部未捕获的异常走 App 的初始化失败路径。
-            exitCode = SelfTest.Run();
+            // C-17：--isolated 把配置 / 卡片状态重定向到临时目录，并跳过键盘注入与全局热键。
+            bool isolated = args.Remove("--isolated");
+            string isolatedDir = null;
+            if (isolated)
+            {
+                isolatedDir = Path.Combine(Path.GetTempPath(), $"mhud-selftest-{Guid.NewGuid():N}");
+                Directory.CreateDirectory(isolatedDir);
+                ConfigStore.SetDirectoryOverride(isolatedDir);
+                SelfTest.Isolated = true;
+                Log.Info($"自检隔离模式：配置与卡片状态重定向到 {isolatedDir}");
+            }
+
+            // SelfTest 自己负责收集失败并返回失败数；临时目录在返回后清理。
+            try { exitCode = SelfTest.Run(); }
+            finally
+            {
+                SelfTest.Isolated = false;
+                ConfigStore.ClearDirectoryOverride();
+                if (isolatedDir is not null)
+                {
+                    try { Directory.Delete(isolatedDir, true); }
+                    catch (Exception ex) { Log.Warn($"清理自检临时目录失败: {ex.Message}"); }
+                }
+            }
             return true;
         }
 

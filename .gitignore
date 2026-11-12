@@ -41,3 +41,6 @@ samples/ContourLine/
 # Affinity Logo资源文件
 assets/*.af
 assets/*.af~lock~
+
+# 测试文件
+tests/
