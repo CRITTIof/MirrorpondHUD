@@ -31,6 +31,18 @@ internal sealed class ParticleTextLayer : FrameworkElement
     const double BaseSettleMs = 220.0;
     const double Responsiveness = 24.0;
 
+    /// <summary>T-5：候选点上限。超过就只取前 N 个（后面还要随机洗牌，不会偏向某一行）。</summary>
+    const int MaxCandidatePoints = 12000;
+
+    /// <summary>
+    /// T-5：单次采样的像素预算。4K 卡片（约 1200×900 DIP）在 100% 下是 108 万像素，
+    /// 还在预算内；再大的卡按面积比降采样，避免一次采样就拷出十几 MB 的字节数组。
+    /// </summary>
+    const long MaxSamplePixels = 2_000_000;
+
+    /// <summary>RTB 每像素 4 字节（Pbgra32）。</summary>
+    const int BytesPerPixel = 4;
+
     readonly DispatcherTimer _timer;
     readonly Stopwatch _clock = new();
     readonly Random _random = new(20261111);
@@ -39,6 +51,27 @@ internal sealed class ParticleTextLayer : FrameworkElement
     double[] _y = Array.Empty<double>();
     double[] _tx = Array.Empty<double>();
     double[] _ty = Array.Empty<double>();
+
+    // —— T-5：采样缓冲按尺寸缓存，跨轮复用 ——
+    /// <summary>采样用的离屏位图；尺寸变化或有降采样时才重建。</summary>
+    RenderTargetBitmap _rtb;
+    int _rtbPixelWidth;
+    int _rtbPixelHeight;
+    int _rtbStride;
+    /// <summary>实际"像素 / DIP"比例（1.0 = 原尺寸；小于 1 表示触发了像素预算降级）。</summary>
+    double _rtbScale = 1.0;
+    /// <summary>像素缓冲：只增不减，尺寸来回变时不反复分配大数组。</summary>
+    byte[] _pixels = Array.Empty<byte>();
+    readonly DrawingVisual _sampleVisual = new();
+    readonly List<Point> _candidates = new(MaxCandidatePoints);
+    readonly List<Point> _targets = new();
+    readonly HashSet<int> _hideSet = new();
+    int[] _order = Array.Empty<int>();
+    int[] _particleOrder = Array.Empty<int>();
+    List<Point> _sortTargets;
+    readonly LogThrottle _sampleLog = new("粒子采样降级", 30000);
+    readonly Comparer<int> _particleComparer;
+    readonly Comparer<int> _targetComparer;
 
     Brush _brush = Brushes.White;
     TextCanvas _canvas;
@@ -61,6 +94,12 @@ internal sealed class ParticleTextLayer : FrameworkElement
     bool _geometry;
     HashSet<int> _targetChars;
 
+    /// <summary>
+    /// T-6：本轮播放开始时 <see cref="TextCanvas.Text"/> 的快照。尺寸变化重采样时的
+    /// 差集必须以它为基线；用"当前文本 + 上一轮下标"会把未变字符判成变化。
+    /// </summary>
+    string _playText = "";
+
     public ParticleTextLayer()
     {
         IsHitTestVisible = false;
@@ -74,6 +113,10 @@ internal sealed class ParticleTextLayer : FrameworkElement
             Interval = TimeSpan.FromMilliseconds(FrameMs)
         };
         _timer.Tick += OnTick;
+
+        // T-5：比较器只建一次，避免每次配对都分配两个 lambda 闭包。
+        _particleComparer = Comparer<int>.Create((a, b) => _x[a].CompareTo(_x[b]));
+        _targetComparer = Comparer<int>.Create((a, b) => _sortTargets[a].X.CompareTo(_sortTargets[b].X));
 
         Unloaded += (s, e) => Stop();
     }
@@ -159,11 +202,15 @@ internal sealed class ParticleTextLayer : FrameworkElement
         try
         {
             long started = Stopwatch.GetTimestamp();
+            // T-6：先把本轮文本快照与差集绑定好；采样（含尺寸变化重采样）以它为基线。
+            _playText = canvas.Text ?? "";
+            _targetChars = targetChars;
+
             List<Point> targets;
             _sampling = true;
             try
             {
-                if (!SampleTargets(canvas, width, height, requestedCount, geometry, targetChars, out targets))
+                if (!SampleTargets(canvas, width, height, requestedCount, geometry, out targets))
                     return;
             }
             finally
@@ -172,7 +219,6 @@ internal sealed class ParticleTextLayer : FrameworkElement
             }
 
             bool firstPool = !_hasParticles;
-            _targetChars = targetChars;
             _size = size;
             _sampleWidth = width;
             _sampleHeight = height;
@@ -196,7 +242,7 @@ internal sealed class ParticleTextLayer : FrameworkElement
             _canvas.SizeChanged += OnCanvasSizeChanged;
             // 与粒子层显示放在同一个 UI 回调里：不能先由宿主藏字、再等 Loaded 出粒子，
             // 否则 WPF 可能在两者之间合成一帧缺字画面。
-            if (targetChars is not null) _canvas.SetHiddenChars(targetChars);
+            if (_targetChars is not null) _canvas.SetHiddenChars(_targetChars);
             _count = targets.Count;
             _playing = true;
             Visibility = Visibility.Visible;
@@ -218,9 +264,32 @@ internal sealed class ParticleTextLayer : FrameworkElement
 
     /// <summary>采样时临时把画布恢复为不透明：粒子播放中画布 Opacity=0，直接渲染会采到空白。</summary>
     bool SampleTargets(TextCanvas canvas, double width, double height,
-                       int requestedCount, bool geometry,
-                       HashSet<int> targetChars, out List<Point> targets) =>
-        BuildTargets(canvas, width, height, requestedCount, geometry, targetChars, out targets);
+                       int requestedCount, bool geometry, out List<Point> targets) =>
+        BuildTargets(canvas, width, height, requestedCount, geometry,
+                     ResolveChangedTargets(canvas), out targets);
+
+    /// <summary>
+    /// T-6：解析本轮应交给粒子层的"变化字符"。
+    /// 文本没变时直接复用本轮差集；动画期间文本被换掉时按「本轮起点 → 当前文本」重算，
+    /// 索引基数同步切到当前文本——否则会把上一句的下标套在当前句上，隐藏错字符，
+    /// 粒子轮廓也会来自上一句。
+    /// </summary>
+    HashSet<int> ResolveChangedTargets(TextCanvas canvas)
+    {
+        string current = canvas.Text ?? "";
+        if (string.Equals(current, _playText, StringComparison.Ordinal))
+            return _targetChars;
+
+        int[] changed = OverlaySurface.ChangedIndices(_playText, current);
+        _playText = current;
+        _targetChars = changed.Length == 0 ? null : new HashSet<int>(changed);
+        if (canvas is not null)
+        {
+            if (_targetChars is not null) canvas.SetHiddenChars(_targetChars);
+            else canvas.ClearHiddenChars();
+        }
+        return _targetChars;
+    }
 
     void EnsureCapacity(int count)
     {
@@ -293,17 +362,20 @@ internal sealed class ParticleTextLayer : FrameworkElement
     void AssignTargets(List<Point> targets, bool nearest)
     {
         int count = targets.Count;
-        int[] order = new int[count];
+        EnsureOrderCapacity(count);
+
+        int[] order = _order;
         for (int i = 0; i < count; i++) order[i] = i;
 
         if (nearest)
         {
             // 近似最近邻：粒子与目标各自按 x 排序后顺序配对。文字只改一两个字符时，
             // 大部分粒子仍会落在原来的笔画附近，不会被随机目标整句甩开。
-            int[] particles = new int[count];
+            int[] particles = _particleOrder;
             for (int i = 0; i < count; i++) particles[i] = i;
-            Array.Sort(particles, (a, b) => _x[a].CompareTo(_x[b]));
-            Array.Sort(order, (a, b) => targets[a].X.CompareTo(targets[b].X));
+            Array.Sort(particles, 0, count, _particleComparer);
+            _sortTargets = targets;
+            Array.Sort(order, 0, count, _targetComparer);
 
             for (int rank = 0; rank < count; rank++)
             {
@@ -312,6 +384,7 @@ internal sealed class ParticleTextLayer : FrameworkElement
                 _tx[p] = target.X;
                 _ty[p] = target.Y;
             }
+            _sortTargets = null;
             return;
         }
 
@@ -329,95 +402,185 @@ internal sealed class ParticleTextLayer : FrameworkElement
         }
     }
 
-    static bool BuildTargets(TextCanvas canvas, double width, double height,
-                             int requestedCount, bool geometry,
-                             HashSet<int> targetChars, out List<Point> targets)
+    /// <summary>T-5：配对用的两个下标数组按容量复用，不再每轮 new 两个 int[点数]。</summary>
+    void EnsureOrderCapacity(int count)
     {
-        targets = new List<Point>();
+        if (_order.Length >= count) return;
+        _order = new int[count];
+        _particleOrder = new int[count];
+    }
+
+    /// <summary>
+    /// T-5：整块采样。RTB / 像素数组 / 候选点表全部按实例复用；像素数超过预算时按面积比
+    /// 降采样（坐标再换算回 DIP），候选点上限顺次截断。降级原因走节流日志，不静默。
+    /// </summary>
+    bool BuildTargets(TextCanvas canvas, double width, double height,
+                      int requestedCount, bool geometry,
+                      HashSet<int> targetChars, out List<Point> targets)
+    {
+        targets = _targets;
+        targets.Clear();
+
         // 多采 1 像素：排版尺寸向上取整时，末排最右 / 最下一个字不会落在位图外。
         int pixelWidth = Math.Max(1, (int)Math.Ceiling(width) + 1);
         int pixelHeight = Math.Max(1, (int)Math.Ceiling(height) + 1);
 
-        HashSet<int> hide = null;
+        // 采样遮罩与上屏遮罩同源（T-6/T-8）：按文本元素整簇隐藏，避免采到半个代理对。
+        _hideSet.Clear();
         if (targetChars is not null)
         {
-            hide = new HashSet<int>();
-            string current = canvas.Text ?? "";
-            for (int i = 0; i < current.Length; i++)
-                if (!targetChars.Contains(i)) hide.Add(i);
+            BuildHideSet(canvas.Text ?? "", targetChars, _hideSet);
         }
 
         // 直接画到 DrawingVisual，不经过 TextCanvas 的可视缓存；否则隐藏字符后
         // RenderTargetBitmap 仍可能采到上一帧的完整文字，一个变化数字会摊出整行粒子。
-        var visual = new DrawingVisual();
-        using (DrawingContext dc = visual.RenderOpen())
-            canvas.DrawForParticles(dc, hide);
+        string degrade = null;
+        using (DrawingContext dc = _sampleVisual.RenderOpen())
+        {
+            canvas.DrawForParticles(dc, targetChars is null ? null : _hideSet);
+        }
 
-        var bitmap = new RenderTargetBitmap(pixelWidth, pixelHeight, 96, 96, PixelFormats.Pbgra32);
-        bitmap.Render(visual);
+        // 像素预算：降采样只影响采样精度，粒子目标本来就只是近似轮廓，不改变成品视觉。
+        double scale = SampleScale(pixelWidth, pixelHeight);
+        int rtbWidth = Math.Max(1, (int)Math.Ceiling(pixelWidth * scale));
+        int rtbHeight = Math.Max(1, (int)Math.Ceiling(pixelHeight * scale));
+        if (scale < 0.999)
+        {
+            degrade = $"卡片采样 {pixelWidth}×{pixelHeight} 超出像素预算，降采样到 {rtbWidth}×{rtbHeight}";
+        }
 
-        int stride = pixelWidth * 4;
-        byte[] pixels = new byte[stride * pixelHeight];
-        bitmap.CopyPixels(pixels, stride, 0);
+        if (_rtb is null || _rtbPixelWidth != rtbWidth || _rtbPixelHeight != rtbHeight)
+        {
+            _rtb = new RenderTargetBitmap(rtbWidth, rtbHeight,
+                                          96.0 * scale, 96.0 * scale, PixelFormats.Pbgra32);
+            _rtbPixelWidth = rtbWidth;
+            _rtbPixelHeight = rtbHeight;
+            _rtbStride = rtbWidth * BytesPerPixel;
+            // 坐标反算必须用位图创建时的真实 DPI，不能跟着本次 scale 走：
+            // 尺寸相同但 scale 只差一点点时不会重建位图，用错比例会让目标整体偏移。
+            _rtbScale = scale;
+        }
 
+        int stride = _rtbStride;
+        int needed = stride * rtbHeight;
+        if (_pixels.Length < needed)
+        {
+            _pixels = new byte[needed];
+        }
+
+        // 必须 Clear：RenderTargetBitmap.Render 是累加的，不清会叠上一轮的字形。
+        _rtb.Clear();
+        _rtb.Render(_sampleVisual);
+        _rtb.CopyPixels(_pixels, stride, 0);
+
+        byte[] pixels = _pixels;
         long area = Math.Max(1, (long)Math.Ceiling(width) * (long)Math.Ceiling(height));
         int targetCount = Math.Max(MinParticles, Math.Min(MaxParticles, requestedCount));
+        // 候选上限保持原值：先随机洗牌再取前 targetCount 个，分布与旧实现等价。
+        int cap = MaxCandidatePoints;
 
-        var candidates = new List<Point>(Math.Min(12000, targetCount * 2));
+        _candidates.Clear();
         if (geometry)
         {
             // 轮廓采样：取 alpha 边界。对图标 / 键帽 / 混排也有效，不依赖单字体 FormattedText。
-            for (int y = 0; y < pixelHeight; y++)
+            for (int y = 0; y < rtbHeight; y++)
             {
                 int row = y * stride;
-                for (int x = 0; x < pixelWidth; x++)
+                for (int x = 0; x < rtbWidth; x++)
                 {
-                    int index = row + x * 4 + 3;
+                    int index = row + x * BytesPerPixel + 3;
                     if (pixels[index] < AlphaThreshold) continue;
 
-                    bool edge = x == 0 || y == 0 || x == pixelWidth - 1 || y == pixelHeight - 1
-                             || pixels[row + (x - 1) * 4 + 3] < AlphaThreshold
-                             || pixels[row + (x + 1) * 4 + 3] < AlphaThreshold
-                             || pixels[row - stride + x * 4 + 3] < AlphaThreshold
-                             || pixels[row + stride + x * 4 + 3] < AlphaThreshold;
+                    bool edge = x == 0 || y == 0 || x == rtbWidth - 1 || y == rtbHeight - 1
+                             || pixels[row + (x - 1) * BytesPerPixel + 3] < AlphaThreshold
+                             || pixels[row + (x + 1) * BytesPerPixel + 3] < AlphaThreshold
+                             || pixels[row - stride + x * BytesPerPixel + 3] < AlphaThreshold
+                             || pixels[row + stride + x * BytesPerPixel + 3] < AlphaThreshold;
                     if (!edge) continue;
 
-                    candidates.Add(new Point(x + 0.5, y + 0.5));
-                    if (candidates.Count >= 12000) break;
+                    _candidates.Add(ToDip(x, y, 0.5));
+                    if (_candidates.Count >= cap) break;
                 }
-                if (candidates.Count >= 12000) break;
+                if (_candidates.Count >= cap) break;
             }
         }
 
-        if (candidates.Count < targetCount)
+        if (_candidates.Count < targetCount)
         {
             int step = area > 160_000 ? 3 : (area > 60_000 ? 2 : 1);
-            for (int y = 0; y < pixelHeight; y += step)
+            for (int y = 0; y < rtbHeight; y += step)
             {
                 int row = y * stride;
-                for (int x = 0; x < pixelWidth; x += step)
+                for (int x = 0; x < rtbWidth; x += step)
                 {
-                    if (pixels[row + x * 4 + 3] < AlphaThreshold) continue;
-                    candidates.Add(new Point(x + step * 0.5, y + step * 0.5));
-                    if (candidates.Count >= 12000) break;
+                    if (pixels[row + x * BytesPerPixel + 3] < AlphaThreshold) continue;
+                    _candidates.Add(ToDip(x, y, step * 0.5));
+                    if (_candidates.Count >= cap) break;
                 }
-                if (candidates.Count >= 12000) break;
+                if (_candidates.Count >= cap) break;
             }
         }
 
-        if (candidates.Count == 0) return false;
-
-        for (int i = candidates.Count - 1; i > 0; i--)
+        if (_candidates.Count == 0)
         {
-            int j = Random.Shared.Next(i + 1);
-            (candidates[i], candidates[j]) = (candidates[j], candidates[i]);
+            _sampleLog.Success();
+            return false;
         }
 
-        int take = Math.Min(targetCount, candidates.Count);
-        var result = new List<Point>(take);
-        for (int i = 0; i < take; i++) result.Add(candidates[i]);
-        targets = result;
+        if (_candidates.Count >= cap && cap >= MaxCandidatePoints)
+        {
+            degrade = $"候选点达到上限 {MaxCandidatePoints}，只取前段（卡片 {width:0}×{height:0} DIP）";
+        }
+
+        if (degrade is not null) _sampleLog.Failure(degrade);
+        else _sampleLog.Success();
+
+        for (int i = _candidates.Count - 1; i > 0; i--)
+        {
+            int j = Random.Shared.Next(i + 1);
+            (_candidates[i], _candidates[j]) = (_candidates[j], _candidates[i]);
+        }
+
+        int take = Math.Min(targetCount, _candidates.Count);
+        for (int i = 0; i < take; i++) targets.Add(_candidates[i]);
         return true;
+    }
+
+    /// <summary>像素预算换算：1.0 = 原尺寸；超过预算按面积比缩小（不小于 0.25，避免糊到采不出版形）。</summary>
+    static double SampleScale(int pixelWidth, int pixelHeight)
+    {
+        long pixels = Math.Max(1, (long)pixelWidth * pixelHeight);
+        if (pixels <= MaxSamplePixels) return 1.0;
+        return Math.Max(0.25, Math.Sqrt((double)MaxSamplePixels / pixels));
+    }
+
+    /// <summary>采样位图像素坐标 → DIP：位图按 <see cref="_rtbScale"/> 缩放，像素中心要反算回去。</summary>
+    Point ToDip(int x, int y, double half) =>
+        new((x + half) / _rtbScale, (y + half) / _rtbScale);
+
+    /// <summary>
+    /// T-6/T-8：把"变化字符"的补集整理成按文本元素对齐的隐藏集合。
+    /// 一个代理对 / 组合字符簇只要有一半在变化集合里，就不能只隐藏另一半——
+    /// 否则 RTB 会画半个 emoji / 孤立代理，粒子轮廓多出方块。
+    /// </summary>
+    static void BuildHideSet(string text, HashSet<int> targetChars, HashSet<int> hide)
+    {
+        int[] starts = TextCanvas.TextElementStarts(text);
+        for (int k = 0; k < starts.Length; k++)
+        {
+            int start = starts[k];
+            int end = k + 1 < starts.Length ? starts[k + 1] : text.Length;
+            bool anyChanged = false;
+            for (int i = start; i < end; i++)
+            {
+                if (targetChars.Contains(i))
+                {
+                    anyChanged = true;
+                    break;
+                }
+            }
+            if (!anyChanged) hide.Add(start);
+        }
     }
 
     /// <summary>
@@ -448,7 +611,7 @@ internal sealed class ParticleTextLayer : FrameworkElement
             _sampling = true;
             try
             {
-                if (!SampleTargets(canvas, w, h, _requestedCount, _geometry, _targetChars, out var targets))
+                if (!SampleTargets(canvas, w, h, _requestedCount, _geometry, out var targets))
                     return;
 
                 _sampleWidth = w;

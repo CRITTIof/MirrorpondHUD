@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Windows;
+using MirrorpondHUD.Core;
 
 namespace MirrorpondHUD.Ui.Contour;
 
@@ -80,6 +81,37 @@ public static class ContourExtractor
 {
     /// <summary>端点焊接精度：1/1000 像素。相邻格子的交点本应完全相等，留一点余量防浮点抖动。</summary>
     private const double WeldScale = 1000.0;
+
+    /// <summary>
+    /// T-13：单条折线平滑后的点数预算。Chaikin 每轮点数翻倍，Smooth=6 时 3000 点会变成
+    /// 192k 点（约 3MB，直接进 LOH）；按这个预算反推最多能升几轮，超出的部分降级。
+    /// 2.4 万点已经远细于屏幕像素（3000 点的折线两轮就有 12000 点），视觉上看不出差别。
+    /// </summary>
+    private const int MaxSmoothPointsPerPath = 24000;
+
+    /// <summary>供 ContourChainScratch 的降级日志复用同一个预算数字。</summary>
+    internal const int MaxSmoothPointsBudget = MaxSmoothPointsPerPath;
+
+    /// <summary>
+    /// 在点数预算内允许的 Chaikin 轮数：从 <paramref name="maxIterations"/> 往下收，
+    /// 保证 输入点数 × 2^轮数 不超过 <see cref="MaxSmoothPointsPerPath"/>。
+    /// </summary>
+    internal static int AffordableSmoothIterations(int pointCount, int maxIterations)
+    {
+        if (pointCount < 3 || maxIterations <= 0)
+        {
+            return 0;
+        }
+
+        long count = pointCount;
+        int iterations = 0;
+        while (iterations < maxIterations && count * 2 <= MaxSmoothPointsPerPath)
+        {
+            count *= 2;
+            iterations++;
+        }
+        return iterations;
+    }
 
     /// <summary>
     /// 对单个高度提取线段，追加到 sink，返回新增条数。
@@ -333,6 +365,19 @@ public static class ContourExtractor
             return copy;
         }
 
+        // T-13：与生产路径 Smooth 用同一份点数预算；公开入口也走它，
+        // 避免"调用方只拿到 Chaikin 时仍然按 2^n 倍爆内存"。
+        iterations = AffordableSmoothIterations(source.Count, iterations);
+        if (iterations <= 0)
+        {
+            Point[] copy = new Point[source.Count];
+            for (int i = 0; i < copy.Length; i++)
+            {
+                copy[i] = source[i];
+            }
+            return copy;
+        }
+
         List<Point> current = new(source);
 
         for (int it = 0; it < iterations; it++)
@@ -544,7 +589,19 @@ public static class ContourExtractor
         }
         int count = n;
 
-        for (int it = 0; it < iterations; it++)
+        // T-13：轮数先按点数预算收一次。降级必须可见（否则长线折角变粗会被当成"手绘感"），
+        // 但 30fps 下不能每帧写一条，所以走 LogThrottle 的状态转移。
+        int applied = AffordableSmoothIterations(n, iterations);
+        if (applied < iterations)
+        {
+            scratch.NoteSmoothDownscale(n, applied, iterations);
+        }
+        else
+        {
+            scratch.NoteSmoothOk();
+        }
+
+        for (int it = 0; it < applied; it++)
         {
             int nextCount = count * 2;
             Point[] next = scratch.RentPointArray(nextCount);
@@ -612,8 +669,30 @@ internal sealed class ContourChainScratch
     bool[] _used = new bool[0];
     int _pooledPointArrays;
 
-    /// <summary>点数组池上限：极端形状变化下不让内存无限增长（超出上限的数组直接交给 GC）。</summary>
+    /// <summary>
+    /// 池里点数组的总字节数。T-13：只按"个数"限制挡不住 LOH 常驻——一个 192k 点的数组
+    /// 约 3MB，512 个上限等于允许 1.5GB。这里同时按个数与总字节双限，超出预算的数组
+    /// 直接交给 GC，宁可下次 new 也不让池长期占着大块 LOH。
+    /// </summary>
+    long _pooledBytes;
+
+    /// <summary>池内点数组个数上限。</summary>
     const int MaxPooledPointArrays = 512;
+
+    /// <summary>池内点数组总字节上限（8MB）：与 512 个上限取更严的一个。</summary>
+    const long MaxPooledPointBytes = 8L * 1024 * 1024;
+
+    /// <summary>WPF <see cref="Point"/> 是两个 double，固定 16 字节；用它把点数换算成字节预算。</summary>
+    const int PointBytes = 16;
+
+    readonly LogThrottle _smoothLog = new("等高线平滑降级", 30000);
+
+    /// <summary>T-13：平滑轮数被点数预算压低时记一条（状态转移 + 30 秒节流）。</summary>
+    internal void NoteSmoothDownscale(int pointCount, int applied, int requested) =>
+        _smoothLog.Failure($"{pointCount} 点折线只做 {applied}/{requested} 轮 Chaikin（点数预算 {ContourExtractor.MaxSmoothPointsBudget}）");
+
+    /// <summary>平滑轮数恢复正常：只在从降级恢复时记一条 INFO。</summary>
+    internal void NoteSmoothOk() => _smoothLog.Success();
 
     internal bool[] Used => _used;
 
@@ -678,6 +757,7 @@ internal sealed class ContourChainScratch
         if (_pointArrays.TryGetValue(length, out var stack) && stack.Count > 0)
         {
             _pooledPointArrays--;
+            _pooledBytes -= (long)length * PointBytes;
             return stack.Pop();
         }
         return new Point[length];
@@ -689,7 +769,10 @@ internal sealed class ContourChainScratch
         {
             return;
         }
-        if (_pooledPointArrays >= MaxPooledPointArrays)
+
+        long bytes = (long)array.Length * PointBytes;
+        // 单个数组本身超过总预算时没有回收价值：塞进去会把整池挤空，仍然是 LOH 常驻。
+        if (_pooledPointArrays >= MaxPooledPointArrays || _pooledBytes + bytes > MaxPooledPointBytes)
         {
             return;
         }
@@ -701,5 +784,6 @@ internal sealed class ContourChainScratch
         }
         stack.Push(array);
         _pooledPointArrays++;
+        _pooledBytes += bytes;
     }
 }

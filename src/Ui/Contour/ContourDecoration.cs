@@ -35,6 +35,20 @@ internal sealed class ContourDecoration : FrameworkElement
     public Color LineColor = Color.FromArgb(0x40, 0xF5, 0xF5, 0xF0);
     public double LineThickness = 0.8;
 
+    /// <summary>
+    /// T-4：相位量化步长 = 2π/256。相位是连续量，原来的 1e-9 阈值等于"每帧都变"，
+    /// 闸门实际失效；量化到 1/256 周期后，1.0x 速度（10 秒一个周期）大约每 39ms
+    /// 才跨一格，肉眼看不出跳变，却把重建次数压到 1/1~1/2。
+    /// </summary>
+    const double PhaseQuantum = Math.PI * 2.0 / 256.0;
+
+    /// <summary>
+    /// T-4：两次相位重建之间的最小间隔（66ms ≈ 15fps）。量化在高速档（4x）时每帧都会
+    /// 跨格，仍需一个硬上限兜住"常态占一核"；形变周期不受影响——相位按真实时间推进，
+    /// 只是中间几帧继续画上一帧几何。
+    /// </summary>
+    const double MinPhaseBuildIntervalMs = 66.0;
+
     /// <summary>构造时（UI 线程）捕获；后台线程只碰它，不碰任何 DependencyObject。</summary>
     readonly Dispatcher _dispatcher;
     readonly ContourGeometryBuilder _builder = new();
@@ -48,6 +62,9 @@ internal sealed class ContourDecoration : FrameworkElement
     ContourBuildRequest _appliedRequest;
     ContourBuildRequest _failedRequest;
     DateTime _retryNotBeforeUtc = DateTime.MinValue;
+
+    /// <summary>T-4：下一次允许因相位变化重建的时刻（66ms 降频闸门）。</summary>
+    DateTime _nextPhaseBuildUtc = DateTime.MinValue;
 
     bool _inFlight;
     bool _queued;
@@ -86,14 +103,37 @@ internal sealed class ContourDecoration : FrameworkElement
     }
 
     /// <summary>
-    /// 每帧（约 30fps）调用。只记录相位并发起/合并一次后台生成，不做任何几何计算；
-    /// 同一相位重复调用直接返回。新结果到达前画面保持上一帧。
+    /// 每帧（约 30fps）调用。只记录相位并发起/合并一次后台生成，不做任何几何计算。
+    ///
+    /// T-4：相位先量化到 1/256 周期，只有跨过量化格才重建；再叠一个 66ms（约 15fps）
+    /// 的最小重建间隔。没跨格 / 被降频跳过的帧继续画上一帧几何（<see cref="_frame"/>），
+    /// 画面不会闪空，形变周期也仍按真实时间推进。
     /// </summary>
     public void SetPhase(double phase)
     {
-        if (Math.Abs(Phase - phase) < 1e-9) return;
-        Phase = phase;
+        double quantized = QuantizePhase(phase);
+        if (quantized == Phase) return;
+
+        // 降频闸门：后台重建是整网格混合 + 12 级提取，常态 30fps 会稳定吃掉一核。
+        // 跳过的只是这次相位更新，下一次 tick 会带着更新的相位再来（不会累积误差）。
+        if (DateTime.UtcNow < _nextPhaseBuildUtc) return;
+
+        Phase = quantized;
+        _nextPhaseBuildUtc = DateTime.UtcNow.AddMilliseconds(MinPhaseBuildIntervalMs);
         RequestBuild();
+    }
+
+    /// <summary>
+    /// 相位量化：先归一化到 [0, 2π)（地形混合只读 cos，2π 与 0 等价），再四舍五入到
+    /// <see cref="PhaseQuantum"/>。1/256 周期的相位误差在当前形变速度下约 39ms，
+    /// 肉眼看不出，也不会改变层级 / 形状语义。
+    /// </summary>
+    static double QuantizePhase(double phase)
+    {
+        if (double.IsNaN(phase) || double.IsInfinity(phase)) return 0.0;
+        double wrapped = phase % (Math.PI * 2.0);
+        if (wrapped < 0) wrapped += Math.PI * 2.0;
+        return Math.Round(wrapped / PhaseQuantum) * PhaseQuantum;
     }
 
     protected override void OnRender(DrawingContext dc)
@@ -245,7 +285,9 @@ internal sealed class ContourDecoration : FrameworkElement
         ContourBuildRequest request = new();
         request.Width = width;
         request.Height = height;
-        request.Phase = Phase;
+        // Phase 是 public 字段，外部直接赋值时也可能不是量化值；统一在快照里再量化一次，
+        // 保证"请求相等"判定与 SetPhase 的闸门语义一致。
+        request.Phase = QuantizePhase(Phase);
         request.Levels = LevelCount;
         request.Evening = Evening;
         request.Relief = Relief;

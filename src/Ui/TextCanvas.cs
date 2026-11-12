@@ -44,6 +44,32 @@ public sealed class TextCanvas : FrameworkElement
 
     double _fixedWidth;
     double _maxTextWidth;
+    double _pixelsPerDipOverride = double.NaN;
+
+    /// <summary>
+    /// T-11：离屏渲染（截图）时注入的 PixelsPerDip。NaN = 跟随可视树（默认）。
+    ///
+    /// 为什么需要：<c>--screenshot*</c> 里的 OverlaySurface 只是 Grid 子元素，从未接到
+    /// PresentationSource，<see cref="VisualTreeHelper.GetDpi"/> 会退回 96 —— 截图在 2× RTB
+    /// 里用 1.0 px/DIP 做 Display hinting，与屏上 150% 的字形宽度 / 笔画粗细对不上。
+    /// 截图路径按真实屏幕缩放注入后，排版参数与屏上一致。
+    /// </summary>
+    public double PixelsPerDipOverride
+    {
+        get => _pixelsPerDipOverride;
+        set
+        {
+            double next = value > 0.1 && value < 10 ? value : double.NaN;
+            bool same = double.IsNaN(next)
+                ? double.IsNaN(_pixelsPerDipOverride)
+                : Math.Abs(next - _pixelsPerDipOverride) < 1e-6;
+            if (same) return;
+            _pixelsPerDipOverride = next;
+            InvalidateMetrics();
+            InvalidateMeasure();
+            InvalidateVisual();
+        }
+    }
 
     /// <summary>
     /// T-7：超宽时按省略号截断。0 = 不限制；默认取工作区宽度，避免长文本把卡片撑出屏。
@@ -429,14 +455,21 @@ public sealed class TextCanvas : FrameworkElement
 
     // ==================== 粒子遮罩 ====================
 
-    /// <summary>隐藏指定字符（仍占排版宽度），用于把变化字符交给粒子层。</summary>
+    /// <summary>
+    /// 隐藏指定字符（仍占排版宽度），用于把变化字符交给粒子层。
+    /// T-8：下标先按文本元素（grapheme cluster）取整——代理对 / 组合音标 / ZWJ 序列
+    /// 只隐藏一半时，FormattedText 会画出孤立代理或半个 emoji。
+    /// </summary>
     public void SetHiddenChars(IEnumerable<int> indices)
     {
         _hiddenChars.Clear();
         if (indices is not null)
         {
             foreach (int index in indices)
-                if (index >= 0) _hiddenChars.Add(index);
+            {
+                if (index < 0 || index >= _text.Length) continue;
+                _hiddenChars.Add(SnapToTextElementStart(_text, index));
+            }
         }
         InvalidateVisual();
     }
@@ -446,6 +479,28 @@ public sealed class TextCanvas : FrameworkElement
         if (_hiddenChars.Count == 0) return;
         _hiddenChars.Clear();
         InvalidateVisual();
+    }
+
+    /// <summary>
+    /// T-8：文本元素的起点表。代理对、组合音标、国旗 / ZWJ 序列会被 <see cref="StringInfo"/>
+    /// 合成一个元素，后续所有"按下标切分"的地方都以它为准。
+    /// </summary>
+    internal static int[] TextElementStarts(string text) =>
+        StringInfo.ParseCombiningCharacters(text ?? "");
+
+    /// <summary>
+    /// T-8：把任意 UTF-16 下标吸附到所在文本元素的起点；等于/超过长度时返回长度本身
+    /// （光标在行尾，不能退到最后一个元素之前）。删除 / 光标移动都以这个边界为单位。
+    /// </summary>
+    internal static int SnapToTextElementStart(string text, int index)
+    {
+        if (string.IsNullOrEmpty(text) || index <= 0) return 0;
+        if (index >= text.Length) return text.Length;
+
+        int[] starts = TextElementStarts(text);
+        int best = 0;
+        for (int i = 0; i < starts.Length && starts[i] <= index; i++) best = starts[i];
+        return best;
     }
 
     // ==================== 度量 ====================
@@ -736,7 +791,12 @@ public sealed class TextCanvas : FrameworkElement
         RunKind kind = KindOf(line[0]);
         for (int i = 1; i <= line.Length; i++)
         {
-            RunKind next = i < line.Length ? KindOf(line[i]) : kind;
+            // T-8：组合标记 / 变体选择符 / 代理对下半属于前一个文本元素，
+            // 不能在这里换 run 类型，否则 "1\u0301" 会被拆成数字 run + 正文 run，
+            // 后续按元素隐藏时又会跨 run 切一半。
+            RunKind next = i < line.Length
+                ? (IsElementContinuation(line, i) ? kind : KindOf(line[i]))
+                : kind;
             if (i == line.Length || next != kind)
             {
                 result.Add(CreateRun(line.Substring(start, i - start), kind));
@@ -745,6 +805,20 @@ public sealed class TextCanvas : FrameworkElement
             }
         }
         return result;
+    }
+
+    /// <summary>T-8：这个位置上的字符是否属于前一个文本元素（不能作为 run 的起点）。</summary>
+    static bool IsElementContinuation(string line, int index)
+    {
+        char c = line[index];
+        if (char.IsLowSurrogate(c)) return true;
+        // ZWJ 与两个变体选择符：表情 / 文字样式序列的连接符，属于前一簇。
+        if (c == '\u200D' || c == '\uFE0E' || c == '\uFE0F') return true;
+
+        UnicodeCategory category = CharUnicodeInfo.GetUnicodeCategory(c);
+        return category is UnicodeCategory.NonSpacingMark
+            or UnicodeCategory.SpacingCombiningMark
+            or UnicodeCategory.EnclosingMark;
     }
 
     /// <summary>
@@ -823,6 +897,9 @@ public sealed class TextCanvas : FrameworkElement
 
     double PixelsPerDip()
     {
+        // T-11：截图等离屏路径显式注入真实缩放：没有 PresentationSource 时 GetDpi 恒为 96。
+        if (!double.IsNaN(_pixelsPerDipOverride)) return _pixelsPerDipOverride;
+
         try
         {
             double dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
@@ -926,32 +1003,45 @@ public sealed class TextCanvas : FrameworkElement
             DrawCursor(dc, layout, lineHeight, originX, originY, blockWidth);
     }
 
-    /// <summary>把 run 按隐藏字符切成可见段；隐藏段只占宽度不绘制。</summary>
+    /// <summary>
+    /// 把 run 按隐藏字符切成可见段；隐藏段只占宽度不绘制。
+    /// T-8：切分点只允许落在文本元素起点，避免把代理对 / 组合字符切成两半。
+    /// </summary>
     void DrawRunWithHidden(DrawingContext dc, TextRun run, int runStart, double x, double lineY, ISet<int> hidden)
     {
         string source = run.Source ?? "";
         if (source.Length == 0) return;
 
+        int[] starts = TextElementStarts(source);
         int segmentStart = 0;
         bool visible = !hidden.Contains(runStart);
-        for (int i = 1; i <= source.Length; i++)
+        for (int k = 1; k < starts.Length; k++)
         {
-            bool next = i < source.Length ? !hidden.Contains(runStart + i) : !visible;
-            if (i == source.Length || next != visible)
-            {
-                string text = source.Substring(segmentStart, i - segmentStart);
-                TextRun piece = CreateRun(text, run.Kind);
-                if (visible)
-                {
-                    // 键帽 / 图标拆分后要按自己的墨迹中心重新对齐，沿用原 run 的 OffsetY 会上下偏。
-                    double pieceY = lineY + (_refBaseline - piece.Text.Baseline) + piece.OffsetY;
-                    DrawLine(dc, piece.Text, x, pieceY);
-                }
-                x += piece.Width;
-                segmentStart = i;
-                visible = next;
-            }
+            int i = starts[k];
+            bool next = !hidden.Contains(runStart + i);
+            if (next == visible) continue;
+            x = DrawHiddenSegment(dc, run, source, segmentStart, i - segmentStart, x, lineY, visible);
+            segmentStart = i;
+            visible = next;
         }
+
+        x = DrawHiddenSegment(dc, run, source, segmentStart, source.Length - segmentStart, x, lineY, visible);
+    }
+
+    /// <summary>画（或只占位）一段文本，返回这一段之后的 x 偏移。</summary>
+    double DrawHiddenSegment(DrawingContext dc, TextRun run, string source, int start, int length,
+                             double x, double lineY, bool visible)
+    {
+        if (length <= 0) return x;
+
+        TextRun piece = CreateRun(source.Substring(start, length), run.Kind);
+        if (visible)
+        {
+            // 键帽 / 图标拆分后要按自己的墨迹中心重新对齐，沿用原 run 的 OffsetY 会上下偏。
+            double pieceY = lineY + (_refBaseline - piece.Text.Baseline) + piece.OffsetY;
+            DrawLine(dc, piece.Text, x, pieceY);
+        }
+        return x + piece.Width;
     }
 
     void DrawLine(DrawingContext dc, FormattedText ft, double x, double y)
@@ -1044,6 +1134,9 @@ public sealed class TextCanvas : FrameworkElement
             if (_text[i] != '\r') column++;
         }
         if (column > line.Length) column = line.Length;
+        // T-8：光标列吸附到文本元素边界。光标停在代理对 / 组合字符中间时，
+        // 前缀 Substring 会截出孤立代理，量出的宽度与真实字形不符（光标偏 1–2 个字宽）。
+        column = SnapToTextElementStart(line, column);
 
         string prefix = line.Substring(0, Math.Max(0, column));
         // 整行宽度直接取缓存里排好的结果；前缀是光标移动才变的短字符串，

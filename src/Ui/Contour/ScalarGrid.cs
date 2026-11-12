@@ -22,6 +22,40 @@ public sealed class ScalarGrid
 
     public int VertexRows => Rows + 1;
 
+    /// <summary>网格尺寸推导的默认单元格上限（两个方向各自）。</summary>
+    public const int DefaultMaxCellsPerAxis = 512;
+
+    /// <summary>网格尺寸下限：再小就没有"等高线"可言了。</summary>
+    public const int MinCellsPerAxis = 4;
+
+    /// <summary>
+    /// T-12：网格尺寸（Cols / Rows）的**唯一**推导入口。
+    ///
+    /// 为什么单独抽出来：生产路径（<see cref="ContourGeometryBuilder"/>）与可测 API
+    /// （<see cref="Build"/>）原来各写一遍 `cell / cols / rows` 的夹取，已经漂移过
+    /// （生产用 140 上限、这里用 512）。两边都改成调用本方法后，尺寸语义只有一份，
+    /// 调整上限时也不会出现"截图与真机网格不同"的隐性差异。
+    ///
+    /// 单元格数上限按方向独立夹取：4K 窗口把行列都拉到上限会得到 513×513 个顶点，
+    /// 每帧采样 + 12 级提取的代价远超一帧预算，所以仍由调用方决定上限。
+    /// </summary>
+    public static (int Cols, int Rows) ComputeSize(double width, double height, double cellSize,
+                                                   int maxCellsPerAxis = DefaultMaxCellsPerAxis)
+    {
+        if (!(width > 1.0) || !(height > 1.0))
+        {
+            throw new ArgumentOutOfRangeException("width", "采样区域必须大于 1 像素");
+        }
+
+        int maxCells = Math.Max(MinCellsPerAxis, maxCellsPerAxis);
+        double cell = Math.Max(2.0, cellSize);
+        int cols = (int)Math.Ceiling(width / cell);
+        int rows = (int)Math.Ceiling(height / cell);
+        cols = Math.Max(MinCellsPerAxis, Math.Min(cols, maxCells));
+        rows = Math.Max(MinCellsPerAxis, Math.Min(rows, maxCells));
+        return (cols, rows);
+    }
+
     /// <summary>
     /// 按目标单元格尺寸采样。单元格数量上限 512（两个方向各自），
     /// 防止 4K 窗口把内存和生成耗时拖爆；下限 4，防止退化成没有意义的网格。
@@ -37,11 +71,7 @@ public sealed class ScalarGrid
             throw new ArgumentOutOfRangeException("width", "采样区域必须大于 1 像素");
         }
 
-        double cell = Math.Max(2.0, cellSize);
-        int cols = (int)Math.Ceiling(width / cell);
-        int rows = (int)Math.Ceiling(height / cell);
-        cols = Math.Max(4, Math.Min(cols, 512));
-        rows = Math.Max(4, Math.Min(rows, 512));
+        (int cols, int rows) = ComputeSize(width, height, cellSize);
 
         ScalarGrid grid = new();
         grid.Cols = cols;

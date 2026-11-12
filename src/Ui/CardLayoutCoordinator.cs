@@ -25,6 +25,8 @@ internal sealed class CardLayoutCoordinator
     CardSlot _focus;
     /// <summary>本次拖动选定的左 / 右对齐；null = 未拖动过，按设置重新判断。</summary>
     string _alignOverride;
+    /// <summary>上一次看到的 CardAlign 设置；设置被用户改过时清掉拖动选定的对齐。</summary>
+    string _lastAlignSetting;
     /// <summary>
     /// 右对齐时真正固定的是右边缘：卡片内容变宽只向左长，整叠不会横向跳动。
     /// 锚点 / 对齐 / 卡片数量变化时才重新取一次。
@@ -38,6 +40,9 @@ internal sealed class CardLayoutCoordinator
     bool _widthsComplete;
     /// <summary>每张卡上一次的 X。显隐动画期间保留它，只更新 Y，避免整排横向移动。</summary>
     readonly Dictionary<CardSlot, double> _knownX = new();
+
+    /// <summary>T-9：堆叠超出工作区的告警节流（每 120ms 一次布局不能每条都写日志）。</summary>
+    readonly LogThrottle _workAreaLog = new("卡片堆叠超出工作区", 30000);
 
     public CardLayoutCoordinator(IList<CardSlot> cards, Func<Settings> settings,
                                  Func<bool> disposed, Dispatcher dispatcher)
@@ -63,13 +68,15 @@ internal sealed class CardLayoutCoordinator
         }), DispatcherPriority.Render);
     }
 
-    /// <summary>从锚点开始按顺序把可见卡片往下排，间距取每张卡片自己的 Spacing。</summary>
+    /// <summary>
+    /// 从锚点开始按顺序把可见卡片往下排，间距取每张卡片自己的 Spacing。
+    /// T-10：这里不再清 <see cref="_alignOverride"/>——拖动选定的对齐要一直有效到用户
+    /// 下一次拖动（<see cref="BeginDrag"/> 才更新），否则高度变化触发的常规布局会把
+    /// 刚对齐好的整叠重新翻边。
+    /// </summary>
     public void Layout()
     {
         if (_suspended) return;
-        // 非拖动触发的布局（改锚点 / 显隐 / 尺寸变化）重新按当前卡片位置判断，
-        // 不把上一次拖动选的对齐永久钉住。
-        _alignOverride = null;
         LayoutCore(false, null);
     }
 
@@ -110,17 +117,26 @@ internal sealed class CardLayoutCoordinator
     /// 带动画的补位：已显示的卡片从当前位置 ease-out 到新位置；
     /// appearing 不为空时，这张新卡直接落到目标位（内容由呼出动画负责），
     /// 避免它从窗口默认位置「飞」到锚点。
+    /// T-10：同样不清 <see cref="_alignOverride"/>。
     /// </summary>
     public void LayoutAnimated(CardSlot appearing = null)
     {
         if (_suspended) return;
-        _alignOverride = null;
         LayoutCore(true, appearing, true);
     }
 
     void LayoutCore(bool animate, CardSlot appearing, bool preserveX = false)
     {
         Settings settings = _settings();
+
+        // T-10：拖动选定的对齐只在两种情况下失效——用户重新拖动（BeginDrag），
+        // 或用户改了 CardAlign 设置。高度变化 / 显隐 / 常规补位都不再清它。
+        string alignSetting = Settings.NormalizeCardAlign(settings.Style.CardAlign);
+        if (!string.Equals(_lastAlignSetting, alignSetting, StringComparison.Ordinal))
+        {
+            _alignOverride = null;
+            _lastAlignSetting = alignSetting;
+        }
 
         // 先量出整叠卡片里最宽的一张：右对齐时每张卡片的 X = 锚点 + (最宽 - 自己宽度)，
         // 这样所有卡片的右边缘落在同一条竖线上；左对齐时所有卡片共用锚点 X。
@@ -175,6 +191,52 @@ internal sealed class CardLayoutCoordinator
         _lastCardCount = _cards.Count;
         _lastAlign = align;
 
+        // T-9：堆叠必须夹在工作区内。以前 Y 只做加法，卡片一多最下面的窗口就落到
+        // 任务栏以下，用户看不到也拖不回来（拖动要先命中卡片）。这里按目标屏工作区
+        // （物理像素 / ScaleY，天然扣掉任务栏）先算总高：放不下就压缩间距，
+        // 仍放不下再逐卡夹取（会重叠，但每张都可见、可拖）。
+        double workHeight = double.PositiveInfinity;
+        try
+        {
+            ScreenInfo screen = ScreenGeometry.Get(settings.Overlay.Monitor);
+            if (screen is not null && screen.ScaleY > 0.1)
+                workHeight = screen.WorkHeight / screen.ScaleY;
+        }
+        catch (Exception ex)
+        {
+            // 拿不到显示器信息时按"不夹取"继续布局，至少不能让整叠消失。
+            Log.Warn($"读取工作区高度失败，跳过堆叠夹取: {ex.Message}");
+        }
+        bool hasWorkArea = !double.IsInfinity(workHeight) && workHeight > 1.0;
+
+        double spacingScale = 1.0;
+        double stackHeight = MeasureStackHeight(spacingScale, out double stackGaps);
+        if (hasWorkArea && stackHeight > workHeight)
+        {
+            // 间距是可压缩量：保留卡片高度，只把卡片之间的空隙按比例收掉。
+            spacingScale = stackGaps > 0
+                ? Math.Max(0.0, Math.Min(1.0, (workHeight - (stackHeight - stackGaps)) / stackGaps))
+                : 1.0;
+            double compressed = MeasureStackHeight(spacingScale, out _);
+            _workAreaLog.Failure(
+                $"可见卡片总高 {compressed:0} DIP 超出工作区 {workHeight:0} DIP，已压缩间距 {spacingScale:P0}");
+            stackHeight = compressed;
+        }
+        else
+        {
+            _workAreaLog.Success();
+        }
+
+        // 只平移本次布局的起点，不改用户锚点：每帧按同一公式重算，结果稳定；
+        // 落盘会在下一次拖动松手时按实际堆叠位置反算锚点。
+        double startY = settings.Overlay.Y;
+        if (hasWorkArea)
+        {
+            if (startY + stackHeight > workHeight)
+                startY = Math.Max(0.0, workHeight - stackHeight);
+            if (startY < 0.0) startY = 0.0;
+        }
+
         double top = 0;
         bool first = true;
 
@@ -182,7 +244,7 @@ internal sealed class CardLayoutCoordinator
         {
             if (!slot.Shown) continue;
 
-            if (!first) top += Math.Max(0, slot.Config.Spacing);
+            if (!first) top += Math.Max(0, slot.Config.Spacing) * spacingScale;
 
             // 显隐动画期间连新出现的卡片也沿用它上一次的 X；只有从未落过位的
             // 新卡片才现算。这样整排在显示 / 隐藏时不会横向移动。
@@ -200,8 +262,17 @@ internal sealed class CardLayoutCoordinator
                 _knownX[slot] = x;
             }
 
+            double cardHeight = slot.BodyHeight > 0 ? slot.BodyHeight : slot.Window.CardHeight;
+            double y = startY + top;
+            if (hasWorkArea)
+            {
+                // 极端情况（卡片总高超过整个工作区）：每张卡各自夹在工作区内。
+                if (y < 0.0) y = 0.0;
+                if (y + cardHeight > workHeight) y = Math.Max(0.0, workHeight - cardHeight);
+            }
+
             slot.Dialog.Overlay.X = x;
-            slot.Dialog.Overlay.Y = settings.Overlay.Y + top;
+            slot.Dialog.Overlay.Y = y;
             slot.Dialog.Overlay.Monitor = settings.Overlay.Monitor;
             slot.Dialog.Overlay.MonitorDevice = settings.Overlay.MonitorDevice;
             slot.Dialog.Overlay.Locked = settings.Overlay.Locked;
@@ -210,9 +281,34 @@ internal sealed class CardLayoutCoordinator
             slot.Window.SetResolvedCardAlignment(align);
             slot.Window.ApplyPosition(animate && !ReferenceEquals(slot, appearing));
 
-            top += slot.BodyHeight > 0 ? slot.BodyHeight : slot.Window.CardHeight;
+            top += cardHeight;
             first = false;
         }
+    }
+
+    /// <summary>
+    /// T-9：可见卡片的整叠高度（含按 <paramref name="spacingScale"/> 缩放后的间距）。
+    /// gaps 单独返回，用于判断"压缩间距是否还能腾出空间"。
+    /// </summary>
+    double MeasureStackHeight(double spacingScale, out double gaps)
+    {
+        double height = 0;
+        gaps = 0;
+        bool first = true;
+        foreach (CardSlot slot in _cards)
+        {
+            if (!slot.Shown) continue;
+
+            if (!first)
+            {
+                double gap = Math.Max(0, slot.Config.Spacing) * spacingScale;
+                height += gap;
+                gaps += gap;
+            }
+            height += slot.BodyHeight > 0 ? slot.BodyHeight : slot.Window.CardHeight;
+            first = false;
+        }
+        return height;
     }
 
     /// <summary>文字变长 / 命令行展开后窗口会自己长高：渲染后校正一次堆叠位置。</summary>
@@ -230,7 +326,10 @@ internal sealed class CardLayoutCoordinator
             }
         }
 
-        if (changed && !_suspended) Layout();
+        // T-10：高度变化走带动画的布局。以前走 Layout() 是无动画瞬移，
+        // 补位动画刚结束时正好碰上一次高度变化，会在动画末尾再跳一下；
+        // LayoutAnimated 的 AnimateTo 支持从当前位置重定向，不会和上一段动画打架。
+        if (changed && !_suspended) LayoutAnimated();
     }
 
     public void SyncHeight(CardSlot slot)
