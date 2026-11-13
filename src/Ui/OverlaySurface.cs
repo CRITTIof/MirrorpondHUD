@@ -700,8 +700,15 @@ public sealed class OverlaySurface : Border
     /// <summary>重新按当前内容量尺寸（切换命令行时用）。</summary>
     public void ResetStableSize() => _canvas.ResetStableSize();
 
-    /// <summary>用于计算尺寸的文本；null = 跟随显示内容。启动动画期间传完整内容。</summary>
-    public void SetLayoutText(string text) => _canvas.LayoutText = NormalizeNewlines(text);
+    /// <summary>用于计算尺寸的文本；null / 空串 = 跟随显示内容。启动动画期间传完整内容。</summary>
+    public void SetLayoutText(string text)
+    {
+        // 2.46.3：null 与空串都还原成"跟随显示内容"。NormalizeNewlines 会把 null 变成 ""，
+        // 直接塞给 TextCanvas 时，空串会顶替 _text 参与测量，卡片宽度塌成 1 DIP
+        // （启动动画结束后信息卡只剩一条细缝的根因）。
+        string normalized = NormalizeNewlines(text);
+        _canvas.LayoutText = normalized.Length == 0 ? null : normalized;
+    }
 
     public void Apply(Settings settings, string text) => Apply(settings, text, false);
 

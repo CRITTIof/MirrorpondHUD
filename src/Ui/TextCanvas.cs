@@ -522,7 +522,11 @@ public sealed class TextCanvas : FrameworkElement
         PerformanceProbe.TextMeasure();
         // P-1：Measure 与 OnRender 共用同一份排版。这里按布局文本取缓存，
         // 布局文本没变时（启动动画逐字打字期间）一次 BuildLine 都不用做。
-        TextLayout layout = GetLayout(_layoutText ?? _text);
+        // 2.46.3：空串等于"没有布局文本"，必须回落到显示文本。曾经的坑是
+        // SetLayoutText(null) 经 NormalizeNewlines 变成 ""，空串不是 null，
+        // `_layoutText ?? _text` 一直取空串——测量按空文本算（宽 1 DIP）、绘制照旧画全文，
+        // 卡片窗口只有 29 DIP 宽，内容被轮廓硬切，用户看到的就是信息卡"显示不全"。
+        TextLayout layout = GetLayout(string.IsNullOrEmpty(_layoutText) ? _text : _layoutText);
         double lineHeight = LineHeightOf();
 
         // 2.45.4：OnRender 画的一直是 _text，布局文本只是启动动画用来提前撑尺寸的。
@@ -563,6 +567,14 @@ public sealed class TextCanvas : FrameworkElement
     }
 
     /// <summary>
+    /// 2.46.3：窗口真正给的宽度是否比整块文字窄（= 会被祖先轮廓硬切）。
+    /// 0 / 小于 1 DIP 表示布局还没落下（隐藏或尚未 Arrange），不能据此裁剪。
+    /// 容差 0.5 DIP 与其它裁剪判定保持一致。
+    /// </summary>
+    internal static bool OverflowsWindow(double blockWidth, double renderedWidth) =>
+        renderedWidth > 0.5 && blockWidth > renderedWidth + 0.5;
+
+    /// <summary>
     /// 2.45.4：排版 / 绘制 / 采样共用的有效宽度上限（0 = 不限制）。
     /// 固定宽度是用户显式约束，MaxTextWidth 是宿主按工作区给的兜底，两者取小。
     /// 必须只有一个来源：以前 Measure 用 min(固定, 上限)、DrawContent 只看上限，
@@ -583,9 +595,10 @@ public sealed class TextCanvas : FrameworkElement
     /// </summary>
     double AvailableBlockWidth(double textWidth)
     {
-        // 2.46.0：裁剪只看**显式约束**（FixedWidth / 工作区上限），不再看 ActualWidth。
+        // 2.46.0：这里只看**显式约束**（FixedWidth / 工作区上限），不看 ActualWidth。
         // 窗口是 SizeToContent，文本变长时会先 OnRender、后 Arrange；旧 ActualWidth 是上一段文本
         // 的宽度（甚至隐藏布局的 1px），拿它判裁剪会把正常内容错误截断。
+        // 2.46.3：窗口宽度这一档改由 DrawContent 用"连续两帧同尺寸"落定后再收紧，见那里的注释。
         double limit = LayoutWidthLimit();
         double available = limit > 0 ? Math.Min(Math.Max(1, textWidth), limit) : Math.Max(1, textWidth);
         return available;
@@ -603,6 +616,19 @@ public sealed class TextCanvas : FrameworkElement
 
         lastTicks = now;
         return true;
+    }
+
+    /// <summary>
+    /// 2.46.3：「窗口比文本窄」是否已经落定（同一组窗口宽 / 文本宽连续出现两次）。
+    /// 只用于避开 SizeToContent「先渲染、后布局」那一帧的误裁，不做其它判断。
+    /// </summary>
+    bool IsSettledOverflow(double renderedWidth, double textWidth)
+    {
+        bool same = Math.Abs(_settledWidth - renderedWidth) < 0.5
+                 && Math.Abs(_settledText - textWidth) < 0.5;
+        _settledWidth = renderedWidth;
+        _settledText = textWidth;
+        return same;
     }
 
     double LineHeightOf()
@@ -770,6 +796,11 @@ public sealed class TextCanvas : FrameworkElement
     /// </summary>
     long _clipWidthLogTicks;
     long _clipHeightLogTicks;
+    /// <summary>2.46.3：窗口比文本窄的日志节流。</summary>
+    long _clipWindowLogTicks;
+    /// <summary>2.46.3：上一次「窗口比文本窄」观察到的窗口宽 / 文本宽（NaN = 还没观察过）。</summary>
+    double _settledWidth = double.NaN;
+    double _settledText = double.NaN;
 
     /// <summary>
     /// 字形墨迹范围缓存（键 = 字体|字号|字重|文本）。对齐图标要用真实墨迹而不是字体度量：
@@ -1261,6 +1292,29 @@ public sealed class TextCanvas : FrameworkElement
         // 宽度兜底。以前只看 MaxTextWidth，固定宽度 / 窗口被压窄时文字会画到窗口外，
         // 被边缘硬切且没有任何提示；现在统一画省略号，并留下具体数值的日志。
         double available = AvailableBlockWidth(layout.Width);
+
+        // 2.46.3：窗口真正给的宽度也必须算进可用宽度。测量与绘制不同源时（布局文本塌成空串）
+        // 窗口会比文字窄得多，超出部分此前被祖先轮廓静默切掉：没有省略号，也没有日志。
+        // 不能像 2.46.0 那样无条件信任 ActualWidth —— SizeToContent 下文本变长会先 OnRender
+        // 后 Arrange，旧宽度会把正常内容误裁。这里要求同一组尺寸连续出现两次（窗口已落定）
+        // 才认定是真溢出，落定前既不裁也不报，避免闪烁与假告警。
+        bool windowOverflow = OverflowsWindow(layout.Width, RenderSize.Width);
+        if (windowOverflow && IsSettledOverflow(RenderSize.Width, layout.Width))
+        {
+            if (ShouldLogClip(ref _clipWindowLogTicks))
+            {
+                Log.Warn($"窗口宽 {RenderSize.Width:0.#} DIP 小于文本宽 {layout.Width:0.#} DIP，"
+                    + "超出部分会被卡片轮廓裁掉（已按省略号裁剪）");
+            }
+            available = Math.Min(available, RenderSize.Width);
+        }
+        else if (!windowOverflow)
+        {
+            // 不再溢出（窗口追上来了）：清掉落定签名，下次溢出重新按两帧确认。
+            _settledWidth = double.NaN;
+            _settledText = double.NaN;
+        }
+
         bool clipped = layout.Width > available + 0.5;
         double blockWidth = clipped ? available : layout.Width;
 

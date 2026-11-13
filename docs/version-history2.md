@@ -18,6 +18,7 @@
 | v2.46.0 | 2026-11-13 | `b4f34a8` | 修复省略号误裁与仅桌面下富内容置顶；外观包（AppearancePack/Catalog/Runtime）前期脚手架 | 9 文件，+268 / −33 |
 | v2.46.1 | 2026-11-13 | `4565bd5` | 设置页外观包与 recipe 层（明暗 palette、几何令牌、导航/标题/按钮配方） | 10 文件，+398 / −39 |
 | v2.46.2 | 2026-11-13 | `aca4763` | 卡片轮廓三选项（切角/直角/圆角）与左侧强调条 | 9 文件，+209 / −11 |
+| v2.46.3 | 2026-11-13 | （本提交） | 修复启动动画后信息卡宽度塌陷；溢出可见与回归断言 | 4 文件，+81 / −7 |
 
 ---
 
@@ -480,3 +481,54 @@ P2 87 项与 P3 62 项覆盖玻璃线程、媒体状态机、文本布局、插�
   卡片/主题令牌控制，未逐像素复刻。
 - 切角卡片的 1px 轮廓与阴影在 125%/150%/175% DPI 下需真机确认；切角处鼠标命中仍是矩形（视觉裁切不影响 hit test）。
 - 强调条默认关闭；要匹配设计稿需在设置中开启，三套设计也可分别搭配。
+
+---
+
+## 11. v2.46.3（信息卡宽度塌陷，未合并 main）
+
+### 背景
+
+启动动画结束后，首张信息卡（系统信息）只剩一条 29 DIP 宽的细缝：每行只看得见第一个图标，
+其余内容被卡片轮廓硬切；日志里没有任何裁剪告警，像是"卡片自己长不大"。
+
+### 根因
+
+`OverlayIntro.Finish()` 用 `SetLayoutText(null)` 把布局文本设回"跟随显示内容"，
+但 `OverlaySurface.SetLayoutText` 把它送进 `NormalizeNewlines`，null 被规范化成空串；
+空串不是 null，`TextCanvas.MeasureOverride` 的 `_layoutText ?? _text` 一直取空串：
+
+- 测量按空文本算 → 宽 1 DIP，窗口（SizeToContent）只有 `1 + 左右内边距 27.6 ≈ 29` DIP；
+- 高度仍由 `CountLines(_text)` 保持 2 行，所以**只有宽度塌了**，肉眼像"细条卡"；
+- `OnRender` 照旧画完整文本，超出的部分被 `_root.Clip` 硬切；
+- 2.46.0 起 `AvailableBlockWidth` 只看显式约束（固定宽度 / 工作区上限），两者都远大于文本，
+  于是 `clipped=false`：不画省略号、不写日志，缺陷一直静默。
+
+"只增不减"的 `_stableWidth` 救不回来（测出来永远是 1），`ResetStableSize` 也不清布局文本，
+所以整场会话都停在 29 DIP；只有被启动动画选中的那张卡（`FirstLiveCard`）会坏，
+时钟 / 按键卡因此看起来正常。
+
+### 改动
+
+1. **根因修复**：`OverlaySurface.SetLayoutText` 把 null 与空串统一还原成 null（跟随显示内容）；
+   `TextCanvas.MeasureOverride` 用 `string.IsNullOrEmpty(_layoutText) ? _text : _layoutText` 兜底。
+2. **溢出可见**（AGENTS §5）：`TextCanvas.DrawContent` 把窗口实际宽度（`RenderSize.Width`）也算进
+   可用宽度，真溢出时按省略号裁剪并写 30s 节流的 `Log.Warn`。为避免 2.46.0 修过的
+   "SizeToContent 先渲染、后布局"误裁，新增 `OverflowsWindow` 与"同一组尺寸连续两帧才算落定"判定：
+   落定前既不裁也不报。
+3. **回归断言**：自检文本布局域新增"布局文本回落"（Surface 级、真实字体路径，
+   `SetLayoutText(null)` 后 `LayoutText` 必须为 null；空布局文本不得让 `DesiredSize` 塌陷）。
+   另在本地单测（`tests/` 不入库）补 `TextCanvasLayoutTests`：宽度不塌陷、null 回落、
+   `OverflowsWindow` 边界（未布局 / 亚像素容差 / 窗口更宽）。
+
+### 验证
+
+- `dotnet build -c Release` 0 警告 0 错误；`dotnet format --verify-no-changes` 无差异；
+- `--selftest --isolated` 退出码 0，`文本布局: OK（… 布局文本回落）`；
+- 本地单测 19 项全通过；
+- 端到端：启动后系统信息卡窗口 **29×59 → 279×59**，图标 / 数值 / 单位完整显示，右边缘与其它卡对齐。
+
+### 风险 / 未验证
+
+- 窗口宽度这一档依赖"连续两帧同尺寸"才裁；静态内容只渲染一帧时不会补画省略号
+  （下一次布局变化即触发），因此该路径只保证日志可见，不保证第一帧就画省略号。
+- 未在 125%/150%/175% DPI 下复测省略号宽度；裁剪判定全部用 DIP，理论不受缩放影响。

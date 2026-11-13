@@ -841,7 +841,20 @@ internal static class SelfTest
             canvas.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
             bool cacheOk = canvas.DesiredSize.Width > smallWidth * 1.5;
 
-            textLayoutOk = natural > 60 && fixedOk && capOk && heightOk && hiddenOk && linesOk && cacheOk;
+            // 2.46.3：启动动画收尾会把布局文本设回 null，必须回到「跟随显示内容」。
+            // 若被 NormalizeNewlines 变成空串，卡片窗口就按空文本定宽（29 DIP 的细缝），
+            // 完整内容被轮廓硬切——信息卡「显示不全」的回归点。
+            var surface = new OverlaySurface();
+            surface.SetLayoutText("占位布局文本");
+            surface.SetLayoutText(null);
+            bool layoutTextOk = surface.Canvas.LayoutText is null;
+            surface.SetText("CPU 100% RAM 100% GPU 100%", false);
+            surface.SetLayoutText("");
+            surface.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            bool surfaceWidthOk = surface.DesiredSize.Width > 60;
+
+            textLayoutOk = natural > 60 && fixedOk && capOk && heightOk && hiddenOk && linesOk
+                        && cacheOk && layoutTextOk && surfaceWidthOk;
         }
         catch (Exception ex)
         {
@@ -2098,7 +2111,7 @@ internal static class SelfTest
 
         Fix(sb, "外观令牌", results.ThemeOk ? "OK（派生值 = 旧 alpha 常量，非法值回落而不是变白）" : "FAIL");
         Fix(sb, "文本布局", results.TextLayoutOk
-            ? "OK（行数 → 期望高度；固定宽度 / 工作区上限收紧；隐藏字符清理；换行计数；排版缓存失效）" : "FAIL");
+            ? "OK（行数 → 期望高度；固定宽度 / 工作区上限收紧；隐藏字符清理；换行计数；排版缓存失效；布局文本回落）" : "FAIL");
         Fix(sb, "配置修复", results.ConfigRepairOk
             ? "OK（null 判空 / 损坏标记 / 旧 Schema 按损坏 / 未来版本只读 / 未知 Kind 保留 / 状态 .bak 回退）" : "FAIL");
         Fix(sb, "主题文件", results.ThemeFileOk ? "OK（导出 → 解析 → 套用 → 再导出一致，数字透明度按前景派生）" : "FAIL");
