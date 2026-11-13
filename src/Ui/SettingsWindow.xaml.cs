@@ -629,11 +629,13 @@ public partial class SettingsWindow : Window
         {
             if (IsDirty())
             {
+                // 设置窗内的弹窗跟随设置窗当前明暗，并保留状态图标。
                 HudDialogResult answer = HudDialog.Show(this,
                     "镜潭一览 · 未保存的修改",
                     "设置还有未保存的修改。\n\n是 = 保存并应用后关闭；否 = 放弃修改；取消 = 继续编辑。",
                     HudDialogButtons.YesNoCancel, HudDialogIcon.Question,
-                    _working is null ? null : _working.Style);
+                    _working is null ? null : _working.Style,
+                    dark: _settingsDark, showIcon: true);
 
                 if (answer == HudDialogResult.Cancel)
                 {

@@ -605,8 +605,8 @@ public static class Screenshots
     }
 
     /// <summary>
-    /// 对话框验收样张：一张图里并排四种变体（信息 / 警告 / 错误 / 询问），
-    /// 用于目检切角、1px 描边、按钮层级与状态色对比度。
+    /// 对话框验收样张：2×2 四格 —— 三个「设置窗之外」的弹窗（明亮、不画状态图标）
+    /// 加一个「设置窗内」的变体（跟随明暗、保留方形状态标记），一张图同时验收两条宿主路径。
     ///
     /// 直接用 <see cref="HudDialogPanel"/> 离屏渲染，而不是真的弹四个窗口：
     /// 截图模式必须能在没有用户交互的 CI / 远程桌面上跑完，且渲染结果与窗口内面板是同一份布局。
@@ -615,47 +615,70 @@ public static class Screenshots
     {
         try
         {
-            // 暗色走「style = null」的 Endfield 墨版默认值（#141414 底 / #F5F5F0 字 / #FFFA00），
-            // 亮色显式给一套纸版 StyleSettings —— 同一张图同时验证默认路径与主题跟随路径。
-            StyleSettings style = light ? LightDialogStyle() : null;
+            // 明暗走 dark 参数：默认暗色（--dialog-light 切纸白），不再从样式背景亮度推断；
+            // 对话框底色固定取设置窗令牌，样式只剩字体有用，所以这里传 null。
+            bool dark = !light;
+            StyleSettings style = null;
 
             var column = new StackPanel { Width = HudDialog.DefaultWidth };
             AddDialogSample(column, style, "文件中转站 · 收纳完成",
                 "12 个文件已收纳到接收目录。\n文件保留 24 小时后自动清理。",
-                HudDialogButtons.Ok, HudDialogIcon.Info);
+                HudDialogButtons.Ok, HudDialogIcon.Info, dark);
             AddDialogSample(column, style, "镜潭一览 · 托盘不可用",
                 "托盘图标添加失败，程序仍在运行，但托盘入口没有出现。\n" +
                 "可以按 Ctrl+Alt+S 打开设置，或重新登录 Windows 后重试。",
-                HudDialogButtons.Ok, HudDialogIcon.Warning);
+                HudDialogButtons.Ok, HudDialogIcon.Warning, dark);
             AddDialogSample(column, style, "镜潭一览 · 启动失败",
                 "启动失败：无法读取配置文件 settings.json。\n" +
                 "详细信息已写入日志：bin\\Release\\mirrorpond.log",
-                HudDialogButtons.Ok, HudDialogIcon.Error);
+                HudDialogButtons.Ok, HudDialogIcon.Error, dark);
             AddDialogSample(column, style, "镜潭一览 · 未保存的修改",
                 "设置还有未保存的修改。\n保存并应用后关闭，放弃修改，或继续编辑。",
-                HudDialogButtons.YesNoCancel, HudDialogIcon.Question);
+                HudDialogButtons.YesNoCancel, HudDialogIcon.Question, dark, showIcon: true);
+
+            // 2×2：四个变体从单列搬进两列网格（面板与文案不变，只换排列）。
+            var grid = new Grid { Width = HudDialog.DefaultWidth * 2 + 16 };
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(16) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(16) });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            var cells = new List<FrameworkElement>();
+            foreach (UIElement child in column.Children) cells.Add((FrameworkElement)child);
+            column.Children.Clear();
+            for (int i = 0; i < cells.Count; i++)
+            {
+                FrameworkElement cell = cells[i];
+                cell.Margin = new Thickness(0, 0, 0, i < 2 ? 16 : 0);
+                Grid.SetColumn(cell, i % 2 == 0 ? 0 : 2);
+                Grid.SetRow(cell, i < 2 ? 0 : 2);
+                grid.Children.Add(cell);
+            }
 
             var stage = new Grid
             {
-                Width = 560,
+                Width = grid.Width + 48,
+                // 亮色舞台取中性灰：纸白面板 #F2F2EC 若直接铺在同色底上，圆角与 1px 线就看不出来。
                 Background = new SolidColorBrush(light
-                    ? Color.FromRgb(0xEF, 0xEF, 0xEA)
+                    ? Color.FromRgb(0xD9, 0xD9, 0xD2)
                     : Color.FromRgb(0x0B, 0x0B, 0x0B))
             };
-            column.HorizontalAlignment = HorizontalAlignment.Center;
-            column.VerticalAlignment = VerticalAlignment.Center;
-            stage.Children.Add(column);
+            grid.HorizontalAlignment = HorizontalAlignment.Center;
+            grid.VerticalAlignment = VerticalAlignment.Center;
+            stage.Children.Add(grid);
 
-            // 先量内容再定高：四个面板行数不同，固定高度会把最后一张裁掉。
-            stage.Measure(new Size(560, double.PositiveInfinity));
-            stage.Height = Math.Max(600, Math.Ceiling(column.DesiredSize.Height) + 48);
-            stage.Measure(new Size(560, stage.Height));
-            stage.Arrange(new Rect(0, 0, 560, stage.Height));
+            // 先量内容再定高：四格行数不同，固定高度会把最后一行裁掉。
+            stage.Measure(new Size(stage.Width, double.PositiveInfinity));
+            stage.Height = Math.Max(600, Math.Ceiling(grid.DesiredSize.Height) + 48);
+            stage.Measure(new Size(stage.Width, stage.Height));
+            stage.Arrange(new Rect(0, 0, stage.Width, stage.Height));
             stage.UpdateLayout();
 
             const double scale = 2.0;
             var rtb = new RenderTargetBitmap(
-                (int)Math.Ceiling(560 * scale),
+                (int)Math.Ceiling(stage.Width * scale),
                 (int)Math.Ceiling(stage.Height * scale),
                 96 * scale, 96 * scale, PixelFormats.Pbgra32);
             rtb.Render(stage);
@@ -672,24 +695,84 @@ public static class Screenshots
     }
 
     static void AddDialogSample(StackPanel column, StyleSettings style, string title, string message,
-                                HudDialogButtons buttons, HudDialogIcon icon)
+                                HudDialogButtons buttons, HudDialogIcon icon,
+                                bool dark = false, bool showIcon = false)
     {
-        var panel = new HudDialogPanel(title, message, buttons, icon, style, null, null, false)
+        var panel = new HudDialogPanel(title, message, buttons, icon, style, null, null, false, dark, showIcon)
         {
             Margin = new Thickness(0, 0, 0, 16)
         };
         column.Children.Add(panel);
     }
 
-    /// <summary>亮色样张用纸版取值：neutral-50 底、墨字、线 #E6E6E6。</summary>
-    static StyleSettings LightDialogStyle() => new()
+    /// <summary>
+    /// 取色器验收样张：一张图并排暗色 / 明亮两套面板，用于目检 22px 圆角、HSV 色板、
+    /// Hex / RGB 输入、当前 / 新色预览与黄底墨字主按钮；两格给不同初始色，顺带验证回退与色相游标。
+    /// </summary>
+    public static bool CaptureColorPicker(string path)
     {
-        Foreground = "#101110",
-        Background = "#FAFAFA",
-        BackgroundOpacity = 1.0,
-        Accent = "#F2E900",
-        FontFamily = "Microsoft YaHei UI"
-    };
+        try
+        {
+            var row = new StackPanel { Orientation = Orientation.Horizontal };
+            row.Children.Add(PickerSample("暗色 · 设置窗内", true, "#2F6FEB"));
+            row.Children.Add(PickerSample("明亮 · 设置窗外", false, "#B7A400"));
+
+            var stage = new Grid
+            {
+                // 两格各 480 面板 + 40 底板内边距 + 24 外边距 = 544；再加 48 舞台留白。
+                Width = (HudDialog.DefaultWidth + 40 + 24) * 2 + 48,
+                // 深色舞台同时框住两块样张：亮色那一格自己带一块灰底，边界仍然清楚。
+                Background = new SolidColorBrush(Color.FromRgb(0x0B, 0x0B, 0x0B))
+            };
+            row.HorizontalAlignment = HorizontalAlignment.Center;
+            row.VerticalAlignment = VerticalAlignment.Center;
+            stage.Children.Add(row);
+
+            stage.Measure(new Size(stage.Width, double.PositiveInfinity));
+            stage.Height = Math.Max(560, Math.Ceiling(row.DesiredSize.Height) + 48);
+            stage.Measure(new Size(stage.Width, stage.Height));
+            stage.Arrange(new Rect(0, 0, stage.Width, stage.Height));
+            stage.UpdateLayout();
+
+            const double scale = 2.0;
+            var rtb = new RenderTargetBitmap(
+                (int)Math.Ceiling(stage.Width * scale),
+                (int)Math.Ceiling(stage.Height * scale),
+                96 * scale, 96 * scale, PixelFormats.Pbgra32);
+            rtb.Render(stage);
+
+            if (!SavePng(rtb, path)) return false;
+            Log.Info($"已生成取色器截图: {path}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log.Error("生成取色器截图失败", ex);
+            return false;
+        }
+    }
+
+    /// <summary>一格取色器样张：说明 + 中性底板 + 面板本身（面板自己画 22px 圆角与 1px 线）。</summary>
+    static FrameworkElement PickerSample(string caption, bool dark, string color)
+    {
+        var stack = new StackPanel { Width = HudDialog.DefaultWidth + 40, Margin = new Thickness(12) };
+        stack.Children.Add(new TextBlock
+        {
+            Text = caption,
+            FontFamily = CardPalette.ResolveFont("Microsoft YaHei UI"),
+            FontSize = 11,
+            Foreground = CardPalette.Brush(dark ? Color.FromRgb(0x9A, 0x9A, 0x94) : Color.FromRgb(0x4A, 0x4A, 0x44)),
+            Margin = new Thickness(0, 0, 0, 6)
+        });
+        stack.Children.Add(new Border
+        {
+            Padding = new Thickness(20),
+            CornerRadius = new CornerRadius(8),
+            Background = new SolidColorBrush(dark ? Color.FromRgb(0x0B, 0x0B, 0x0B) : Color.FromRgb(0xD9, 0xD9, 0xD2)),
+            Child = HudColorPicker.CreatePanel(color, dark)
+        });
+        return stack;
+    }
 
     /// <summary>四种中转站显示方式的验收样张：每个视图一份，共用同一批假文件。</summary>
     public static bool CaptureStationViews(string path)

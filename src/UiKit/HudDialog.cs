@@ -43,16 +43,18 @@ public enum HudDialogResult
 }
 
 /// <summary>
-/// 宿主与插件共用的自绘对话框：直角 + 单角切角的「行动面」，不用系统 MessageBox。
+/// 宿主与插件共用的自绘对话框：22px 圆角「浮起面板」，不用系统 MessageBox。
 ///
-/// 为什么不用 <see cref="MessageBox"/>：系统弹窗不受主题控制（白底、圆角、系统图标），
+/// 为什么不用 <see cref="MessageBox"/>：系统弹窗不受主题控制（白底、直角、系统图标），
 /// 在深色卡片与 Endfield 主题下像一块外来面板；插件里也无从取得与本项目一致的层级与色彩。
 ///
-/// 视觉规格（见 docs/UI/endfield.md §3.2/§3.3/§3.5）：
-/// - 中性基底 #141414（暗）/ #FAFAFA（亮），1px 线 #383838 / #E6E6E6；
-/// - 形状是直角 + 右上 10px 切角，**不是**圆角；层级只靠标题字号 / 字重 + 3px 信号黄竖条；
-/// - 信号色只作填充 + 墨字（主按钮、顶部竖条、焦点环），不做黄字；
-/// - 状态色（危险 / 提醒 / 信息）只用在方形小标记上，且配字形，不单靠颜色。
+/// 视觉规格（见 docs/UI/endfield.md §3.2/§3.3/§3.5 + 设置窗 SettingsTheme）：
+/// - 形状与设置主界面同一档圆角：外层 22px 圆角 + 1px 线，内容按圆角裁切；
+/// - 暗色 #141414 底 / #F5F5F0 字 / #FFFA00 信号黄；明亮 #F2F2EC 底 / #FFFFFF 面板 /
+///   #151515 字 / #B7A400 暗金强调（亮黄在纸白上不可见，不能当文字/竖条色）；
+/// - 层级只靠标题字号 / 字重 + 3px 强调竖条；信号色只作填充 + 墨字，不做黄字；
+/// - 按钮 6px 圆角（与设置窗控件同档）：主行动黄底墨字、次级透明 + 1px 线、危险红描边红字；
+/// - 状态色（危险 / 提醒 / 信息）只用在设置窗内的方形小标记上，且配字形，不单靠颜色。
 ///
 /// 用法：
 /// <code>
@@ -75,7 +77,16 @@ public static class HudDialog
     /// <param name="cancelText">取消 / 否的文字；null 取默认（取消 / 否）。YesNoCancel 的“否”固定为“否”。</param>
     /// <param name="danger">
     /// true 时主行动改成红描边 + 红字（危险确认），与次级按钮共用同一套形态。
-    /// 不传 = 普通主行动（信号黄实心 + 墨字 + 切角）。
+    /// 不传 = 普通主行动（信号黄实心 + 墨字，6px 圆角）。
+    /// </param>
+    /// <param name="dark">
+    /// 明暗：false（默认）= 外部明亮，true = 暗色。
+    /// 为什么默认明亮：设置窗之外的弹窗浮在任意桌面 / 卡片上，纸白面板与用户对系统确认框的心智一致；
+    /// 设置窗内的弹窗由调用方传 <c>dark: _settingsDark</c>，跟着设置窗一起切，不出现“暗窗里跳出白框”。
+    /// </param>
+    /// <param name="showIcon">
+    /// 是否画左侧方形状态标记。默认 false：外部弹窗只要一句结论，图标位会把正文挤右、也与卡片无关；
+    /// 设置窗内传 true，保留「方形色标 + 字形」这套状态语义。
     /// </param>
     public static HudDialogResult Show(Window owner, string title, string message,
         HudDialogButtons buttons = HudDialogButtons.Ok,
@@ -83,7 +94,9 @@ public static class HudDialog
         StyleSettings style = null,
         string okText = null,
         string cancelText = null,
-        bool danger = false)
+        bool danger = false,
+        bool dark = false,
+        bool showIcon = false)
     {
         HudDialogWindow window = null;
         // 收起（Hide）或已关闭的设置窗不能当 Owner：WPF 会抛 InvalidOperationException，
@@ -92,7 +105,8 @@ public static class HudDialog
 
         try
         {
-            window = new HudDialogWindow(title, message, buttons, icon, style, okText, cancelText, danger);
+            window = new HudDialogWindow(title, message, buttons, icon, style, okText, cancelText, danger,
+                                         dark, showIcon);
             if (owned)
             {
                 window.Owner = owner;
@@ -291,7 +305,8 @@ internal sealed class HudDialogWindow : Window
     internal HudDialogResult Result { get; private set; } = HudDialogResult.None;
 
     internal HudDialogWindow(string title, string message, HudDialogButtons buttons, HudDialogIcon icon,
-                             StyleSettings style, string okText, string cancelText, bool danger)
+                             StyleSettings style, string okText, string cancelText, bool danger,
+                             bool dark, bool showIcon)
     {
         _buttons = buttons;
 
@@ -307,7 +322,8 @@ internal sealed class HudDialogWindow : Window
         // Title 不显示（WindowStyle=None），但任务栏 / 辅助技术仍能读到；空标题给个宿主名。
         Title = string.IsNullOrWhiteSpace(title) ? "镜潭一览" : title;
 
-        _panel = new HudDialogPanel(title, message, buttons, icon, style, okText, cancelText, danger);
+        _panel = new HudDialogPanel(title, message, buttons, icon, style, okText, cancelText, danger,
+                                    dark, showIcon);
         _panel.ResultSelected = Finish;
         _panel.CloseRequested = () => Finish(HudDialog.DismissResult(buttons));
         _panel.DragRequested = DragByTitle;
@@ -373,9 +389,10 @@ internal sealed class HudDialogPanel : Grid
     internal Button PrimaryButton { get; private set; }
 
     internal HudDialogPanel(string title, string message, HudDialogButtons buttons, HudDialogIcon icon,
-                            StyleSettings style, string okText, string cancelText, bool danger)
+                            StyleSettings style, string okText, string cancelText, bool danger,
+                            bool dark = false, bool showIcon = false)
     {
-        HudDialogTheme theme = HudDialogTheme.Resolve(style);
+        HudDialogTheme theme = HudDialogTheme.Resolve(style, dark);
         List<HudDialog.HudDialogButtonSpec> specs = HudDialog.BuildSpecs(buttons, okText, cancelText);
 
         Width = HudDialog.DefaultWidth;
@@ -396,7 +413,8 @@ internal sealed class HudDialogPanel : Grid
         Grid.SetRow(header, 0);
         layout.Children.Add(header);
 
-        Grid body = BuildBody(theme, message, icon);
+        // 外部弹窗不画图标：showIcon=false 时按 None 处理，图标列宽度归零，正文与标题都不偏移。
+        Grid body = BuildBody(theme, message, showIcon ? icon : HudDialogIcon.None);
         Grid.SetRow(body, 1);
         layout.Children.Add(body);
 
@@ -404,19 +422,9 @@ internal sealed class HudDialogPanel : Grid
         Grid.SetRow(footer, 2);
         layout.Children.Add(footer);
 
-        // 直角 + 单角切角是「行动面」的形状语义：切角给 10px（规范 8–12px），
-        // 只切右上，和主按钮的右上切角同向。1px 线是唯一的边界，不用阴影。
-        var surface = new CutCornerBorder
-        {
-            CutSize = 10,
-            Corner = CutCorner.TopRight,
-            BorderThickness = new Thickness(1),
-            BorderBrush = CardPalette.Brush(theme.Line),
-            Background = CardPalette.Brush(theme.Surface),
-            Padding = new Thickness(24, 18, 24, 20)
-        };
-        surface.Child = layout;
-        Children.Add(surface);
+        // 与设置主界面同一档圆角：22px 表面 + 1px 线，内容按圆角裁切。
+        // 上下各留 20px，3px 强调竖条落在弧线之内，不会被圆角吃掉。
+        Children.Add(HudDialogSurface.Wrap(layout, theme.Surface, theme.Line, new Thickness(24, 20, 24, 20)));
     }
 
     /// <summary>标题行：3px 信号黄竖条 + 14 SemiBold 标题 + 可选关闭键；整行是拖动区。</summary>
@@ -600,13 +608,14 @@ internal enum HudDialogButtonTone
 }
 
 /// <summary>
-/// 自绘按钮：模板只留内容呈现，底形 / 描边 / 切角 / 悬停 / 焦点环全部在 OnRender 里画。
+/// 自绘按钮：模板只留内容呈现，底形 / 描边 / 圆角 / 悬停 / 焦点环全部在 OnRender 里画。
 /// 这样按钮不会被 WPF 默认模板再套一层灰色边框，也不用为每种语气拼一套 XAML。
 /// </summary>
 internal sealed class HudDialogButton : Button
 {
-    // 32px 高的行动按钮，切角取 8px ≈ 高度 1/4（规范 --cut-sm/md 之间，视觉上与 10px 的面板切角同向）。
-    const double CutSize = 8;
+    // 6px 圆角：与设置窗控件（Theme.xaml 按钮 4–6px、色块 4px）同档。
+    // 32px 高的按钮用 6px 才和 22px 圆角的面板同调；继续用切角会像上一个版本的残留。
+    const double Radius = 6;
     const double MinHeightValue = 32;
 
     readonly HudDialogTheme _theme;
@@ -667,7 +676,6 @@ internal sealed class HudDialogButton : Button
         double h = ActualHeight;
         if (w > 0 && h > 0)
         {
-            bool cut = _tone == HudDialogButtonTone.Primary;
             Color fill;
             Color border;
 
@@ -688,18 +696,18 @@ internal sealed class HudDialogButton : Button
                     break;
 
                 case HudDialogButtonTone.Ghost:
-                    fill = IsMouseOver ? _theme.RaisedColor : Colors.Transparent;
+                    fill = IsMouseOver ? _theme.Panel : Colors.Transparent;
                     border = Colors.Transparent;
                     break;
 
                 default:
                     // 次级行动：透明底 + 1px 线 + 主文字，悬停只抬一档中性底。
-                    fill = IsMouseOver ? _theme.RaisedColor : Colors.Transparent;
+                    fill = IsMouseOver ? _theme.Panel : Colors.Transparent;
                     border = _theme.Line;
                     break;
             }
 
-            Geometry shape = BuildShape(new Rect(0, 0, w, h), cut);
+            Geometry shape = BuildShape(new Rect(0, 0, w, h), Radius);
             Pen pen = null;
             if (border.A > 0)
             {
@@ -711,7 +719,7 @@ internal sealed class HudDialogButton : Button
             if (IsKeyboardFocused)
             {
                 // 焦点环外扩 2px，颜色在实心黄上用墨色、其余用信号黄，保证在底形上总能看见。
-                Geometry ring = BuildShape(new Rect(-2, -2, w + 4, h + 4), cut);
+                Geometry ring = BuildShape(new Rect(-2, -2, w + 4, h + 4), Radius + 2);
                 Color ringColor = _tone == HudDialogButtonTone.Primary ? _theme.AccentInk : _theme.AccentColor;
                 var ringPen = new Pen(CardPalette.Brush(ringColor), 2);
                 ringPen.Freeze();
@@ -722,20 +730,11 @@ internal sealed class HudDialogButton : Button
         base.OnRender(dc);
     }
 
-    /// <summary>右上切角的直角多边形；不切角时就是普通矩形（次级 / 危险 / 关闭键）。</summary>
-    static Geometry BuildShape(Rect rect, bool cut)
+    /// <summary>6px 圆角矩形；半径按较短边折半收口，避免小按钮（关闭键 24px）画成胶囊。</summary>
+    static Geometry BuildShape(Rect rect, double radius)
     {
-        double size = cut ? Math.Min(CutSize, Math.Min(rect.Width, rect.Height) / 2) : 0;
-
-        var geometry = new StreamGeometry();
-        using (StreamGeometryContext ctx = geometry.Open())
-        {
-            ctx.BeginFigure(new Point(rect.Left, rect.Top), true, true);
-            ctx.LineTo(new Point(rect.Right - size, rect.Top), true, false);
-            ctx.LineTo(new Point(rect.Right, rect.Top + size), true, false);
-            ctx.LineTo(new Point(rect.Right, rect.Bottom), true, false);
-            ctx.LineTo(new Point(rect.Left, rect.Bottom), true, false);
-        }
+        double r = Math.Min(radius, Math.Min(rect.Width, rect.Height) / 2);
+        var geometry = new RectangleGeometry(rect, r, r);
         geometry.Freeze();
         return geometry;
     }
@@ -787,69 +786,91 @@ internal sealed class HudDialogButton : Button
 }
 
 /// <summary>
-/// 对话框用到的全部颜色与字体：null 的 StyleSettings 走 Endfield 墨版默认值；
-/// 提供 StyleSettings 时取强调色 / 前景 / 背景 / 背景不透明度 / 字体。
+/// 对话框表面：22px 圆角 + 1px 线的「浮起面板」，与设置主界面同一档圆角。
 ///
-/// 圆角按规范**不使用**：对话框是行动面，形状固定为直角 + 单角切角，
-/// 所以外部主题的 CornerRadius（在 Overlay 上，不在 StyleSettings 里）不会把这里变成大圆角。
+/// 为什么必须自己裁切：<see cref="Border"/> 的 CornerRadius 只影响背景与描边，
+/// 不会剪掉子元素 —— 悬停底、色块、输入框都会在弧线外露出直角，圆角就只“画”了一半。
+/// </summary>
+internal static class HudDialogSurface
+{
+    internal const double Radius = 22;
+
+    /// <summary>把内容放进圆角表面；内容按缩进后的矩形裁切，圆角本身由 Border 画。</summary>
+    internal static Border Wrap(FrameworkElement content, Color background, Color line, Thickness padding)
+    {
+        var surface = new Border
+        {
+            CornerRadius = new CornerRadius(Radius),
+            BorderThickness = new Thickness(1),
+            BorderBrush = CardPalette.Brush(line),
+            Background = CardPalette.Brush(background),
+            Padding = padding
+        };
+
+        // 内容区被 padding 缩进到弧线之内（缩进 ≥ 圆角半径时内层无需再倒角），
+        // 内层半径按「外圆角 − 缩进」计算：padding 变小也不会突然露出直角。
+        var clip = new RectangleGeometry();
+        content.Clip = clip;
+        content.SizeChanged += (s, e) =>
+        {
+            clip.Rect = new Rect(0, 0, content.ActualWidth, content.ActualHeight);
+            double inset = Math.Min(padding.Left, padding.Top);
+            clip.RadiusX = clip.RadiusY = Math.Max(0, Radius - inset);
+        };
+
+        surface.Child = content;
+        return surface;
+    }
+}
+
+/// <summary>
+/// 对话框用到的全部颜色与字体：明暗**不再**从背景亮度推断，而由调用方显式给 <c>dark</c>。
+///
+/// 为什么底色不吃 <see cref="StyleSettings"/> 的背景：卡片底色可能半透明、带花纹或极亮，
+/// 系统级确认面浮在桌面上时正文会读不清；对话框固定跟设置窗的两套 Endfield 令牌，
+/// StyleSettings 只贡献字体（用户选的字体要跟着走）。
 /// </summary>
 internal sealed class HudDialogTheme
 {
     internal Color Surface;
+    internal Color Panel;
+    internal Color Field;
     internal Color Text;
     internal Color Secondary;
     internal Color Line;
-    internal Color RaisedColor;
     internal Color AccentColor;
-    // 浅色行动面上的强调色：亮黄在浅底几乎不可见，按 paper 版换成暗金。
+    // 浅色行动面上的强调色：亮黄在浅底几乎不可见，按 paper 版换成暗金 #B7A400。
     internal Color AccentOnSurface;
     internal Color AccentInk;
     internal Color DangerColor;
     internal FontFamily Font;
 
-    internal static HudDialogTheme Resolve(StyleSettings style)
+    internal static HudDialogTheme Resolve(StyleSettings style, bool dark)
     {
-        Color background = Color.FromRgb(0x14, 0x14, 0x14);
-        Color text = Color.FromRgb(0xF5, 0xF5, 0xF0);
-        Color accent = Color.FromRgb(0xFF, 0xFA, 0x00);
-        double opacity = 1.0;
-        string font = "Microsoft YaHei UI";
+        string font = style is not null && !string.IsNullOrWhiteSpace(style.FontFamily)
+            ? style.FontFamily
+            : "Microsoft YaHei UI";
 
-        if (style is not null)
-        {
-            background = CardPalette.TryColor(style.Background, background);
-            text = CardPalette.TryColor(style.Foreground, text);
-            accent = CardPalette.TryColor(style.Accent, accent);
-            opacity = double.IsNaN(style.BackgroundOpacity)
-                ? 1.0
-                : Math.Max(0.0, Math.Min(1.0, style.BackgroundOpacity));
-            if (!string.IsNullOrWhiteSpace(style.FontFamily)) font = style.FontFamily;
-        }
-
-        bool dark = Luminance(background) < 0.5;
-
-        // 背景不透明度按用户主题取，但先与中性行动面底色合成：
-        // 对话框浮在任意桌面内容上，直接留 alpha 会让正文在花哨壁纸上读不清。
-        // 合成既保留了用户的色相 / 不透明度，又保证最低对比度。
-        Color baseSurface = dark ? Color.FromRgb(0x14, 0x14, 0x14) : Color.FromRgb(0xFA, 0xFA, 0xFA);
-        Color surface = Mix(baseSurface, background, opacity);
-        // 次级文字：暗色取 #F5F5F0 的 52% ≈ #8A8A8A，亮色取 #101110 的 65% ≈ #626262（neutral-600）。
-        Color secondary = Mix(text, surface, dark ? 0.48 : 0.35);
+        // 两套令牌与 SettingsTheme 一一对应：暗色是 Endfield 墨版 #141414/#F5F5F0/#FFFA00，
+        // 明亮是 paper 版 #F2F2EC 底 / #FFFFFF 面板 / #151515 字 / #626262 次级 / #E6E6E6 线。
+        // 强调色在浅底上用暗金 #B7A400（亮黄当文字/竖条几乎不可见），主按钮仍保留黄底墨字。
+        Color accent = dark ? Color.FromRgb(0xFF, 0xFA, 0x00) : Color.FromRgb(0xF2, 0xE9, 0x00);
 
         return new HudDialogTheme
         {
-            Surface = surface,
-            Text = text,
-            Secondary = secondary,
-            // 线是唯一边界：暗 #383838 / 亮 #E6E6E6，1px。
+            Surface = dark ? Color.FromRgb(0x14, 0x14, 0x14) : Color.FromRgb(0xF2, 0xF2, 0xEC),
+            // Panel 只用于悬停底 / 关闭键 / 取色器面板，不参与层级（层级靠字号字重 + 3px 竖条）。
+            Panel = dark ? Color.FromRgb(0x1E, 0x1E, 0x1E) : Color.FromRgb(0xFF, 0xFF, 0xFF),
+            // Field 是输入框底：浅色用纯白，暗色比表面再沉一档，输入区才有“凹陷”的可读边界。
+            Field = dark ? Color.FromRgb(0x0E, 0x11, 0x13) : Color.FromRgb(0xFF, 0xFF, 0xFF),
+            Text = dark ? Color.FromRgb(0xF5, 0xF5, 0xF0) : Color.FromRgb(0x15, 0x15, 0x15),
+            Secondary = dark ? Color.FromRgb(0x8A, 0x8A, 0x8A) : Color.FromRgb(0x62, 0x62, 0x62),
             Line = dark ? Color.FromRgb(0x38, 0x38, 0x38) : Color.FromRgb(0xE6, 0xE6, 0xE6),
-            // raised 只用于悬停底、关闭键底，不参与层级（层级靠字号 / 字重 + 3px 竖条）。
-            RaisedColor = dark ? Color.FromRgb(0x19, 0x19, 0x19) : Colors.White,
             AccentColor = accent,
-            AccentOnSurface = dark || Luminance(accent) <= 0.60 ? accent : Color.FromRgb(0xB7, 0xA4, 0x00),
-            AccentInk = Luminance(accent) > 0.58 ? Color.FromRgb(0x14, 0x14, 0x14) : Color.FromRgb(0xFA, 0xFA, 0xFA),
-            // 角色色按规范固定值：红危险、橙提醒、蓝信息；状态另有方形字形标记。
-            DangerColor = Color.FromRgb(0xF6, 0x2A, 0x2A),
+            AccentOnSurface = dark ? accent : Color.FromRgb(0xB7, 0xA4, 0x00),
+            AccentInk = dark ? Color.FromRgb(0x14, 0x14, 0x14) : Color.FromRgb(0x11, 0x11, 0x11),
+            // 危险色与设置窗同值：暗 #F62A2A / 亮 #B83A2E（浅底上的纯红会发飘）。
+            DangerColor = dark ? Color.FromRgb(0xF6, 0x2A, 0x2A) : Color.FromRgb(0xB8, 0x3A, 0x2E),
             Font = CardPalette.ResolveFont(font)
         };
     }
@@ -862,16 +883,4 @@ internal sealed class HudDialogTheme
         HudDialogIcon.Question => (Color.FromRgb(0x2A, 0x84, 0xB4), "?"),
         _ => (Colors.Transparent, "")
     };
-
-    static double Luminance(Color color) =>
-        (0.2126 * color.R + 0.7152 * color.G + 0.0722 * color.B) / 255.0;
-
-    static Color Mix(Color from, Color to, double amount)
-    {
-        double t = Math.Max(0, Math.Min(1, amount));
-        return Color.FromRgb(
-            (byte)Math.Round(from.R + (to.R - from.R) * t),
-            (byte)Math.Round(from.G + (to.G - from.G) * t),
-            (byte)Math.Round(from.B + (to.B - from.B) * t));
-    }
 }
