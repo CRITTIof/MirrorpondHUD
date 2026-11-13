@@ -66,6 +66,7 @@
     <ProjectReference Include="src\Plugins\Chat\MirrorpondHUD.Cards.Chat.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="src\Plugins\Media\MirrorpondHUD.Cards.Media.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="src\Plugins\DropStation\MirrorpondHUD.Cards.DropStation.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="src\Plugins\Lyrics\MirrorpondHUD.Cards.Lyrics.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>
@@ -86,6 +87,9 @@
     </BundledCardPluginFile>
     <BundledCardPluginFile Include="src\Plugins\DropStation\bin\$(Configuration)\MirrorpondHUD.Cards.DropStation.dll">
       <PluginId>builtin.dropstation</PluginId>
+    </BundledCardPluginFile>
+    <BundledCardPluginFile Include="src\Plugins\Lyrics\bin\$(Configuration)\MirrorpondHUD.Cards.Lyrics.dll">
+      <PluginId>builtin.lyrics</PluginId>
     </BundledCardPluginFile>
   </ItemGroup>
 
