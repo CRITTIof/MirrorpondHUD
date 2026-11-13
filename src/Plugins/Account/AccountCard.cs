@@ -55,11 +55,18 @@ public sealed class AccountCard : RichCardModuleBase, ICardSettingsModule, ICard
         var panel = new StackPanel { Margin = new Thickness(0, 6, 0, 0) };
         panel.Children.Add(new TextBlock
         {
-            Text = "只读展示，不会签到或修改账号。请填写森空岛登录后的只读凭据（不是手机号密码），只保存在本机。",
+            Text = "只读展示，不会签到或修改账号。点「扫码登录」用森空岛 App 扫一下即可，不用再找浏览器请求头。",
             TextWrapping = TextWrapping.Wrap,
             Opacity = 0.65,
             Margin = new Thickness(0, 0, 0, 6)
         });
+
+        var loginState = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0), Opacity = 0.6 };
+        var scan = new Button { Content = "扫码登录", Padding = new Thickness(10, 3, 10, 3), HorizontalAlignment = HorizontalAlignment.Left };
+        var loginRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
+        loginRow.Children.Add(scan);
+        loginRow.Children.Add(loginState);
+        panel.Children.Add(loginRow);
 
         var cred = new TextBox { Text = extras.Cred ?? "", Margin = new Thickness(0, 0, 0, 6) };
         var salt = new TextBox { Text = extras.Salt ?? "", Margin = new Thickness(0, 0, 0, 6) };
@@ -70,7 +77,7 @@ public sealed class AccountCard : RichCardModuleBase, ICardSettingsModule, ICard
         panel.Children.Add(salt);
         panel.Children.Add(new TextBlock
         {
-            Text = "提示：在森空岛网页登录后的请求头里可以找到 cred 与 sign 对应的 salt；两者都是只读凭据。",
+            Text = "扫码登录会自动填好这两项；也可以手动粘贴。cred 与 salt 都是只读凭据，只保存在本机。",
             TextWrapping = TextWrapping.Wrap,
             Opacity = 0.55,
             FontSize = 11,
@@ -96,6 +103,20 @@ public sealed class AccountCard : RichCardModuleBase, ICardSettingsModule, ICard
             config.SetExtras(SettingsKey, extras);
             onChanged?.Invoke();
         }
+
+        scan.Click += (s, e) =>
+        {
+            var dialog = new QrLoginDialog(Window.GetWindow(panel), settings?.Style);
+            bool ok = dialog.ShowDialog() == true;
+            if (!ok)
+            {
+                loginState.Text = "已取消";
+                return;
+            }
+            cred.Text = dialog.Cred;
+            salt.Text = dialog.Salt;
+            loginState.Text = "登录成功，凭据已回填";
+        };
 
         cred.TextChanged += (s, e) => Commit();
         salt.TextChanged += (s, e) => Commit();
@@ -164,10 +185,28 @@ public sealed class AccountCard : RichCardModuleBase, ICardSettingsModule, ICard
     {
         const string sample = "{\"code\":0,\"data\":{\"status\":{\"nickName\":\"博士\",\"level\":120,\"uid\":\"12345678\",\"ap\":{\"current\":42,\"completeRecoveryTime\":1760000000}},\"chars\":[{\"rarity\":6},{\"rarity\":4},{\"rarity\":6}]}}";
         AccountSnapshot snapshot = AccountSnapshot.Parse(sample, out string error);
-        return error is null && snapshot is not null
-               && snapshot.NickName == "博士" && snapshot.Level == 120
-               && snapshot.CharCount == 3 && snapshot.SixStarCount == 2
-            ? null : "账号快照解析失败: " + (error ?? "字段不符");
+        bool snapshotOk = error is null && snapshot is not null
+                          && snapshot.NickName == "博士" && snapshot.Level == 120
+                          && snapshot.CharCount == 3 && snapshot.SixStarCount == 2;
+
+        // 2.47.0：扫码登录的二维码必须稳定生成（固定 v4-L，33×33）。
+        bool qrOk;
+        try
+        {
+            bool[,] matrix = QrCode.Encode("hypergryph://scan_login?scanId=" + new string('a', 32));
+            qrOk = matrix.GetLength(0) == 33 && matrix.GetLength(1) == 33
+                   && matrix[0, 0] && matrix[0, 6] && matrix[6, 0] && matrix[6, 6]
+                   && !matrix[1, 1] && matrix[3, 3]
+                   && matrix[6, 8] && !matrix[6, 9]
+                   && matrix[25, 8]; // 固定深色模块 (8, size-8)
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"二维码自检异常: {ex.Message}");
+            qrOk = false;
+        }
+
+        return snapshotOk && qrOk ? null : "账号快照解析或扫码二维码生成失败";
     }
 }
 
