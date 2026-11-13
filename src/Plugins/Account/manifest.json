@@ -1,0 +1,10 @@
+{
+  "id": "builtin.account",
+  "name": "明日方舟 · 账号状态",
+  "version": "0.0.0",
+  "apiVersion": 2,
+  "contractsVersion": "2.46.7",
+  "entryType": "MirrorpondHUD.Cards.AccountCard",
+  "assembly": "MirrorpondHUD.Cards.Account.dll",
+  "author": "MirrorpondHUD"
+}

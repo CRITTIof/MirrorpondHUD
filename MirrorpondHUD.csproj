@@ -67,6 +67,7 @@
     <ProjectReference Include="src\Plugins\Media\MirrorpondHUD.Cards.Media.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="src\Plugins\DropStation\MirrorpondHUD.Cards.DropStation.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="src\Plugins\Lyrics\MirrorpondHUD.Cards.Lyrics.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="src\Plugins\Account\MirrorpondHUD.Cards.Account.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>
@@ -90,6 +91,9 @@
     </BundledCardPluginFile>
     <BundledCardPluginFile Include="src\Plugins\Lyrics\bin\$(Configuration)\MirrorpondHUD.Cards.Lyrics.dll">
       <PluginId>builtin.lyrics</PluginId>
+    </BundledCardPluginFile>
+    <BundledCardPluginFile Include="src\Plugins\Account\bin\$(Configuration)\MirrorpondHUD.Cards.Account.dll">
+      <PluginId>builtin.account</PluginId>
     </BundledCardPluginFile>
   </ItemGroup>
 
