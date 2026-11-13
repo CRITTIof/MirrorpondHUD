@@ -121,6 +121,12 @@ internal static class CardMotion
     /// <summary>截图 / 自检一次关掉，之后设置加载 / 应用也不能重新打开。</summary>
     public static void SuppressForCapture() => _captureDisabled = true;
 
+    /// <summary>
+    /// 离屏模式是否已静音。设置窗动效（<see cref="SettingsMotion"/>）读这个开关，
+    /// 保证 --screenshot-settings 拿到的是终态，不另立一套全局布尔。
+    /// </summary>
+    public static bool SuppressedForCapture => _captureDisabled;
+
     /// <summary>按当前设置决定动效档位与是否循环；减少动效仍然一票否决。</summary>
     public static void ApplySettings(Settings settings)
     {
