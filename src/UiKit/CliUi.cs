@@ -147,6 +147,7 @@ public static class CliScrollBars
             template = template
                 .Replace("CornerRadius=\"3\" Margin=\"2,2,2,2\"", "CornerRadius=\"0\" Margin=\"0\"")
                 .Replace("<Setter Property=\"Width\" Value=\"7\"/>", "<Setter Property=\"Width\" Value=\"6\"/>")
+                .Replace("<Thumb MinHeight=\"20\"", "<Thumb Width=\"6\" MinWidth=\"0\" MinHeight=\"20\"")
                 .Replace("<Grid Background=\"Transparent\" SnapsToDevicePixels=\"True\">",
                          "<Grid Background=\"Transparent\" SnapsToDevicePixels=\"True\">"
                          + "<Border Width=\"6\" HorizontalAlignment=\"Right\" Background=\"#3A3A3F\"/>");
@@ -260,7 +261,7 @@ public sealed class CliEntryPanel : Border
 
         const double inset = 4;
         const double hArm = 22;
-        const double vArm = 8;
+        const double vArm = 16;
         var brush = new SolidColorBrush(Color.FromArgb(150, _foreground.R, _foreground.G, _foreground.B));
         brush.Freeze();
         var pen = new Pen(brush, 1.4);

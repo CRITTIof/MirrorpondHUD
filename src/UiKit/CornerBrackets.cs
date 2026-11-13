@@ -48,7 +48,7 @@ public sealed class CornerBrackets : FrameworkElement
             if (value)
             {
                 _horizontalArm = 26;
-                _verticalArm = 9;
+                _verticalArm = 18;
                 _thickness = 1.6;
             }
             else
