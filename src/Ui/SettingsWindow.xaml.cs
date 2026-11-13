@@ -247,6 +247,7 @@ public partial class SettingsWindow : Window
         OverallMotionCheck.Checked += (s, e) => UiChanged();
         OverallMotionCheck.Unchecked += (s, e) => UiChanged();
         CardSlideCombo.SelectionChanged += (s, e) => UiChanged();
+        LogLevelCombo.SelectionChanged += (s, e) => UiChanged();
         TrayCheck.Checked += (s, e) => { UiChanged(); UpdateContextUiState(); };
         TrayCheck.Unchecked += (s, e) => { UiChanged(); UpdateContextUiState(); };
         GpuCheck.Checked += (s, e) => { UiChanged(); UpdateContextUiState(); };

@@ -131,6 +131,9 @@ internal sealed class SettingsApplier
         {
             settings.Normalize();
             CardModel.Normalize(settings);
+            // 日志等级属于“立即生效”的运行期偏好：放在写日志 / SyncCards 之前，
+            // 保存后的日志就按新等级过滤。
+            Log.SetMinLevel(settings.Behavior.LogLevel);
 
             SyncCards(summoned);
         }

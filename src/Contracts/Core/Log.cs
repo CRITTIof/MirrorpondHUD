@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
@@ -6,6 +6,15 @@ using System.Text;
 using System.Threading;
 
 namespace MirrorpondHUD.Core;
+
+/// <summary>日志最小输出等级；数值越小越详细。</summary>
+public enum LogSeverity
+{
+    Debug = 0,
+    Info = 1,
+    Warn = 2,
+    Error = 3
+}
 
 /// <summary>
 /// 极简文件日志。优先写到 exe 同目录（便携、权限问题最少），
@@ -42,6 +51,30 @@ public static class Log
     static DateTime _nextRetryUtc = DateTime.MinValue;
 
     static bool? _debugEnabled;
+
+    /// <summary>当前最小输出等级；设置页「行为 → 日志等级」控制，默认 Info。</summary>
+    static int _minLevel = (int)LogSeverity.Info;
+
+    public static LogSeverity MinLevel
+    {
+        get => (LogSeverity)Volatile.Read(ref _minLevel);
+        set => Volatile.Write(ref _minLevel, (int)value);
+    }
+
+    /// <summary>按设置字符串设置最小等级；非法值由 NormalizeLogLevel 回落 Info。</summary>
+    public static void SetMinLevel(string value) => MinLevel = ParseSeverity(Settings.NormalizeLogLevel(value));
+
+    static LogSeverity ParseSeverity(string level) =>
+        string.Equals(level, "Debug", StringComparison.OrdinalIgnoreCase) ? LogSeverity.Debug
+        : string.Equals(level, "Warn", StringComparison.OrdinalIgnoreCase) ? LogSeverity.Warn
+        : string.Equals(level, "Error", StringComparison.OrdinalIgnoreCase) ? LogSeverity.Error
+        : LogSeverity.Info;
+
+    static LogSeverity SeverityOf(string level) =>
+        string.Equals(level, "DEBUG", StringComparison.OrdinalIgnoreCase) ? LogSeverity.Debug
+        : string.Equals(level, "WARN", StringComparison.OrdinalIgnoreCase) ? LogSeverity.Warn
+        : string.Equals(level, "ERROR", StringComparison.OrdinalIgnoreCase) ? LogSeverity.Error
+        : LogSeverity.Info;
 
     readonly struct Entry
     {
@@ -151,7 +184,8 @@ public static class Log
 
     public static void Debug(string msg)
     {
-        if (DebugEnabled) Write("DEBUG", msg);
+        // 环境变量仍可强制打开 Debug（排查启动期问题）；否则跟随设置里的最小等级。
+        if (DebugEnabled || MinLevel <= LogSeverity.Debug) Write("DEBUG", msg);
     }
 
     public static void Info(string msg) => Write("INFO", msg);
@@ -217,6 +251,9 @@ public static class Log
 
     static void Write(string level, string msg)
     {
+        // 日志等级过滤放在入队之前：低于最小等级的记录既不占队列也不碰磁盘。
+        if (SeverityOf(level) < MinLevel) return;
+
         // X-8：先计数再入队，写线程消费后减回去；队列满则丢弃并计数。
         Interlocked.Increment(ref _pending);
         if (!Queue.TryAdd(new Entry(level, msg)))

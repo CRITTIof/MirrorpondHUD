@@ -79,6 +79,7 @@ public sealed class Settings
         Behavior.CursorStyle = NormalizeCursor(Behavior.CursorStyle);
         Behavior.CardSlide = NormalizeCardSlide(Behavior.CardSlide);
         Behavior.SettingsTheme = NormalizeSettingsTheme(Behavior.SettingsTheme);
+        Behavior.LogLevel = NormalizeLogLevel(Behavior.LogLevel);
         if (!IsHexColor(Behavior.SettingsPreviewBg))
         {
             // 只影响设置窗主题缩略图的衬底；非法值退回默认深蓝，不阻断整份设置。
@@ -326,6 +327,22 @@ public sealed class Settings
                 return "None";
             default:
                 return legacyLoopMotion ? "Breath" : "None";
+        }
+    }
+
+    /// <summary>日志最小等级清单；下拉框、归一化与校验共用。</summary>
+    public static readonly string[] LogLevelNames = { "Debug", "Info", "Warn", "Error" };
+
+    /// <summary>归一化日志等级：大小写不敏感，非法值回落 Info。</summary>
+    public static string NormalizeLogLevel(string value)
+    {
+        switch ((value ?? "").Trim().ToLowerInvariant())
+        {
+            case "debug": return "Debug";
+            case "warn":
+            case "warning": return "Warn";
+            case "error": return "Error";
+            default: return "Info";
         }
     }
 
@@ -841,6 +858,12 @@ public sealed class BehaviorSettings
     public bool AutoStart = false;
     public bool StartMinimized = false;
     public bool TrayEnabled = true;
+
+    /// <summary>
+    /// 日志最小打印等级：Debug / Info / Warn / Error。
+    /// 选 Debug 会记录取图、媒体、插件加载等细节；日常保持 Info。
+    /// </summary>
+    public string LogLevel = "Info";
 
     /// <summary>启动时播放"打字 / 退格"欢迎动画。</summary>
     public bool IntroEnabled = true;

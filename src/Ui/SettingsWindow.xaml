@@ -1,4 +1,4 @@
-<Window x:Class="MirrorpondHUD.Ui.SettingsWindow"
+﻿<Window x:Class="MirrorpondHUD.Ui.SettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
@@ -1280,6 +1280,24 @@
                         <CheckBox x:Name="AutoStartCheck" Content="开机自动启动" Margin="0,0,0,8" />
                         <CheckBox x:Name="StartMinCheck" Content="启动后最小化到托盘" Margin="0,0,0,8" />
                         <CheckBox x:Name="TrayCheck" Content="显示托盘图标" Margin="0,0,0,8" />
+
+                        <TextBlock Text="诊断" Style="{StaticResource SectionTitle}" Margin="0,16,0,6" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="110" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="日志等级" VerticalAlignment="Center" />
+                            <ComboBox x:Name="LogLevelCombo" Grid.Column="1" Width="180"
+                                      HorizontalAlignment="Left">
+                                <ComboBoxItem Content="调试" Tag="Debug" />
+                                <ComboBoxItem Content="常规" Tag="Info" />
+                                <ComboBoxItem Content="警告" Tag="Warn" />
+                                <ComboBoxItem Content="错误" Tag="Error" />
+                            </ComboBox>
+                        </Grid>
+                        <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="110,4,0,0"
+                                   Text="调试会记录取图、媒体、插件加载等详细过程；日常用常规，排查问题再临时调低。" />
 
                         <TextBlock Text="文件" Style="{StaticResource SectionTitle}" Margin="0,16,0,6" />
                         <StackPanel Orientation="Horizontal">

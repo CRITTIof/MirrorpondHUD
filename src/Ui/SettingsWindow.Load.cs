@@ -135,6 +135,7 @@ public partial class SettingsWindow
             AutoStartCheck.IsChecked = s.Behavior.AutoStart;
             StartMinCheck.IsChecked = s.Behavior.StartMinimized;
             TrayCheck.IsChecked = s.Behavior.TrayEnabled;
+            LogLevelCombo.SelectedIndex = LogLevelIndex(s.Behavior.LogLevel);
             IntroCheck.IsChecked = s.Behavior.IntroEnabled;
             ReduceMotionCheck.IsChecked = s.Behavior.ReduceMotion;
             OverallMotionCheck.IsChecked = s.Behavior.OverallMotion;
@@ -229,6 +230,23 @@ public partial class SettingsWindow
         if (mode == "Right") return 2;
         if (mode == "Card") return 3;
         return 0;
+    }
+
+    static int LogLevelIndex(string value)
+    {
+        switch (Settings.NormalizeLogLevel(value))
+        {
+            case "Debug": return 0;
+            case "Warn": return 2;
+            case "Error": return 3;
+            default: return 1;
+        }
+    }
+
+    string LogLevelTag()
+    {
+        var item = LogLevelCombo is null ? null : LogLevelCombo.SelectedItem as ComboBoxItem;
+        return Settings.NormalizeLogLevel(item is null ? null : item.Tag as string);
     }
 
     string AlignmentTag()
@@ -586,6 +604,7 @@ public partial class SettingsWindow
             s.Behavior.AutoStart = AutoStartCheck.IsChecked == true;
             s.Behavior.StartMinimized = StartMinCheck.IsChecked == true;
             s.Behavior.TrayEnabled = TrayCheck.IsChecked == true;
+            s.Behavior.LogLevel = LogLevelTag();
             s.Behavior.IntroEnabled = IntroCheck.IsChecked == true;
             s.Behavior.ReduceMotion = ReduceMotionCheck.IsChecked == true;
             s.Behavior.OverallMotion = OverallMotionCheck.IsChecked == true;

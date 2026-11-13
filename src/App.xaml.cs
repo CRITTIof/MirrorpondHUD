@@ -162,6 +162,7 @@ public partial class App : Application
 
             // 运行时卡片插件已在启动早期加载（见 args 之后）。
             settings = ConfigStore.Load();
+            Log.SetMinLevel(settings.Behavior.LogLevel);
             // P1-1：启动日志补全配置与插件上下文，出问题时日志自带现场。
             Log.Info($"配置已加载  文件={ConfigStore.Path}  schema={settings.SchemaVersion}/{Settings.CurrentSchemaVersion}  插件={_plugins.Count} 个");
             if (!string.IsNullOrEmpty(ConfigStore.LastLoadWarning))

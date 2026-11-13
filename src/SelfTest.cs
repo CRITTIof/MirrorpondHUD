@@ -1326,6 +1326,11 @@ internal static class SelfTest
                             && roundTrip.Cards[0].Content == "{time}"
                             && roundTrip.Cards[0].Extras.ContainsKey("command");
 
+            bool logLevelOk = Settings.NormalizeLogLevel("debug") == "Debug"
+                           && Settings.NormalizeLogLevel("WARN") == "Warn"
+                           && Settings.NormalizeLogLevel("nonsense") == "Info"
+                           && Settings.NormalizeLogLevel("ERROR") == "Error";
+
             Settings nullBlocks = Json.Deserialize<Settings>(
                 "{\"SchemaVersion\":7,\"Style\":null,\"Overlay\":null,\"Cli\":null," +
                 "\"Data\":null,\"Behavior\":null,\"Hotkeys\":null,\"Cards\":null}");
@@ -1334,7 +1339,7 @@ internal static class SelfTest
                        && nullBlocks.Data is not null && nullBlocks.Behavior is not null
                        && nullBlocks.Hotkeys is not null && nullBlocks.Cards is not null;
 
-            configOk = defaultsOk && roundTripOk && nullOk;
+            configOk = defaultsOk && roundTripOk && nullOk && logLevelOk;
 
             configRepairOk = CheckConfigRepair();
         }
