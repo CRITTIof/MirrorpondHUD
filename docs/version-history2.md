@@ -1,4 +1,4 @@
-# 版本修改记录（2.45.0 → ）
+﻿# 版本修改记录（2.45.0 → ）
 
 > 承接 [`version-history.md`](version-history.md)：那边记录到 v2.44.2（82 节，已超过 3000 行），此后不再追加，避免单文件继续膨胀。
 > 统计口径与旧文档一致：`git diff --shortstat <上一版>..<本版>`，文件行的 `+ / -` 是实际增删行数；版本号唯一来源是 `Directory.Build.props` 的 `<Version>`。
@@ -11,7 +11,7 @@
 | v2.45.0 | 2026-11-12 | `38c07ac` `75e6ea0` | 2.44.2 审阅 P1 全量修复 + samples 排除列表 | 29 文件，+511 / −154 |
 | v2.45.1 | 2026-11-12 | `82a955e`…`f7aa73a`（29 个提交，含合并） | 2.44.2 审阅 P2 87 项 + P3 62 项全量修复；构建门禁、日志异步化、插件 contractsVersion、工程改名 | 150 文件，+11,627 / −1,505 |
 | v2.45.2 | 2026-11-13 | `d99dc2d` `20f7340` `6e2497a` 等 | Endfield 风格自绘对话框、行为页日志等级、粒子变化范围收窄、AGENTS 精简 | 24 文件，+1,862 / −216 |
-| v2.45.3 | 2026-11-13 | 本提交 | 设置窗动效（入场 / 切页 / 折叠分组 / 导航 / 明暗 / 状态行） | 8 文件 |
+| v2.45.3 | 2026-11-13 | `e86e446` `4f45ac0` `3e03c9d` `3d11541` 等 | 弹窗改设置窗圆角并区分内外明暗、取色器风格化、设置窗动效、粒子动态掩码、黑色 ICO 重制 | 24 文件，+2,168 / −189 |
 
 ---
 
@@ -109,13 +109,15 @@ P2 87 项与 P3 62 项覆盖玻璃线程、媒体状态机、文本布局、插�
 
 ---
 
-## 4. v2.45.3（设置窗动效，未合并 main）
+## 4. v2.45.3（弹窗圆角与取色器、设置窗动效、粒子动态掩码、黑色 ICO，未合并 main）
 
 ### 背景
 
 设置窗此前只有卡片列表的拖动 / 折叠动画，窗口开场、切页、折叠分组、左侧导航与明暗切换全是硬切，
 与 [`endfield-motion.md`](UI/endfield-motion.md) 的「短、直、不过冲」和 [`endfield.md`](UI/endfield.md) §3.7 不一致。
-本轮只给**设置窗**加动效，布局、主题、资源键与事件方法名都不变；卡片叠层、Overlay、HudDialog 与 UiKit 控件一律未动。
+同时，自绘弹窗还是切角风格、与设置窗 22px 圆角不统一；设置窗之外的弹窗（权限受限 / 托盘不可用 / 启动失败）应与设置窗区分、
+统一明亮且不显示“！”“？”图标；取色仍调用 WinForms `ColorDialog`；粒子首播会把模板字面量和硬件图标一起卷进粒子；
+黑色 ICO 在 16–48px 下发糊、边缘发灰。本轮一并处理。
 
 ### 改动
 
@@ -147,6 +149,22 @@ P2 87 项与 P3 62 项覆盖玻璃线程、媒体状态机、文本布局、插�
    SystemParameters.ClientAreaAnimation`。任一开关命中就直接到终态——截图 / 自检复用卡片动效已有的
    `CardMotion.SuppressForCapture`，不新增全局开关；本窗口内勾选「减少动效」立即生效（不必等保存）。
    所有动画失败 / 被打断都靠 `FillBehavior.Stop` 与「先重置再播」回到终态，不会把窗口留在 Opacity 0 或错误高度。
+10. **弹窗改设置窗圆角**：`HudDialog` 表面从「直角 + 单角切角」改为 22px 圆角 + 1px 线，内容按圆角几何裁切；
+    按钮改 6px 圆角（设置窗控件同档），黄底墨字 / 透明描边 / 危险红保留；2×2 截图模式保留。
+11. **内外弹窗分流**：`HudDialog.Show` 新增 `dark` / `showIcon`（默认外部明亮、无状态图标）。设置窗内 2 处
+    （删除卡片、未保存修改）传 `dark: _settingsDark, showIcon: true`；窗外 10 处（App / Overlay / Tray / Station）
+    保持默认，统一明亮风格且不画“！”“？”图标。明亮令牌用 `#F2F2EC/#FFFFFF/#151515/#626262/#E6E6E6`，
+    强调条用 paper 版 `#B7A400`。
+12. **取色器风格化**：新增 `UiKit.HudColorPicker`（22px 圆角、明暗两套、HSV 自绘色板 + 色相条 + Hex + RGB +
+    当前/新色预览 + 6px 圆角按钮）；替换 `SettingsWindow.Theme.PickColor` 的 WinForms `ColorDialog`，6 个颜色按钮自动生效；
+    非法输入红框提示且不关窗，Esc 取消 / Enter 确定；无 WinForms 依赖。
+13. **粒子动态掩码**：`TemplateEngine.TryBuildDynamicMask(template, rendered)` 按 Render 同源规则解析
+    `{{}}` 转义与占位符，用字面量顺序定位区分静态/动态字符；`OverlaySurface.PlayParticle` 与
+    `ParticleTextLayer.ResolveChangedTargets` 都只把「动态且非图标/键帽」的字符交给粒子，首播同理；
+    掩码不可用时保守退回“仅排除图标/键帽”并节流 Debug。模板字面量与 `Keycaps`/`Icons` 字形永不参与粒子。
+14. **黑色 ICO 重制**：新增 `tools/make_black_ico.py`，用 Edge/Chrome 无头渲染 `MirrorpondHUDLogoBlack.svg`
+    （透明底 1000×1000）→ alpha 包围盒裁剪 + 方形补齐 → 256px 母版生成 16/20/24/32/40/48/64/128/256 九档 ICO；
+    同时刷新 `logo.ico`（浅色任务栏）与 `logo-black.png`，并加入 csproj Resource。
 
 ### 验证
 
@@ -165,6 +183,11 @@ P2 87 项与 P3 62 项覆盖玻璃线程、媒体状态机、文本布局、插�
 - `dotnet format --verify-no-changes --include <6 个改动文件>`：无变更。
 - 截图模式按设计只验证终态布局：所有新动效在 `CardMotion.SuppressForCapture` 下直接落终态，
   导航选中底块（0.78）与 3px 指示条位置、分组展开高度都与基线逐像素相同。
+- `--screenshot-dialog` / `--dialog-light` / `--screenshot-colorpicker` / `--screenshot-settings` / `--screenshot-cards`
+  全部出图并目检：22px 圆角干净、外部三格无图标且正文不偏移、设置窗格保留方形“?”、明亮纸白与暗金竖条正确、
+  取色器暗/亮两套 Hex/RGB 与 HSV 游标正确；`--selftest` 两种模式退出 0、xUnit 12/12。
+- 粒子真实冒烟（临时 `TextEffect=Particle`）：时钟卡首播变化 23 → 参赛 12、系统信息卡 27 → 参赛 12
+  （模板字面量 + 2 个 Lucide 图标全部排除），后续 tick 5→5/2→2/1→1，无“掩码退回”日志。
 
 ### 风险 / 未验证
 
@@ -172,5 +195,9 @@ P2 87 项与 P3 62 项覆盖玻璃线程、媒体状态机、文本布局、插�
 - 分组高度动画每帧重排当前页（外观页最长），低端机需真机确认无掉帧；若吃紧可退化为「淡入 + 位移」。
 - `SystemParameters.ClientAreaAnimation` 跟随系统「显示动画」开关，需在关闭该开关的机器上确认全部停在终态。
 - 多显示器 / 混合 DPI 下的窗口缩放入场未实测（缩放锚点在内容根中心，理论不受 DPI 影响）。
+- 对话框/取色器需真机确认：125%/150%/175% 下 1px 线与 22px 圆角、跨屏 CenterOwner、暗窗里打开取色器的合成边缘、
+  Esc/Enter/Tab 与拖动连续性；Station 危险红在明亮底的对比度。
+- 粒子掩码在“模板与渲染不同源 / 字面量歧义”时按设计退回仅图标过滤；按键卡等非模板文本不在本轮冒烟范围，
+  只经纯函数自检覆盖。
 
 
