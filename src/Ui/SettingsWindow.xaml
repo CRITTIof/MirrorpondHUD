@@ -431,6 +431,13 @@
                                 </Grid.ColumnDefinitions>
 
                                 <StackPanel Margin="0,0,16,0">
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                        <TextBlock Text="外观包" VerticalAlignment="Center" Margin="0,0,10,0" />
+                                        <ComboBox x:Name="AppearanceCombo" Width="200"
+                                                  SelectionChanged="AppearanceSelectionChanged" />
+                                    </StackPanel>
+                                    <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,0,0,10"
+                                               Text="外观包 = 主题令牌 + 卡片 chrome；后续风格在此扩展，选“自定义”可保留手动微调。" />
                                     <TextBlock Text="选一套内置主题，或导入 .mptheme；只改当前设置副本，点“保存并应用”才生效。"
                                                Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" />
                                     <StackPanel Orientation="Horizontal" Margin="0,10,0,0">

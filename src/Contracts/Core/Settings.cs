@@ -146,6 +146,7 @@ public sealed class Settings
         Style.LoopPulseThickness = (int)Clamp(Style.LoopPulseThickness, 1, 8);
         Style.LoopScanlineThickness = (int)Clamp(Style.LoopScanlineThickness, 1, 10);
         Style.ThemeName = (Style.ThemeName ?? "").Trim();
+        Style.AppearanceId = (Style.AppearanceId ?? "").Trim();
         if (Style.Endfield is null) Style.Endfield = new EndfieldStyleSettings();
         Style.Endfield.Normalize();
 
@@ -700,6 +701,12 @@ public sealed class StyleSettings
 
     /// <summary>当前主题名（导入 / 选中内置主题时写入；手动改外观后清空）。空 = 自定义。</summary>
     public string ThemeName = "";
+
+    /// <summary>
+    /// 2.46.0：当前外观包 id（空 = 自定义/手动改过）。外观包 = 主题令牌 + 卡片 chrome 配方，
+    /// 设置页“外观包”下拉使用；后续新增风格只登记新包，不改卡片代码。
+    /// </summary>
+    public string AppearanceId = "endfield-ink";
 
     /// <summary>
     /// 终末地视觉语言（M2–M8）的开关与页脚模板。独立成对象是为了让每项都能单选，

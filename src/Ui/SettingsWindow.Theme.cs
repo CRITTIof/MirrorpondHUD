@@ -24,6 +24,8 @@ public partial class SettingsWindow
     readonly List<ThemePreset> _themes = new();
     bool _applyingTheme;
     bool _importingTheme;
+    bool _applyingAppearance;
+    readonly List<AppearancePack> _appearances = new();
 
     // ==================== 主题 ====================
 
@@ -36,6 +38,66 @@ public partial class SettingsWindow
         ThemeCombo.Items.Add("自定义（当前外观）");
         foreach (ThemePreset preset in _themes) ThemeCombo.Items.Add(preset.Name);
         if (ThemeCombo.SelectedIndex < 0) ThemeCombo.SelectedIndex = 0;
+
+        _appearances.Clear();
+        _appearances.AddRange(AppearanceCatalog.Load());
+        AppearanceCombo.Items.Clear();
+        AppearanceCombo.Items.Add("自定义（当前外观）");
+        foreach (AppearancePack pack in _appearances) AppearanceCombo.Items.Add(pack.Name);
+        if (AppearanceCombo.SelectedIndex < 0) AppearanceCombo.SelectedIndex = 0;
+    }
+
+    int AppearanceIndexOf(string id)
+    {
+        if (string.IsNullOrWhiteSpace(id)) return 0;
+        for (int i = 0; i < _appearances.Count; i++)
+            if (string.Equals(_appearances[i].Id, id, StringComparison.OrdinalIgnoreCase)) return i + 1;
+        return 0;
+    }
+
+    void AppearanceSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_suppress || _applyingAppearance || _working is null) return;
+
+        int index = AppearanceCombo.SelectedIndex;
+        if (index <= 0)
+        {
+            // 手动改回“自定义”：解除外观包身份，但保留当前令牌，不覆盖用户微调。
+            if (!string.IsNullOrEmpty(_working.Style.AppearanceId))
+            {
+                _working.Style.AppearanceId = "";
+                MarkDirty();
+            }
+            return;
+        }
+        if (index - 1 >= _appearances.Count) return;
+
+        AppearancePack pack = _appearances[index - 1];
+        if (!TryClone(_working, out var next, out var cloneError))
+        {
+            ThemeStatusText.Text = $"套用外观包失败：{cloneError}";
+            return;
+        }
+
+        if (!AppearanceRuntime.TryApply(next, pack, out var applyError))
+        {
+            ThemeStatusText.Text = $"套用外观包失败：{applyError}";
+            return;
+        }
+
+        next.Normalize();
+        CardModel.Normalize(next);
+        _applyingAppearance = true;
+        try
+        {
+            LoadUi(next);
+            ThemeStatusText.Text = $"已套用外观包「{pack.Name}」，点“保存并应用”生效";
+            MarkDirty();
+        }
+        finally
+        {
+            _applyingAppearance = false;
+        }
     }
 
     int ThemeIndexOf(string name)
@@ -52,8 +114,22 @@ public partial class SettingsWindow
     {
         // ReadUi 会调 ApplyCliBoxes → UiChanged；保存不是“用户手动改外观”，
         // 这里清掉 ThemeName 会让刚套用的主题在每次保存时丢失（L-1）。
-        if (_readingUi || _applyingTheme) return;
-        if (_working is null || string.IsNullOrEmpty(_working.Style.ThemeName)) return;
+        if (_readingUi || _applyingTheme || _applyingAppearance) return;
+        if (_working is null) return;
+
+        // 手动改任一外观字段 = 不再是某个外观包；组合框同步回“自定义”，
+        // 否则会显示“终末地·墨”但令牌已经被用户改过，身份与视觉不一致。
+        if (!string.IsNullOrEmpty(_working.Style.AppearanceId))
+        {
+            _working.Style.AppearanceId = "";
+            if (AppearanceCombo is not null && AppearanceCombo.SelectedIndex != 0)
+            {
+                _applyingAppearance = true;
+                try { AppearanceCombo.SelectedIndex = 0; }
+                finally { _applyingAppearance = false; }
+            }
+        }
+        if (string.IsNullOrEmpty(_working.Style.ThemeName)) return;
 
         _working.Style.ThemeName = "";
         ThemeNameText.Text = "自定义";
@@ -86,6 +162,7 @@ public partial class SettingsWindow
 
             document.ApplyTo(next);
             next.Style.ThemeName = name ?? "";
+            next.Style.AppearanceId = "";
             next.Normalize();
             CardModel.Normalize(next);
             LoadUi(next);

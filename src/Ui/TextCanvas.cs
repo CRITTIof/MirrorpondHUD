@@ -517,23 +517,6 @@ public sealed class TextCanvas : FrameworkElement
 
     // ==================== 度量 ====================
 
-    /// <summary>
-    /// 2.45.5：上一次 Arrange 对应的文本与宽度。窗口是 SizeToContent，文本变长后
-    /// 会先触发一次 OnRender、后完成新的 Arrange；如果直接用旧的 ActualWidth 判裁剪，
-    /// 正常内容会在那一瞬被加上省略号（用户看到的“偶发截断”）。
-    /// 只有“当前文本已经按这个宽度 Arrange 过”时，ActualWidth 才可信。
-    /// </summary>
-    string _arrangedText;
-    double _arrangedWidth;
-
-    protected override Size ArrangeOverride(Size finalSize)
-    {
-        Size size = base.ArrangeOverride(finalSize);
-        _arrangedText = _text;
-        _arrangedWidth = finalSize.Width;
-        return size;
-    }
-
     protected override Size MeasureOverride(Size availableSize)
     {
         PerformanceProbe.TextMeasure();
@@ -600,15 +583,11 @@ public sealed class TextCanvas : FrameworkElement
     /// </summary>
     double AvailableBlockWidth(double textWidth)
     {
+        // 2.46.0：裁剪只看**显式约束**（FixedWidth / 工作区上限），不再看 ActualWidth。
+        // 窗口是 SizeToContent，文本变长时会先 OnRender、后 Arrange；旧 ActualWidth 是上一段文本
+        // 的宽度（甚至隐藏布局的 1px），拿它判裁剪会把正常内容错误截断。
         double limit = LayoutWidthLimit();
-        double available = limit > 0 ? limit : Math.Max(1, textWidth);
-
-        // 只有当前文本已经按这个 Arrange 宽度布局过，ActualWidth 才代表“真的被压窄”；
-        // 文本刚变、Arrange 还没跟上时它还是上一段文本的宽度，用它裁会误伤正常内容。
-        if (_arrangedText == _text && _arrangedWidth > 0 && _arrangedWidth < available)
-            available = _arrangedWidth;
-
-        if (available <= 0) available = Math.Max(1, textWidth);
+        double available = limit > 0 ? Math.Min(Math.Max(1, textWidth), limit) : Math.Max(1, textWidth);
         return available;
     }
 
@@ -1312,7 +1291,7 @@ public sealed class TextCanvas : FrameworkElement
             if (ShouldLogClip(ref _clipWidthLogTicks))
             {
                 Log.Warn($"文本宽 {layout.Width:0.#} DIP 超过可用宽 {available:0.#} DIP"
-                    + $"（固定宽度 {_fixedWidth:0.#} / 工作区上限 {_maxTextWidth:0.#} / Arrange {ActualWidth:0.#}），已按省略号裁剪");
+                    + $"（固定宽度 {_fixedWidth:0.#} / 工作区上限 {_maxTextWidth:0.#}），已按省略号裁剪");
             }
             dc.PushClip(new RectangleGeometry(new Rect(0, 0, textLimit, ActualHeight)));
         }

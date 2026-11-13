@@ -41,6 +41,17 @@ public partial class SettingsWindow
             ThemeCombo.SelectedIndex = ThemeIndexOf(_working.Style.ThemeName);
             ThemeNameText.Text = string.IsNullOrWhiteSpace(_working.Style.ThemeName)
                 ? "自定义" : _working.Style.ThemeName;
+            _applyingAppearance = true;
+            try
+            {
+                int appearanceIndex = AppearanceIndexOf(_working.Style.AppearanceId);
+                AppearanceCombo.SelectedIndex = appearanceIndex;
+                // 离屏截图/首次布局时只改 SelectedIndex 偶尔不会刷新选中项文字；
+                // 显式选回同一个 item，保证界面与持久化 id 一致。
+                if (appearanceIndex >= 0 && appearanceIndex < AppearanceCombo.Items.Count)
+                    AppearanceCombo.SelectedItem = AppearanceCombo.Items[appearanceIndex];
+            }
+            finally { _applyingAppearance = false; }
             ThemePreviewBgBox.Text = _working.Behavior.SettingsPreviewBg;
 
             // S-18：字体列表改成后台预热 + 缓存，UI 只负责装视图与选中项（不再在 UI 线程全量枚举）。

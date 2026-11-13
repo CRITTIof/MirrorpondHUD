@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
@@ -44,6 +44,7 @@ internal sealed class VideoWindow : IDisposable
     static readonly LogThrottle StyleThrottle = new("设置视频窗扩展样式", 60000);
     static readonly LogThrottle ZOrderThrottle = new("调整视频窗 z-order", 60000);
     bool _zOrderFallbackLogged;
+    bool _nonTopmostAnchorFallbackLogged;
 
     static readonly IntPtr HwndTopmost = new(-1);
     const uint GwHwndPrev = 3;
@@ -461,10 +462,23 @@ internal sealed class VideoWindow : IDisposable
             }
             else
             {
-                // 卡片不置顶：只有锚点也不是置顶窗时才能插到它下面，否则会把视频窗也变成置顶。
-                // 此时退回 HWND_TOP（非置顶层最前面），层级仍然高于卡片。
+                // 卡片不置顶（含“仅桌面”模式）：只有锚点也不是置顶窗时才插到它下面。
+                // 绝不能用 HWND_TOP（IntPtr.Zero）——那会把视频抬到所有普通窗口上方，
+                // 看起来就像“富内容卡还置顶”。没有安全锚点时保持 owner 关系，不强行改 Z 序。
                 bool? anchorTopmost = TryIsTopmost(anchor);
-                insertAfter = anchor != IntPtr.Zero && anchorTopmost == false ? anchor : IntPtr.Zero;
+                if (anchor != IntPtr.Zero && anchorTopmost == false)
+                {
+                    insertAfter = anchor;
+                }
+                else
+                {
+                    if (!_nonTopmostAnchorFallbackLogged)
+                    {
+                        _nonTopmostAnchorFallbackLogged = true;
+                        Log.Debug("视频窗没有非置顶锚点；保持 owner 关系，不把它抬到普通窗口之上");
+                    }
+                    return;
+                }
             }
 
             const uint SwpNoMove = 0x0002, SwpNoSize = 0x0001, SwpNoActivate = 0x0010;

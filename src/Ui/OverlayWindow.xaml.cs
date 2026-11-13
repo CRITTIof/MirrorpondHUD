@@ -746,6 +746,12 @@ public partial class OverlayWindow : Window
         }
 
         _lastZPrev = Native.GetWindow(hwnd, Native.GwHwndPrev);
+
+        // 仅桌面：通知富内容（视频子窗口）重新按“卡片不置顶”的口径摆 Z 序，
+        // 否则它可能还停在之前置顶时的层级。
+        _glassRuntime.UpdateBackdrop();
+        Action handler = RaisedTopmost;
+        if (handler is not null) handler();
     }
 
     /// <summary>
