@@ -61,6 +61,8 @@ internal static class CommandLineMode
         // 校验失败必须 Log.Error + 非 0 退出，不能把配置或任意文件当 PNG 覆盖掉。
         // --screenshot-dialog 先判：避免 --screenshot 的前缀匹配误收，也让它独占自己的 --dialog-light。
         if (TryRunDialogScreenshot(args, out exitCode)) return true;
+        // 取色器与对话框共用一套验证：路径校验同样走 S-20，不合法就明确失败。
+        if (TryRunScreenshot(args, "--screenshot-colorpicker", Screenshots.CaptureColorPicker, out exitCode)) return true;
         if (TryRunScreenshot(args, "--screenshot-cards", Screenshots.CaptureCards, out exitCode)) return true;
         if (TryRunScreenshot(args, "--screenshot", Screenshots.CaptureOverlay, out exitCode)) return true;
         if (TryRunScreenshot(args, "--screenshot-settings", Screenshots.CaptureSettings, out exitCode)) return true;

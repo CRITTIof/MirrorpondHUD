@@ -165,9 +165,11 @@ public partial class SettingsWindow
         }
 
         // 原系统弹窗是 OKCancel：保持“确定 / 取消”的按钮语义与结果判断，不改成 Yes/No。
+        // 设置窗内的弹窗跟随设置窗当前明暗，并保留状态图标（方形色标 + 字形）。
         HudDialogResult answer = HudDialog.Show(this,
             "镜潭一览", "删除卡片「" + editor.DisplayName + "」？\n保存并应用后生效。",
-            HudDialogButtons.OkCancel, HudDialogIcon.Question, _working.Style);
+            HudDialogButtons.OkCancel, HudDialogIcon.Question, _working.Style,
+            dark: _settingsDark, showIcon: true);
         if (answer != HudDialogResult.Ok) return;
 
         _working.Cards.Remove(editor.Config);

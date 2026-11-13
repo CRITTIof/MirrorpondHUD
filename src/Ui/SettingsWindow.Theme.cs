@@ -9,6 +9,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using MirrorpondHUD.Cards;
 using MirrorpondHUD.Core;
+using MirrorpondHUD.Ui.Controls;
 
 namespace MirrorpondHUD.Ui;
 
@@ -375,26 +376,13 @@ public partial class SettingsWindow
     // ==================== 卡片内部：AI 对话 ====================
     // （历史分区注释保留：那一节的输入框加密逻辑已迁到 CardEditor.cs。）
 
-    /// <summary>输入框失焦：把新填的 Key 加密收下来，之后框里只剩「已填写」提示。</summary>
-    static string PickColor(string current)
-    {
-        try
-        {
-            using (var dialog = new System.Windows.Forms.ColorDialog())
-            {
-                Color color = OverlaySurface.ParseColor(current);
-                dialog.Color = System.Drawing.Color.FromArgb(color.R, color.G, color.B);
-                dialog.FullOpen = true;
-                if (dialog.ShowDialog() != System.Windows.Forms.DialogResult.OK) return null;
-                return $"#{dialog.Color.R:X2}{dialog.Color.G:X2}{dialog.Color.B:X2}";
-            }
-        }
-        catch (Exception ex)
-        {
-            Log.Warn($"取色失败: {ex.Message}");
-            return null;
-        }
-    }
+    /// <summary>
+    /// 取色：走 UiKit 自绘取色器（与对话框同一套 22px 圆角 / 明暗令牌），
+    /// 不再用 <c>System.Windows.Forms.ColorDialog</c> —— 系统面板白底直角，在暗色设置窗里像外来窗口。
+    /// 返回 null = 用户取消；非法输入由取色器自己红框提示，不静默写回设置。
+    /// </summary>
+    string PickColor(string current) =>
+        HudColorPicker.Pick(this, current, _settingsDark, _working is null ? null : _working.Style);
 
     /// <summary>P2-7：后台线程读取/解析主题文件的结果，回到 UI 线程再决定是否套用。</summary>
     sealed class ThemeImportOutcome
