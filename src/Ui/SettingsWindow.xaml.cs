@@ -84,6 +84,7 @@ public partial class SettingsWindow : Window
                             Func<string> applyWarning = null)
     {
         InitializeComponent();
+        FontFamily = HudFont.Default;
 
         _settingsDark = SettingsTheme.IsDark(live is null ? null : live.Behavior.SettingsTheme);
         _previewBg = live is null ? "#0B1020" : live.Behavior.SettingsPreviewBg;
@@ -176,6 +177,8 @@ public partial class SettingsWindow : Window
         return NavList.ItemContainerGenerator.ContainerFromIndex(index) as ListBoxItem
                ?? NavList.Items[index] as ListBoxItem;
     }
+
+    void DisplayModeChanged(object sender, SelectionChangedEventArgs e) => UiChanged();
 
     void NavSelectionChanged(object sender, SelectionChangedEventArgs e)
     {

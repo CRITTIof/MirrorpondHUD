@@ -133,7 +133,7 @@ public partial class SettingsWindow
                 StatusText.Text = "设备列表暂不可用：本次保存会保留原来的 GPU / 网卡选择。";
             FillMonitors(s.Overlay.Monitor);
 
-            TopmostCheck.IsChecked = s.Overlay.Topmost;
+            DisplayModeCombo.SelectedIndex = s.Overlay.Topmost ? 1 : 0;
             AutoStartCheck.IsChecked = s.Behavior.AutoStart;
             StartMinCheck.IsChecked = s.Behavior.StartMinimized;
             TrayCheck.IsChecked = s.Behavior.TrayEnabled;
@@ -602,7 +602,7 @@ public partial class SettingsWindow
             if (RefreshCombo.SelectedIndex >= 0 && RefreshCombo.SelectedIndex < SettingsDeviceCatalog.RefreshOptions.Length)
                 s.Behavior.RefreshMs = SettingsDeviceCatalog.RefreshOptions[RefreshCombo.SelectedIndex];
 
-            s.Overlay.Topmost = TopmostCheck.IsChecked == true;
+            s.Overlay.Topmost = DisplayModeCombo.SelectedIndex == 1;
             s.Behavior.AutoStart = AutoStartCheck.IsChecked == true;
             s.Behavior.StartMinimized = StartMinCheck.IsChecked == true;
             s.Behavior.TrayEnabled = TrayCheck.IsChecked == true;

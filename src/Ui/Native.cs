@@ -18,6 +18,8 @@ internal static class Native
     public const int WsExLayered = 0x00080000;
 
     public static readonly IntPtr HwndTopmost = new(-1);
+    /// <summary>2.45.6：仅桌面模式把叠层压到 Z 序最底，普通窗口都在它上方。</summary>
+    public static readonly IntPtr HwndBottom = new(1);
 
     [DllImport("user32.dll")]
     public static extern IntPtr GetWindow(IntPtr hWnd, int uCmd);

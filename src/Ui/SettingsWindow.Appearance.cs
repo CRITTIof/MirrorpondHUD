@@ -13,6 +13,7 @@ using System.Windows.Markup;
 using System.Windows.Media;
 using System.Windows.Threading;
 using MirrorpondHUD.Core;
+using MirrorpondHUD.Ui.Controls;
 
 namespace MirrorpondHUD.Ui;
 
@@ -350,6 +351,15 @@ public partial class SettingsWindow
                 string display = chinese ? $"{local} ({name})" : name;
                 items.Add(new FontItem { Family = name, Display = display, Chinese = chinese });
             }
+
+            // 2.45.6：嵌入的思源黑体不在 SystemFontFamilies 里，手动放在第一项；
+            // 否则默认值 "Noto Sans SC" 在字体下拉中选不中，看起来像“空字体”。
+            items.Insert(0, new FontItem
+            {
+                Family = HudFont.DefaultName,
+                Display = HudFont.DisplayName,
+                Chinese = true
+            });
 
             List<FontItem> sorted = items
                 .OrderBy(f => f.Chinese ? 0 : 1)

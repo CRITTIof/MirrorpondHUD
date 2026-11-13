@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Media;
 using System.Windows.Threading;
 using MirrorpondHUD.Core;
+using MirrorpondHUD.Ui.Controls;
 
 namespace MirrorpondHUD.Ui;
 
@@ -29,7 +30,7 @@ public sealed class TextCanvas : FrameworkElement
     string _text = "";
     string _layoutText;
 
-    FontFamily _fontFamily = new("Microsoft YaHei UI");
+    FontFamily _fontFamily = HudFont.Default;
     FontFamily _monoFamily;
     bool _monoNumbers;
     double _fontSize = 15;
@@ -119,7 +120,7 @@ public sealed class TextCanvas : FrameworkElement
                 {
                     // 字体加载失败会让键帽 PUA 字符显示成方框，是最难排查的显示问题之一。
                     Log.Warn($"键帽字体加载失败，回退 Microsoft YaHei UI: {ex.Message}");
-                    _keycapFamily = new FontFamily("Microsoft YaHei UI");
+                    _keycapFamily = HudFont.Default;
                 }
             }
             return _keycapFamily;

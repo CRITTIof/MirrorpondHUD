@@ -7,7 +7,7 @@
         AllowsTransparency="True"
         WindowStartupLocation="CenterScreen"
         Background="Transparent"
-        FontFamily="Microsoft YaHei UI" FontSize="13"
+        FontSize="13"
         UseLayoutRounding="True" SnapsToDevicePixels="True"
         Icon="/assets/MirrorpondHUDLogoDeepYellow.ico">
     <shell:WindowChrome.WindowChrome>
@@ -1241,7 +1241,16 @@
                     <StackPanel Margin="18,16,18,24">
 
                         <TextBlock Text="窗口" Style="{StaticResource SectionTitle}" Margin="0,0,0,6" />
-                        <CheckBox x:Name="TopmostCheck" Content="始终置顶" Margin="0,0,0,8" />
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                            <TextBlock Text="显示模式" VerticalAlignment="Center" Margin="0,0,12,0" />
+                            <ComboBox x:Name="DisplayModeCombo" Width="160"
+                                      SelectionChanged="DisplayModeChanged">
+                                <ComboBoxItem Content="仅桌面" />
+                                <ComboBoxItem Content="置顶" />
+                            </ComboBox>
+                        </StackPanel>
+                        <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,0,0,8"
+                                   Text="仅桌面：贴在工作区底层，普通窗口会盖住它；置顶：始终显示在其它窗口上方。" />
                         <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,0,0,8"
                                    Text="叠层拖动只由 F8 或托盘菜单的锁定切换，开关本窗口不会自动锁定。" />
 

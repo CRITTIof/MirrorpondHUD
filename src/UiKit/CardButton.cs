@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
@@ -364,12 +364,7 @@ public class CardButton : Button
         return Color.FromArgb(a, color.R, color.G, color.B);
     }
 
-    static FontFamily ResolveFont(string name)
-    {
-        if (string.IsNullOrWhiteSpace(name)) return new FontFamily("Microsoft YaHei UI");
-        try { return new FontFamily(name); }
-        catch { return new FontFamily("Microsoft YaHei UI"); }
-    }
+    static FontFamily ResolveFont(string name) => HudFont.Resolve(name);
 
     /// <summary>
     /// 新模板只保留内容呈现：底形、切角、悬停 / 按下 / 焦点全部由 OnRender 画，

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
@@ -59,12 +59,7 @@ public static class CardPalette
         return brush;
     }
 
-    public static FontFamily ResolveFont(string name)
-    {
-        if (string.IsNullOrWhiteSpace(name)) return new FontFamily("Microsoft YaHei UI");
-        try { return new FontFamily(name); }
-        catch { return new FontFamily("Microsoft YaHei UI"); }
-    }
+    public static FontFamily ResolveFont(string name) => HudFont.Resolve(name);
 
     /// <summary>
     /// M2：圆角下限只在「用户确实要圆角」时生效。cornerRadius = 0 必须真的得到 0，

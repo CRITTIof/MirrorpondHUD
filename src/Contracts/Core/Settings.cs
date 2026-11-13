@@ -44,7 +44,12 @@ public sealed class Settings
         Style.BackgroundOpacity = ClampLogged("Style.BackgroundOpacity", Style.BackgroundOpacity, 0, 1);
         Style.Padding = ClampLogged("Style.Padding", Style.Padding, 0, 80);
         Style.LineHeight = ClampLogged("Style.LineHeight", Style.LineHeight, 0, 120);
-        Style.FontFamily = string.IsNullOrWhiteSpace(Style.FontFamily) ? "Microsoft YaHei UI" : Style.FontFamily.Trim();
+        // 2.45.6：默认改为思源黑体（Noto Sans SC，OFL）。旧默认值“微软雅黑”必须迁移，
+        // 否则老配置会继续用有版权风险的字体；用户显式选择的其它字体保留。
+        string font = Style.FontFamily?.Trim();
+        bool legacyDefault = string.Equals(font, "Microsoft YaHei UI", StringComparison.OrdinalIgnoreCase)
+                             || string.Equals(font, "微软雅黑", StringComparison.OrdinalIgnoreCase);
+        Style.FontFamily = string.IsNullOrWhiteSpace(font) || legacyDefault ? "Noto Sans SC" : font;
         Style.OutlineThickness = ClampLogged("Style.OutlineThickness", Style.OutlineThickness, 0.2, 10);
         Style.FixedWidth = ClampLogged("Style.FixedWidth", Style.FixedWidth, 0, 4000);
         Style.ImageOpacity = ClampLogged("Style.ImageOpacity", Style.ImageOpacity, 0, 1);
@@ -584,7 +589,7 @@ public sealed class OverlaySettings
 
 public sealed class StyleSettings
 {
-    public string FontFamily = "Microsoft YaHei UI";
+    public string FontFamily = "Noto Sans SC";
     public double FontSize = 15;
     public bool Bold = false;
     /// <summary>文字颜色（7 位 #RRGGBB），默认白色；粒子聚字颜色跟随它。</summary>

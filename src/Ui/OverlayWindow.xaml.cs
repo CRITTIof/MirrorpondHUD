@@ -184,7 +184,7 @@ public partial class OverlayWindow : Window
         ApplyPosition();
         _glassRuntime.UpdateGlassCapture();
         UpdateClickThrough();
-        EnsureTopmost();
+        ApplyDisplayMode();
     }
 
     public void Apply(Settings settings, string text, CardSettings config = null)
@@ -196,7 +196,7 @@ public partial class OverlayWindow : Window
         Surface.SetCardMeta(config);
         Surface.Apply(settings, text, false);
         if (_handleReady) _glassRuntime.UpdateGlassCapture();
-        Topmost = settings.Overlay.Topmost;
+        ApplyDisplayMode();
         UpdateClickThrough();
         UpdateMenuHeaders();
     }
@@ -210,7 +210,7 @@ public partial class OverlayWindow : Window
         Surface.Apply(settings, "");
         Surface.SetContent(content);
         if (_handleReady) _glassRuntime.UpdateGlassCapture();
-        Topmost = settings.Overlay.Topmost;
+        ApplyDisplayMode();
         UpdateClickThrough();
         UpdateMenuHeaders();
     }
@@ -692,6 +692,8 @@ public partial class OverlayWindow : Window
 
     public void EnsureTopmost()
     {
+        // 2.45.6：仅桌面模式不允许任何路径把窗口重新顶上去（启动、换卡、命令结束、2.5s 调度都走这里）。
+        if (_settings is null || !_settings.Overlay.Topmost) return;
         if (!_handleReady) return;
         IntPtr hwnd = new WindowInteropHelper(this).Handle;
         if (hwnd == IntPtr.Zero) return;
@@ -714,12 +716,46 @@ public partial class OverlayWindow : Window
     }
 
     /// <summary>
+    /// 2.45.6：应用“显示模式”。置顶 = 现有 topmost；仅桌面 = 取消 topmost 并压到 HWND_BOTTOM。
+    /// 桌面模式不是把窗口藏起来，而是让它留在壁纸上、普通窗口下方；点击穿透仍由锁定单独控制。
+    /// </summary>
+    public void ApplyDisplayMode()
+    {
+        if (_settings is null) return;
+        bool topmost = _settings.Overlay.Topmost;
+        Topmost = topmost;
+
+        if (!_handleReady) return;
+        IntPtr hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero) return;
+
+        if (topmost)
+        {
+            EnsureTopmost();
+            return;
+        }
+
+        if (!Native.SetWindowPos(hwnd, Native.HwndBottom, 0, 0, 0, 0,
+                Native.SwpNoMove | Native.SwpNoSize | Native.SwpNoActivate | Native.SwpNoOwnerZorder))
+        {
+            _windowPosFailure.Failure($"仅桌面 SetWindowPos(HWND_BOTTOM) 失败 err={Marshal.GetLastWin32Error()}");
+        }
+        else
+        {
+            _windowPosFailure.Success();
+        }
+
+        _lastZPrev = Native.GetWindow(hwnd, Native.GwHwndPrev);
+    }
+
+    /// <summary>
     /// G-13：共享置顶调度每 2.5 秒问一次「真的需要重新置顶吗」。
     /// 绝大多数时候 Z 序没变；只有扩展样式丢了 topmost、或上方插进了新窗口时才调 SetWindowPos。
     /// 以前每张卡每 2.5 秒无条件置顶一次，还会连带重摆底板、通知富内容子窗口，全是冗余。
     /// </summary>
     internal void RefreshTopmostIfNeeded()
     {
+        if (_settings is null || !_settings.Overlay.Topmost) return;
         if (!_handleReady || !IsVisible) return;
         IntPtr hwnd = new WindowInteropHelper(this).Handle;
         if (hwnd == IntPtr.Zero) return;

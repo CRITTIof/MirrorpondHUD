@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Globalization;
@@ -38,7 +38,7 @@ internal static class ChartDraw
                                      Brush brush, double pixelsPerDip) => new FormattedText(text ?? "",
             CultureInfo.CurrentCulture,
             FlowDirection.LeftToRight,
-            new Typeface(family ?? new FontFamily("Microsoft YaHei UI"),
+            new Typeface(family ?? HudFont.Default,
                          FontStyles.Normal, FontWeights.Normal, FontStretches.Normal),
             Math.Max(6, size),
             brush,
@@ -510,7 +510,7 @@ public class CardLineChart : FrameworkElement
     readonly ReadOnlyCollection<string> _labelsView;
     ThemeTokens _tokens = ThemeResolver.Resolve(null);
     Color _foreground = Color.FromRgb(0xE6, 0xED, 0xF3);
-    FontFamily _font = new("Microsoft YaHei UI");
+    FontFamily _font = HudFont.Default;
     double _fontSize = 12;
     bool _autoScale = true;
     bool _showGrid = true;
@@ -753,7 +753,7 @@ public class CardBarChart : FrameworkElement
     readonly ReadOnlyCollection<string> _labelsView;
     ThemeTokens _tokens = ThemeResolver.Resolve(null);
     Color _foreground = Color.FromRgb(0xE6, 0xED, 0xF3);
-    FontFamily _font = new("Microsoft YaHei UI");
+    FontFamily _font = HudFont.Default;
     double _fontSize = 12;
     double _radius = 8;
     bool _autoScale = true;

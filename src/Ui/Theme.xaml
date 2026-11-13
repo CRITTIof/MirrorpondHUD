@@ -48,10 +48,13 @@
     <!-- ReiconFont：只保留键帽字形（U+E000–U+E056）；卡片内容里的键帽仍由 TextCanvas 直接加载 -->
     <FontFamily x:Key="ReiconFont">pack://application:,,,/assets/keycaps/#ReiconFont</FontFamily>
 
+    <!-- 2.45.6：嵌入思源黑体（Noto Sans SC，SIL OFL 1.1）。所有设置界面控件走这一档。 -->
+    <FontFamily x:Key="AppFontFamily">pack://application:,,,/assets/fonts/#Noto Sans SC</FontFamily>
+
 
     <!-- ================= 文本 ================= -->
     <Style TargetType="TextBlock">
-        <Setter Property="FontFamily" Value="Microsoft YaHei UI" />
+        <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}" />
         <Setter Property="FontSize" Value="13" />
         <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
         <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
@@ -96,7 +99,7 @@
                                                            VerticalAlignment="Center" Margin="0,0,7,0" />
                                                 <TextBlock Text="{Binding Header, RelativeSource={RelativeSource AncestorType=Expander}}"
                                                            FontSize="15" FontWeight="SemiBold"
-                                                           FontFamily="Cascadia Mono, Microsoft YaHei UI"
+                                                           FontFamily="Cascadia Mono"
                                                            Foreground="{DynamicResource TextPrimary}"
                                                            VerticalAlignment="Center" />
                                             </StackPanel>
@@ -137,7 +140,7 @@
 
     <!-- ================= 按钮 ================= -->
     <Style TargetType="Button">
-        <Setter Property="FontFamily" Value="Microsoft YaHei UI" />
+        <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}" />
         <Setter Property="FontSize" Value="13" />
         <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
         <Setter Property="Background" Value="{DynamicResource CardBg}" />
@@ -237,7 +240,7 @@
         <Setter Property="BorderBrush" Value="{DynamicResource BorderSoft}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="Padding" Value="8,5" />
-        <Setter Property="FontFamily" Value="Microsoft YaHei UI" />
+        <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}" />
         <Setter Property="FontSize" Value="12" />
         <Setter Property="Template">
             <Setter.Value>
@@ -254,7 +257,7 @@
     </Style>
 
     <Style TargetType="TextBox">
-        <Setter Property="FontFamily" Value="Microsoft YaHei UI" />
+        <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}" />
         <Setter Property="FontSize" Value="13" />
         <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
         <Setter Property="Background" Value="{DynamicResource CardBg}" />
@@ -291,7 +294,7 @@
     </Style>
 
     <Style x:Key="CodeBox" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
-        <Setter Property="FontFamily" Value="Consolas, Microsoft YaHei UI" />
+        <Setter Property="FontFamily" Value="Consolas" />
         <Setter Property="FontSize" Value="13" />
         <Setter Property="AcceptsReturn" Value="True" />
         <Setter Property="AcceptsTab" Value="False" />
@@ -304,7 +307,7 @@
 
     <!-- ================= 复选框 ================= -->
     <Style TargetType="CheckBox">
-        <Setter Property="FontFamily" Value="Microsoft YaHei UI" />
+        <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}" />
         <Setter Property="FontSize" Value="13" />
         <Setter Property="Foreground" Value="{DynamicResource TextPrimary}" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
@@ -366,7 +369,7 @@
     </Style>
 
     <Style TargetType="ComboBox">
-        <Setter Property="FontFamily" Value="Microsoft YaHei UI" />
+        <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}" />
         <Setter Property="FontSize" Value="13" />
         <Setter Property="MinHeight" Value="30" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
@@ -608,7 +611,7 @@
     </Style>
 
     <Style TargetType="TabItem">
-        <Setter Property="FontFamily" Value="Microsoft YaHei UI" />
+        <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}" />
         <Setter Property="FontSize" Value="13" />
         <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
         <Setter Property="Cursor" Value="Hand" />
@@ -671,7 +674,7 @@
         <Setter Property="BorderBrush" Value="{DynamicResource MenuBorder}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="Padding" Value="4" />
-        <Setter Property="FontFamily" Value="Microsoft YaHei UI" />
+        <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}" />
         <Setter Property="FontSize" Value="13" />
         <Setter Property="Template">
             <Setter.Value>
@@ -700,7 +703,7 @@
 
     <Style x:Key="HudMenuItem" TargetType="MenuItem">
         <Setter Property="Foreground" Value="{DynamicResource MenuText}" />
-        <Setter Property="FontFamily" Value="Microsoft YaHei UI" />
+        <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}" />
         <Setter Property="FontSize" Value="13" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Padding" Value="11,8" />
