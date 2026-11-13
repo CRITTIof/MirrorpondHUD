@@ -718,9 +718,16 @@ internal sealed class HudDialogButton : Button
 
             if (IsKeyboardFocused)
             {
-                // 焦点环外扩 2px，颜色在实心黄上用墨色、其余用信号黄，保证在底形上总能看见。
-                Geometry ring = BuildShape(new Rect(-2, -2, w + 4, h + 4), Radius + 2);
-                Color ringColor = _tone == HudDialogButtonTone.Primary ? _theme.AccentInk : _theme.AccentColor;
+                // 2.45.3 修复：旧环画在按钮外侧 2px，颜色按“按钮填充”取墨色——
+                // 暗色下外侧是深色表面，墨色环与背景同色；外侧绘制还可能被布局裁切。
+                // 改为在按钮内侧留 1.5px 画环：任何宿主都不会裁掉，且按“环所在的底色”取对比色。
+                double inset = 1.5;
+                double rw = Math.Max(1, w - inset * 2);
+                double rh = Math.Max(1, h - inset * 2);
+                Geometry ring = BuildShape(new Rect(inset, inset, rw, rh), Math.Max(2, Radius - 1));
+                Color ringColor = _tone == HudDialogButtonTone.Primary
+                    ? _theme.AccentInk          // 环压在黄色填充上
+                    : _theme.AccentOnSurface;   // 环压在面板底色上
                 var ringPen = new Pen(CardPalette.Brush(ringColor), 2);
                 ringPen.Freeze();
                 dc.DrawGeometry(null, ringPen, ring);

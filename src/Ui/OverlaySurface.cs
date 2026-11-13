@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -1122,8 +1122,10 @@ public sealed class OverlaySurface : Border
                 AlignmentY = AlignmentY.Center
             };
 
-            // WriteableBitmap 不可冻结；冻结一个引用可变源图片的画刷会抛 InvalidOperationException。
-            if (brush.CanFreeze) brush.Freeze();
+            // G-17 修复：Freezable 是级联的——冻结 ImageBrush 会把作为子对象的
+            // WriteableBitmap 一起冻结，下一帧 WritePixels 就会抛 “IsFrozen 必须为 false”。
+            // 只有真正的不可变图源（背景图 BitmapImage 等）才冻结画刷。
+            if (!(image is WriteableBitmap) && brush.CanFreeze) brush.Freeze();
 
             _glassBrush = brush;
             _glassLayer.Background = brush;
