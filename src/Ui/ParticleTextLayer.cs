@@ -16,6 +16,8 @@ namespace MirrorpondHUD.Ui;
 /// 性能与手感取舍：
 ///  · 无惯性：位置直接指数逼近目标，不存速度、不冲过头；文字变化时立即重新配对；
 ///  · 粒子位置跨播放保留，文字只改一个字符时大部分粒子不需要重新散开；
+///  · 2.45.2：采样位图只覆盖"变化字符的包围盒 + padding"，而不再按整卡尺寸建；
+///    像素预算与填充步长仍按整卡算，保证粒子密度 / 精度与整卡采样等价；
 ///  · 默认按 x 排序就近配对目标（近似最近邻，避免 O(n²)）；
 ///  · 画布尺寸变化（首次布局未完成、卡片长高）会重新采样，避免末排目标缺失；
 ///  · 点数 / 大小 / 速度 / 轮廓采样 / 是否就近都可配，点数和采样步长有硬上限；
@@ -43,6 +45,20 @@ internal sealed class ParticleTextLayer : FrameworkElement
     /// <summary>RTB 每像素 4 字节（Pbgra32）。</summary>
     const int BytesPerPixel = 4;
 
+    /// <summary>
+    /// 2.45.2：变化包围盒（含 padding）达到整卡这个比例时不再收窄采样区域。
+    /// 整段变化 / 文字铺满卡片时收窄省不下多少扫描量，却多一层"区域算得对不对"的风险；
+    /// 正确性优先，这种情况退回整卡（日志里能看到原因）。
+    /// </summary>
+    const double RegionFallbackFraction = 0.9;
+
+    /// <summary>
+    /// 2.45.2：采样位图按这个像素粒度对齐分配。变化字符的位置 / 宽度每轮都会差几像素，
+    /// 按精确尺寸建位图就会每轮新建一张 RenderTargetBitmap（等于每轮一次大分配）；
+    /// 对齐后同一档尺寸可跨轮复用，实际拷贝仍只覆盖 usedWidth×usedHeight。
+    /// </summary>
+    const int SampleBitmapQuantum = 64;
+
     readonly DispatcherTimer _timer;
     readonly Stopwatch _clock = new();
     readonly Random _random = new(20261111);
@@ -53,15 +69,29 @@ internal sealed class ParticleTextLayer : FrameworkElement
     double[] _ty = Array.Empty<double>();
 
     // —— T-5：采样缓冲按尺寸缓存，跨轮复用 ——
-    /// <summary>采样用的离屏位图；尺寸变化或有降采样时才重建。</summary>
+    /// <summary>采样用的离屏位图；对齐后的尺寸变化或有降采样时才重建（2.45.2 起按 64 像素对齐）。</summary>
     RenderTargetBitmap _rtb;
     int _rtbPixelWidth;
     int _rtbPixelHeight;
-    int _rtbStride;
     /// <summary>实际"像素 / DIP"比例（1.0 = 原尺寸；小于 1 表示触发了像素预算降级）。</summary>
     double _rtbScale = 1.0;
     /// <summary>像素缓冲：只增不减，尺寸来回变时不反复分配大数组。</summary>
     byte[] _pixels = Array.Empty<byte>();
+    /// <summary>本轮采样区域原点（DIP）：位图只覆盖区域，像素坐标反算要加回这个偏移。</summary>
+    double _sampleOriginX;
+    double _sampleOriginY;
+    /// <summary>本轮采样区域（画布 DIP），只用于诊断日志。</summary>
+    Rect _sampleRegion;
+    /// <summary>本轮实际扫描的像素数（usedWidth × usedHeight），用来核对区域收窄是否真的生效。</summary>
+    long _samplePixelCount;
+    /// <summary>同一轮若按整卡采样会用的像素数，作为对比基准。</summary>
+    long _sampleFullCardPixelCount;
+    /// <summary>本轮候选点数。</summary>
+    int _sampleCandidateCount;
+    /// <summary>区域退回整卡的最近一次 Debug 打点（30s 节流）。</summary>
+    long _regionFallbackLogTicks;
+    /// <summary>文本元素矩形缓冲：跨轮复用，避免每次采样都新建 List。</summary>
+    readonly List<Rect> _elementRects = new();
     readonly DrawingVisual _sampleVisual = new();
     readonly List<Point> _candidates = new(MaxCandidatePoints);
     readonly List<Point> _targets = new();
@@ -283,7 +313,9 @@ internal sealed class ParticleTextLayer : FrameworkElement
             // 下一次文字变化才有“直接前往新目标”的位移。
             if (firstPool)
             {
-                Log.Info($"粒子文字就位：{targets.Count} 点 / {width:0}×{height:0} DIP");
+                Log.Info($"粒子文字就位：{targets.Count} 点 / {width:0}×{height:0} DIP"
+                    + $" / 采样 {Stopwatch.GetElapsedTime(started).TotalMilliseconds:0.0} ms"
+                    + SampleRegionSummary());
                 NotifyFinished("首池就位（不动画）");
                 return;
             }
@@ -308,7 +340,8 @@ internal sealed class ParticleTextLayer : FrameworkElement
             InvalidateVisual();
             Log.Info($"粒子文字启动：{_count} 点 / {width:0}×{height:0} DIP / "
                 + (geometry ? "几何采样" : "填充采样") + (nearest ? " / 就近配对" : " / 随机配对")
-                + $" / 采样 {Stopwatch.GetElapsedTime(started).TotalMilliseconds:0.0} ms");
+                + $" / 采样 {Stopwatch.GetElapsedTime(started).TotalMilliseconds:0.0} ms"
+                + SampleRegionSummary());
         }
         catch (Exception ex)
         {
@@ -469,8 +502,13 @@ internal sealed class ParticleTextLayer : FrameworkElement
     }
 
     /// <summary>
-    /// T-5：整块采样。RTB / 像素数组 / 候选点表全部按实例复用；像素数超过预算时按面积比
-    /// 降采样（坐标再换算回 DIP），候选点上限顺次截断。降级原因走节流日志，不静默。
+    /// T-5：按采样区域渲染 / 扫描。RTB / 像素数组 / 候选点表全部按实例复用。
+    ///
+    /// 2.45.2：采样区域默认是整卡，但"只采变化字符"时收窄到变化字符的包围盒 + padding——
+    /// 信息卡每秒改一个数字，原来也要清 / 渲染 / 拷贝 / 扫完整张卡。为了不改变成品视觉，
+    /// 像素预算（降采样比例）与填充采样步长仍按整卡尺寸算：同一张卡上的粒子密度与精度
+    /// 与整卡采样等价，只是被清 / 拷贝 / 扫描的像素少了。
+    /// 取不到可信包围盒、裁剪省略号、或区域接近整卡时退回整卡（见 TryResolveSampleRegion）。
     /// </summary>
     bool BuildTargets(TextCanvas canvas, double width, double height,
                       int requestedCount, bool geometry,
@@ -479,48 +517,85 @@ internal sealed class ParticleTextLayer : FrameworkElement
         targets = _targets;
         targets.Clear();
 
-        // 多采 1 像素：排版尺寸向上取整时，末排最右 / 最下一个字不会落在位图外。
-        int pixelWidth = Math.Max(1, (int)Math.Ceiling(width) + 1);
-        int pixelHeight = Math.Max(1, (int)Math.Ceiling(height) + 1);
-
         // 采样遮罩与上屏遮罩同源（T-6/T-8）：按文本元素整簇隐藏，避免采到半个代理对。
         _hideSet.Clear();
-        if (targetChars is not null)
+        bool onlyChanged = targetChars is not null && targetChars.Count > 0;
+        if (onlyChanged)
         {
             BuildHideSet(canvas.Text ?? "", targetChars, _hideSet);
         }
 
-        // 直接画到 DrawingVisual，不经过 TextCanvas 的可视缓存；否则隐藏字符后
-        // RenderTargetBitmap 仍可能采到上一帧的完整文字，一个变化数字会摊出整行粒子。
-        string degrade = null;
-        using (DrawingContext dc = _sampleVisual.RenderOpen())
-        {
-            canvas.DrawForParticles(dc, targetChars is null ? null : _hideSet);
-        }
+        // 整卡像素尺寸：决定降采样比例与填充采样步长。两者都按整卡算，
+        // 才能保证"同一张卡上的粒子密度 / 精度"与整卡采样等价（见方法注释）。
+        int cardPixelWidth = Math.Max(1, (int)Math.Ceiling(width) + 1);
+        int cardPixelHeight = Math.Max(1, (int)Math.Ceiling(height) + 1);
+        long area = Math.Max(1, (long)Math.Ceiling(width) * (long)Math.Ceiling(height));
+        double scale = SampleScale(cardPixelWidth, cardPixelHeight);
 
-        // 像素预算：降采样只影响采样精度，粒子目标本来就只是近似轮廓，不改变成品视觉。
-        double scale = SampleScale(pixelWidth, pixelHeight);
-        int rtbWidth = Math.Max(1, (int)Math.Ceiling(pixelWidth * scale));
-        int rtbHeight = Math.Max(1, (int)Math.Ceiling(pixelHeight * scale));
+        string degrade = null;
         if (scale < 0.999)
         {
-            degrade = $"卡片采样 {pixelWidth}×{pixelHeight} 超出像素预算，降采样到 {rtbWidth}×{rtbHeight}";
+            degrade = $"卡片采样 {cardPixelWidth}×{cardPixelHeight} 超出像素预算，降采样到 {scale:0.###}x";
         }
 
-        if (_rtb is null || _rtbPixelWidth != rtbWidth || _rtbPixelHeight != rtbHeight)
+        // 采样区域：默认整卡；只有"按变化字符采样"且能拿到可信包围盒时才收窄。
+        Rect region = new(0, 0, width, height);
+        if (onlyChanged)
         {
-            _rtb = new RenderTargetBitmap(rtbWidth, rtbHeight,
+            if (TryResolveSampleRegion(canvas, targetChars, width, height, out Rect narrowed, out string reason))
+            {
+                region = narrowed;
+            }
+            else
+            {
+                // 退回整卡是"正确性优先"的正常路径，不是错误：按 30s 节流写 Debug 留痕。
+                LogRegionFallback(reason);
+            }
+        }
+
+        // 直接画到 DrawingVisual，不经过 TextCanvas 的可视缓存；否则隐藏字符后
+        // RenderTargetBitmap 仍可能采到上一帧的完整文字，一个变化数字会摊出整行粒子。
+        // 收窄采样时把画布平移 -区域原点：位图只覆盖区域，区域外本来也没有可见字形。
+        bool offset = region.X != 0 || region.Y != 0;
+        using (DrawingContext dc = _sampleVisual.RenderOpen())
+        {
+            if (offset) dc.PushTransform(new TranslateTransform(-region.X, -region.Y));
+            canvas.DrawForParticles(dc, onlyChanged ? _hideSet : null);
+            if (offset) dc.Pop();
+        }
+
+        // 区域像素尺寸同样多采 1 像素：区域边界向上取整后，最右 / 最下的字形不落在位图外。
+        int usedWidth = Math.Max(1, (int)Math.Ceiling(region.Width * scale) + 1);
+        int usedHeight = Math.Max(1, (int)Math.Ceiling(region.Height * scale) + 1);
+        // 位图按 64 像素对齐分配、只拷贝实际用到的区域：
+        // 变化字符的位置 / 宽度每轮都会变一点，如果按精确尺寸建位图，就会每轮新建一张
+        // RenderTargetBitmap（等于每轮一次大分配）。对齐后同一档尺寸可以跨轮复用，
+        // 同时 CopyPixels 仍只拷 usedWidth×usedHeight，像素搬运量不被对齐浪费。
+        int allocWidth = AlignUp(usedWidth, SampleBitmapQuantum);
+        int allocHeight = AlignUp(usedHeight, SampleBitmapQuantum);
+
+        if (_rtb is null || _rtbPixelWidth != allocWidth || _rtbPixelHeight != allocHeight
+            || Math.Abs(_rtbScale - scale) > 1e-6)
+        {
+            _rtb = new RenderTargetBitmap(allocWidth, allocHeight,
                                           96.0 * scale, 96.0 * scale, PixelFormats.Pbgra32);
-            _rtbPixelWidth = rtbWidth;
-            _rtbPixelHeight = rtbHeight;
-            _rtbStride = rtbWidth * BytesPerPixel;
+            _rtbPixelWidth = allocWidth;
+            _rtbPixelHeight = allocHeight;
             // 坐标反算必须用位图创建时的真实 DPI，不能跟着本次 scale 走：
-            // 尺寸相同但 scale 只差一点点时不会重建位图，用错比例会让目标整体偏移。
+            // 尺寸相同但 scale 只差一点点却复用旧位图，会让目标整体偏移。
             _rtbScale = scale;
         }
 
-        int stride = _rtbStride;
-        int needed = stride * rtbHeight;
+        _sampleOriginX = region.X;
+        _sampleOriginY = region.Y;
+        _sampleRegion = region;
+        _samplePixelCount = (long)usedWidth * usedHeight;
+        // 整卡采样的像素数（旧实现的位图大小），作为"本轮省了多少"的对比基准。
+        _sampleFullCardPixelCount = (long)Math.Ceiling(cardPixelWidth * scale)
+                                  * (long)Math.Ceiling(cardPixelHeight * scale);
+
+        int stride = usedWidth * BytesPerPixel;
+        int needed = stride * usedHeight;
         if (_pixels.Length < needed)
         {
             _pixels = new byte[needed];
@@ -529,10 +604,9 @@ internal sealed class ParticleTextLayer : FrameworkElement
         // 必须 Clear：RenderTargetBitmap.Render 是累加的，不清会叠上一轮的字形。
         _rtb.Clear();
         _rtb.Render(_sampleVisual);
-        _rtb.CopyPixels(_pixels, stride, 0);
+        _rtb.CopyPixels(new Int32Rect(0, 0, usedWidth, usedHeight), _pixels, stride, 0);
 
         byte[] pixels = _pixels;
-        long area = Math.Max(1, (long)Math.Ceiling(width) * (long)Math.Ceiling(height));
         int targetCount = Math.Max(MinParticles, Math.Min(MaxParticles, requestedCount));
         // 候选上限保持原值：先随机洗牌再取前 targetCount 个，分布与旧实现等价。
         int cap = MaxCandidatePoints;
@@ -541,15 +615,17 @@ internal sealed class ParticleTextLayer : FrameworkElement
         if (geometry)
         {
             // 轮廓采样：取 alpha 边界。对图标 / 键帽 / 混排也有效，不依赖单字体 FormattedText。
-            for (int y = 0; y < rtbHeight; y++)
+            for (int y = 0; y < usedHeight; y++)
             {
                 int row = y * stride;
-                for (int x = 0; x < rtbWidth; x++)
+                for (int x = 0; x < usedWidth; x++)
                 {
                     int index = row + x * BytesPerPixel + 3;
                     if (pixels[index] < AlphaThreshold) continue;
 
-                    bool edge = x == 0 || y == 0 || x == rtbWidth - 1 || y == rtbHeight - 1
+                    // 采样区域自带 ≥4 DIP 的 padding，所以"扫描边界"那一圈一定是空的，
+                    // 把它当边缘不会凭空多出候选点（见 TryClipSampleRegion 的 padding 下限）。
+                    bool edge = x == 0 || y == 0 || x == usedWidth - 1 || y == usedHeight - 1
                              || pixels[row + (x - 1) * BytesPerPixel + 3] < AlphaThreshold
                              || pixels[row + (x + 1) * BytesPerPixel + 3] < AlphaThreshold
                              || pixels[row - stride + x * BytesPerPixel + 3] < AlphaThreshold
@@ -566,10 +642,10 @@ internal sealed class ParticleTextLayer : FrameworkElement
         if (_candidates.Count < targetCount)
         {
             int step = area > 160_000 ? 3 : (area > 60_000 ? 2 : 1);
-            for (int y = 0; y < rtbHeight; y += step)
+            for (int y = 0; y < usedHeight; y += step)
             {
                 int row = y * stride;
-                for (int x = 0; x < rtbWidth; x += step)
+                for (int x = 0; x < usedWidth; x += step)
                 {
                     if (pixels[row + x * BytesPerPixel + 3] < AlphaThreshold) continue;
                     _candidates.Add(ToDip(x, y, step * 0.5));
@@ -579,6 +655,7 @@ internal sealed class ParticleTextLayer : FrameworkElement
             }
         }
 
+        _sampleCandidateCount = _candidates.Count;
         if (_candidates.Count == 0)
         {
             _sampleLog.Success();
@@ -612,9 +689,129 @@ internal sealed class ParticleTextLayer : FrameworkElement
         return Math.Max(0.25, Math.Sqrt((double)MaxSamplePixels / pixels));
     }
 
-    /// <summary>采样位图像素坐标 → DIP：位图按 <see cref="_rtbScale"/> 缩放，像素中心要反算回去。</summary>
+    /// <summary>2.45.2：向上取整到 quantum 的整数倍（位图分配粒度，避免每轮重建 RTB）。</summary>
+    static int AlignUp(int value, int quantum) => (value + quantum - 1) / quantum * quantum;
+
+    /// <summary>
+    /// 采样位图像素坐标 → 画布 DIP：先按位图创建时的 DPI 反算，再加回区域原点。
+    /// 2.45.2 起位图只覆盖采样区域，所以必须补这个偏移，否则粒子目标整体偏到左上角。
+    /// </summary>
     Point ToDip(int x, int y, double half) =>
-        new((x + half) / _rtbScale, (y + half) / _rtbScale);
+        new(_sampleOriginX + (x + half) / _rtbScale,
+            _sampleOriginY + (y + half) / _rtbScale);
+
+    /// <summary>
+    /// 2.45.2：解析本轮采样区域（画布 DIP）。
+    /// 返回 false 时 <paramref name="reason"/> 说明为什么必须退回整卡采样——
+    /// 取不到包围盒、外扩后为空、或已接近整卡（整段变化 / 文字铺满卡片）。
+    /// 只有"只采变化字符"这条路径会调用它；文本未变的全量重采样仍然整卡。
+    /// </summary>
+    bool TryResolveSampleRegion(TextCanvas canvas, HashSet<int> targetChars, double width, double height,
+                                out Rect region, out string reason)
+    {
+        region = Rect.Empty;
+        reason = null;
+
+        _elementRects.Clear();
+        if (!canvas.TryGetTextElementRects(targetChars, _elementRects))
+        {
+            reason = "取不到变化字符的 DIP 包围盒";
+            return false;
+        }
+
+        Rect merged = Rect.Empty;
+        for (int i = 0; i < _elementRects.Count; i++)
+        {
+            merged = MergeBounds(merged, _elementRects[i]);
+        }
+
+        if (!TryClipSampleRegion(merged, canvas.ParticleSamplePadding, width, height, out region))
+        {
+            reason = $"变化包围盒 {merged.Width:0.#}×{merged.Height:0.#} DIP 外扩后无效或接近整卡 {width:0}×{height:0} DIP";
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// 2.45.2：合并文本元素包围盒。空 / 无效（NaN、无穷、零宽）矩形会被跳过——
+    /// 单个元素算不出位置时不能污染整个并集（例如变化字符全是空格：
+    /// 它没有墨迹，少一个元素不影响采样，而并出一个错误的框会切掉相邻字形）。
+    /// 纯函数，自检直接断言。
+    /// </summary>
+    internal static Rect MergeBounds(Rect current, Rect next)
+    {
+        if (!IsUsableBounds(next)) return current;
+        if (!IsUsableBounds(current)) return next;
+        return Rect.Union(current, next);
+    }
+
+    static bool IsUsableBounds(Rect r) =>
+        !r.IsEmpty
+        && !double.IsNaN(r.X) && !double.IsNaN(r.Y)
+        && !double.IsNaN(r.Width) && !double.IsNaN(r.Height)
+        && !double.IsInfinity(r.X) && !double.IsInfinity(r.Y)
+        && r.Width > 0 && r.Height > 0;
+
+    /// <summary>
+    /// 2.45.2：包围盒外扩 padding 后夹到卡片内，作为采样区域。返回 false 表示不能安全收窄：
+    ///  · 空 / 无效矩形（例如整段都是删除，新文本里没有要重采的字形）；
+    ///  · 外扩后完全落在卡片外；
+    ///  · 已接近整卡（整段变化、文字铺满卡片）——收窄省不下多少扫描量，却多一层风险。
+    /// padding 有 2 DIP 下限：至少多采一圈，不让字形边缘正好压在位图边界上。
+    /// 纯函数，自检直接断言。
+    /// </summary>
+    internal static bool TryClipSampleRegion(Rect content, double padding, double cardWidth, double cardHeight,
+                                             out Rect region)
+    {
+        region = Rect.Empty;
+        if (cardWidth <= 0 || cardHeight <= 0) return false;
+        if (!IsUsableBounds(content)) return false;
+
+        double pad = Math.Max(2.0, padding);
+        var inflated = new Rect(content.X - pad, content.Y - pad,
+                                content.Width + pad * 2, content.Height + pad * 2);
+        Rect clipped = Rect.Intersect(inflated, new Rect(0, 0, cardWidth, cardHeight));
+        if (!IsUsableBounds(clipped)) return false;
+
+        if (clipped.Width * clipped.Height >= cardWidth * cardHeight * RegionFallbackFraction) return false;
+
+        region = clipped;
+        return true;
+    }
+
+    /// <summary>
+    /// 2.45.2：退回整卡采样的原因按 30s 节流写 Debug。
+    /// 这是"正确性优先"的正常降级而不是错误，所以不用 Warn；但必须留痕——
+    /// 否则"某张卡为什么没享受到区域收窄"会变成没法排查的黑盒。
+    /// </summary>
+    void LogRegionFallback(string reason)
+    {
+        long now = Stopwatch.GetTimestamp();
+        if (_regionFallbackLogTicks != 0
+            && Stopwatch.GetElapsedTime(_regionFallbackLogTicks, now).TotalMilliseconds < 30000)
+        {
+            return;
+        }
+
+        _regionFallbackLogTicks = now;
+        Log.Debug($"粒子采样区域退回整卡: {reason}");
+    }
+
+    /// <summary>
+    /// 2.45.2：采样诊断——本轮实际渲染 / 扫描的区域、像素数与候选点数。
+    /// 同时给出整卡像素数，日志里能直接看出区域收窄生效了多少。
+    /// </summary>
+    string SampleRegionSummary()
+    {
+        double ratio = _sampleFullCardPixelCount <= 0
+            ? 1.0
+            : (double)_samplePixelCount / _sampleFullCardPixelCount;
+        return $" / 采样区域 {_sampleRegion.X:0.#},{_sampleRegion.Y:0.#} "
+             + $"{_sampleRegion.Width:0.#}×{_sampleRegion.Height:0.#} DIP"
+             + $"，像素 {_samplePixelCount}/{_sampleFullCardPixelCount}（{ratio * 100:0}%），候选 {_sampleCandidateCount}";
+    }
 
     /// <summary>
     /// T-6/T-8：把"变化字符"的补集整理成按文本元素对齐的隐藏集合。
@@ -678,7 +875,7 @@ internal sealed class ParticleTextLayer : FrameworkElement
                 _count = targets.Count;
                 _settleElapsedMs = 0;
                 InvalidateVisual();
-                Log.Info($"粒子文字重新采样：{_count} 点 / {w:0}×{h:0} DIP");
+                Log.Info($"粒子文字重新采样：{_count} 点 / {w:0}×{h:0} DIP" + SampleRegionSummary());
             }
             catch (Exception ex)
             {

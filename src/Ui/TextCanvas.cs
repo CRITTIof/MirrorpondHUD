@@ -1017,6 +1017,133 @@ public sealed class TextCanvas : FrameworkElement
     internal void DrawForParticles(DrawingContext dc, ISet<int> hidden) =>
         DrawContent(dc, hidden, false);
 
+    /// <summary>
+    /// 2.45.2：粒子采样区域的外扩量（DIP）。
+    ///
+    /// 为什么要外扩：包围盒的水平范围是用「run 前缀排版宽度差」估的，把一个元素单独
+    /// 拼出来的宽度与整串排版的字距可能差零点几像素；描边会向外扩；图标 / 键帽按墨迹
+    /// 中心对齐，字形也可能略微超出行盒。这些都靠 padding 兜住——宁可多采几个空像素，
+    /// 也不能把变化字形的边缘切掉（切掉就是粒子少一块，属于视觉回退）。
+    /// </summary>
+    internal double ParticleSamplePadding =>
+        Math.Max(4.0, _fontSize * 0.5)
+        + (_outline && _outlineThickness > 0.05 ? _outlineThickness : 0.0)
+        + Math.Max(0.0, _fontSize * (_iconScale - 1.0) * 0.5);
+
+    /// <summary>
+    /// 2.45.2：粒子采样用——把一组字符按文本元素对齐后，取它们在画布 DIP 坐标系里的
+    /// 逐个包围盒并追加到 <paramref name="rects"/>。
+    ///
+    /// 为什么要这个查询：粒子层只隐藏「变化字符」，但采样位图原来按整卡尺寸建、整块
+    /// 扫描——信息卡每秒改一个数字也要清 / 渲染 / 拷贝 / 扫完整张卡。有了每元素的
+    /// DIP 矩形，采样位图就能只覆盖变化字形。
+    ///
+    /// 坐标必须与 <see cref="DrawContent"/> 完全同源（整块对齐 + 行内对齐 + 行高 +
+    /// 图标 / 键帽的基线偏移），否则区域整体偏移会切掉字形。返回 false 表示一个都取
+    /// 不到（空文本 / 还没量好 / 索引全落在换行符上 / 裁剪模式），调用方必须退回整卡。
+    ///
+    /// 只读：不改排版缓存、不改绘制状态，可以和 OnRender 走同一份 <see cref="GetLayout"/>。
+    /// </summary>
+    internal bool TryGetTextElementRects(IReadOnlyCollection<int> indices, ICollection<Rect> rects)
+    {
+        if (indices is null || indices.Count == 0 || rects is null) return false;
+        if (ActualWidth <= 0.5 || ActualHeight <= 0.5) return false;
+
+        string text = _text ?? "";
+        if (text.Length == 0) return false;
+
+        // 与 DrawContent 同一份排版缓存：这里多一次 GetLayout 不会重新排版。
+        TextLayout layout = GetLayout(text);
+        List<TextLine> built = layout.Built;
+        if (built.Count == 0) return false;
+
+        // T-7：裁剪模式在整块右侧额外画一个省略号，它不受隐藏集合控制。
+        // 按变化区域采样会漏掉省略号的墨迹，所以这里直接放弃收窄，由调用方退回整卡。
+        if (_maxTextWidth > 0 && layout.Width > _maxTextWidth) return false;
+
+        double lineHeight = LineHeightOf();
+        double blockWidth = layout.Width;
+        double blockHeight = built.Count * lineHeight;
+        double originX = AlignBlockX(blockWidth);
+        double originY = Math.Max(0, (ActualHeight - blockHeight) / 2);
+
+        bool any = false;
+        string preparedLineText = null;
+        int[] preparedStarts = null;
+
+        foreach (int raw in indices)
+        {
+            // T-8：先吸附到文本元素起点——代理对 / 组合字符只隐藏一半会画出孤立代理。
+            int index = SnapToTextElementStart(text, raw);
+            if (index < 0 || index >= text.Length) continue;
+
+            int lineIndex = -1;
+            for (int i = 0; i < built.Count; i++)
+            {
+                int lineStart = layout.LineStarts[i];
+                int lineLength = layout.Lines[i].Length;
+                if (index >= lineStart && index < lineStart + lineLength)
+                {
+                    lineIndex = i;
+                    break;
+                }
+            }
+            // 落在换行符 / 空行上：那个元素没有字形，跳过即可（其余元素仍要进区域）。
+            if (lineIndex < 0) continue;
+
+            string line = layout.Lines[lineIndex];
+            if (!ReferenceEquals(preparedLineText, line))
+            {
+                preparedLineText = line;
+                preparedStarts = TextElementStarts(line);
+            }
+            if (preparedStarts is null) continue;
+
+            int column = index - layout.LineStarts[lineIndex];
+            int elementStart = 0;
+            int elementEnd = line.Length;
+            for (int k = 0; k < preparedStarts.Length; k++)
+            {
+                if (preparedStarts[k] > column) break;
+                elementStart = preparedStarts[k];
+                elementEnd = k + 1 < preparedStarts.Length ? preparedStarts[k + 1] : line.Length;
+            }
+
+            TextLine builtLine = built[lineIndex];
+            double x = originX + AlignX(builtLine.Width, blockWidth);
+            double y = originY + lineIndex * lineHeight;
+            int runStart = 0;
+            for (int r = 0; r < builtLine.Runs.Count; r++)
+            {
+                TextRun run = builtLine.Runs[r];
+                int start = runStart;
+                int end = start + run.Source.Length;
+                runStart = end;
+                if (elementStart < start || elementStart >= end)
+                {
+                    x += run.Width;
+                    continue;
+                }
+
+                int offset = elementStart - start;
+                int length = Math.Min(elementEnd, end) - elementStart;
+                if (length <= 0) break;
+
+                // 与 DrawRunWithHidden 同样的推进方式：横向范围用"前缀宽度差"估算，
+                // 误差由 <see cref="ParticleSamplePadding"/> 兜住。
+                double left = offset == 0 ? 0 : CreateRun(run.Source.Substring(0, offset), run.Kind).Width;
+                double right = CreateRun(run.Source.Substring(0, offset + length), run.Kind).Width;
+                if (right < left) right = left;
+                // 垂直方向直接用整行行盒：图标 / 描边 / 不同字体的下降部都包在里面。
+                rects.Add(new Rect(x + left, y, right - left, lineHeight));
+                any = true;
+                break;
+            }
+        }
+
+        return any;
+    }
+
     void DrawContent(DrawingContext dc, ISet<int> hidden, bool drawCursor)
     {
         if (ActualWidth <= 0 || ActualHeight <= 0) return;
