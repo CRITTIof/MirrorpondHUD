@@ -41,13 +41,22 @@ $counts = @{}
 $total = 0
 Get-ChildItem -LiteralPath $srcDir -Recurse -Filter *.cs -File | ForEach-Object {
     $text = Get-Content -LiteralPath $_.FullName -Raw
+    $lines = $text -split "`r?`n"
     $matches = [regex]::Matches($text, $pattern)
-    if ($matches.Count -gt 0) {
+    $real = 0
+    foreach ($m in $matches) {
+        # 注释里的示例（如 /// 说明不要写 catch { }）不是真实 catch，别计入棘轮。
+        $lineNo = ($text.Substring(0, $m.Index) -split "`n").Count
+        $line = if ($lineNo -le $lines.Count) { $lines[$lineNo - 1] } else { "" }
+        if ($line.TrimStart().StartsWith('//')) { continue }
+        $real++
+    }
+    if ($real -gt 0) {
         $relative = $_.FullName.Substring($Root.Length).TrimStart('\', '/')
         $area = ($relative -split '[\\/]')[1]
         if (-not $counts.ContainsKey($area)) { $counts[$area] = 0 }
-        $counts[$area] += $matches.Count
-        $total += $matches.Count
+        $counts[$area] += $real
+        $total += $real
     }
 }
 
