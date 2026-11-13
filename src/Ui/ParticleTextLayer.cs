@@ -100,6 +100,12 @@ internal sealed class ParticleTextLayer : FrameworkElement
     int[] _particleOrder = Array.Empty<int>();
     List<Point> _sortTargets;
     readonly LogThrottle _sampleLog = new("粒子采样降级", 30000);
+
+    /// <summary>
+    /// 2.45.4：文本变化后旧遮罩必须恢复显示的节流打点。指标卡 120ms 就换一次文本，
+    /// 不能每条都写；这是正常降级（先把字符恢复显示，等下一轮重新遮），用 Debug 级。
+    /// </summary>
+    long _hiddenMaskStaleTicks;
     readonly Comparer<int> _particleComparer;
     readonly Comparer<int> _targetComparer;
 
@@ -151,6 +157,12 @@ internal sealed class ParticleTextLayer : FrameworkElement
     /// 差集必须以它为基线；用"当前文本 + 上一轮下标"会把未变字符判成变化。
     /// </summary>
     string _playText = "";
+
+    /// <summary>
+    /// 2.45.4：遮罩有效性判定的缓存键。文本没再变时不必每帧重算差集与模板掩码；
+    /// 每轮开始 / 差集重算 / 停止时清空，保证不会拿旧结论套新状态。
+    /// </summary>
+    string _hiddenCheckText;
 
     public ParticleTextLayer()
     {
@@ -397,7 +409,8 @@ internal sealed class ParticleTextLayer : FrameworkElement
         // 否则模板里写死的文字会在动画中途被卷进粒子。
         changed = FilterParticleTargets(current, changed, ResolveAllowedMask(current));
         _playText = current;
-        // 空集合 = 本次变化全在模板字面量 / 图标上：明确"没有可播字符"，
+        // 差集重算后基线变了，上一段文本的"遮罩仍有效"结论随之失效。
+        _hiddenCheckText = null;
         // 不能用 null（null 在任何调用方都意味着"不限制，整卡采样"）。
         _targetChars = new HashSet<int>(changed);
         if (canvas is not null)
@@ -408,6 +421,84 @@ internal sealed class ParticleTextLayer : FrameworkElement
             else canvas.ClearHiddenChars();
         }
         return _targetChars;
+    }
+
+    /// <summary>
+    /// 2.45.4：遮罩下标必须始终对应当前文本。
+    ///
+    /// 隐藏集合是"本轮开始那份文本"的 UTF-16 下标。指标卡 / 时钟的文本原地变化
+    /// （长度常常不变、画布尺寸也不变）不会触发尺寸重采样，旧下标就会落到新文本的
+    /// 其它字符上——用户看到的是"少字 / 整段缺字"。
+    ///
+    /// 这里不猜测新目标：新变化字符还没有对应粒子，提前遮住同样会缺字。
+    /// 正确做法是先恢复全部字符，下一轮 BeginPlay 或尺寸变化重采样会用新文本
+    /// 重新算差集、连同粒子一起遮。代价只是粒子收敛前文字与粒子短暂并存。
+    /// </summary>
+    void RestoreHiddenCharsIfTextChanged()
+    {
+        if (_canvas is null) return;
+        string current = _canvas.Text ?? "";
+        if (string.Equals(current, _playText, StringComparison.Ordinal))
+        {
+            _hiddenCheckText = null;
+            return;
+        }
+
+        // 同一段新文本只判定一次；没再变化时不必每帧重算差集与模板掩码。
+        if (string.Equals(current, _hiddenCheckText, StringComparison.Ordinal)) return;
+        _hiddenCheckText = current;
+
+        // 文本变了，但"相对本轮起点的变化字符"如果还是同一组下标（例如时钟只改最后一位），
+        // 粒子和被遮字符仍然一一对应，继续用旧遮罩是正确且效果最好的。
+        if (TargetsStillValid(current)) return;
+
+        _canvas.ClearHiddenChars();
+
+        // 正常降级：每次文本变化都会走到这里，30s 记一条 Debug 足够定位。
+        long now = Stopwatch.GetTimestamp();
+        if (_hiddenMaskStaleTicks != 0
+            && Stopwatch.GetElapsedTime(_hiddenMaskStaleTicks, now).TotalMilliseconds < 30000)
+        {
+            return;
+        }
+
+        _hiddenMaskStaleTicks = now;
+        Log.Debug($"粒子播放中文本已变（{_playText.Length}→{current.Length} 字符），"
+            + "旧遮罩下标不再适用，已恢复全部字符；等下一轮重新采样遮罩");
+    }
+
+    /// <summary>
+    /// 2.45.4：本轮隐藏集合是否仍然覆盖"当前文本相对本轮起点的变化字符"。
+    ///
+    /// 相等时（同一批字符位置又变了）可以继续遮：粒子目标就是这些字符的旧位置，
+    /// 新字形还没有被采样，但它们与旧字形在同一批格子里，粒子收敛后由本轮结束统一恢复。
+    /// 一旦出现新的变化字符（还没有对应粒子）或下标整体错位，继续遮就会缺字。
+    /// </summary>
+    bool TargetsStillValid(string current)
+    {
+        if (_targetChars is null || _targetChars.Count == 0) return false;
+
+        int[] changed = OverlaySurface.ChangedIndices(_playText, current);
+        changed = FilterParticleTargets(current, changed, ResolveAllowedMask(current));
+        if (changed.Length != _targetChars.Count) return false;
+
+        for (int i = 0; i < changed.Length; i++)
+        {
+            if (!_targetChars.Contains(changed[i])) return false;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// 2.45.4：宿主的"本次不播新粒子"早退路径调用。
+    /// 本轮还在播时用与 OnTick 相同的规则决定是保留还是恢复遮罩；返回 false 表示没有在播的
+    /// 轮次，宿主应直接把画布遮罩清空（此时不应存在有效遮罩）。
+    /// </summary>
+    public bool SyncHiddenCharsToText()
+    {
+        if (_canvas is null || !_playing) return false;
+        RestoreHiddenCharsIfTextChanged();
+        return true;
     }
 
     /// <summary>
@@ -948,7 +1039,14 @@ internal sealed class ParticleTextLayer : FrameworkElement
             try
             {
                 if (!SampleTargets(canvas, w, h, _requestedCount, _geometry, out var targets))
+                {
+                    // 2.45.4：ResolveChangedTargets 在采样前可能已经改过遮罩；采样失败
+                    // 说明没有新粒子来"接替"这些字形，必须立刻恢复，否则缺字会持续到
+                    // 本轮收敛（最长约 1 秒）。
+                    canvas.ClearHiddenChars();
+                    Log.Debug("粒子重新采样没有得到字形，已恢复遮罩字符");
                     return;
+                }
 
                 _sampleWidth = w;
                 _sampleHeight = h;
@@ -972,6 +1070,9 @@ internal sealed class ParticleTextLayer : FrameworkElement
     void OnTick(object sender, EventArgs e)
     {
         if (!_playing) return;
+
+        // 2.45.4：先保证遮罩与当前文本同步，再推进粒子。
+        RestoreHiddenCharsIfTextChanged();
 
         double dt = _clock.Elapsed.TotalSeconds;
         _clock.Restart();

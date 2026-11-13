@@ -223,6 +223,7 @@ internal static class SelfTest
         results.StateStoreOk = RunCardStateStoreChecks();
         results.GlassPolicyOk = RunGlassPolicyChecks();
         results.ThemeOk = RunThemeTokenChecks();
+        results.TextLayoutOk = RunTextLayoutChecks();
         results.ThemeFileOk = RunThemeFileChecks();
         results.ThemeRejectOk = RunThemeRejectChecks();
         results.ThemeCatalogOk = RunThemeCatalogChecks();
@@ -739,6 +740,74 @@ internal static class SelfTest
             Log.Error("外观令牌自检异常", ex);
         }
         return themeOk;
+    }
+
+    /// <summary>
+    /// 2.45.4：文本卡的测量 / 裁剪同源回归。
+    /// 这里不靠截图，直接断言："行数 → 期望高度"、"固定宽度与工作区上限的收紧顺序"、
+    /// "隐藏字符清理后必须全部可见"、"换行计数与 Split 同源"。
+    /// </summary>
+    static bool RunTextLayoutChecks()
+    {
+        bool textLayoutOk = false;
+        try
+        {
+            var canvas = new TextCanvas
+            {
+                FontSize = 15,
+                FontFamily = new FontFamily("Microsoft YaHei UI"),
+                Text = "CPU 100% RAM 100% GPU 100%"
+            };
+            canvas.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            double natural = canvas.DesiredSize.Width;
+
+            // 固定宽度：即使文字比它窄 / 宽，测量宽度都必须是用户给的那一档。
+            canvas.FixedWidth = 80;
+            canvas.ResetStableSize();
+            canvas.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            bool fixedOk = Math.Abs(canvas.DesiredSize.Width - 80) < 0.1;
+
+            // 工作区上限只能收紧固定宽度，不能反过来放宽。
+            canvas.MaxTextWidth = 60;
+            canvas.ResetStableSize();
+            canvas.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            bool capOk = Math.Abs(canvas.DesiredSize.Width - 60) < 0.1;
+
+            // 行数 → 高度：测量文本只有 1 行、显示文本有 3 行时，画布必须按 3 行定高，
+            // 否则 OnRender 画出的后两行会被窗口边缘裁掉（本次"少行"的回归点）。
+            canvas.FixedWidth = 0;
+            canvas.MaxTextWidth = 0;
+            canvas.LineHeight = 20;
+            canvas.LayoutText = "one";
+            canvas.Text = "1\n2\n3";
+            canvas.ResetStableSize();
+            canvas.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            bool heightOk = Math.Abs(canvas.DesiredSize.Height - 60) < 0.01;
+
+            // 隐藏字符：清理后必须全部可见；越界下标不能留在集合里。
+            canvas.SetHiddenChars(new[] { 0, 2 });
+            bool hiddenOk = canvas.HasHiddenChars;
+            canvas.ClearHiddenChars();
+            hiddenOk = hiddenOk && !canvas.HasHiddenChars;
+            canvas.SetHiddenChars(new[] { -1, 999 });
+            hiddenOk = hiddenOk && !canvas.HasHiddenChars;
+
+            // 换行计数与 Split 同源（CRLF / CR / LF / 末尾换行）。
+            bool linesOk = TextCanvas.CountLines("") == 1
+                        && TextCanvas.CountLines("a") == 1
+                        && TextCanvas.CountLines("a\nb") == 2
+                        && TextCanvas.CountLines("a\r\nb") == 2
+                        && TextCanvas.CountLines("a\rb") == 2
+                        && TextCanvas.CountLines("a\n") == 2
+                        && TextCanvas.CountLines("\n\n") == 3;
+
+            textLayoutOk = natural > 60 && fixedOk && capOk && heightOk && hiddenOk && linesOk;
+        }
+        catch (Exception ex)
+        {
+            Log.Error("文本布局自检异常", ex);
+        }
+        return textLayoutOk;
     }
 
     /// <summary>主题文件（P3/P4）：往返一致与仓库示例主题解析；异常收尾与原单 try 块一致。</summary>
@@ -1911,6 +1980,7 @@ internal static class SelfTest
         public bool StateStoreOk;
         public bool RenderOk;
         public bool ThemeOk;
+        public bool TextLayoutOk;
         public bool GlassPolicyOk;
         public bool ThemeFileOk;
         public bool ThemeRejectOk;
@@ -1945,6 +2015,7 @@ internal static class SelfTest
             yield return new KeyValuePair<string, bool>("状态存储", StateStoreOk);
             yield return new KeyValuePair<string, bool>("渲染节流", RenderOk);
             yield return new KeyValuePair<string, bool>("外观令牌", ThemeOk);
+            yield return new KeyValuePair<string, bool>("文本布局", TextLayoutOk);
             yield return new KeyValuePair<string, bool>("毛玻璃策略", GlassPolicyOk);
             yield return new KeyValuePair<string, bool>("主题文件", ThemeFileOk);
             yield return new KeyValuePair<string, bool>("主题文件校验", ThemeRejectOk);

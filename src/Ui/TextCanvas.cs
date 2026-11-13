@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Media;
@@ -486,6 +487,12 @@ public sealed class TextCanvas : FrameworkElement
     }
 
     /// <summary>
+    /// 2.45.4：当前是否还有被粒子遮住的字符。自检用它断言"清理后必须全部可见"；
+    /// 生产路径不依赖它做决策。
+    /// </summary>
+    internal bool HasHiddenChars => _hiddenChars.Count > 0;
+
+    /// <summary>
     /// T-8：文本元素的起点表。代理对、组合音标、国旗 / ZWJ 序列会被 <see cref="StringInfo"/>
     /// 合成一个元素，后续所有"按下标切分"的地方都以它为准。
     /// </summary>
@@ -517,16 +524,26 @@ public sealed class TextCanvas : FrameworkElement
         TextLayout layout = GetLayout(_layoutText ?? _text);
         double lineHeight = LineHeightOf();
 
+        // 2.45.4：OnRender 画的一直是 _text，布局文本只是启动动画用来提前撑尺寸的。
+        // 两者行数不一致时（动画被打断后遗留布局文本、未来新增其它布局文本来源），
+        // 窗口按少的行数定高，多出来的行会被窗口边缘直接切掉——用户看到的就是"少行"。
+        // 高度取两者较大值；CountLines 只数换行、不排版，打字动画不会因此变慢。
+        int lineCount = Math.Max(layout.Lines.Count, CountLines(_text));
+
         double width = layout.Width;
 
         // 光标画在行尾，给右侧留一点余量，避免被裁掉
         if (_cursorVisible) width += Math.Max(3, _fontSize * 0.75);
 
-        double height = Math.Max(1, lineHeight * layout.Lines.Count);
+        double height = Math.Max(1, lineHeight * lineCount);
         width = Math.Max(1, width);
 
+        // T-7 / 2.45.4：固定宽度是用户显式约束，工作区上限只能收紧；这个组合必须和
+        // DrawContent 走同一个函数（LayoutWidthLimit），否则窗口按一个宽度排、
+        // 文字按另一个宽度画，超出部分会被窗口边缘无声切掉（没有省略号、没有日志）。
         if (_fixedWidth > 0) width = _fixedWidth;
-        if (_maxTextWidth > 0) width = Math.Min(width, _maxTextWidth);
+        double limit = LayoutWidthLimit();
+        if (limit > 0) width = Math.Min(width, limit);
 
         // 只增不减：数据从 "5%" 变成 "100%" 时窗口会长大一次，
         // 之后即使数值变短也不会缩回去，位置就不会来回跳。
@@ -536,12 +553,54 @@ public sealed class TextCanvas : FrameworkElement
             height = Math.Max(height, _stableHeight);
         }
 
-        if (_maxTextWidth > 0) width = Math.Min(width, _maxTextWidth);
+        if (limit > 0) width = Math.Min(width, limit);
         _stableWidth = width;
         _stableHeight = height;
         _hasStable = true;
 
         return new Size(Math.Ceiling(width), Math.Ceiling(height));
+    }
+
+    /// <summary>
+    /// 2.45.4：排版 / 绘制 / 采样共用的有效宽度上限（0 = 不限制）。
+    /// 固定宽度是用户显式约束，MaxTextWidth 是宿主按工作区给的兜底，两者取小。
+    /// 必须只有一个来源：以前 Measure 用 min(固定, 上限)、DrawContent 只看上限，
+    /// 于是固定宽度下的长文本会按自然宽度画出去，被窗口边缘硬切。
+    /// </summary>
+    double LayoutWidthLimit()
+    {
+        double limit = 0;
+        if (_fixedWidth > 0) limit = _fixedWidth;
+        if (_maxTextWidth > 0 && (limit <= 0 || _maxTextWidth < limit)) limit = _maxTextWidth;
+        return limit;
+    }
+
+    /// <summary>
+    /// 2.45.4：绘制时真正可用的整块宽度。
+    /// 先取设置上限（固定宽度 / 工作区），再受 Arrange 实际给出的宽度约束；
+    /// 后者更窄说明窗口被外部限制得比测量值小，此时必须按可用宽度裁剪并画省略号。
+    /// </summary>
+    double AvailableBlockWidth(double textWidth)
+    {
+        double limit = LayoutWidthLimit();
+        double available = ActualWidth > 0 ? ActualWidth : textWidth;
+        if (limit > 0 && limit < available) available = limit;
+        if (available <= 0) available = Math.Max(1, textWidth);
+        return available;
+    }
+
+    /// <summary>2.45.4：裁剪日志 30s 节流（只影响日志，不影响绘制）。</summary>
+    static bool ShouldLogClip(ref long lastTicks)
+    {
+        long now = Stopwatch.GetTimestamp();
+        if (lastTicks != 0
+            && Stopwatch.GetElapsedTime(lastTicks, now).TotalMilliseconds < 30000)
+        {
+            return false;
+        }
+
+        lastTicks = now;
+        return true;
     }
 
     double LineHeightOf()
@@ -559,6 +618,32 @@ public sealed class TextCanvas : FrameworkElement
         double iconRoom = _fontSize * _iconScale * 0.78 + 1;
         _cachedLineHeight = Math.Max(textHeight, iconRoom);
         return _cachedLineHeight;
+    }
+
+    /// <summary>
+    /// 2.45.4：与 <see cref="Split"/> 完全同源的换行计数（CRLF / CR / LF 各算一次，
+    /// 末尾换行也算一个空行）。只数换行、不建 run，用于"测量取布局文本与显示文本
+    /// 行数较大值"时不额外付排版成本，也不破坏启动动画的缓存收益。
+    /// </summary>
+    internal static int CountLines(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return 1;
+
+        int lines = 1;
+        for (int i = 0; i < text.Length; i++)
+        {
+            char c = text[i];
+            if (c == '\r')
+            {
+                lines++;
+                if (i + 1 < text.Length && text[i + 1] == '\n') i++;
+            }
+            else if (c == '\n')
+            {
+                lines++;
+            }
+        }
+        return lines;
     }
 
     static List<string> Split(string text)
@@ -675,6 +760,14 @@ public sealed class TextCanvas : FrameworkElement
     /// 而它只取决于 (字体, 字号, 字重) 与字号 × 图标倍率——这些都在 setter 里置脏。
     /// </summary>
     double _cachedLineHeight = double.NaN;
+
+    /// <summary>
+    /// 2.45.4：裁剪必须可见（AGENTS §5）。宽度裁剪是合法降级（设置固定宽度 / 超出工作区），
+    /// 画省略号并把具体数值写进日志；高度裁剪说明"测量与绘制不同源"，是缺陷线索。
+    /// 两者都按 30s 手动节流：正常刷新不会刷屏，但长时间坏着仍能留下证据。
+    /// </summary>
+    long _clipWidthLogTicks;
+    long _clipHeightLogTicks;
 
     /// <summary>
     /// 字形墨迹范围缓存（键 = 字体|字号|字重|文本）。对齐图标要用真实墨迹而不是字体度量：
@@ -1059,7 +1152,9 @@ public sealed class TextCanvas : FrameworkElement
 
         // T-7：裁剪模式在整块右侧额外画一个省略号，它不受隐藏集合控制。
         // 按变化区域采样会漏掉省略号的墨迹，所以这里直接放弃收窄，由调用方退回整卡。
-        if (_maxTextWidth > 0 && layout.Width > _maxTextWidth) return false;
+        // 2.45.4：裁剪判定必须和 DrawContent 同源（设置上限 + Arrange 实际宽度），
+        // 否则固定宽度 / 窗口被压窄时采样区域会漏掉被硬切的部分。
+        if (layout.Width > AvailableBlockWidth(layout.Width) + 0.5) return false;
 
         double lineHeight = LineHeightOf();
         double blockWidth = layout.Width;
@@ -1160,21 +1255,46 @@ public sealed class TextCanvas : FrameworkElement
         // 整块位置必须跟对齐方式走：左对齐时贴左、居中时居中、右对齐时贴右。
         // 之前无论选哪种都先把整块居中，导致「左对齐 / 右对齐」只剩下多行行宽差，
         // 单行时看起来完全没生效。
-        // T-7：超宽时把对齐块夹到上限，并在下面 push clip + 画省略号。
-        bool clipped = _maxTextWidth > 0 && layout.Width > _maxTextWidth;
-        double blockWidth = clipped ? _maxTextWidth : layout.Width;
+        // T-7 / 2.45.4：裁剪判定与 Measure 同源（LayoutWidthLimit），并用 Arrange 实际
+        // 宽度兜底。以前只看 MaxTextWidth，固定宽度 / 窗口被压窄时文字会画到窗口外，
+        // 被边缘硬切且没有任何提示；现在统一画省略号，并留下具体数值的日志。
+        double available = AvailableBlockWidth(layout.Width);
+        bool clipped = layout.Width > available + 0.5;
+        double blockWidth = clipped ? available : layout.Width;
 
         double blockHeight = built.Count * lineHeight;
-        double originX = AlignBlockX(blockWidth);
+        // 裁剪时从行首开始画：居中 / 右对齐若继续按整行宽对齐，x 会是负数，
+        // 行首反而被切掉。用户需要看到的是"从头开始、尾部省略"，不是中间一截。
+        double originX = clipped ? 0 : AlignBlockX(blockWidth);
         double originY = Math.Max(0, (ActualHeight - blockHeight) / 2);
 
+        // 测量与绘制理论上同源；真出现"要画的内容比画布高"时必须留痕，
+        // 否则用户只看到少行、日志里没有任何线索。这里不偷偷改尺寸，只报出具体数值。
+        if (blockHeight > ActualHeight + 0.5)
+        {
+            if (ShouldLogClip(ref _clipHeightLogTicks))
+            {
+                Log.Warn($"文本块高 {blockHeight:0.#} DIP 超过画布高 {ActualHeight:0.#} DIP"
+                    + $"（{built.Count} 行 × 行高 {lineHeight:0.#}），底部行会被裁掉");
+            }
+        }
+
         if (clipped)
-            dc.PushClip(new RectangleGeometry(new Rect(0, 0, _maxTextWidth, ActualHeight)));
+        {
+            if (ShouldLogClip(ref _clipWidthLogTicks))
+            {
+                Log.Warn($"文本宽 {layout.Width:0.#} DIP 超过可用宽 {available:0.#} DIP"
+                    + $"（固定宽度 {_fixedWidth:0.#} / 工作区上限 {_maxTextWidth:0.#} / Arrange {ActualWidth:0.#}），已按省略号裁剪");
+            }
+            dc.PushClip(new RectangleGeometry(new Rect(0, 0, blockWidth, ActualHeight)));
+        }
 
         for (int i = 0; i < built.Count; i++)
         {
             TextLine line = built[i];
-            double x = originX + AlignX(line.Width, blockWidth);
+            // 裁剪模式下整块已按左边缘对齐（originX=0），行内也不能再按整行宽右 / 居中，
+            // 否则行首会被推到 0 左边。未裁剪时保持原来的对齐语义。
+            double x = originX + (clipped ? 0 : AlignX(line.Width, blockWidth));
             double y = originY + i * lineHeight;
             int runStart = layout.LineStarts[i];
 
@@ -1200,7 +1320,7 @@ public sealed class TextCanvas : FrameworkElement
         {
             dc.Pop();
             TextRun ellipsis = CreateRun("…", RunKind.Text);
-            double x = Math.Max(0, _maxTextWidth - ellipsis.Width);
+            double x = Math.Max(0, blockWidth - ellipsis.Width);
             double y = originY + Math.Max(0, built.Count - 1) * lineHeight;
             double baseY = y + (_refBaseline - ellipsis.Text.Baseline);
             DrawLine(dc, ellipsis.Text, x, baseY);
