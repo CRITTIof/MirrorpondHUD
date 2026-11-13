@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 
@@ -130,6 +130,7 @@ public sealed class Settings
         Style.Panel = NormalizeColorToken(Style.Panel, "");
         Style.Scrollbar = NormalizeColorToken(Style.Scrollbar, "");
         Style.ScrollbarHot = NormalizeColorToken(Style.ScrollbarHot, "");
+        Style.Progress = NormalizeColorToken(Style.Progress, "");
         Style.MonoFont = (Style.MonoFont ?? "").Trim();
         Style.Decoration = NormalizeDecoration(Style.Decoration);
         Style.DecorationDensity = Clamp(Style.DecorationDensity, 0, 2);
@@ -719,6 +720,11 @@ public sealed class StyleSettings
 
     /// <summary>滚动条悬停 / 拖动。空 = 前景 0.40。</summary>
     public string ScrollbarHot = "";
+
+    /// <summary>
+    /// 2.47.0：进度条填充。空 = 跟随 Accent（默认观感不变）；成功 / 错误状态仍会覆盖。
+    /// </summary>
+    public string Progress = "";
 
     /// <summary>CLI 面板的等宽字体。空 = Cascadia Mono / Consolas。</summary>
     public string MonoFont = "";

@@ -97,6 +97,7 @@ public partial class SettingsWindow
             EdgeBarWidthSlider.Value = s.Style.EdgeBarWidth;
             EdgeBarWidthValue.Text = s.Style.EdgeBarWidth.ToString("0", CultureInfo.InvariantCulture);
             EdgeBarColorBox.Text = s.Style.EdgeBarColor ?? "";
+            ProgressColorBox.Text = s.Style.Progress ?? "";
             ShadowCheck.IsChecked = s.Overlay.Shadow;
             MonoReadoutsCheck.IsChecked = s.Style.MonoReadouts;
             LoadEndfieldUi(s.Style);
@@ -184,6 +185,7 @@ public partial class SettingsWindow
             ValidateColorBox(OutlineColorBox, true);
             ValidateColorBox(SuccessColorBox, true);
             ValidateColorBox(WarningColorBox, true);
+            ValidateColorBox(ProgressColorBox, true);
             ValidateHotkeyBox(HotkeyToggleBox);
             ValidateHotkeyBox(HotkeySettingsBox);
             ValidateHotkeyBox(HotkeyLockBox);
@@ -557,6 +559,7 @@ public partial class SettingsWindow
             s.Style.EdgeBar = EdgeBarCheck.IsChecked == true;
             s.Style.EdgeBarWidth = Math.Round(EdgeBarWidthSlider.Value);
             s.Style.EdgeBarColor = (EdgeBarColorBox.Text ?? "").Trim();
+            s.Style.Progress = (ProgressColorBox.Text ?? "").Trim();
             s.Overlay.Shadow = ShadowCheck.IsChecked == true;
             s.Style.MonoReadouts = MonoReadoutsCheck.IsChecked == true;
             ReadEndfieldUi(s.Style);

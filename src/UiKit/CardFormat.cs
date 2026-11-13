@@ -13,7 +13,7 @@ namespace MirrorpondHUD.Ui.Controls;
 /// 自己 try/catch 兜住了，表单 / 数据仪表 / 表格列却直接 ToString —— 一个手滑的格式串就能
 /// 在 OnRender 或 UI 回调里崩掉窗口。现在统一走这里：非法格式回退默认格式，并只提示一次。
 /// </summary>
-internal static class CardFormat
+public static class CardFormat
 {
     /// <summary>格式串为空 / 非法时使用的默认格式。</summary>
     public const string DefaultNumber = "0.##";
@@ -21,6 +21,23 @@ internal static class CardFormat
     static readonly HashSet<string> WarnedFormats = new(StringComparer.Ordinal);
 
     public static bool IsFinite(double value) => !double.IsNaN(value) && !double.IsInfinity(value);
+
+    /// <summary>
+    /// 播放时长：mm:ss，满一小时才补 h:mm:ss。
+    /// 2.47.0 前媒体卡与歌词卡各写一份，歌词那份用 <c>m:ss</c> 会把超过一小时的歌截成 0:xx；
+    /// 现在统一走这里，两处读数口径一致（四舍五入到秒）。
+    /// </summary>
+    public static string Clock(double seconds)
+    {
+        if (!IsFinite(seconds) || seconds < 0) seconds = 0;
+
+        long total = (long)Math.Round(seconds);
+        return total >= 3600
+            ? $"{total / 3600:0}:{total / 60 % 60:00}:{total % 60:00}"
+            : $"{total / 60:00}:{total % 60:00}";
+    }
+
+    public static string Clock(TimeSpan value) => Clock(value.TotalSeconds);
 
     /// <summary>按设置里的格式显示数值；非法格式退回 <see cref="DefaultNumber"/>，不抛异常。</summary>
     public static string Number(double value, string format)

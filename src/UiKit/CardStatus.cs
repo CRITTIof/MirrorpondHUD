@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -31,10 +31,7 @@ public sealed class CardStatus : Grid, IDisposable
     readonly TextBlock _icon;
     readonly TextBlock _text;
     readonly Grid _progressHost;
-    readonly CardSegmentBar _segment;
-    readonly Grid _legacyProgress;
-    readonly Border _track;
-    readonly Border _fill;
+    readonly CardProgressBar _bar;
     readonly CornerBrackets _brackets;
     DispatcherTimer _timer;
     bool _disposed;
@@ -46,7 +43,6 @@ public sealed class CardStatus : Grid, IDisposable
     double? _progress;
     bool _busy;
     bool _showIcon = true;
-    bool _segmentMode = true;
     int _frame;
 
     public CardStatus()
@@ -72,30 +68,10 @@ public sealed class CardStatus : Grid, IDisposable
         line.Children.Add(_text);
         Children.Add(line);
 
-        _segment = new CardSegmentBar
-        {
-            Height = 4,
-            Value = 0,
-            Segments = 28,
-            Gap = 2
-        };
-
-        _track = new Border { Height = 3, CornerRadius = new CornerRadius(1.5) };
-        _fill = new Border
-        {
-            Height = 3,
-            CornerRadius = new CornerRadius(1.5),
-            HorizontalAlignment = HorizontalAlignment.Left,
-            Width = 0
-        };
-        _legacyProgress = new Grid();
-        _legacyProgress.Children.Add(_track);
-        _legacyProgress.Children.Add(_fill);
-        _track.SizeChanged += (s, e) => UpdateProgress();
+        _bar = new CardProgressBar();
 
         _progressHost = new Grid { Margin = new Thickness(19, 3, 0, 0), Visibility = Visibility.Collapsed };
-        _progressHost.Children.Add(_legacyProgress);
-        _progressHost.Children.Add(_segment);
+        _progressHost.Children.Add(_bar);
         SetRow(_progressHost, 1);
         Children.Add(_progressHost);
 
@@ -205,15 +181,7 @@ public sealed class CardStatus : Grid, IDisposable
         _text.FontFamily = family;
         _text.FontSize = size;
 
-        _segmentMode = EndfieldVisuals.SegmentProgress(_style);
-        _segment.Visibility = _segmentMode ? Visibility.Visible : Visibility.Collapsed;
-        _legacyProgress.Visibility = _segmentMode ? Visibility.Collapsed : Visibility.Visible;
-
-        _segment.TrackBrush = CardPalette.Brush(_foreground, 0.12);
-        _track.Background = CardPalette.Brush(_foreground, 0.12);
-        _fill.Background = CardPalette.Brush(_tokens.Accent, 0.9);
-        _track.CornerRadius = new CornerRadius(1.5);
-        _fill.CornerRadius = new CornerRadius(1.5);
+        _bar.ApplyStyle(_style);
 
         _brackets.ApplyStyle(CardPalette.TryColor(_style.Foreground, _foreground));
         UpdateIconLayout();
@@ -230,8 +198,7 @@ public sealed class CardStatus : Grid, IDisposable
     void UpdateVisual()
     {
         _text.Foreground = CardPalette.Brush(_foreground, 0.72);
-        _segment.FillBrush = ProgressBrush();
-        _fill.Background = ProgressBrush();
+        _bar.FillBrush = ProgressBrush();
         _brackets.ChatStyle = EndfieldVisuals.ChatBrackets(_style);
         _brackets.Visibility = EndfieldVisuals.CornerBrackets(_style)
                                && (_kind == CardStatusKind.Error || _kind == CardStatusKind.Warning)
@@ -268,7 +235,12 @@ public sealed class CardStatus : Grid, IDisposable
         }
     }
 
-    Brush ProgressBrush() => _kind == CardStatusKind.Error ? CardPalette.Brush(_tokens.Danger)
+    /// <summary>
+    /// 2.47.0：用户显式指定了进度条颜色时一律用它；否则保持旧行为
+    /// （错误红 / 成功绿 / 常态强调色）。
+    /// </summary>
+    Brush ProgressBrush() => _tokens.ProgressExplicit ? CardPalette.Brush(_tokens.Progress)
+        : _kind == CardStatusKind.Error ? CardPalette.Brush(_tokens.Danger)
         : _kind == CardStatusKind.Success ? CardPalette.Brush(_tokens.Success)
         : CardPalette.Brush(_tokens.Accent);
 
@@ -323,14 +295,6 @@ public sealed class CardStatus : Grid, IDisposable
     void UpdateProgress()
     {
         if (!_progress.HasValue) return;
-
-        double value = Math.Max(0.0, Math.Min(1.0, _progress.Value));
-        if (_segmentMode)
-        {
-            _segment.Value = value;
-            return;
-        }
-
-        _fill.Width = Math.Max(0, _track.ActualWidth * value);
+        _bar.Value = Math.Max(0.0, Math.Min(1.0, _progress.Value));
     }
 }

@@ -672,12 +672,14 @@ internal static class SelfTest
                     Muted = "#12",
                     Success = "nope",
                     Warning = "#12",
+                    Progress = "#12",
                     Decoration = "spiral"
                 }
             };
             bad.Normalize();
             bool normalizeOk = bad.Style.Accent == "#2F6FEB" && bad.Style.Muted == ""
                             && bad.Style.Success == "" && bad.Style.Warning == ""
+                            && bad.Style.Progress == ""
                             && bad.Style.Decoration == "None";
 
             bool codeOk = ColorCode.TryParse("#80E6EDF3", out var ca, out var cr, out var cg, out var cb)
@@ -690,6 +692,23 @@ internal static class SelfTest
             bool fallbackOk = OverlaySurface.ParseColor("nope", fg) == fg
                            && badToken.Muted == ThemeResolver.WithAlpha(fg, 0.45)
                            && badToken.Accent == System.Windows.Media.Color.FromRgb(0x2F, 0x6F, 0xEB);
+
+            // 2.47.0：进度条颜色为空 = 跟随强调色；显式指定时覆盖成功 / 错误状态色。
+            ThemeTokens progressDefault = ThemeResolver.Resolve(new StyleSettings());
+            ThemeTokens progressExplicit = ThemeResolver.Resolve(new StyleSettings
+            {
+                Accent = "#123456",
+                Progress = "#80ABCDEF"
+            });
+            bool progressColorOk = !progressDefault.ProgressExplicit
+                                && progressDefault.Progress == progressDefault.Accent
+                                && progressExplicit.ProgressExplicit
+                                && progressExplicit.Progress
+                                   == System.Windows.Media.Color.FromArgb(0x80, 0xAB, 0xCD, 0xEF)
+                                // 2.47.0：时长读数统一走 CardFormat，超过一小时不能丢小时位。
+                                && CardFormat.Clock(65.4) == "01:05"
+                                && CardFormat.Clock(3723) == "1:02:03"
+                                && CardFormat.Clock(-1) == "00:00";
 
             // 2.36.0：M2–M8 默认全开；关闭 M6 后铭牌必须整体消失，信息 / 文本卡始终不显示。
             var metaSettings = new Settings();
@@ -759,7 +778,7 @@ internal static class SelfTest
                        && double.IsNaN(richProbe.LineHeight);
 
             themeOk = defaultOk && mutedOk && scrollOk && statusOk && cornerOk && contourOk && motionOk
-                   && validateOk && normalizeOk && codeOk && fallbackOk && endfieldOk
+                   && validateOk && normalizeOk && codeOk && fallbackOk && progressColorOk && endfieldOk
                    && settingsThemeOk && motionAliasOk && loopThicknessOk && previewOk && textEffectOk
                    && richStyleOk;
         }

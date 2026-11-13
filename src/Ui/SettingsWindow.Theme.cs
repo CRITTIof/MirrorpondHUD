@@ -455,6 +455,12 @@ public partial class SettingsWindow
         if (picked is not null) EdgeBarColorBox.Text = picked;
     }
 
+    void PickProgressColorClick(object sender, RoutedEventArgs e)
+    {
+        string picked = PickColor(ProgressColorBox.Text);
+        if (picked is not null) ProgressColorBox.Text = picked;
+    }
+
     void PickThemePreviewBgClick(object sender, RoutedEventArgs e)
     {
         string picked = PickColor(ThemePreviewBgBox.Text);

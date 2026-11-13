@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Threading.Tasks;
 using System.Windows;
@@ -1648,7 +1648,7 @@ public sealed class CardMediaView : Grid, IDisposable
         }
 
         string text = (_mediaEnded ? "■ " : (_playing ? "▶ " : "❚❚ ")) +
-                      Clock(position) + " / " + Clock(duration);
+                      CardFormat.Clock(position) + " / " + CardFormat.Clock(duration);
 
         if (_mediaEnded) text += " · 已结束";
 
@@ -1661,17 +1661,6 @@ public sealed class CardMediaView : Grid, IDisposable
         if (_speedNote is not null) text += $" · {_speedNote}";
 
         _status.SetText(text, CardStatusKind.Normal);
-    }
-
-    static string Clock(double seconds)
-    {
-        if (double.IsNaN(seconds) || double.IsInfinity(seconds) || seconds < 0) seconds = 0;
-
-        long total = (long)Math.Round(seconds);
-        if (total >= 3600)
-            return $"{total / 3600:0}:{total / 60 % 60:00}:{total % 60:00}";
-
-        return $"{total / 60:00}:{total % 60:00}";
     }
 
     /// <summary>把视频子窗口重新摆到卡片上方（卡片置顶后会被压下去）。</summary>

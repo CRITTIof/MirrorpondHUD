@@ -331,6 +331,8 @@ public partial class SettingsWindow : Window
         EdgeBarCheck.Unchecked += (s, e) => UiChanged();
         EdgeBarWidthSlider.ValueChanged += (s, e) => UiChanged();
         EdgeBarColorBox.TextChanged += (s, e) => UiChanged();
+        ProgressColorBox.TextChanged += (s, e) => UiChanged();
+        ProgressColorBox.TextChanged += (s, e) => ValidateColorBox(ProgressColorBox, true);
         ShadowCheck.Checked += (s, e) => UiChanged();
         ShadowCheck.Unchecked += (s, e) => UiChanged();
         IntroCheck.Checked += (s, e) => { UiChanged(); UpdateContextUiState(); };

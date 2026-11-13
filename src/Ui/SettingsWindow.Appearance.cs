@@ -605,9 +605,17 @@ public partial class SettingsWindow
             Foreground = (FgBox.Text ?? "").Trim(),
             Accent = _working is null ? new StyleSettings().Accent : _working.Style.Accent,
             Success = (SuccessColorBox.Text ?? "").Trim(),
-            Warning = (WarningColorBox.Text ?? "").Trim()
+            Warning = (WarningColorBox.Text ?? "").Trim(),
+            Progress = (ProgressColorBox.Text ?? "").Trim()
         };
         ThemeTokens tokens = ThemeResolver.Resolve(preview);
+        if (ProgressSwatch is not null)
+        {
+            ProgressSwatch.Background = new SolidColorBrush(tokens.Progress);
+            ProgressSwatch.ToolTip = tokens.ProgressExplicit
+                ? $"进度条颜色预览（{tokens.Progress}）"
+                : $"空 = 跟随强调色（{tokens.Progress}）";
+        }
         if (SuccessSwatch is not null)
         {
             SuccessSwatch.Background = new SolidColorBrush(tokens.Success);

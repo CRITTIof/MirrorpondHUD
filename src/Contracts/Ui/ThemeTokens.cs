@@ -21,6 +21,13 @@ public sealed class ThemeTokens
     public Color Panel;
     public Color Scrollbar;
     public Color ScrollbarHot;
+    /// <summary>2.47.0：进度条填充；空配置时等于 Accent。</summary>
+    public Color Progress;
+    /// <summary>
+    /// 用户是否显式指定了进度条颜色。显式指定时覆盖成功 / 错误状态色，
+    /// 否则保持旧行为（成功绿 / 失败红 / 常态强调色）。
+    /// </summary>
+    public bool ProgressExplicit;
     public string MonoFont;
 }
 
@@ -53,6 +60,10 @@ public static class ThemeResolver
             Panel = ParseColor(s.Panel, WithAlpha(foreground, 0.045)),
             Scrollbar = ParseColor(s.Scrollbar, WithAlpha(foreground, 0.18)),
             ScrollbarHot = ParseColor(s.ScrollbarHot, WithAlpha(foreground, 0.40)),
+            Progress = ParseColor(s.Progress, accent),
+            // 空串 = 没指定；只有非空且合法才算用户显式指定（非法值已在 Normalize 里清空）。
+            ProgressExplicit = !string.IsNullOrWhiteSpace(s.Progress)
+                               && ColorCode.TryParse(s.Progress, out _, out _, out _, out _),
             MonoFont = string.IsNullOrWhiteSpace(s.MonoFont) ? DefaultMonoFont : s.MonoFont.Trim()
         };
     }
