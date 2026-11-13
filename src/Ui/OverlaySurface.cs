@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -992,7 +992,9 @@ public sealed class OverlaySurface : Border
 
                 _contourPhase += (2.0 * Math.PI * elapsed / ContourBasePeriodMs) * _contourSpeed;
                 if (_contourPhase > 2.0 * Math.PI) _contourPhase -= 2.0 * Math.PI;
-                _contourLayer.SetPhase(_contourPhase);
+                // 重建节奏（量化 / 闸门）由 ContourDecoration 按速度 + 实测生成耗时自适应：
+                // 低速率不再被 1/256 量化压到约 5fps。
+                _contourLayer.SetPhase(_contourPhase, _contourSpeed);
             };
         }
         if (!_contourTimer.IsEnabled)

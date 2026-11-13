@@ -499,6 +499,33 @@ internal static class SelfTest
                      && Math.Abs(StyleSettings.ContourPeriodSeconds(1.0) - 10.0) < 1e-9
                      && Math.Abs(StyleSettings.ContourPeriodSeconds(2.0) - 5.0) < 1e-9;
 
+            // 2.45.4：低速率卡顿的根因是"1/256 量化 + 66ms 闸门"叠加——0.2x 跨一格约 195ms，
+            // 30fps 调用也只重建约 5 次/秒。策略必须是可断言的纯函数：慢速不量化、30fps；
+            // 快速量化 + 15fps；单次生成超预算时退回 15fps（不许把常态 CPU 拉回一核）。
+            ContourPhasePolicy slowPhase = ContourDecoration.PolicyFor(0.2, 2.0);
+            ContourPhasePolicy midPhase = ContourDecoration.PolicyFor(1.0, 2.0);
+            ContourPhasePolicy fastPhase = ContourDecoration.PolicyFor(4.0, 2.0);
+            ContourPhasePolicy heavyPhase = ContourDecoration.PolicyFor(0.2, 40.0);
+            bool contourPhaseOk = slowPhase.Quantum <= 0.0
+                               && Math.Abs(slowPhase.MinIntervalMs - ContourDecoration.SlowIntervalMs) < 1e-9
+                               // 0.2x 跨一格约 195ms：量化正是"约 5fps"的来源，必须被关掉。
+                               && ContourDecoration.QuantumCrossingMs(0.2) > 150.0
+                               && midPhase.Quantum <= 0.0
+                               && fastPhase.Quantum > 0.0
+                               && fastPhase.MinIntervalMs >= ContourDecoration.FastIntervalMs - 1e-9
+                               && ContourDecoration.QuantumCrossingMs(4.0) < 12.0
+                               // 成本兜底：生成太贵时回到 15fps，且不量化（量化会再拖慢）。
+                               && Math.Abs(heavyPhase.MinIntervalMs - ContourDecoration.FastIntervalMs) < 1e-9
+                               && heavyPhase.Quantum <= 0.0
+                               // 不变量：一旦量化，跨一格的时间不能慢于出帧间隔。
+                               && ContourDecoration.QuantumCrossingMs(1.5) <= ContourDecoration.PolicyFor(1.5, 2.0).MinIntervalMs
+                               // 速率单调：速度更快时出帧间隔不会更短。
+                               && fastPhase.MinIntervalMs >= slowPhase.MinIntervalMs
+                               // 归一化只做 [0, 2π) 折叠，不改相位本身的值。
+                               && Math.Abs(ContourDecoration.WrapPhase(-1.0) - (Math.PI * 2.0 - 1.0)) < 1e-9
+                               && Math.Abs(ContourDecoration.WrapPhase(Math.PI * 2.0 + 0.25) - 0.25) < 1e-9;
+            contourOk = contourOk && contourPhaseOk;
+
             // M7：四档动效参数是纯数据，Cut 必须零位移、90ms 补位。
             var cutMotion = new Settings();
             cutMotion.Style.MotionProfile = "Cut";
