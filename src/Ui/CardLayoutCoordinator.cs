@@ -44,6 +44,14 @@ internal sealed class CardLayoutCoordinator
     /// <summary>T-9：堆叠超出工作区的告警节流（每 120ms 一次布局不能每条都写日志）。</summary>
     readonly LogThrottle _workAreaLog = new("卡片堆叠超出工作区", 30000);
 
+    /// <summary>
+    /// 2.45.4：长文本把卡片撑宽后，靠右锚点 / 右对齐会把窗口推出工作区，
+    /// 用户看到的是"右边一截内容不见了"。宽度、高度各自用独立节流：
+    /// 叠放高度正常（Success 会复位状态）时不能把宽度告警一起吞掉。
+    /// </summary>
+    readonly LogThrottle _cardWidthLog = new("卡片宽度超出工作区", 30000);
+    readonly LogThrottle _cardHeightLog = new("卡片高度超出工作区", 30000);
+
     public CardLayoutCoordinator(IList<CardSlot> cards, Func<Settings> settings,
                                  Func<bool> disposed, Dispatcher dispatcher)
     {
@@ -196,18 +204,22 @@ internal sealed class CardLayoutCoordinator
         // （物理像素 / ScaleY，天然扣掉任务栏）先算总高：放不下就压缩间距，
         // 仍放不下再逐卡夹取（会重叠，但每张都可见、可拖）。
         double workHeight = double.PositiveInfinity;
+        double workWidth = double.PositiveInfinity;
         try
         {
             // G-14：优先按设备名定位（多屏热插拔后整数序号可能已指到别的屏）。
             ScreenInfo screen = ScreenGeometry.Get(settings.Overlay.Monitor, settings.Overlay.MonitorDevice);
             if (screen is not null && screen.ScaleY > 0.1)
                 workHeight = screen.WorkHeight / screen.ScaleY;
+            if (screen is not null && screen.ScaleX > 0.1)
+                workWidth = screen.WorkWidth / screen.ScaleX;
         }
         catch (Exception ex)
         {
             // 拿不到显示器信息时按"不夹取"继续布局，至少不能让整叠消失。
-            Log.Warn($"读取工作区高度失败，跳过堆叠夹取: {ex.Message}");
+            Log.Warn($"读取工作区尺寸失败，跳过堆叠夹取: {ex.Message}");
         }
+        bool hasWorkWidth = !double.IsInfinity(workWidth) && workWidth > 1.0;
 
         // T-11：纵向几何统一由 PlanStack 计算。拖动限制、松手换算与这里必须用同一份结果，
         // 否则「拖动时能到、松手后被 Layout 拉回」——那正是拖到屏幕下部被吸回的根因。
@@ -252,13 +264,43 @@ internal sealed class CardLayoutCoordinator
                 x = settings.Overlay.X;
                 if (align == "Right")
                     x = Math.Max(0, _rightEdge - slot.Window.CardWidth);
-                _knownX[slot] = x;
             }
+
+            // T-9 / 2.45.4：纵向只夹 Y 还不够——信息 / 文本卡的文字变长会把窗口撑宽，
+            // 靠右锚点或右对齐时右半边直接落到工作区外，用户看到"内容被裁掉"。
+            // 与纵向一致：只平移、不缩放。夹取用窗口实际宽度（CardWidth 已扣掉投影留白，
+            // 直接拿它算会残留 10px 出屏）；卡片本身比工作区还宽时平移无法补救，
+            // 由 TextCanvas 的宽度上限裁剪（画省略号）兜底，这里留具体数值的日志。
+            double cardWidth = slot.Window.CardWidth;
+            if (hasWorkWidth)
+            {
+                if (cardWidth > workWidth)
+                {
+                    _cardWidthLog.Failure(
+                        $"卡片宽 {cardWidth:0} DIP 超出工作区 {workWidth:0} DIP，左右内容会被屏幕裁掉");
+                }
+                else
+                {
+                    double windowWidth = cardWidth + (settings.Overlay.Shadow ? 20 : 0);
+                    double maxX = Math.Max(0, workWidth - windowWidth);
+                    if (x < 0) x = 0;
+                    if (x > maxX) x = maxX;
+                }
+            }
+            _knownX[slot] = x;
 
             double cardHeight = slot.BodyHeight > 0 ? slot.BodyHeight : slot.Window.CardHeight;
             double y = startY + plan.Tops[visibleIndex];
             if (plan.HasWorkArea)
             {
+                // 2.45.4：单张卡就比整个工作区高时，平移只能把顶部对齐（y=0），
+                // 底部一定会被屏幕裁掉。这是"必须裁"的场景，给出具体数值而不是静默。
+                if (cardHeight > workHeight)
+                {
+                    _cardHeightLog.Failure(
+                        $"卡片高 {cardHeight:0} DIP 超出工作区 {workHeight:0} DIP，底部内容会被屏幕裁掉");
+                }
+
                 // 极端情况（卡片总高超过整个工作区）：每张卡各自夹在工作区内。
                 y = ClampCardY(y, cardHeight, plan.WorkHeight);
             }

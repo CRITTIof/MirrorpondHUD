@@ -67,6 +67,12 @@ public sealed class OverlaySurface : Border
     /// </summary>
     long _particleMaskFallbackTicks;
 
+    /// <summary>
+    /// 2.45.4：文本已变但本次不播粒子时，旧遮罩必须立刻撤销。指标卡 120ms 刷新一次，
+    /// 这是正常降级，按 30s 节流记 Debug，避免把限频误记成失败。
+    /// </summary>
+    long _particleMaskStaleTicks;
+
     BitmapImage _image;
     string _imagePath;
     // G-7：路径 + 最后写入时间 + 长度做缓存键；失败不再永久缓存（30s 后重试）。
@@ -418,14 +424,47 @@ public sealed class OverlaySurface : Border
         {
             _particlePending = true;
             _particleRetries = 0;
+            // 2.45.4：文本换了但卡片还不可见，旧隐藏下标不能留到下次显示。
+            EnsureParticleMaskFresh("卡片未加载 / 未显示，本次不启动粒子");
             return;
         }
 
         // 指标卡 120ms 刷新一次；按卡片限频，避免粒子层永远在重启动。
         bool metrics = string.Equals(_metaConfig?.Preset, "metrics", StringComparison.OrdinalIgnoreCase);
-        if (metrics && (DateTime.UtcNow - _lastParticlePlayUtc).TotalMilliseconds < 800) return;
+        if (metrics && (DateTime.UtcNow - _lastParticlePlayUtc).TotalMilliseconds < 800)
+        {
+            // 2.45.4：限频期间文本已经变了，上一轮按旧文本算出的隐藏下标会遮住新字符。
+            // 先全部恢复显示；800ms 到点后的新一轮会用自己的目标重新遮。
+            EnsureParticleMaskFresh("指标卡粒子限频，本次不重播");
+            return;
+        }
 
         PlayParticle(current);
+    }
+
+    /// <summary>
+    /// 2.45.4：本次不启动新粒子时，保证旧遮罩不会落到新文本上。
+    ///
+    /// 隐藏集合是上一段文本的 UTF-16 下标；文本变长/变短后继续套用会遮错字符
+    /// （用户看到"少字 / 整段缺字"）。本轮还在播时交给粒子层按同一规则判断能否继续用；
+    /// 没有在播的轮次就直接清空。粒子层自己每帧也会做同样的检查（兜住不经它触发的文本变化）。
+    /// </summary>
+    void EnsureParticleMaskFresh(string reason)
+    {
+        if (_canvas is null) return;
+        if (_particleLayer.SyncHiddenCharsToText()) return;
+
+        _canvas.ClearHiddenChars();
+
+        long now = Stopwatch.GetTimestamp();
+        if (_particleMaskStaleTicks != 0
+            && Stopwatch.GetElapsedTime(_particleMaskStaleTicks, now).TotalMilliseconds < 30000)
+        {
+            return;
+        }
+
+        _particleMaskStaleTicks = now;
+        Log.Debug($"粒子遮罩已恢复显示: {reason}");
     }
 
     /// <summary>
@@ -440,6 +479,9 @@ public sealed class OverlaySurface : Border
         if (changed.Length == 0)
         {
             _lastParticleText = current;
+            // 2.45.4：纯删除时新文本里没有要重采的字符（ChangedIndices 返回空），
+            // 但上一轮按旧文本设置的隐藏下标还在，必须一并撤掉，否则会遮住剩余字符。
+            EnsureParticleMaskFresh("文本纯删除，旧遮罩下标已失效");
             return;
         }
 
@@ -480,6 +522,8 @@ public sealed class OverlaySurface : Border
         else
         {
             _particlePending = true;
+            // 2.45.4：画布没量好时不播粒子，但文本已经变了，旧遮罩必须先撤。
+            EnsureParticleMaskFresh("画布未就绪，本轮粒子未启动");
             // 不要重置 _particleRetries：否则画布长期量不出来时会在 Background 级无限自旋。
         }
     }
