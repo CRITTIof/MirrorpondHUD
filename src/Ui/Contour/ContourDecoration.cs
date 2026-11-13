@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
@@ -206,7 +206,7 @@ internal sealed class ContourDecoration : FrameworkElement
     /// <summary>
     /// 成本闸门状态切换日志。用 Debug 而不是 Warn：冷启动首帧（含基础网格采样）几乎必然
     /// 超预算，但一两秒后会自行恢复——这不是错误，默认 Info 等级下不该为此刷一条警告。
-    /// 状态真的反复抖动时由 5 秒防抖兜住。
+    /// 状态真的在阈值附近抖动时由 1 秒防抖兜住（最多每秒一条 Debug）。
     /// </summary>
     void UpdateCostGuard(double buildCostMs)
     {
@@ -214,7 +214,7 @@ internal sealed class ContourDecoration : FrameworkElement
         if (engaged == _costGuardEngaged) return;
 
         DateTime now = DateTime.UtcNow;
-        if ((now - _costGuardLogUtc).TotalSeconds < 5.0)
+        if ((now - _costGuardLogUtc).TotalSeconds < 1.0)
         {
             _costGuardEngaged = engaged;
             return;
