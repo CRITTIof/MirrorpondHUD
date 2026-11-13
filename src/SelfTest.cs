@@ -255,6 +255,14 @@ internal static class SelfTest
         ReportUnitChecks(sb, results);
     }
 
+    /// <summary>2.45.3：把动态掩码打印成 '0/1' 串，断言读起来就是模板结构（1 = 动态值）。</summary>
+    static string DynamicMaskText(bool[] mask)
+    {
+        var sb = new StringBuilder(mask.Length);
+        for (int i = 0; i < mask.Length; i++) sb.Append(mask[i] ? '1' : '0');
+        return sb.ToString();
+    }
+
     /// <summary>模板渲染：占位符格式化、双花括号转义与未知占位符收集。</summary>
     static bool RunTemplateChecks(out bool unknownOk)
     {
@@ -272,7 +280,29 @@ internal static class SelfTest
             string minAlign = TemplateEngine.Render("{n,-2147483648}", vars);
             string maxAlign = TemplateEngine.Render("{n,2147483647}", vars);
             bool alignOk = minAlign.Length == 1024 && maxAlign.Length == 1024;
-            templateOk = templateOk && alignOk;
+
+            // 2.45.3：粒子只该作用于 {占位符} 输出的动态值，模板字面量必须能被认出来。
+            // "CPU 23.4% RAM 39.5%"：只有两个数字区间动态，"CPU "、"% RAM "、末尾 "%" 都是字面量。
+            bool maskOk = TemplateEngine.TryBuildDynamicMask(
+                              "CPU {cpu:0.0}% RAM {mem:0.0}%", "CPU 23.4% RAM 39.5%", out bool[] cpuMask)
+                       && DynamicMaskText(cpuMask) == "0000111100000011110"
+                       // 纯字面量模板：定位成功但没有任何动态字符（不是"失败掩码"）。
+                       && TemplateEngine.TryBuildDynamicMask("CPU 23.4%", "CPU 23.4%", out bool[] literalMask)
+                       && DynamicMaskText(literalMask) == "000000000"
+                       // {{ok}} 是转义出来的字面花括号，不在占位符里，必须算静态。
+                       && TemplateEngine.TryBuildDynamicMask("{{ok}} {cpu:0.0}", "{ok} 23.4", out bool[] escapeMask)
+                       && DynamicMaskText(escapeMask) == "000001111"
+                       // 对齐补齐属于占位符输出（动态），两个占位符之间的 '-' 仍是字面量。
+                       && TemplateEngine.TryBuildDynamicMask("{n,4}-{n}", "   5-5", out bool[] alignMask)
+                       && DynamicMaskText(alignMask) == "111101"
+                       // 模板与渲染不同源时必须失败（绝不返回一个错位掩码）：
+                       // 字面量对不上 / 尾部多出字符 / 模板为空。
+                       && !TemplateEngine.TryBuildDynamicMask("A{x}B", "A1C", out _)
+                       && !TemplateEngine.TryBuildDynamicMask("A{x}B", "A1B2", out _)
+                       && !TemplateEngine.TryBuildDynamicMask("P{x}", "1", out _)
+                       && !TemplateEngine.TryBuildDynamicMask(null, "A", out _);
+
+            templateOk = templateOk && alignOk && maskOk;
         }
         catch (Exception ex)
         {
@@ -554,9 +584,33 @@ internal static class SelfTest
                          && !ParticleTextLayer.TryClipSampleRegion(new Rect(500, 500, 10, 10), 2, 320, 200, out _)
                          && !ParticleTextLayer.TryClipSampleRegion(Rect.Empty, 2, 320, 200, out _);
 
+            // 2.45.3：图标 / 键帽码位永远不参赛，与掩码能否用无关（PUA 字形采样就是糊块）。
+            string glyphText = $"{Keycaps.First}CPU {Icons.Cpu}23";
+            var glyphIndices = new int[glyphText.Length];
+            for (int i = 0; i < glyphIndices.Length; i++) glyphIndices[i] = i;
+            int[] glyphFiltered = ParticleTextLayer.FilterParticleTargets(glyphText, glyphIndices, null);
+            bool glyphOk = glyphFiltered.Length == glyphText.Length - 2;
+            for (int i = 0; i < glyphFiltered.Length && glyphOk; i++)
+            {
+                glyphOk = !ParticleTextLayer.IsParticleGlyph(glyphText[glyphFiltered[i]]);
+            }
+
+            // 掩码可用时模板字面量也不参赛；掩码失败（null / 长度不符 / 越界下标）只做字形过滤，不抛异常。
+            bool[] staticOnly = new bool[glyphText.Length];   // 全静态 → 一个都不留
+            bool maskFilterOk = ParticleTextLayer.FilterParticleTargets(glyphText, glyphIndices, staticOnly).Length == 0
+                             && ParticleTextLayer.FilterParticleTargets("CPU 23.4%", new[] { 4, 8 }, null).Length == 2
+                             // 长度不符的掩码被忽略（不能按错位下标剔除动态值）
+                             && ParticleTextLayer.FilterParticleTargets("CPU", new[] { 0 }, new[] { false, true }).Length == 1
+                             // 越界下标被丢掉，不抛异常
+                             && ParticleTextLayer.FilterParticleTargets("CPU", new[] { -1, 3, 0 }, null).Length == 1
+                             && ParticleTextLayer.FilterParticleTargets("", new[] { 0 }, null).Length == 0
+                             && ParticleTextLayer.FilterParticleTargets("CPU", Array.Empty<int>(), null).Length == 0;
+
             textEffectOk = textEffectOk
                         && lineDiffOk
                         && regionOk
+                        && glyphOk
+                        && maskFilterOk
                         // 2.43.2：末排目标中心按粒子半径夹取，不能越过图层边缘。
                         && Math.Abs(ParticleTextLayer.ClampCenter(20.5, 20.0, 2.2) - 18.9) < 1e-9
                         && Math.Abs(particleStyle.TextParticleSize - 4.0) < 1e-9
