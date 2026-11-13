@@ -57,6 +57,11 @@ public sealed class Settings
         Style.BlurFps = (int)ClampLogged("Style.BlurFps", Style.BlurFps, 2, 30);
         Style.IconScale = ClampLogged("Style.IconScale", Style.IconScale, 0.5, 3);
         Style.CardAlign = NormalizeCardAlign(Style.CardAlign);
+        Style.CornerStyle = NormalizeCornerStyle(Style.CornerStyle);
+        Style.EdgeBarWidth = ClampLogged("Style.EdgeBarWidth", Style.EdgeBarWidth, 1, 10);
+        Style.EdgeBarColor = NormalizeColorToken(Style.EdgeBarColor, "");
+        Style.ScrollbarStyle = string.Equals(Style.ScrollbarStyle, "Chat", StringComparison.OrdinalIgnoreCase) ? "Chat" : "Default";
+        Style.BracketStyle = string.Equals(Style.BracketStyle, "Chat", StringComparison.OrdinalIgnoreCase) ? "Chat" : "Default";
         Style.TextAlignment = NormalizeTextAlign(Style.TextAlignment);
         Style.GlassMode = NormalizeGlassMode(Style.GlassMode);
         Style.GlassSource = NormalizeGlassSource(Style.GlassSource);
@@ -197,23 +202,11 @@ public sealed class Settings
     }
 
     /// <summary>卡片对齐：Auto / Left / Right。</summary>
-    /// <summary>2.46.2：卡片轮廓三种设计语言；未知值回退圆角。</summary>
-    public static string NormalizeCardShape(string value)
-    {
-        switch ((value ?? "").Trim().ToLowerInvariant())
-        {
-            case "cut":
-            case "cutangle":
-            case "切角":
-                return "CutAngle";
-            case "right":
-            case "rightangle":
-            case "直角":
-                return "RightAngle";
-            default:
-                return "RoundAngle";
-        }
-    }
+    /// <summary>2.46.3：角处理两档；未知值回退原版圆角。</summary>
+    public static string NormalizeCornerStyle(string value) =>
+        string.Equals((value ?? "").Trim(), "Cut", StringComparison.OrdinalIgnoreCase)
+        || string.Equals((value ?? "").Trim(), "切角", StringComparison.OrdinalIgnoreCase)
+            ? "Cut" : "Round";
 
     public static string NormalizeCardAlign(string value)
     {
@@ -642,6 +635,18 @@ public sealed class StyleSettings
 
     /// <summary>卡片对齐：Left = 所有卡片左边缘共线，Right = 右边缘共线；Auto = 按整叠卡片在屏幕左 / 右半边决定。</summary>
     public string CardAlign = "Auto";
+
+    /// <summary>2.46.3：角处理。Round = 原圆角；Cut = 45° 切角（共用 Overlay.CornerRadius 大小）。</summary>
+    public string CornerStyle = "Round";
+
+    /// <summary>2.46.3：边缘条开关/粗细/颜色；颜色空 = 跟随 Accent。位置随卡片对齐自动左/右。</summary>
+    public bool EdgeBar = false;
+    public double EdgeBarWidth = 3;
+    public string EdgeBarColor = "";
+
+    /// <summary>2.46.3：滚动条 / 角括号样式（Default / Chat，Chat 取自 AI 对话设计稿）。</summary>
+    public string ScrollbarStyle = "Default";
+    public string BracketStyle = "Default";
 
     /// <summary>
     /// 图标大小倍率：图标字形按「正文同字号」绘制，再乘这个倍率（1.0 = 图标与文字等高）。

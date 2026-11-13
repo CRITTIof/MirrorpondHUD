@@ -327,6 +327,10 @@ public partial class SettingsWindow : Window
         PaddingSlider.ValueChanged += (s, e) => UiChanged();
         LineHeightSlider.ValueChanged += (s, e) => UiChanged();
         CornerSlider.ValueChanged += (s, e) => UiChanged();
+        EdgeBarCheck.Checked += (s, e) => UiChanged();
+        EdgeBarCheck.Unchecked += (s, e) => UiChanged();
+        EdgeBarWidthSlider.ValueChanged += (s, e) => UiChanged();
+        EdgeBarColorBox.TextChanged += (s, e) => UiChanged();
         ShadowCheck.Checked += (s, e) => UiChanged();
         ShadowCheck.Unchecked += (s, e) => UiChanged();
         IntroCheck.Checked += (s, e) => { UiChanged(); UpdateContextUiState(); };

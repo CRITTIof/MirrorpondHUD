@@ -124,12 +124,15 @@ public static class CliScrollBars
         "</Style>" +
         "</ResourceDictionary>";
 
+    /// <summary>2.46.3：全局滚动条样式；卡片 Apply 时同步，所有 ScrollViewer 一起换。</summary>
+    public static string Mode = "Default";
+
     static readonly Dictionary<string, Style> Cache = new(StringComparer.Ordinal);
 
     /// <summary>按令牌生成（并缓存）滚动条样式：常态 / 悬停两块颜色来自主题。</summary>
     public static Style For(Color thumb, Color hot)
     {
-        string key = $"{thumb}|{hot}";
+        string key = $"{thumb}|{hot}|{Mode}";
         Style style;
         lock (Cache)
         {
@@ -137,7 +140,19 @@ public static class CliScrollBars
         }
 
         // 注意不能用 string.Format：模板里的 {StaticResource ...} 会被当成占位符。
-        string xaml = TemplateFormat
+        string template = TemplateFormat;
+        if (string.Equals(Mode, "Chat", StringComparison.OrdinalIgnoreCase))
+        {
+            // AI 对话设计稿：6px 方头、无内缩；轨道用中性灰，滑块仍是主题色。
+            template = template
+                .Replace("CornerRadius=\"3\" Margin=\"2,2,2,2\"", "CornerRadius=\"0\" Margin=\"0\"")
+                .Replace("<Setter Property=\"Width\" Value=\"7\"/>", "<Setter Property=\"Width\" Value=\"6\"/>")
+                .Replace("<Grid Background=\"Transparent\" SnapsToDevicePixels=\"True\">",
+                         "<Grid Background=\"Transparent\" SnapsToDevicePixels=\"True\">"
+                         + "<Border Width=\"6\" HorizontalAlignment=\"Right\" Background=\"#3A3A3F\"/>");
+        }
+
+        string xaml = template
             .Replace("%THUMB%", thumb.ToString())
             .Replace("%THUMBHOT%", hot.ToString());
 
@@ -233,6 +248,35 @@ public sealed class CliEntryPanel : Border
         Margin = new Thickness(0, 0, 0, 6);
     }
 
+    /// <summary>2.46.3：AI 对话设计稿的每轮角括号（长横短竖）；只画视觉，不参与命中。</summary>
+    protected override void OnRender(DrawingContext dc)
+    {
+        base.OnRender(dc);
+        if (!string.Equals(_style?.BracketStyle, "Chat", StringComparison.OrdinalIgnoreCase)) return;
+
+        double w = ActualWidth;
+        double h = ActualHeight;
+        if (w < 24 || h < 20) return;
+
+        const double inset = 4;
+        const double hArm = 22;
+        const double vArm = 8;
+        var brush = new SolidColorBrush(Color.FromArgb(150, _foreground.R, _foreground.G, _foreground.B));
+        brush.Freeze();
+        var pen = new Pen(brush, 1.4);
+        pen.Freeze();
+        double x0 = inset, y0 = inset, x1 = w - inset, y1 = h - inset;
+
+        dc.DrawLine(pen, new Point(x0, y0), new Point(x0 + hArm, y0));
+        dc.DrawLine(pen, new Point(x0, y0), new Point(x0, y0 + vArm));
+        dc.DrawLine(pen, new Point(x1 - hArm, y0), new Point(x1, y0));
+        dc.DrawLine(pen, new Point(x1, y0), new Point(x1, y0 + vArm));
+        dc.DrawLine(pen, new Point(x0, y1 - vArm), new Point(x0, y1));
+        dc.DrawLine(pen, new Point(x0, y1), new Point(x0 + hArm, y1));
+        dc.DrawLine(pen, new Point(x1 - hArm, y1), new Point(x1, y1));
+        dc.DrawLine(pen, new Point(x1, y1 - vArm), new Point(x1, y1));
+    }
+
     /// <summary>往里加一段文字，返回这个 TextBlock（流式回答要就地改它）。</summary>
     public TextBlock AddText(string text, double alpha, bool bold, double sizeDelta, double bottomMargin)
     {
@@ -271,6 +315,7 @@ public sealed class CliEntryPanel : Border
         BorderBrush = CardPalette.Brush(tokens.Border);
         CornerRadius = new CornerRadius(CardPalette.Corner(corner - 3, 3));
         CliScrollBars.Apply(_scroller, tokens.Scrollbar, tokens.ScrollbarHot);
+        InvalidateVisual();
 
         foreach (UIElement child in _body.Children)
         {

@@ -92,6 +92,11 @@ public partial class SettingsWindow
             PaddingSlider.Value = s.Style.Padding;
             LineHeightSlider.Value = s.Style.LineHeight;
             CornerSlider.Value = s.Overlay.CornerRadius;
+            CornerStyleCombo.SelectedIndex = string.Equals(s.Style.CornerStyle, "Cut", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+            EdgeBarCheck.IsChecked = s.Style.EdgeBar;
+            EdgeBarWidthSlider.Value = s.Style.EdgeBarWidth;
+            EdgeBarWidthValue.Text = s.Style.EdgeBarWidth.ToString("0", CultureInfo.InvariantCulture);
+            EdgeBarColorBox.Text = s.Style.EdgeBarColor ?? "";
             ShadowCheck.IsChecked = s.Overlay.Shadow;
             MonoReadoutsCheck.IsChecked = s.Style.MonoReadouts;
             LoadEndfieldUi(s.Style);
@@ -548,6 +553,10 @@ public partial class SettingsWindow
             s.Style.Padding = Math.Round(PaddingSlider.Value);
             s.Style.LineHeight = Math.Round(LineHeightSlider.Value);
             s.Overlay.CornerRadius = Math.Round(CornerSlider.Value);
+            s.Style.CornerStyle = (CornerStyleCombo.SelectedItem as ComboBoxItem)?.Tag as string ?? "Round";
+            s.Style.EdgeBar = EdgeBarCheck.IsChecked == true;
+            s.Style.EdgeBarWidth = Math.Round(EdgeBarWidthSlider.Value);
+            s.Style.EdgeBarColor = (EdgeBarColorBox.Text ?? "").Trim();
             s.Overlay.Shadow = ShadowCheck.IsChecked == true;
             s.Style.MonoReadouts = MonoReadoutsCheck.IsChecked == true;
             ReadEndfieldUi(s.Style);

@@ -125,8 +125,6 @@ public static class AppearanceRuntime
             Meta = src.Meta,
             CornerBrackets = src.CornerBrackets,
             CutCorners = src.CutCorners,
-            CardShape = src.CardShape,
-            AccentBar = src.AccentBar,
             FooterText = src.FooterText
         };
         settings.Style.AppearanceId = pack.Id;

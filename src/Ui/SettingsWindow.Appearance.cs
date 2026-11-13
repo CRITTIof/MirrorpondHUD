@@ -59,6 +59,7 @@ public partial class SettingsWindow
         BindNumberBox(PaddingValue, PaddingSlider, "0");
         BindNumberBox(LineHeightValue, LineHeightSlider, "0");
         BindNumberBox(CornerValue, CornerSlider, "0");
+        BindNumberBox(EdgeBarWidthValue, EdgeBarWidthSlider, "0");
         BindNumberBox(OutlineValue, OutlineSlider, "0.0");
         BindNumberBox(ImageOpacityValue, ImageOpacitySlider, "0.00");
         BindNumberBox(FixedWidthValue, FixedWidthSlider, "0");

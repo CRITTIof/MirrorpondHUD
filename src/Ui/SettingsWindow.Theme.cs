@@ -447,6 +447,14 @@ public partial class SettingsWindow
         MarkDirty();
     }
 
+    void CornerStyleChanged(object sender, SelectionChangedEventArgs e) => UiChanged();
+
+    void PickEdgeBarColorClick(object sender, RoutedEventArgs e)
+    {
+        string picked = PickColor(EdgeBarColorBox.Text);
+        if (picked is not null) EdgeBarColorBox.Text = picked;
+    }
+
     void PickThemePreviewBgClick(object sender, RoutedEventArgs e)
     {
         string picked = PickColor(ThemePreviewBgBox.Text);

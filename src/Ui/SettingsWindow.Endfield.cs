@@ -26,8 +26,8 @@ public partial class SettingsWindow
         EndfieldBracketCheck.Unchecked += (s, e) => UiChanged();
         EndfieldCutCheck.Checked += (s, e) => UiChanged();
         EndfieldCutCheck.Unchecked += (s, e) => UiChanged();
-        CardAccentBarCheck.Checked += (s, e) => UiChanged();
-        CardAccentBarCheck.Unchecked += (s, e) => UiChanged();
+        ScrollbarStyleCombo.SelectionChanged += (s, e) => UiChanged();
+        BracketStyleCombo.SelectionChanged += (s, e) => UiChanged();
         EndfieldMetaCheck.Checked += (s, e) => { UiChanged(); UpdateEndfieldUiState(); };
         EndfieldMetaCheck.Unchecked += (s, e) => { UiChanged(); UpdateEndfieldUiState(); };
         FooterTextBox.TextChanged += (s, e) => UiChanged();
@@ -45,14 +45,9 @@ public partial class SettingsWindow
         EndfieldMetaCheck.IsChecked = flags.Meta;
         EndfieldBracketCheck.IsChecked = flags.CornerBrackets;
         EndfieldCutCheck.IsChecked = flags.CutCorners;
-        CardShapeCombo.SelectedIndex = flags.CardShape switch
-        {
-            "CutAngle" => 0,
-            "RightAngle" => 1,
-            _ => 2
-        };
-        CardAccentBarCheck.IsChecked = flags.AccentBar;
         FooterTextBox.Text = flags.FooterText ?? "";
+        ScrollbarStyleCombo.SelectedIndex = string.Equals(style?.ScrollbarStyle, "Chat", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+        BracketStyleCombo.SelectedIndex = string.Equals(style?.BracketStyle, "Chat", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
         UpdateEndfieldUiState();
     }
 
@@ -69,15 +64,17 @@ public partial class SettingsWindow
         flags.Meta = EndfieldMetaCheck.IsChecked == true;
         flags.CornerBrackets = EndfieldBracketCheck.IsChecked == true;
         flags.CutCorners = EndfieldCutCheck.IsChecked == true;
-        flags.CardShape = (CardShapeCombo.SelectedItem as ComboBoxItem)?.Tag as string ?? "RoundAngle";
-        flags.AccentBar = CardAccentBarCheck.IsChecked == true;
         flags.FooterText = (FooterTextBox.Text ?? "").Trim();
+        style.ScrollbarStyle = ScrollbarStyleCombo.SelectedIndex == 1 ? "Chat" : "Default";
+        style.BracketStyle = BracketStyleCombo.SelectedIndex == 1 ? "Chat" : "Default";
         flags.Normalize();
     }
 
-    void CardShapeChanged(object sender, SelectionChangedEventArgs e) => UiChanged();
-
     /// <summary>页脚模板只在「编号与页脚」开启时有意义，关闭时整行收起，保持设置页干净。</summary>
+    void ScrollbarStyleChanged(object sender, SelectionChangedEventArgs e) => UiChanged();
+
+    void BracketStyleChanged(object sender, SelectionChangedEventArgs e) => UiChanged();
+
     void UpdateEndfieldUiState()
     {
         if (FooterTextBoxRow is null) return;

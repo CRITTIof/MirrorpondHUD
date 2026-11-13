@@ -1,3 +1,4 @@
+﻿using System;
 using MirrorpondHUD.Core;
 
 namespace MirrorpondHUD.Ui.Controls;
@@ -25,6 +26,10 @@ public static class EndfieldVisuals
     public static bool Meta(StyleSettings style) => Flags(style)?.Meta ?? true;
 
     public static bool CornerBrackets(StyleSettings style) => Flags(style)?.CornerBrackets ?? true;
+
+    /// <summary>2.46.3：AI 对话设计稿的长横短竖角括号。</summary>
+    public static bool ChatBrackets(StyleSettings style) =>
+        string.Equals(style?.BracketStyle, "Chat", StringComparison.OrdinalIgnoreCase);
 
     public static bool CutCorners(StyleSettings style) => Flags(style)?.CutCorners ?? true;
 

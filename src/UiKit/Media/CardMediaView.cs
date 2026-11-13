@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Threading.Tasks;
 using System.Windows;
@@ -260,6 +260,7 @@ public sealed class CardMediaView : Grid, IDisposable
         _status.TextFont = new FontFamily(tokens.MonoFont);
         _metaFooter.Margin = new Thickness(_padX, 4, _padX, Math.Max(10, _padY * 0.9));
         _metaFooter.ApplyStyle(style);
+        _brackets.ChatStyle = EndfieldVisuals.ChatBrackets(style);
         _brackets.ApplyStyle(Solid(_foreground, 0.62).Color);
         _message.Foreground = Solid(_foreground, 0.55);
         if (_message.Visibility == Visibility.Visible)

@@ -42,8 +42,10 @@ public sealed class OverlaySurface : Border
     readonly ContourDecoration _contourLayer;
     readonly CardFrame _cardFrame;
     readonly Border _accentBar;
-    string _cardShape = CardShapeGeometry.RoundAngle;
+    string _cornerStyle = CardShapeGeometry.Round;
     double _shapeRadius = 10;
+    bool _edgeBar;
+    bool _barRight;
     readonly Border _contourHost;
     readonly TextBlock _metaTop;
     readonly TextBlock _metaBottom;
@@ -306,6 +308,14 @@ public sealed class OverlaySurface : Border
             : (string.Equals(value, "Right", StringComparison.OrdinalIgnoreCase) ? "Right" : "Left");
         if (string.Equals(_resolvedCardAlign, normalized, StringComparison.Ordinal)) return;
         _resolvedCardAlign = normalized;
+        // 对齐方向变了，边缘条要换边，角处理也要把新边缘侧改成直角。
+        if (_lastSettings is not null)
+        {
+            _barRight = ResolveEdgeBarRight(_lastSettings.Style);
+            _accentBar.HorizontalAlignment = _barRight ? HorizontalAlignment.Right : HorizontalAlignment.Left;
+            _cardFrame.Configure(_cornerStyle, _shapeRadius, _edgeBar, _barRight, _cardFrame.Stroke);
+            UpdateCardShape();
+        }
         UpdateTextAlignment();
     }
 
@@ -763,7 +773,10 @@ public sealed class OverlaySurface : Border
         // 2.46.2：外轮廓统一由 _root.Clip 负责（切角/直角/圆角），各层不再各自圆角，
         // 否则切角卡片内部会露出圆角底。CornerRadius 仍保留为 0 交给自绘轮廓。
         _shapeRadius = Math.Max(0, overlay.CornerRadius);
-        _cardShape = Settings.NormalizeCardShape(style.Endfield?.CardShape);
+        _cornerStyle = Settings.NormalizeCornerStyle(style.CornerStyle);
+        // 滚动条样式是全局的：所有卡片的 ScrollViewer 共用 CliScrollBars.Mode。
+        Ui.Controls.CliScrollBars.Mode = string.Equals(style.ScrollbarStyle, "Chat", StringComparison.OrdinalIgnoreCase)
+            ? "Chat" : "Default";
         CornerRadius = new CornerRadius(0);
         _tintLayer.Background = GetBrush(style.Background, style.BackgroundOpacity);
         _tintLayer.CornerRadius = new CornerRadius(0);
@@ -787,13 +800,19 @@ public sealed class OverlaySurface : Border
         _contentLayer.CornerRadius = new CornerRadius(0);
 
         _imageLayer.CornerRadius = new CornerRadius(0);
-        _accentBar.Background = new SolidColorBrush(tokens.Accent);
-        bool accentBar = style.Endfield?.AccentBar ?? false;
-        _accentBar.Visibility = accentBar ? Visibility.Visible : Visibility.Collapsed;
-        // 默认「圆角 + 无强调条」保持旧观感（不新增外描边）；选了三套设计之一才显示轮廓线。
-        _cardFrame.Visibility = accentBar || _cardShape != CardShapeGeometry.RoundAngle
+        _edgeBar = style.EdgeBar;
+        _barRight = ResolveEdgeBarRight(style);
+        _accentBar.Width = Math.Max(1, Math.Min(10, style.EdgeBarWidth));
+        _accentBar.Background = string.IsNullOrWhiteSpace(style.EdgeBarColor)
+            ? new SolidColorBrush(tokens.Accent)
+            : GetBrush(style.EdgeBarColor, 1.0);
+        _accentBar.HorizontalAlignment = _barRight ? HorizontalAlignment.Right : HorizontalAlignment.Left;
+        _accentBar.Visibility = _edgeBar ? Visibility.Visible : Visibility.Collapsed;
+        // 默认「圆角 + 无边缘条」保持旧观感；切角或边缘条开启时才画设计稿的 1px 轮廓。
+        _cardFrame.Visibility = _edgeBar || _cornerStyle == CardShapeGeometry.Cut
             ? Visibility.Visible : Visibility.Collapsed;
-        _cardFrame.Configure(_cardShape, _shapeRadius, GetBrush(style.Foreground, 0.22));
+        _cardFrame.Configure(_cornerStyle, _shapeRadius, _edgeBar, _barRight,
+                             GetBrush(style.Foreground, 0.22));
         UpdateCardShape();
         ApplyImage(style);
         ApplyDecoration(style, tokens);
@@ -953,8 +972,21 @@ public sealed class OverlaySurface : Border
         double h = _root.ActualHeight > 0 ? _root.ActualHeight : ActualHeight;
         if (w < 1 || h < 1) return;
 
-        _root.Clip = CardShapeGeometry.Build(new Size(w, h), _cardShape, _shapeRadius);
+        _root.Clip = CardShapeGeometry.Build(new Size(w, h), _cornerStyle, _shapeRadius, _edgeBar, _barRight);
         _cardFrame.InvalidateVisual();
+    }
+
+    /// <summary>边缘条跟随卡片对齐：右对齐在右，其余在左；Auto 按卡片在屏幕的位置解析。</summary>
+    bool ResolveEdgeBarRight(StyleSettings style)
+    {
+        if (!style.EdgeBar) return false;
+        string align = _resolvedCardAlign;
+        if (string.IsNullOrEmpty(align))
+        {
+            align = Settings.NormalizeCardAlign(style.CardAlign);
+            if (string.Equals(align, "Auto", StringComparison.OrdinalIgnoreCase)) align = ResolveAutoCardAlign();
+        }
+        return string.Equals(align, "Right", StringComparison.OrdinalIgnoreCase);
     }
 
     void ApplyDecoration(StyleSettings style, ThemeTokens tokens)

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -232,6 +232,7 @@ public sealed class CardStatus : Grid, IDisposable
         _text.Foreground = CardPalette.Brush(_foreground, 0.72);
         _segment.FillBrush = ProgressBrush();
         _fill.Background = ProgressBrush();
+        _brackets.ChatStyle = EndfieldVisuals.ChatBrackets(_style);
         _brackets.Visibility = EndfieldVisuals.CornerBrackets(_style)
                                && (_kind == CardStatusKind.Error || _kind == CardStatusKind.Warning)
             ? Visibility.Visible
