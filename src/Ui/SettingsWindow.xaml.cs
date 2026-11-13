@@ -65,6 +65,13 @@ public partial class SettingsWindow : Window
     bool _settingsDark = true;
     /// <summary>主题缩略图的衬底色；和明暗主题分开保存，切明暗时保留用户选择。</summary>
     string _previewBg = "#0B1020";
+    /// <summary>导航项的悬停事件只挂一次（窗口隐藏再显示会重新触发 Loaded）。</summary>
+    bool _navMotionHooked;
+    /// <summary>
+    /// 状态行的属性变更描述符必须由窗口持有引用：DependencyPropertyDescriptor 是弱缓存，
+    /// 只留局部变量会被回收，之后状态文案就不再触发淡入。
+    /// </summary>
+    DependencyPropertyDescriptor _statusTextDescriptor;
 
     /// <summary>
     /// 第 5 个参数读「当前实际玻璃实现」（可为 null：无头截图等没有宿主窗口的场景）。
@@ -108,6 +115,66 @@ public partial class SettingsWindow : Window
         BuildThemeList();
         LoadUi(live);
         NavList.SelectedIndex = Math.Max(0, Tabs.SelectedIndex);
+        HookSettingsMotion();
+    }
+
+    // ==================== 动效（2.45.3，只作用于设置窗） ====================
+
+    /// <summary>
+    /// 设置窗动效的挂接点，全部集中在这里，事件处理器里只留一行调用：
+    /// · 窗口变为可见 → 淡入 + 轻微缩放（隐藏后重新 Show 也会播）；
+    /// · 状态行文案 → 淡入（用依赖属性监听一次接管约 30 处赋值点，不必逐个改成 SetStatus）；
+    /// · 左侧导航 → 悬停底块过渡，并在首次加载时把选中态直接摆好。
+    /// 所有时长 / 缓动 / 减少动效判断都在 <see cref="SettingsMotion"/> 里。
+    /// </summary>
+    void HookSettingsMotion()
+    {
+        IsVisibleChanged += (sender, e) =>
+        {
+            if (IsVisible) SettingsMotion.PlayWindowIn(WindowRoot);
+        };
+
+        // 状态行没有绑定，用属性变更描述符接管所有赋值点（含 Save / Load 里的失败文案）。
+        _statusTextDescriptor = DependencyPropertyDescriptor.FromProperty(TextBlock.TextProperty, typeof(TextBlock));
+        if (_statusTextDescriptor is null)
+            Log.Warn("状态行属性监听不可用：状态文案更新将不带淡入");
+        else
+            _statusTextDescriptor.AddValueChanged(StatusText, (sender, e) => SettingsMotion.FadeStatusIn(StatusText));
+
+        // 本窗口内勾选「减少动效」立刻生效，不必等保存（与卡片动效的实时性一致）。
+        ReduceMotionCheck.Checked += (sender, e) => SettingsMotion.SyncReduceMotion(true);
+        ReduceMotionCheck.Unchecked += (sender, e) => SettingsMotion.SyncReduceMotion(false);
+
+        NavList.Loaded += (sender, e) => HookNavMotion();
+    }
+
+    /// <summary>
+    /// 导航项动效：5 个 ListBoxItem 直接写在 XAML 里，加载后逐项挂一次悬停事件，
+    /// 同时把当前选中项的底块 / 指示条直接摆到终态（开场不播选中动画）。
+    /// </summary>
+    void HookNavMotion()
+    {
+        if (_navMotionHooked) return;
+        _navMotionHooked = true;
+
+        for (int i = 0; i < NavList.Items.Count; i++)
+        {
+            ListBoxItem item = NavListItem(i);
+            if (item is null) continue;
+
+            ListBoxItem captured = item;
+            captured.MouseEnter += (sender, e) => SettingsMotion.NavHover(captured, true);
+            captured.MouseLeave += (sender, e) => SettingsMotion.NavHover(captured, false);
+            SettingsMotion.NavSelected(captured, captured.IsSelected, animate: false);
+        }
+    }
+
+    /// <summary>取第 i 个导航项；容器还没生成时退回 Items 里的 ListBoxItem 本身。</summary>
+    ListBoxItem NavListItem(int index)
+    {
+        if (NavList is null || index < 0 || index >= NavList.Items.Count) return null;
+        return NavList.ItemContainerGenerator.ContainerFromIndex(index) as ListBoxItem
+               ?? NavList.Items[index] as ListBoxItem;
     }
 
     void NavSelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -115,6 +182,14 @@ public partial class SettingsWindow : Window
         if (Tabs is null || NavList is null) return;
         int index = NavList.SelectedIndex;
         if (index >= 0 && Tabs.SelectedIndex != index) Tabs.SelectedIndex = index;
+
+        // 2.45.3：选中底块 0 → 0.78、3px 指示条从左侧滑入，各 140ms；旧项同时淡出。
+        // 窗口还没显示时不播（开场那一次由 NavList.Loaded 直接落终态）。
+        foreach (object removed in e.RemovedItems)
+            if (removed is ListBoxItem previous) SettingsMotion.NavSelected(previous, false);
+
+        foreach (object added in e.AddedItems)
+            if (added is ListBoxItem current) SettingsMotion.NavSelected(current, true, IsVisible);
     }
 
     void TabSelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -122,6 +197,11 @@ public partial class SettingsWindow : Window
         if (Tabs is null || NavList is null) return;
         int index = Tabs.SelectedIndex;
         if (index >= 0 && NavList.SelectedIndex != index) NavList.SelectedIndex = index;
+
+        // 2.45.3：内容区淡入 + 8px 位移归位（180ms）。切走的页由 TabControl 模板立刻摘掉，
+        // 不会叠影；连点快速切换时每次都重挂动画，最后一页自然接管。
+        if (!IsVisible) return;
+        SettingsMotion.FadeSlide(Tabs.SelectedContent as UIElement, -8, SettingsMotion.PageMs);
     }
 
     // ==================== 初始化 ====================
@@ -451,6 +531,9 @@ public partial class SettingsWindow : Window
         SettingsTheme.Apply(_settingsDark, _previewBg);
         UpdateThemeToggleText();
         UpdateBrandLogo();
+        // 2.45.3：整窗换色的那一帧给内容区一次 160ms 的不透明度起伏，
+        // 只动内容不动窗口——窗口允许透明，整窗变淡会透出桌面。
+        SettingsMotion.PlayThemeDip(FrameContent);
         MarkDirty();
     }
 
@@ -577,12 +660,24 @@ public partial class SettingsWindow : Window
             e.Cancel = true;
             // S-10：窗口隐藏后不再需要为残留的输入事件渲染预览。
             _previewTimer?.Stop();
-            Hide();
-            // S-14：Hide 之后没有人再看这些对象；先隐藏再释放，避免看到可视树被拆的瞬间。
-            ReleaseTransientState();
+
+            // 2.45.3：退场只淡出 120ms，完成后再隐藏。保存 / 放弃提示已经在上面同步处理完，
+            // 这条路径不会被动画拖住；退出软件走 CloseForReal，不经过这里，也不等动画。
+            if (!SettingsMotion.TryFadeWindowOut(WindowRoot, HideAfterCloseFade))
+                HideAfterCloseFade();
             return;
         }
         base.OnClosing(e);
+    }
+
+    /// <summary>
+    /// 关闭淡出结束（或动效被关掉）后的真正隐藏。
+    /// S-14：先隐藏再释放，避免看到可视树被拆的瞬间。
+    /// </summary>
+    void HideAfterCloseFade()
+    {
+        Hide();
+        ReleaseTransientState();
     }
 
     /// <summary>

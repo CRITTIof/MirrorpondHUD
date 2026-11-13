@@ -1,4 +1,4 @@
-﻿<Window x:Class="MirrorpondHUD.Ui.SettingsWindow"
+<Window x:Class="MirrorpondHUD.Ui.SettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
@@ -23,35 +23,30 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ListBoxItem">
+                        <!-- 2.45.3：悬停 / 选中的底色与 3px 指示条改为「只动不透明度 + 位移」，
+                             由 SettingsMotion 驱动 140ms 过渡；这里不再用触发器瞬间切换 Visibility，
+                             否则一到 0 就会硬切。状态字色仍由触发器在选中那一刻切换。 -->
                         <Grid Height="46">
-                            <Border x:Name="Fill" Background="{DynamicResource Accent}" Opacity="0.78"
-                                    CornerRadius="7" Margin="14,3,18,3" Visibility="Collapsed" />
+                            <Border x:Name="HoverFill" Background="{DynamicResource HoverBg}" CornerRadius="7"
+                                    Margin="14,3,18,3" Opacity="0" />
+                            <Border x:Name="Fill" Background="{DynamicResource Accent}" Opacity="0"
+                                    CornerRadius="7" Margin="14,3,18,3" />
                             <Border x:Name="Bg" Background="Transparent" CornerRadius="7"
                                     Margin="14,3,18,3" Padding="14,0,10,0">
                                 <ContentPresenter VerticalAlignment="Center" />
                             </Border>
-                            <Border x:Name="Bar" Width="3" Height="24" CornerRadius="1.5"
+                            <Border x:Name="Bar" Width="3" Height="24" CornerRadius="1.5" Opacity="0"
                                     HorizontalAlignment="Left" Margin="14,0,0,0"
-                                    Background="{DynamicResource Accent}" Visibility="Collapsed" />
+                                    Background="{DynamicResource Accent}">
+                                <Border.RenderTransform>
+                                    <TranslateTransform X="-3" />
+                                </Border.RenderTransform>
+                            </Border>
                         </Grid>
                         <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bg" Property="Background" Value="{DynamicResource HoverBg}" />
-                            </Trigger>
                             <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="Fill" Property="Visibility" Value="Visible" />
-                                <Setter TargetName="Bar" Property="Visibility" Value="Visible" />
-                                <Setter TargetName="Bg" Property="Background" Value="Transparent" />
                                 <Setter Property="Foreground" Value="#1D1D1D" />
                             </Trigger>
-                            <MultiTrigger>
-                                <MultiTrigger.Conditions>
-                                    <Condition Property="IsMouseOver" Value="True" />
-                                    <Condition Property="IsSelected" Value="True" />
-                                </MultiTrigger.Conditions>
-                                <Setter TargetName="Bg" Property="Background" Value="Transparent" />
-                                <Setter TargetName="Fill" Property="Opacity" Value="0.88" />
-                            </MultiTrigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>

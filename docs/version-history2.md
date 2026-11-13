@@ -1,4 +1,4 @@
-﻿# 版本修改记录（2.45.0 → ）
+# 版本修改记录（2.45.0 → ）
 
 > 承接 [`version-history.md`](version-history.md)：那边记录到 v2.44.2（82 节，已超过 3000 行），此后不再追加，避免单文件继续膨胀。
 > 统计口径与旧文档一致：`git diff --shortstat <上一版>..<本版>`，文件行的 `+ / -` 是实际增删行数；版本号唯一来源是 `Directory.Build.props` 的 `<Version>`。
@@ -11,6 +11,7 @@
 | v2.45.0 | 2026-11-12 | `38c07ac` `75e6ea0` | 2.44.2 审阅 P1 全量修复 + samples 排除列表 | 29 文件，+511 / −154 |
 | v2.45.1 | 2026-11-12 | `82a955e`…`f7aa73a`（29 个提交，含合并） | 2.44.2 审阅 P2 87 项 + P3 62 项全量修复；构建门禁、日志异步化、插件 contractsVersion、工程改名 | 150 文件，+11,627 / −1,505 |
 | v2.45.2 | 2026-11-13 | `d99dc2d` `20f7340` `6e2497a` 等 | Endfield 风格自绘对话框、行为页日志等级、粒子变化范围收窄、AGENTS 精简 | 24 文件，+1,862 / −216 |
+| v2.45.3 | 2026-11-13 | 本提交 | 设置窗动效（入场 / 切页 / 折叠分组 / 导航 / 明暗 / 状态行） | 8 文件 |
 
 ---
 
@@ -105,3 +106,71 @@ P2 87 项与 P3 62 项覆盖玻璃线程、媒体状态机、文本布局、插�
 
 - 对话框需真机确认多显示器/混合 DPI 下的居中与切角像素对齐、键盘焦点循环。
 - 粒子包围盒采样在图标/键帽混排、跨行、代理对场景需真实卡片冒烟；取不到 bounds 时退回整卡，性能收益会回落。
+
+---
+
+## 4. v2.45.3（设置窗动效，未合并 main）
+
+### 背景
+
+设置窗此前只有卡片列表的拖动 / 折叠动画，窗口开场、切页、折叠分组、左侧导航与明暗切换全是硬切，
+与 [`endfield-motion.md`](UI/endfield-motion.md) 的「短、直、不过冲」和 [`endfield.md`](UI/endfield.md) §3.7 不一致。
+本轮只给**设置窗**加动效，布局、主题、资源键与事件方法名都不变；卡片叠层、Overlay、HudDialog 与 UiKit 控件一律未动。
+
+### 改动
+
+1. **新增 `src/Ui/SettingsMotion.cs`**：设置窗动效的唯一入口。时长令牌集中为常量
+   （入场 200ms / 退场 120ms / 切页 180ms / 分组 200ms / 导航 140ms / 明暗 160ms / 状态行 150ms），
+   缓动统一 `QuadraticEase(EaseOut)`（不过冲）；位移用的 `TranslateTransform`、窗口缩放用的 `ScaleTransform`
+   按元素缓存在 `ConditionalWeakTable`，重复触发不重新分配。
+2. **入场**：窗口变为可见时整窗 Opacity 0→1、Scale 0.985→1（`RenderTransformOrigin` 居中，不移动窗口位置），
+   200ms；隐藏后重新 Show 同样播。缩放只作用于内容根，不影响 `UpdateFrameClip` 的圆角裁切。
+3. **退场**：`OnClosing` 的隐藏分支先淡出 120ms，Completed 里再 `Hide()` + `ReleaseTransientState()`；
+   动效关闭或窗口本就不可见时立即隐藏。淡出带作废令牌，淡出途中重新打开不会把新窗口藏掉；
+   `CloseForReal` / `CloseForShutdown`（退出软件）不经过这条路径，完全不等待动画。
+4. **切页**：`TabSelectionChanged` 对 `Tabs.SelectedContent` 淡入 180ms + 8px 水平位移归位。
+   切走的页由 TabControl 模板（只呈现 `SelectedContent`）立刻摘掉，不会叠影；连点快速切换时
+   后一次动画直接替换前一次时钟，最后一页为准。
+5. **折叠分组**：`SettingsWindow.Sections.cs` 为每个 `Expander` 挂 `Expanded/Collapsed`，对模板部件 `Body`
+   做 200ms 高度动画 + `ClipToBounds` 裁切：展开与收起都从**当前实际高度**起算（连点从半路折返），
+   收起动画结束才 `ClearValue(Visibility)` 交回模板触发器真正折叠；结束时清掉本地高度，下次展开重新按内容量高度。
+6. **左侧导航**：`SettingsNavItem` 模板新增 `HoverFill` 叠层，悬停 / 选中底色与 3px 指示条改为
+   「不透明度 + `TranslateTransform`」140ms 过渡（指示条从 -3px 滑到 0），不再用触发器瞬间切 `Visibility`；
+   只动不透明度和 Transform，不参与布局，所以文字位置不抖。正文字色 / 字重仍由触发器在选中那一刻切换
+   （状态不只靠动效表达）。开场由 `NavList.Loaded` 直接落终态，不播选中动画。
+7. **明暗切换**：`ToggleSettingsThemeClick` 换色后给 `FrameContent` 做 160ms 不透明度起伏（1→0.84→1）。
+   只动内容不动整窗：窗口 `AllowsTransparency`，整窗变淡会直接透出桌面；底板上同时已换色，不会闪白 / 闪黑。
+8. **状态行**：用 `DependencyPropertyDescriptor` 监听 `StatusText.Text`，文案更新时淡入 150ms
+   （一次接管约 30 处赋值点，不必逐个改调用）。只淡入、从不淡出，失败 / 警告文案因此常显。
+   描述符由窗口字段持有引用，避免弱缓存回收后失效。
+9. **减少动效与截图**：`SettingsMotion.Enabled = !CardMotion.SuppressedForCapture && !ReduceMotion &&
+   SystemParameters.ClientAreaAnimation`。任一开关命中就直接到终态——截图 / 自检复用卡片动效已有的
+   `CardMotion.SuppressForCapture`，不新增全局开关；本窗口内勾选「减少动效」立即生效（不必等保存）。
+   所有动画失败 / 被打断都靠 `FillBehavior.Stop` 与「先重置再播」回到终态，不会把窗口留在 Opacity 0 或错误高度。
+
+### 验证
+
+- `dotnet build -c Release`：0 警告 0 错误；`--selftest --isolated` 退出 0。
+- `--screenshot-settings` 默认与折叠态各出一组（5 页 × 2），与 v2.45.2 基线逐像素对比全部一致：
+  - IDENTICAL  before/after.png (1120x1100)
+  - IDENTICAL  before/after-tab1.png (1120x1100)
+  - IDENTICAL  before/after-tab2.png (1120x1100)
+  - IDENTICAL  before/after-tab3.png (1120x1100)
+  - IDENTICAL  before/after-tab4.png (1120x1100)
+  - IDENTICAL  before/after-collapsed.png (1120x1100)
+  - IDENTICAL  before/after-collapsed-tab1.png (1120x1100)
+  - IDENTICAL  before/after-collapsed-tab2.png (1120x1100)
+  - IDENTICAL  before/after-collapsed-tab3.png (1120x1100)
+  - IDENTICAL  before/after-collapsed-tab4.png (1120x1100)
+- `dotnet format --verify-no-changes --include <6 个改动文件>`：无变更。
+- 截图模式按设计只验证终态布局：所有新动效在 `CardMotion.SuppressForCapture` 下直接落终态，
+  导航选中底块（0.78）与 3px 指示条位置、分组展开高度都与基线逐像素相同。
+
+### 风险 / 未验证
+
+- 动效观感需真机目视：窗口淡入 + 0.985 缩放、连点切页、连点折叠折返、指示条滑入、明暗起伏、状态行淡入。
+- 分组高度动画每帧重排当前页（外观页最长），低端机需真机确认无掉帧；若吃紧可退化为「淡入 + 位移」。
+- `SystemParameters.ClientAreaAnimation` 跟随系统「显示动画」开关，需在关闭该开关的机器上确认全部停在终态。
+- 多显示器 / 混合 DPI 下的窗口缩放入场未实测（缩放锚点在内容根中心，理论不受 DPI 影响）。
+
+

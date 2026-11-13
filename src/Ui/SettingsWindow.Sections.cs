@@ -69,10 +69,29 @@ public partial class SettingsWindow
                 IsExpanded = true
             };
 
+            // 2.45.3：初始就是展开的（不播入场），只挂用户后续的展开 / 收起。
+            HookSectionMotion(section);
+
             panel.Children.RemoveAt(index);
             panel.Children.Insert(index, section);
             count++;
             index++;
         }
+    }
+
+    /// <summary>
+    /// 折叠分组的高度动画。模板部件 <c>Body</c> 只有套用模板后才拿得到，
+    /// 所以不在创建时解析，而是在事件里现取（每个分组只在自己被点开 / 收起时取一次）。
+    /// </summary>
+    static void HookSectionMotion(Expander section)
+    {
+        section.Expanded += (sender, e) => AnimateSectionBody(section, true);
+        section.Collapsed += (sender, e) => AnimateSectionBody(section, false);
+    }
+
+    static void AnimateSectionBody(Expander section, bool expand)
+    {
+        if (section.Template?.FindName("Body", section) is not ContentPresenter body) return;
+        SettingsMotion.AnimateSection(section, body, expand);
     }
 }

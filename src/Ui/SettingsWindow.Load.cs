@@ -33,6 +33,8 @@ public partial class SettingsWindow
             _loadFailed = false;
             _working = working;
             CardModel.Normalize(_working);
+            // 2.45.3：设置树里的「减少动效」一票否决设置窗动效（与卡片动效同源，分组 / 切页都不播）。
+            SettingsMotion.SyncReduceMotion(_working.Behavior is not null && _working.Behavior.ReduceMotion);
             UpdateSettingsTheme(_working);
             CaptureRuntimeBaseline();
 
