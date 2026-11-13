@@ -1,4 +1,4 @@
-# 版本修改记录（2.45.0 → ）
+﻿# 版本修改记录（2.45.0 → ）
 
 > 承接 [`version-history.md`](version-history.md)：那边记录到 v2.44.2（82 节，已超过 3000 行），此后不再追加，避免单文件继续膨胀。
 > 统计口径与旧文档一致：`git diff --shortstat <上一版>..<本版>`，文件行的 `+ / -` 是实际增删行数；版本号唯一来源是 `Directory.Build.props` 的 `<Version>`。
@@ -91,7 +91,11 @@ P2 87 项与 P3 62 项覆盖玻璃线程、媒体状态机、文本布局、插�
 
 ### 验证
 
-- 待本轮合并后补：`dotnet build -c Release`、两种 `--selftest`、`--screenshot-dialog`、`dotnet format --verify-no-changes`。
+- `dotnet build -c Release`：0 警告 0 错误；`--selftest --isolated` 退出 0；xUnit 12/12。
+- 设置窗 `--screenshot-settings`：行为页“诊断 → 日志等级”渲染正常，默认“常规”。
+- 日志过滤实测：临时把 `Behavior.LogLevel` 设为 `Error` 跑 `--smoke 2`，配置加载后的 INFO 全部消失，仅保留加载前的启动/插件日志；配置已恢复。
+- 空 catch 棘轮修正注释误报后，真实代码计数 31，基线同步收紧。
+- 对话框 `--screenshot-dialog` 与最终截图目检在合并后补。
 
 ### 风险 / 未验证
 
