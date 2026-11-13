@@ -208,20 +208,14 @@ internal sealed class CardLayoutCoordinator
             // 拿不到显示器信息时按"不夹取"继续布局，至少不能让整叠消失。
             Log.Warn($"读取工作区高度失败，跳过堆叠夹取: {ex.Message}");
         }
-        bool hasWorkArea = !double.IsInfinity(workHeight) && workHeight > 1.0;
 
-        double spacingScale = 1.0;
-        double stackHeight = MeasureStackHeight(spacingScale, out double stackGaps);
-        if (hasWorkArea && stackHeight > workHeight)
+        // T-11：纵向几何统一由 PlanStack 计算。拖动限制、松手换算与这里必须用同一份结果，
+        // 否则「拖动时能到、松手后被 Layout 拉回」——那正是拖到屏幕下部被吸回的根因。
+        StackPlan plan = PlanVisible(workHeight, settings.Overlay.Y);
+        if (plan.HasWorkArea && plan.StackHeight > workHeight)
         {
-            // 间距是可压缩量：保留卡片高度，只把卡片之间的空隙按比例收掉。
-            spacingScale = stackGaps > 0
-                ? Math.Max(0.0, Math.Min(1.0, (workHeight - (stackHeight - stackGaps)) / stackGaps))
-                : 1.0;
-            double compressed = MeasureStackHeight(spacingScale, out _);
             _workAreaLog.Failure(
-                $"可见卡片总高 {compressed:0} DIP 超出工作区 {workHeight:0} DIP，已压缩间距 {spacingScale:P0}");
-            stackHeight = compressed;
+                $"可见卡片总高 {plan.StackHeight:0} DIP 超出工作区 {workHeight:0} DIP，已压缩间距 {plan.SpacingScale:P0}");
         }
         else
         {
@@ -230,22 +224,20 @@ internal sealed class CardLayoutCoordinator
 
         // 只平移本次布局的起点，不改用户锚点：每帧按同一公式重算，结果稳定；
         // 落盘会在下一次拖动松手时按实际堆叠位置反算锚点。
-        double startY = settings.Overlay.Y;
-        if (hasWorkArea)
+        double startY = plan.StartY;
+        if (plan.HasWorkArea && Math.Abs(startY - settings.Overlay.Y) > 0.5)
         {
-            if (startY + stackHeight > workHeight)
-                startY = Math.Max(0.0, workHeight - stackHeight);
-            if (startY < 0.0) startY = 0.0;
+            // 诊断：锚点在工作区外时整叠会被平移到可容纳位置，松手换算必须按同一口径，
+            // 否则下一次拖动的落点会持续偏移（Debug 级，默认等级下不写日志）。
+            Log.Debug($"整叠起始 Y 被工作区夹取: 锚点={settings.Overlay.Y:0.#} → 起始={startY:0.#} "
+                      + $"整叠={plan.StackHeight:0.#} 工作区={plan.WorkHeight:0.#}");
         }
 
-        double top = 0;
-        bool first = true;
+        int visibleIndex = 0;
 
         foreach (CardSlot slot in _cards)
         {
             if (!slot.Shown) continue;
-
-            if (!first) top += Math.Max(0, slot.Config.Spacing) * spacingScale;
 
             // 显隐动画期间连新出现的卡片也沿用它上一次的 X；只有从未落过位的
             // 新卡片才现算。这样整排在显示 / 隐藏时不会横向移动。
@@ -264,12 +256,11 @@ internal sealed class CardLayoutCoordinator
             }
 
             double cardHeight = slot.BodyHeight > 0 ? slot.BodyHeight : slot.Window.CardHeight;
-            double y = startY + top;
-            if (hasWorkArea)
+            double y = startY + plan.Tops[visibleIndex];
+            if (plan.HasWorkArea)
             {
                 // 极端情况（卡片总高超过整个工作区）：每张卡各自夹在工作区内。
-                if (y < 0.0) y = 0.0;
-                if (y + cardHeight > workHeight) y = Math.Max(0.0, workHeight - cardHeight);
+                y = ClampCardY(y, cardHeight, plan.WorkHeight);
             }
 
             slot.Dialog.Overlay.X = x;
@@ -282,35 +273,184 @@ internal sealed class CardLayoutCoordinator
             slot.Window.SetResolvedCardAlignment(align);
             slot.Window.ApplyPosition(animate && !ReferenceEquals(slot, appearing));
 
-            top += cardHeight;
-            first = false;
+            visibleIndex++;
         }
     }
 
     /// <summary>
-    /// T-9：可见卡片的整叠高度（含按 <paramref name="spacingScale"/> 缩放后的间距）。
-    /// gaps 单独返回，用于判断"压缩间距是否还能腾出空间"。
+    /// T-11：一帧卡片堆叠的纵向几何。布局、拖动限制与松手换算共用这一份计算——
+    /// 三处各自算一套 clamp 是「卡片拖到屏幕下部松手被吸回」的根因。
+    /// 纯计算，不碰窗口 / 设置，自检可直接断言。
     /// </summary>
-    double MeasureStackHeight(double spacingScale, out double gaps)
+    internal struct StackPlan
     {
-        double height = 0;
-        gaps = 0;
-        bool first = true;
+        /// <summary>间距压缩比例（1 = 原始间距；整叠放不下时按比例收掉空隙）。</summary>
+        public double SpacingScale;
+        /// <summary>压缩后的整叠高度（只算可见卡片）。</summary>
+        public double StackHeight;
+        /// <summary>按锚点夹取后的整叠起始 Y；拿不到工作区时等于锚点。</summary>
+        public double StartY;
+        /// <summary>每张可见卡片相对 <see cref="StartY"/> 的偏移。</summary>
+        public double[] Tops;
+        /// <summary>每张可见卡片的高度。</summary>
+        public double[] Heights;
+        /// <summary>目标屏工作区高度（DIP）；无效时为 <see cref="double.PositiveInfinity"/>。</summary>
+        public double WorkHeight;
+        /// <summary>是否拿到有效工作区（拿不到时整叠不做夹取）。</summary>
+        public bool HasWorkArea;
+    }
+
+    /// <summary>
+    /// 把可见卡片按顺序压成整叠几何。整叠超出工作区时先按比例收掉间距（保留卡片高度），
+    /// 仍超出则起始 Y 固定为 0，由 <see cref="ClampCardY"/> 逐卡塞进工作区。
+    /// </summary>
+    internal static StackPlan PlanStack(double anchorY, double workHeight, double[] heights, double[] spacings)
+    {
+        int count = heights?.Length ?? 0;
+        var tops = new double[count];
+        var plan = new StackPlan
+        {
+            SpacingScale = 1.0,
+            Tops = tops,
+            Heights = heights ?? Array.Empty<double>(),
+            WorkHeight = workHeight,
+            HasWorkArea = workHeight > 1.0 && !double.IsInfinity(workHeight) && !double.IsNaN(workHeight)
+        };
+
+        // 先用原始间距量一次总高，再判断能否靠压缩间距塞进工作区。
+        double rawHeight = 0;
+        double gaps = 0;
+        for (int i = 0; i < count; i++)
+        {
+            if (i > 0)
+            {
+                double gap = Math.Max(0.0, SpacingAt(spacings, i));
+                rawHeight += gap;
+                gaps += gap;
+            }
+            rawHeight += heights[i];
+        }
+
+        if (plan.HasWorkArea && rawHeight > workHeight && gaps > 0)
+            plan.SpacingScale = Math.Clamp((workHeight - (rawHeight - gaps)) / gaps, 0.0, 1.0);
+
+        double top = 0;
+        for (int i = 0; i < count; i++)
+        {
+            if (i > 0) top += Math.Max(0.0, SpacingAt(spacings, i)) * plan.SpacingScale;
+            tops[i] = top;
+            top += heights[i];
+        }
+
+        plan.StackHeight = top;
+        plan.StartY = ClampStackStartY(anchorY, top, plan.WorkHeight, plan.HasWorkArea);
+        return plan;
+    }
+
+    static double SpacingAt(double[] spacings, int index) =>
+        spacings is not null && index < spacings.Length ? spacings[index] : 0.0;
+
+    /// <summary>整叠起始 Y 的合法范围：0 到「工作区 - 整叠高」（放不下时只能取 0）。</summary>
+    internal static double ClampStackStartY(double anchorY, double stackHeight, double workHeight, bool hasWorkArea)
+    {
+        if (!hasWorkArea) return anchorY;
+
+        double startY = anchorY;
+        if (startY + stackHeight > workHeight) startY = Math.Max(0.0, workHeight - stackHeight);
+        if (startY < 0.0) startY = 0.0;
+        return startY;
+    }
+
+    /// <summary>单张卡片自身的纵向夹取（整叠比工作区还高时逐卡塞进去）。</summary>
+    internal static double ClampCardY(double y, double cardHeight, double workHeight)
+    {
+        if (!(workHeight > 1.0)) return y;
+        if (y < 0.0) return 0.0;
+        if (y + cardHeight > workHeight) return Math.Max(0.0, workHeight - cardHeight);
+        return y;
+    }
+
+    /// <summary>
+    /// T-11：被抓住的卡片能落到的顶部 Y（DIP，工作区坐标）。拖动与松手共用。
+    /// 整叠放得下：落点必须让整叠仍留在工作区内（对应起始 Y ∈ [0, 工作区-整叠高]）；
+    /// 整叠超高：Layout 只能把整叠钉在顶部并逐卡夹取，此时卡片只有一个合法位置，
+    /// 拖动中就用它挡住用户——用户看得见边界，松手后不会再跳。
+    /// </summary>
+    internal static double ClampCardTop(double cardTop, int index, StackPlan plan)
+    {
+        if (!plan.HasWorkArea || index < 0 || index >= plan.Tops.Length) return cardTop;
+
+        double height = plan.Heights[index];
+        if (plan.StackHeight > plan.WorkHeight)
+            return ClampCardY(plan.Tops[index], height, plan.WorkHeight);
+
+        double min = plan.Tops[index];
+        double max = Math.Max(min, plan.WorkHeight - plan.StackHeight + plan.Tops[index]);
+        // 兜底：卡片本身比工作区还高时只保留上沿，避免 min > max。
+        max = Math.Max(min, Math.Min(max, plan.WorkHeight - height));
+
+        if (cardTop < min) return min;
+        if (cardTop > max) return max;
+        return cardTop;
+    }
+
+    /// <summary>
+    /// T-11：被抓住的卡片能落到的左边缘（DIP）。至少在屏内留一部分可见，靠近边缘 16 DIP 吸附。
+    /// 右对齐时卡片 X 由 Layout 的 <c>max(0, 右边缘 - 卡宽)</c> 决定，左边缘不能为负，
+    /// 否则松手会被推到 0（横向的“吸回”）；这里用同一口径提前挡住。
+    /// </summary>
+    internal static double ClampCardLeft(double cardLeft, double cardWidth, double workWidth, bool rightAligned)
+    {
+        if (!(workWidth > 1.0)) return cardLeft;
+
+        double width = Math.Max(40.0, cardWidth);
+        double visible = Math.Min(80.0, workWidth / 3.0);
+        double min = visible - width;
+        if (rightAligned) min = Math.Max(0.0, min);
+        double max = Math.Max(min, workWidth - visible);
+
+        if (cardLeft < min + 16.0) return min;
+        if (cardLeft > max - 16.0) return max;
+        return cardLeft;
+    }
+
+    /// <summary>DIP → 物理像素（锚点 / 尺寸都按目标屏 DPI 换算，跨屏不双重缩放）。</summary>
+    internal static int DipToPhysical(double dip, double scale, int origin) =>
+        origin + (int)Math.Round(dip * (scale > 0.1 ? scale : 1.0));
+
+    /// <summary>物理像素 → DIP（<paramref name="origin"/> 是该屏工作区左上角的物理坐标）。</summary>
+    internal static double PhysicalToDip(int physical, double scale, int origin) =>
+        (physical - origin) / (scale > 0.1 ? scale : 1.0);
+
+    /// <summary>当前可见卡片的纵向几何（拖动限制 / 松手换算用）。</summary>
+    public StackPlan PlanVisible(double workHeight, double anchorY)
+    {
+        var heights = new List<double>(_cards.Count);
+        var spacings = new List<double>(_cards.Count);
         foreach (CardSlot slot in _cards)
         {
             if (!slot.Shown) continue;
-
-            if (!first)
-            {
-                double gap = Math.Max(0, slot.Config.Spacing) * spacingScale;
-                height += gap;
-                gaps += gap;
-            }
-            height += slot.BodyHeight > 0 ? slot.BodyHeight : slot.Window.CardHeight;
-            first = false;
+            heights.Add(slot.BodyHeight > 0 ? slot.BodyHeight : slot.Window.CardHeight);
+            spacings.Add(slot.Config is null ? 0.0 : slot.Config.Spacing);
         }
-        return height;
+        return PlanStack(anchorY, workHeight, heights.ToArray(), spacings.ToArray());
     }
+
+    /// <summary>卡片在可见序列里的下标（与 <see cref="PlanVisible"/> 的 Tops 下标一致）。</summary>
+    public int ShownIndexOf(CardSlot slot)
+    {
+        int index = 0;
+        foreach (CardSlot card in _cards)
+        {
+            if (!card.Shown) continue;
+            if (ReferenceEquals(card, slot)) return index;
+            index++;
+        }
+        return -1;
+    }
+
+    /// <summary>最近一次布局算出的整叠宽度（松手换算右对齐锚点时与 Layout 用同一个值）。</summary>
+    public double StackWidth => _stackWidth;
 
     /// <summary>文字变长 / 命令行展开后窗口会自己长高：渲染后校正一次堆叠位置。</summary>
     public void LayoutIfNeeded()
