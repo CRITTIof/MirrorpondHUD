@@ -135,6 +135,18 @@ internal sealed class ParticleTextLayer : FrameworkElement
     HashSet<int> _targetChars;
 
     /// <summary>
+    /// 2.45.3：本轮"允许进入粒子"的字符掩码（true = 模板 {占位符} 的动态值）。
+    /// null = 只做字形过滤（宿主拿不到模板 / 模板字面量定位失败）。
+    /// </summary>
+    bool[] _allowedMask;
+
+    /// <summary>
+    /// 2.45.3：按新文本重算允许掩码。动画中途换文本时，旧掩码的下标会错位，
+    /// 所以必须按当前文本重算，而不是拿旧下标硬套。
+    /// </summary>
+    Func<string, bool[]> _allowedMaskFactory;
+
+    /// <summary>
     /// T-6：本轮播放开始时 <see cref="TextCanvas.Text"/> 的快照。尺寸变化重采样时的
     /// 差集必须以它为基线；用"当前文本 + 上一轮下标"会把未变字符判成变化。
     /// </summary>
@@ -171,7 +183,8 @@ internal sealed class ParticleTextLayer : FrameworkElement
 
     /// <summary>排一次播放；真正的采样与上屏等布局完成后再做。返回 false 表示画布还没量好。</summary>
     public bool SchedulePlay(TextCanvas canvas, Color color, StyleSettings style,
-                             IReadOnlyCollection<int> targetChars = null, int? countOverride = null)
+                             IReadOnlyCollection<int> targetChars = null, int? countOverride = null,
+                             bool[] dynamicMask = null, Func<string, bool[]> maskFactory = null)
     {
         if (canvas is null || canvas.ActualWidth < 2 || canvas.ActualHeight < 2) return false;
 
@@ -197,7 +210,8 @@ internal sealed class ParticleTextLayer : FrameworkElement
         {
             if (version != _version || !_pending) return;
             _pending = false;
-            BeginPlay(target, color, size, count, speed, nearest, geometry, targetSet, version);
+            BeginPlay(target, color, size, count, speed, nearest, geometry, targetSet, version,
+                      dynamicMask, maskFactory);
         }), DispatcherPriority.Loaded);
         return true;
     }
@@ -219,6 +233,10 @@ internal sealed class ParticleTextLayer : FrameworkElement
         Opacity = 1;
         Visibility = Visibility.Collapsed;
         _canvas?.ClearHiddenChars();
+        // 2.45.3：允许集合属于本轮，旧代的掩码 / 重算器不能带进下一轮（新轮由 BeginPlay 重新绑定）。
+        _targetChars = null;
+        _allowedMask = null;
+        _allowedMaskFactory = null;
         ReleaseCanvas();
 
         if (hadRound) NotifyFinished("取消");
@@ -259,7 +277,8 @@ internal sealed class ParticleTextLayer : FrameworkElement
 
     void BeginPlay(TextCanvas canvas, Color color, double size, int requestedCount,
                    double speed, bool nearest, bool geometry,
-                   HashSet<int> targetChars, int version)
+                   HashSet<int> targetChars, int version,
+                   bool[] allowedMask, Func<string, bool[]> maskFactory)
     {
         if (version != _version) return;
 
@@ -286,6 +305,8 @@ internal sealed class ParticleTextLayer : FrameworkElement
             // T-6：先把本轮文本快照与差集绑定好；采样（含尺寸变化重采样）以它为基线。
             _playText = canvas.Text ?? "";
             _targetChars = targetChars;
+            _allowedMask = allowedMask;
+            _allowedMaskFactory = maskFactory;
 
             List<Point> targets;
             _sampling = true;
@@ -372,14 +393,70 @@ internal sealed class ParticleTextLayer : FrameworkElement
             return _targetChars;
 
         int[] changed = OverlaySurface.ChangedIndices(_playText, current);
+        // 2.45.3：动画中途换文本时重算的差集同样要过掩码 + 字形过滤，
+        // 否则模板里写死的文字会在动画中途被卷进粒子。
+        changed = FilterParticleTargets(current, changed, ResolveAllowedMask(current));
         _playText = current;
-        _targetChars = changed.Length == 0 ? null : new HashSet<int>(changed);
+        // 空集合 = 本次变化全在模板字面量 / 图标上：明确"没有可播字符"，
+        // 不能用 null（null 在任何调用方都意味着"不限制，整卡采样"）。
+        _targetChars = new HashSet<int>(changed);
         if (canvas is not null)
         {
-            if (_targetChars is not null) canvas.SetHiddenChars(_targetChars);
+            // 空集合会先清再逐项加入（TextCanvas.SetHiddenChars），等于把遮罩撤干净；
+            // 显式走 Clear 只是省一次无意义的 InvalidateVisual。
+            if (_targetChars.Count > 0) canvas.SetHiddenChars(_targetChars);
             else canvas.ClearHiddenChars();
         }
         return _targetChars;
+    }
+
+    /// <summary>
+    /// 2.45.3：图标 / 键帽码位。它们由专用字体绘制（TextCanvas 按 run 分流），既不是数据，
+    /// 采样也只会把字形拆成一團糊状方块，所以永远不参与粒子。
+    /// 键帽区间取自 Keycaps.First / Keycaps.Last（T-16 唯一来源）：Keycaps.IsKeycap 已被
+    /// C-19 标记过时，这里直接按同一区间的常量判定；图标只认 Icons 登记过的码位——
+    /// 两套字体共用 PUA，按整段判断会互相抢字形。
+    /// </summary>
+    internal static bool IsParticleGlyph(char c) =>
+        (c >= Keycaps.First && c <= Keycaps.Last) || Icons.IsIconChar(c);
+
+    /// <summary>
+    /// 2.45.3：把变化下标过滤成"真正能交给粒子"的集合。
+    /// 恒排除图标 / 键帽码位（与掩码是否可用无关）；掩码与文本等长时再剔除模板字面量。
+    /// 掩码为空或长度不符（宿主拿不到模板、文本已被换掉）时只做字形过滤——
+    /// 宁可让个别字面量动，也不能用一个错位的掩码把动态值判成静态。
+    /// 纯函数，自检直接断言。
+    /// </summary>
+    internal static int[] FilterParticleTargets(string text, IReadOnlyList<int> changed, bool[] dynamicMask)
+    {
+        if (changed is null || changed.Count == 0) return Array.Empty<int>();
+
+        text ??= "";
+        bool useMask = dynamicMask is not null && dynamicMask.Length == text.Length;
+        var kept = new List<int>(changed.Count);
+        for (int k = 0; k < changed.Count; k++)
+        {
+            int index = changed[k];
+            if (index < 0 || index >= text.Length) continue;
+            if (IsParticleGlyph(text[index])) continue;
+            if (useMask && !dynamicMask[index]) continue;
+            kept.Add(index);
+        }
+
+        if (kept.Count == changed.Count && changed is int[] array) return array;
+        return kept.ToArray();
+    }
+
+    /// <summary>
+    /// 2.45.3：取当前文本的允许掩码。宿主给了重算器就一律按新文本重算：文本变长变短后
+    /// 旧掩码的下标全部失效，长度相同也不代表位置相同。重算失败（模板定位不上）才退回
+    /// 本轮开始时那份同长掩码，再不行就只做字形过滤。
+    /// </summary>
+    bool[] ResolveAllowedMask(string text)
+    {
+        bool[] fresh = _allowedMaskFactory?.Invoke(text);
+        if (fresh is not null) return fresh;
+        return _allowedMask is not null && _allowedMask.Length == text.Length ? _allowedMask : null;
     }
 
     void EnsureCapacity(int count)
@@ -516,6 +593,10 @@ internal sealed class ParticleTextLayer : FrameworkElement
     {
         targets = _targets;
         targets.Clear();
+
+        // 2.45.3：调用方明确给了"没有允许字符"（本次变化全在模板字面量 / 图标上）时，
+        // 不能退回整卡采样——那正好会把字面量卷进来。直接按"没有可采样的字形"收尾。
+        if (targetChars is not null && targetChars.Count == 0) return false;
 
         // 采样遮罩与上屏遮罩同源（T-6/T-8）：按文本元素整簇隐藏，避免采到半个代理对。
         _hideSet.Clear();

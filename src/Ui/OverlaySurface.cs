@@ -61,6 +61,12 @@ public sealed class OverlaySurface : Border
     bool _particlePending;
     int _particleRetries;
 
+    /// <summary>
+    /// 2.45.3：模板动态掩码定位失败的节流打点（30s）。降级是"正确性优先"的正常路径，
+    /// 不是错误，但必须留痕（Debug）——否则"某个字面量为什么还在动"会变成没法排查的黑盒。
+    /// </summary>
+    long _particleMaskFallbackTicks;
+
     BitmapImage _image;
     string _imagePath;
     // G-7：路径 + 最后写入时间 + 长度做缓存键；失败不再永久缓存（30s 后重试）。
@@ -422,12 +428,33 @@ public sealed class OverlaySurface : Border
         PlayParticle(current);
     }
 
-    /// <summary>只把变化字符交给粒子层，未变字符继续由 TextCanvas 正常绘制。</summary>
+    /// <summary>
+    /// 只把变化字符交给粒子层，未变字符继续由 TextCanvas 正常绘制。
+    /// 2.45.3：模板里预先写好的文字与图标 / 键帽码位一律不参赛——前者由
+    /// <see cref="TemplateEngine.TryBuildDynamicMask"/> 的掩码剔除，后者按字形恒排除
+    /// （即使掩码失败也不放过）；首播（整段文本都算"变化"）走同一条过滤。
+    /// </summary>
     void PlayParticle(string current)
     {
         int[] changed = ChangedIndices(_lastParticleText ?? "", current);
         if (changed.Length == 0)
         {
+            _lastParticleText = current;
+            return;
+        }
+
+        string template = _metaConfig?.Content;
+        bool[] mask = BuildParticleMask(template, current);
+        int changedBefore = changed.Length;
+        changed = ParticleTextLayer.FilterParticleTargets(current, changed, mask);
+        // 诊断（Debug，默认关闭）：冒烟时用来核对"参赛字符"只覆盖动态值。
+        Log.Debug($"粒子参赛字符：变化 {changedBefore} → {changed.Length}"
+            + $"（{(mask is null ? "掩码不可用，仅排除图标/键帽" : "模板动态掩码生效")}，文本 {current.Length} 字符）");
+        if (changed.Length == 0)
+        {
+            // 本次变化全在模板字面量 / 图标上：粒子没有可动的字符。
+            // 不启动粒子层，但必须清掉遮罩——上一轮藏起来的字符不能一直缺字。
+            _canvas.ClearHiddenChars();
             _lastParticleText = current;
             return;
         }
@@ -441,7 +468,9 @@ public sealed class OverlaySurface : Border
             : Math.Max(60, Math.Min(configured, changed.Length * 120));
 
         _particleLayer.Margin = _canvas.Margin;
-        if (_particleLayer.SchedulePlay(_canvas, _particleColor, _lastSettings.Style, changed, count))
+        // 动画中途换文本时由粒子层用同一个掩码工厂按新文本重算（见 ResolveChangedTargets）。
+        if (_particleLayer.SchedulePlay(_canvas, _particleColor, _lastSettings.Style, changed, count,
+                                        mask, text => BuildParticleMask(template, text)))
         {
             _lastParticleText = current;
             _lastParticlePlayUtc = DateTime.UtcNow;
@@ -453,6 +482,44 @@ public sealed class OverlaySurface : Border
             _particlePending = true;
             // 不要重置 _particleRetries：否则画布长期量不出来时会在 Background 级无限自旋。
         }
+    }
+
+    /// <summary>
+    /// 2.45.3：算本卡模板的动态字符掩码。只有 infotext 卡的
+    /// <see cref="CardSettings.Content"/> 就是渲染模板，粒子也只对这类卡生效
+    /// （见 <see cref="ParticleEnabled"/>）。返回 null = 退回"仅排除图标 / 键帽"，
+    /// 绝不猜一个可能错位的掩码。
+    ///
+    /// 模板先按画布同样的规则归一换行：<see cref="SetText(string, bool, int)"/> 会把 CRLF
+    /// 压成 LF，不归一就会让字面量定位整体错一位。
+    /// </summary>
+    bool[] BuildParticleMask(string template, string text)
+    {
+        if (string.IsNullOrWhiteSpace(template))
+        {
+            LogParticleMaskFallback("卡片模板为空，无法区分字面量与动态值");
+            return null;
+        }
+
+        if (TemplateEngine.TryBuildDynamicMask(NormalizeNewlines(template), text ?? "", out bool[] mask))
+            return mask;
+
+        LogParticleMaskFallback("模板字面量在渲染文本里定位失败（用户内容可能含相同片段，或模板与渲染不同源）");
+        return null;
+    }
+
+    /// <summary>2.45.3：掩码降级按 30s 节流写 Debug（保守回退不是错误，但必须可见）。</summary>
+    void LogParticleMaskFallback(string reason)
+    {
+        long now = Stopwatch.GetTimestamp();
+        if (_particleMaskFallbackTicks != 0
+            && Stopwatch.GetElapsedTime(_particleMaskFallbackTicks, now).TotalMilliseconds < 30000)
+        {
+            return;
+        }
+
+        _particleMaskFallbackTicks = now;
+        Log.Debug($"粒子动态掩码退回「仅排除图标/键帽」: {reason}");
     }
 
     /// <summary>统一换行：TextCanvas 的 Split 会把 CRLF / CR 归一成 LF，
