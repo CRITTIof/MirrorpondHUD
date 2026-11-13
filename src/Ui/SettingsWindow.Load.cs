@@ -41,6 +41,13 @@ public partial class SettingsWindow
             ThemeCombo.SelectedIndex = ThemeIndexOf(_working.Style.ThemeName);
             ThemeNameText.Text = string.IsNullOrWhiteSpace(_working.Style.ThemeName)
                 ? "自定义" : _working.Style.ThemeName;
+            _applyingSettingsAppearance = true;
+            try
+            {
+                SettingsAppearanceCombo.SelectedIndex =
+                    SettingsAppearanceIndexOf(_working.Behavior.SettingsAppearanceId);
+            }
+            finally { _applyingSettingsAppearance = false; }
             _applyingAppearance = true;
             try
             {

@@ -65,6 +65,7 @@ public partial class SettingsWindow : Window
     bool _settingsDark = true;
     /// <summary>主题缩略图的衬底色；和明暗主题分开保存，切明暗时保留用户选择。</summary>
     string _previewBg = "#0B1020";
+    SettingsAppearancePack _settingsAppearancePack;
     /// <summary>导航项的悬停事件只挂一次（窗口隐藏再显示会重新触发 Loaded）。</summary>
     bool _navMotionHooked;
     /// <summary>
@@ -88,7 +89,9 @@ public partial class SettingsWindow : Window
 
         _settingsDark = SettingsTheme.IsDark(live is null ? null : live.Behavior.SettingsTheme);
         _previewBg = live is null ? "#0B1020" : live.Behavior.SettingsPreviewBg;
-        SettingsTheme.Apply(_settingsDark, _previewBg);
+        _settingsAppearancePack = SettingsAppearanceCatalog.Find(
+            live is null ? null : live.Behavior.SettingsAppearanceId);
+        ApplySettingsAppearance();
         UpdateThemeToggleText();
         UpdateBrandLogo();
 
@@ -531,7 +534,7 @@ public partial class SettingsWindow : Window
     void ToggleSettingsThemeClick(object sender, RoutedEventArgs e)
     {
         _settingsDark = !_settingsDark;
-        SettingsTheme.Apply(_settingsDark, _previewBg);
+        ApplySettingsAppearance();
         UpdateThemeToggleText();
         UpdateBrandLogo();
         // 2.45.3：整窗换色的那一帧给内容区一次 160ms 的不透明度起伏，
@@ -569,12 +572,32 @@ public partial class SettingsWindow : Window
         if (ThemeIcon is not null) ThemeIcon.Text = _settingsDark ? "\uE11E" : "\uE178";
     }
 
+    /// <summary>2.46.1：设置页外观包 → 调色板 + 几何令牌 + recipe；只改资源，不重建窗口。</summary>
+    void ApplySettingsAppearance()
+    {
+        SettingsAppearancePack pack = _settingsAppearancePack ?? SettingsAppearanceCatalog.Find("endfield");
+        SettingsAppearanceRuntime.Apply(pack, _settingsDark, _previewBg);
+        FontFamily = HudFont.Resolve(pack.FontFamily);
+        if (NavList is not null)
+        {
+            // 切回 Endfield 时 Theme.xaml 没有同名全局样式，必须落回窗口里的默认样式，
+            // 否则会继续沿用上一个包的 Arknights 模板。
+            Style nav = SettingsAppearanceRuntime.ResolveNavItemStyle(pack)
+                        ?? TryFindResource("SettingsNavItem") as Style;
+            if (nav is not null) NavList.ItemContainerStyle = nav;
+        }
+    }
+
     void UpdateSettingsTheme(Settings settings)
     {
         _settingsDark = SettingsTheme.IsDark(settings is null ? null : settings.Behavior.SettingsTheme);
-        if (settings is not null && Settings.IsHexColor(settings.Behavior.SettingsPreviewBg))
-            _previewBg = settings.Behavior.SettingsPreviewBg;
-        SettingsTheme.Apply(_settingsDark, _previewBg);
+        if (settings is not null)
+        {
+            if (Settings.IsHexColor(settings.Behavior.SettingsPreviewBg))
+                _previewBg = settings.Behavior.SettingsPreviewBg;
+            _settingsAppearancePack = SettingsAppearanceCatalog.Find(settings.Behavior.SettingsAppearanceId);
+        }
+        ApplySettingsAppearance();
         UpdateThemeToggleText();
         UpdateBrandLogo();
     }

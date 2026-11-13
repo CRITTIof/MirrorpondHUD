@@ -25,7 +25,9 @@ public partial class SettingsWindow
     bool _applyingTheme;
     bool _importingTheme;
     bool _applyingAppearance;
+    bool _applyingSettingsAppearance;
     readonly List<AppearancePack> _appearances = new();
+    readonly List<SettingsAppearancePack> _settingsAppearances = new();
 
     // ==================== 主题 ====================
 
@@ -45,6 +47,40 @@ public partial class SettingsWindow
         AppearanceCombo.Items.Add("自定义（当前外观）");
         foreach (AppearancePack pack in _appearances) AppearanceCombo.Items.Add(pack.Name);
         if (AppearanceCombo.SelectedIndex < 0) AppearanceCombo.SelectedIndex = 0;
+
+        _settingsAppearances.Clear();
+        _settingsAppearances.AddRange(SettingsAppearanceCatalog.Load());
+        SettingsAppearanceCombo.Items.Clear();
+        foreach (SettingsAppearancePack pack in _settingsAppearances)
+            SettingsAppearanceCombo.Items.Add(pack.Name);
+        _applyingSettingsAppearance = true;
+        try
+        {
+            SettingsAppearanceCombo.SelectedIndex = SettingsAppearanceIndexOf(
+                _settingsAppearancePack is null ? "endfield" : _settingsAppearancePack.Id);
+        }
+        finally { _applyingSettingsAppearance = false; }
+    }
+
+    int SettingsAppearanceIndexOf(string id)
+    {
+        for (int i = 0; i < _settingsAppearances.Count; i++)
+            if (string.Equals(_settingsAppearances[i].Id, id, StringComparison.OrdinalIgnoreCase)) return i;
+        return 0;
+    }
+
+    void SettingsAppearanceSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_suppress || _applyingSettingsAppearance || _working is null) return;
+        int index = SettingsAppearanceCombo.SelectedIndex;
+        if (index < 0 || index >= _settingsAppearances.Count) return;
+
+        SettingsAppearancePack pack = _settingsAppearances[index];
+        _settingsAppearancePack = pack;
+        _working.Behavior.SettingsAppearanceId = pack.Id;
+        ApplySettingsAppearance();
+        MarkDirty();
+        StatusText.Text = $"设置页外观已切换为「{pack.Name}」，点“保存并应用”生效";
     }
 
     int AppearanceIndexOf(string id)
@@ -407,7 +443,7 @@ public partial class SettingsWindow
 
         _previewBg = text;
         _working.Behavior.SettingsPreviewBg = text;
-        SettingsTheme.Apply(_settingsDark, _previewBg);
+        ApplySettingsAppearance();
         MarkDirty();
     }
 

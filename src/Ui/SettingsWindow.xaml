@@ -12,7 +12,7 @@
         Icon="/assets/MirrorpondHUDLogoDeepYellow.ico">
     <shell:WindowChrome.WindowChrome>
         <shell:WindowChrome CaptionHeight="60" ResizeBorderThickness="6"
-                            GlassFrameThickness="0" CornerRadius="22" />
+                            GlassFrameThickness="0" CornerRadius="{DynamicResource SettingsWindowRadius}" />
     </shell:WindowChrome.WindowChrome>
 
     <Window.Resources>
@@ -88,11 +88,11 @@
 
     <Grid x:Name="WindowRoot" Background="Transparent">
     <Border x:Name="WindowFrame" Margin="0" Background="{DynamicResource WindowBg}"
-            BorderThickness="0" CornerRadius="22">
+            BorderThickness="0" CornerRadius="{DynamicResource SettingsWindowRadius}">
     <AdornerDecorator>
     <Grid x:Name="FrameContent" SizeChanged="FrameContentSizeChanged">
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="220" />
+            <ColumnDefinition Width="{DynamicResource SettingsNavWidth}" />
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
 
@@ -175,7 +175,8 @@
         </Grid>
 
         <!-- 分隔线不触顶底 -->
-        <Border Grid.ColumnSpan="2" Width="2" HorizontalAlignment="Left" Margin="220,64,0,64"
+        <Border Grid.ColumnSpan="2" Width="{DynamicResource SettingsDividerThickness}" HorizontalAlignment="Left"
+                Margin="{DynamicResource SettingsDividerMargin}"
                 Panel.ZIndex="10" Background="{DynamicResource Divider}" />
 
         <!-- 右栏：内容 + 自绘窗口按钮 + 悬浮操作区 -->
@@ -262,7 +263,7 @@
                                     <DataTemplate>
                                         <Border Background="{DynamicResource CardBg}"
                                                 BorderBrush="{DynamicResource BorderSoft}"
-                                                BorderThickness="1" CornerRadius="8" Margin="0,0,0,10">
+                                                BorderThickness="1" CornerRadius="{DynamicResource SettingsCardRadius}" Margin="0,0,0,10">
                                             <StackPanel>
                                                 <!-- 标题栏：图标 + 名称 + 常驻/热键摘要；右侧移动 / 删除 / 展开 -->
                                                 <Border x:Name="CardHeader" Tag="CardHeader" Background="{DynamicResource HeaderBg}" BorderBrush="{DynamicResource HeaderBorder}" BorderThickness="0,0,0,1"
@@ -420,10 +421,10 @@
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="18,16,18,24">
 
-                        <TextBlock Text="主题" Style="{StaticResource SectionTitle}" Margin="0,0,0,6" />
+                        <TextBlock Text="主题" Style="{DynamicResource SectionTitle}" Margin="0,0,0,6" />
 
                         <Border Background="{DynamicResource CardBg}" BorderBrush="{DynamicResource BorderSoft}"
-                                BorderThickness="1" CornerRadius="8" Padding="14" Margin="0,0,0,18">
+                                BorderThickness="1" CornerRadius="{DynamicResource SettingsCardRadius}" Padding="14" Margin="0,0,0,18">
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
@@ -431,6 +432,13 @@
                                 </Grid.ColumnDefinitions>
 
                                 <StackPanel Margin="0,0,16,0">
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                        <TextBlock Text="设置页外观" VerticalAlignment="Center" Margin="0,0,10,0" />
+                                        <ComboBox x:Name="SettingsAppearanceCombo" Width="200"
+                                                  SelectionChanged="SettingsAppearanceSelectionChanged" />
+                                    </StackPanel>
+                                    <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="0,0,0,10"
+                                               Text="设置页外观 = 明暗 palette + 圆角/导航宽度 + 组件 recipe；只影响设置窗。" />
                                     <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                                         <TextBlock Text="外观包" VerticalAlignment="Center" Margin="0,0,10,0" />
                                         <ComboBox x:Name="AppearanceCombo" Width="200"
@@ -480,7 +488,7 @@
                             </Grid>
                         </Border>
 
-                        <TextBlock Text="卡片" Style="{StaticResource SectionTitle}" Margin="0,0,0,6" />
+                        <TextBlock Text="卡片" Style="{DynamicResource SectionTitle}" Margin="0,0,0,6" />
 
                         <Grid Margin="0,0,0,16">
                             <Grid.ColumnDefinitions>
@@ -496,7 +504,7 @@
                             </ComboBox>
                         </Grid>
 
-                        <TextBlock Text="文字" Style="{StaticResource SectionTitle}" Margin="0,0,0,6" />
+                        <TextBlock Text="文字" Style="{DynamicResource SectionTitle}" Margin="0,0,0,6" />
 
                         <Grid Margin="0,0,0,10">
                             <Grid.ColumnDefinitions>
@@ -624,7 +632,7 @@
                             </StackPanel>
                         </Grid>
 
-                        <TextBlock Text="CLI 交互面板" Style="{StaticResource SectionTitle}" Margin="0,18,0,6" />
+                        <TextBlock Text="CLI 交互面板" Style="{DynamicResource SectionTitle}" Margin="0,18,0,6" />
                         <TextBlock Style="{StaticResource Hint}" Margin="0,0,0,8"
                                    Text="AI 对话与命令行共用这套尺寸。" />
 
@@ -661,7 +669,7 @@
                         <TextBlock x:Name="CliHint" Style="{StaticResource Hint}" Margin="110,0,0,10"
                                    Text="每轮问答、每条命令都是一块小面板，各自滚动；整块超过最大高度再用外层滑块。" />
 
-                        <TextBlock Text="背景" Style="{StaticResource SectionTitle}" Margin="0,18,0,6" />
+                        <TextBlock Text="背景" Style="{DynamicResource SectionTitle}" Margin="0,18,0,6" />
 
                         <Grid Margin="0,0,0,10">
                             <Grid.ColumnDefinitions>
@@ -734,7 +742,7 @@
 
                         <CheckBox x:Name="ShadowCheck" Content="显示投影" Margin="110,4,0,0" />
 
-                        <TextBlock Text="装饰" Style="{StaticResource SectionTitle}" Margin="0,18,0,6" />
+                        <TextBlock Text="装饰" Style="{DynamicResource SectionTitle}" Margin="0,18,0,6" />
                         <TextBlock Style="{StaticResource Hint}" Margin="0,0,0,8"
                                    Text="可选，默认关闭。" />
 
@@ -795,7 +803,7 @@
                         </Grid>
 
                         <StackPanel x:Name="ContourOptionsPanel">
-                        <TextBlock Text="等高线" Style="{StaticResource SectionTitle}" Margin="0,12,0,6" />
+                        <TextBlock Text="等高线" Style="{DynamicResource SectionTitle}" Margin="0,12,0,6" />
 
                         <Grid Margin="0,0,0,6">
                             <Grid.ColumnDefinitions>
@@ -860,7 +868,7 @@
                         </Grid>
                         </StackPanel>
 
-                        <TextBlock Text="动效" Style="{StaticResource SectionTitle}" Margin="0,18,0,6" />
+                        <TextBlock Text="动效" Style="{DynamicResource SectionTitle}" Margin="0,18,0,6" />
                         <CheckBox x:Name="IntroCheck" Content="启动时播放打字动画" Margin="0,0,0,8" />
                         <CheckBox x:Name="ReduceMotionCheck" Content="减少动效" Margin="0,0,0,8" />
                         <CheckBox x:Name="OverallMotionCheck" Content="显示和隐藏全部时播放整体动效" Margin="0,0,0,8" />
@@ -1064,7 +1072,7 @@
                                        Text="打字时显示模拟光标，启动动画只播放第一张可见卡片。" />
                         </StackPanel>
 
-                        <TextBlock Text="终末地视觉" Style="{StaticResource SectionTitle}" Margin="0,18,0,6" />
+                        <TextBlock Text="终末地视觉" Style="{DynamicResource SectionTitle}" Margin="0,18,0,6" />
                         <TextBlock Style="{StaticResource Hint}" Margin="0,0,0,8"
                                    Text="M2–M8 可分别关闭；关闭后回到旧样式，默认全开。" />
 
@@ -1099,7 +1107,7 @@
                             </StackPanel>
                         </Grid>
 
-                        <TextBlock Text="高级" Style="{StaticResource SectionTitle}" Margin="0,18,0,6" />
+                        <TextBlock Text="高级" Style="{DynamicResource SectionTitle}" Margin="0,18,0,6" />
 
                         <CheckBox x:Name="AcrylicCheck" Content="毛玻璃背景" Margin="0,0,0,4" />
 
@@ -1174,7 +1182,7 @@
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="18,16,18,24">
 
-                        <TextBlock Text="刷新" Style="{StaticResource SectionTitle}" Margin="0,0,0,6" />
+                        <TextBlock Text="刷新" Style="{DynamicResource SectionTitle}" Margin="0,0,0,6" />
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="采样间隔" VerticalAlignment="Center" />
                             <ComboBox x:Name="RefreshCombo" Width="140" Margin="8,0,0,0" />
@@ -1182,7 +1190,7 @@
                                        VerticalAlignment="Center" Margin="12,0,0,0" />
                         </StackPanel>
 
-                        <TextBlock Text="设备数据" Style="{StaticResource SectionTitle}" Margin="0,16,0,6" />
+                        <TextBlock Text="设备数据" Style="{DynamicResource SectionTitle}" Margin="0,16,0,6" />
                         <WrapPanel Margin="0,0,0,4">
                             <CheckBox x:Name="CpuCheck" Content="CPU" Margin="0,0,24,10" />
                             <CheckBox x:Name="GpuCheck" Content="GPU" Margin="0,0,24,10" />
@@ -1192,25 +1200,25 @@
                         </WrapPanel>
 
                         <StackPanel x:Name="GpuOptionsPanel">
-                            <TextBlock Text="GPU 选择" Style="{StaticResource SectionTitle}" Margin="0,10,0,6" />
+                            <TextBlock Text="GPU 选择" Style="{DynamicResource SectionTitle}" Margin="0,10,0,6" />
                             <ComboBox x:Name="GpuCombo" Width="260" HorizontalAlignment="Left" />
                         </StackPanel>
 
                         <StackPanel x:Name="DrivesOptionsPanel">
-                            <TextBlock Text="磁盘分区" Style="{StaticResource SectionTitle}" Margin="0,14,0,6" />
+                            <TextBlock Text="磁盘分区" Style="{DynamicResource SectionTitle}" Margin="0,14,0,6" />
                         <TextBlock Style="{StaticResource Hint}" Margin="0,0,0,6" Text="用于统计剩余空间。" />
                             <WrapPanel x:Name="DrivesPanel" />
                         </StackPanel>
 
                         <StackPanel x:Name="NetworkOptionsPanel">
-                            <TextBlock Text="网卡" Style="{StaticResource SectionTitle}" Margin="0,14,0,6" />
+                            <TextBlock Text="网卡" Style="{DynamicResource SectionTitle}" Margin="0,14,0,6" />
                             <StackPanel Orientation="Horizontal">
                                 <ComboBox x:Name="AdapterCombo" Width="380" />
                                 <Button Content="刷新" Margin="8,0,0,0" Click="RefreshAdaptersClick" />
                             </StackPanel>
                         </StackPanel>
 
-                        <TextBlock Text="键盘输入" Style="{StaticResource SectionTitle}" Margin="0,14,0,6" />
+                        <TextBlock Text="键盘输入" Style="{DynamicResource SectionTitle}" Margin="0,14,0,6" />
                         <CheckBox x:Name="KeysCheck" Content="记录按键" Margin="0,0,0,10" />
                         <StackPanel x:Name="KeyboardOptionsPanel" Visibility="Collapsed">
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
@@ -1230,7 +1238,7 @@
                             </StackPanel>
                         </StackPanel>
 
-                        <TextBlock Text="NVIDIA 显卡" Style="{StaticResource SectionTitle}" Margin="0,14,0,6" />
+                        <TextBlock Text="NVIDIA 显卡" Style="{DynamicResource SectionTitle}" Margin="0,14,0,6" />
                         <TextBlock Style="{StaticResource Hint}" Margin="0,0,0,6" Text="温度、显存与功耗。" />
                         <CheckBox x:Name="NvidiaCheck" Content="启用 nvidia-smi 数据" Margin="0,0,0,10" />
                         <StackPanel x:Name="NvidiaOptionsPanel" Orientation="Horizontal" Visibility="Collapsed">
@@ -1247,7 +1255,7 @@
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="18,16,18,24">
 
-                        <TextBlock Text="窗口" Style="{StaticResource SectionTitle}" Margin="0,0,0,6" />
+                        <TextBlock Text="窗口" Style="{DynamicResource SectionTitle}" Margin="0,0,0,6" />
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                             <TextBlock Text="显示模式" VerticalAlignment="Center" Margin="0,0,12,0" />
                             <ComboBox x:Name="DisplayModeCombo" Width="160"
@@ -1287,12 +1295,12 @@
                         <TextBlock Style="{StaticResource Hint}" Margin="110,2,0,0" TextWrapping="Wrap"
                                    Text="0 = 自适应，宽度只增不减，信息位置不会来回跳动。填数值可完全固定。" />
 
-                        <TextBlock Text="启动" Style="{StaticResource SectionTitle}" Margin="0,16,0,6" />
+                        <TextBlock Text="启动" Style="{DynamicResource SectionTitle}" Margin="0,16,0,6" />
                         <CheckBox x:Name="AutoStartCheck" Content="开机自动启动" Margin="0,0,0,8" />
                         <CheckBox x:Name="StartMinCheck" Content="启动后最小化到托盘" Margin="0,0,0,8" />
                         <CheckBox x:Name="TrayCheck" Content="显示托盘图标" Margin="0,0,0,8" />
 
-                        <TextBlock Text="诊断" Style="{StaticResource SectionTitle}" Margin="0,16,0,6" />
+                        <TextBlock Text="诊断" Style="{DynamicResource SectionTitle}" Margin="0,16,0,6" />
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="110" />
@@ -1310,7 +1318,7 @@
                         <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap" Margin="110,4,0,0"
                                    Text="调试会记录取图、媒体、插件加载等详细过程；日常用常规，排查问题再临时调低。" />
 
-                        <TextBlock Text="文件" Style="{StaticResource SectionTitle}" Margin="0,16,0,6" />
+                        <TextBlock Text="文件" Style="{DynamicResource SectionTitle}" Margin="0,16,0,6" />
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="配置文件：" VerticalAlignment="Center" />
                             <TextBlock x:Name="PathText" VerticalAlignment="Center"
@@ -1332,7 +1340,7 @@
                     <TextBlock Style="{StaticResource Hint}" TextWrapping="Wrap"
                                Text="点击输入框后按组合键；Esc 或清空可取消。卡片呼出热键在内容页设置。" />
 
-                    <TextBlock Text="全局" Style="{StaticResource SectionTitle}" Margin="0,18,0,8" />
+                    <TextBlock Text="全局" Style="{DynamicResource SectionTitle}" Margin="0,18,0,8" />
 
                     <Grid Margin="0,0,0,0">
                         <Grid.ColumnDefinitions>
@@ -1401,7 +1409,7 @@
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                     <Button Content="恢复默认" Margin="0,0,8,0" Click="ResetClick" />
                     <Button Content="关闭" Margin="0,0,8,0" Click="CloseClick" />
-                    <Button x:Name="SaveButton" Content="保存并应用" Style="{StaticResource PrimaryButton}" Click="SaveClick" />
+                    <Button x:Name="SaveButton" Content="保存并应用" Style="{DynamicResource PrimaryButton}" Click="SaveClick" />
                 </StackPanel>
             </Grid>
         </Grid>

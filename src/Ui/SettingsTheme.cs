@@ -58,7 +58,8 @@ internal static class SettingsTheme
     public static bool IsDark(string value) =>
         string.Equals(Settings.NormalizeSettingsTheme(value), "Dark", StringComparison.OrdinalIgnoreCase);
 
-    public static void Apply(bool dark, string previewBg = null)
+    public static void Apply(bool dark, string previewBg = null,
+                             IReadOnlyDictionary<string, string> overrides = null)
     {
         ResourceDictionary resources = Application.Current?.Resources;
         if (resources is null) return;
@@ -66,6 +67,12 @@ internal static class SettingsTheme
         foreach (KeyValuePair<string, (Color Dark, Color Light)> pair in Palette)
         {
             Color color = dark ? pair.Value.Dark : pair.Value.Light;
+            // 2.46.1：设置页外观包只覆盖自己声明的键，其余回退 Endfield 基线。
+            if (overrides is not null && overrides.TryGetValue(pair.Key, out string text) && !string.IsNullOrWhiteSpace(text))
+            {
+                if (TryColor(text, out var custom)) color = custom;
+                else Log.Warn($"设置页外观颜色非法 {pair.Key}={text}，已回退基线");
+            }
             // X-10：优先改已有画刷的 Color —— StaticResource 与 DynamicResource 消费者都会刷新。
             // 只有资源缺失或画刷被冻结时才替换实例。
             if (resources[pair.Key] is SolidColorBrush brush && !brush.IsFrozen)
@@ -87,6 +94,20 @@ internal static class SettingsTheme
             {
                 Log.Warn($"设置窗预览底色解析失败（{previewBg}）: {ex.Message}");
             }
+        }
+    }
+
+    static bool TryColor(string text, out Color color)
+    {
+        color = default;
+        try
+        {
+            color = (Color)ColorConverter.ConvertFromString(text.Trim());
+            return true;
+        }
+        catch (Exception)
+        {
+            return false;
         }
     }
 

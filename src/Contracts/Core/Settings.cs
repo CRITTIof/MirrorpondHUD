@@ -146,6 +146,7 @@ public sealed class Settings
         Style.LoopPulseThickness = (int)Clamp(Style.LoopPulseThickness, 1, 8);
         Style.LoopScanlineThickness = (int)Clamp(Style.LoopScanlineThickness, 1, 10);
         Style.ThemeName = (Style.ThemeName ?? "").Trim();
+        Behavior.SettingsAppearanceId = (Behavior.SettingsAppearanceId ?? "").Trim();
         Style.AppearanceId = (Style.AppearanceId ?? "").Trim();
         if (Style.Endfield is null) Style.Endfield = new EndfieldStyleSettings();
         Style.Endfield.Normalize();
@@ -899,6 +900,9 @@ public sealed class BehaviorSettings
 
     /// <summary>设置窗口明暗主题：Dark / Light；只影响设置窗口，不影响桌面叠层。</summary>
     public string SettingsTheme = "Dark";
+
+    /// <summary>2.46.1：设置页外观包 id（endfield / arknights…）；只影响设置窗，不碰卡片。</summary>
+    public string SettingsAppearanceId = "endfield";
     /// <summary>欢迎语，默认 Welcome Back。</summary>
     public string WelcomeText = "Welcome Back";
     /// <summary>每字符的动画间隔（毫秒），越小越快。</summary>
