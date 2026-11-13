@@ -707,6 +707,11 @@ public sealed class OverlaySurface : Border
         _canvas.Foreground = GetBrush(style.Foreground, 1.0);
         _canvas.LineHeight = style.LineHeight > 0 ? style.LineHeight : 0;
 
+        // T-7 / 2.45.4：宽度上限必须按卡片所在显示器算。TextCanvas 的默认值是
+        // SystemParameters.WorkArea（主屏），卡片放到更窄的副屏 / 笔记本内屏时，
+        // 主屏上限会让窗口超出屏幕，右半边内容直接不可见。
+        _canvas.MaxTextWidth = ResolveMaxTextWidth(settings);
+
         // 卡片对齐设置变了，上一轮布局传下来的 Left / Right 就过期了；
         // 先清掉，让本次 Apply 按新的显式值（或卡片自身位置）排版，等下一次布局再覆盖。
         string cardAlignSetting = Settings.NormalizeCardAlign(style.CardAlign);
@@ -801,6 +806,28 @@ public sealed class OverlaySurface : Border
         }
         _particleLayer.Margin = _canvas.Margin;
         MaybePlayParticle(_canvas.Text, cursor);
+    }
+
+    /// <summary>
+    /// 2.45.4：按卡片所在显示器的可用宽度算文本宽度上限（DIP），留 3% 给圆角 / 投影。
+    /// 取不到屏幕信息时保留 <see cref="TextCanvas.MaxTextWidth"/> 的当前值（主屏兜底），
+    /// 不能回落成 0——0 表示不限制，长文本会把窗口撑出屏幕。
+    /// </summary>
+    double ResolveMaxTextWidth(Settings settings)
+    {
+        try
+        {
+            ScreenInfo screen = ScreenGeometry.Get(settings.Overlay.Monitor, settings.Overlay.MonitorDevice);
+            if (screen is null || screen.ScaleX <= 0.1) return _canvas.MaxTextWidth;
+
+            double workWidth = screen.WorkWidth / screen.ScaleX;
+            return workWidth > 1.0 ? Math.Max(160, workWidth * 0.97) : _canvas.MaxTextWidth;
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"读取工作区宽度失败，文本宽度上限继续用主屏值: {ex.Message}");
+            return _canvas.MaxTextWidth;
+        }
     }
 
     // ==================== 背景图片 ====================

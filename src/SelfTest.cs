@@ -829,7 +829,19 @@ internal static class SelfTest
                         && TextCanvas.CountLines("a\n") == 2
                         && TextCanvas.CountLines("\n\n") == 3;
 
-            textLayoutOk = natural > 60 && fixedOk && capOk && heightOk && hiddenOk && linesOk;
+            // 排版缓存失效：字号变了，缓存的 FormattedText 必须按新字号重建（T-21）。
+            // 若缓存没失效，宽度会停在 15px 的旧值。用 10 位数字做单行，宽度差足够明显。
+            canvas.LayoutText = null;
+            canvas.Text = "1234567890";
+            canvas.ResetStableSize();
+            canvas.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            double smallWidth = canvas.DesiredSize.Width;
+            canvas.FontSize = 30;
+            canvas.ResetStableSize();
+            canvas.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            bool cacheOk = canvas.DesiredSize.Width > smallWidth * 1.5;
+
+            textLayoutOk = natural > 60 && fixedOk && capOk && heightOk && hiddenOk && linesOk && cacheOk;
         }
         catch (Exception ex)
         {
@@ -2079,6 +2091,8 @@ internal static class SelfTest
             results.GlassPolicyOk ? "OK" : "FAIL"));
 
         Fix(sb, "外观令牌", results.ThemeOk ? "OK（派生值 = 旧 alpha 常量，非法值回落而不是变白）" : "FAIL");
+        Fix(sb, "文本布局", results.TextLayoutOk
+            ? "OK（行数 → 期望高度；固定宽度 / 工作区上限收紧；隐藏字符清理；换行计数；排版缓存失效）" : "FAIL");
         Fix(sb, "配置修复", results.ConfigRepairOk
             ? "OK（null 判空 / 损坏标记 / 旧 Schema 按损坏 / 未来版本只读 / 未知 Kind 保留 / 状态 .bak 回退）" : "FAIL");
         Fix(sb, "主题文件", results.ThemeFileOk ? "OK（导出 → 解析 → 套用 → 再导出一致，数字透明度按前景派生）" : "FAIL");

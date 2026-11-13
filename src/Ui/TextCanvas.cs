@@ -1268,6 +1268,11 @@ public sealed class TextCanvas : FrameworkElement
         double originX = clipped ? 0 : AlignBlockX(blockWidth);
         double originY = Math.Max(0, (ActualHeight - blockHeight) / 2);
 
+        // 2.45.4：裁剪时必须给省略号预留宽度，否则"…"会画在最后一个被裁字形上面
+        // （同为前景色，视觉上仍是硬切）。正文裁到 textLimit，省略号从 textLimit 起画。
+        TextRun ellipsis = clipped ? CreateRun("…", RunKind.Text) : null;
+        double textLimit = clipped ? Math.Max(0, blockWidth - ellipsis.Width) : blockWidth;
+
         // 测量与绘制理论上同源；真出现"要画的内容比画布高"时必须留痕，
         // 否则用户只看到少行、日志里没有任何线索。这里不偷偷改尺寸，只报出具体数值。
         if (blockHeight > ActualHeight + 0.5)
@@ -1286,7 +1291,7 @@ public sealed class TextCanvas : FrameworkElement
                 Log.Warn($"文本宽 {layout.Width:0.#} DIP 超过可用宽 {available:0.#} DIP"
                     + $"（固定宽度 {_fixedWidth:0.#} / 工作区上限 {_maxTextWidth:0.#} / Arrange {ActualWidth:0.#}），已按省略号裁剪");
             }
-            dc.PushClip(new RectangleGeometry(new Rect(0, 0, blockWidth, ActualHeight)));
+            dc.PushClip(new RectangleGeometry(new Rect(0, 0, textLimit, ActualHeight)));
         }
 
         for (int i = 0; i < built.Count; i++)
@@ -1319,8 +1324,7 @@ public sealed class TextCanvas : FrameworkElement
         if (clipped)
         {
             dc.Pop();
-            TextRun ellipsis = CreateRun("…", RunKind.Text);
-            double x = Math.Max(0, blockWidth - ellipsis.Width);
+            double x = Math.Max(0, textLimit);
             double y = originY + Math.Max(0, built.Count - 1) * lineHeight;
             double baseY = y + (_refBaseline - ellipsis.Text.Baseline);
             DrawLine(dc, ellipsis.Text, x, baseY);
