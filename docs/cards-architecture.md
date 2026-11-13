@@ -243,7 +243,9 @@ InfoText 提供 3 张（系统信息 / 时钟 / 按键），Command 与 Media �
 | 控件 / 服务 | 用途 | 要点 |
 |---|---|---|
 | `CardList` | 主题化列表：行模板、悬停 / 选中、空状态、双击 / 回车激活 | 用 `ItemTemplate` 或直接放控件；虚拟化需要给固定 / 最大高度；`SelectionMode` 可选 `Extended` |
-| `CardStatus` | 状态行：图标 + 文字 + 进度 + 转圈 + 错误态 | `SetText` / `SetBusy` / `SetProgress` |
+| `CardStatus` | 状态行：图标 + 文字 + 进度 + 转圈 + 错误态 | `SetText` / `SetBusy` / `SetProgress`；进度由内嵌 `CardProgressBar` 绘制 |
+| `CardProgressBar` | 进度条唯一实现：直角分段 / 3px 连续两种形态 | `Value` + `ApplyStyle`；颜色取 `ThemeTokens.Progress`（空 = 强调色，显式指定覆盖成功 / 错误状态色）；「终末地视觉 → 分段进度」控制形态 |
+| `CardParticleText` | 帧内“粒子聚字”：文字采样成点集后收拢 | `Play(text, color)` 返回不可用 / 首池 / 播放中；收敛触发 `Settled`，调用方恢复原文；用 `Visibility.Hidden` 保留布局 |
 | `CardHeader` + `CardToolbar` | 标题 + 徽标 + 右侧动作按钮 | `Actions.Add("清空", handler)`；按钮是细描边幽灵样式，危险语气只染描边 / 文字 |
 | `CardInput` | 输入框：占位符、Enter / Ctrl+Enter 提交、错误描边 | 多行构造 `new CardInput(true)`；`TextChanged` 可做实时搜索 |
 | `CardDropOverlay` | 拖入高亮与“松开添加 N 个”提示 | 配合 `ICardDropFeedback` 的进入 / 离开回调使用 |
@@ -504,7 +506,6 @@ ffmpeg 路线把视频解成逐帧原始像素，什么格式都能放（代价�
 | 滑块 `CardSlider` | 连续值（音量、透明度、阈值） | 中：要一套细轨道模板 + 数值气泡，拖动时不能触发卡片拖动 |
 | 数字步进 `CardStepper` | 精确小整数（数量、间隔秒数） | 轻：输入框 + 两个小按钮，需要输入校验 |
 | 下拉框 `CardCombo` | 枚举选择（模型、来源、单位） | 中：弹出层在分层窗口里容易被裁剪，得自己画 Popup（或用 `Popup`） |
-| 进度条 `CardProgress` | 下载 / 编译 / 任务进度（确定或不确定态） | 轻：纯显示，不需要鼠标；但要有「不确定」动画 → `DispatcherTimer` |
 | 状态灯 / 徽标 `CardBadge` | 「在线 / 离线 / 有 3 条待处理」 | 轻：纯显示，配合 `NeedsMouseInput = false` 也能用 |
 | 小图表 `CardSparkline` | CPU / 网络的历史曲线、环形进度 | 中：要维护环形缓冲 + 自绘；值变化频繁时注意不要每帧重建几何 |
 | 图标按钮 `CardIconButton` | 用 Lucide 字形代替文字的紧凑按钮 | 轻：`CardButton` 多一个 ctor，字体换成 LucideFont、字号按 `IconScale` |
