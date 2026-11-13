@@ -152,8 +152,10 @@ public sealed class LyricsCard : RichCardModuleBase, ICardSettingsModule, ICardE
     public string RunSelfTest()
     {
         List<LyricLine> lines = LrcParser.Parse("[00:01.00]a\n[00:02.50][00:03.00]b", out string warning);
-        return lines.Count == 3 && lines[0].Time < lines[1].Time && warning is null
-            ? null : "LRC 解析器未正确处理多时间戳/排序";
+        // P0-7：GBK 的「中文」= D6 D0 CE C4，不能被当成非法 UTF-8 丢掉。
+        string gbk = LrcFile.DecodeBytes(new byte[] { 0xD6, 0xD0, 0xCE, 0xC4 });
+        return lines.Count == 3 && lines[0].Time < lines[1].Time && warning is null && gbk == "中文"
+            ? null : "LRC 解析器未正确处理多时间戳/排序或 GB18030 回退";
     }
 
     static string NormalizeSource(string value) =>
@@ -199,6 +201,15 @@ internal sealed class LyricsView : Grid
     int _lineIndex = -2;
     bool _particleEnabled;
     Color _particleColor;
+
+    // P0-5：SMTC 失败节流 + 退避；P0-3/P0-4/P0-6：取词任务代次与失败重试。
+    readonly LogThrottle _smtcLog = new("歌词卡 SMTC 读取失败", 30000);
+    int _smtcFailures;
+    DateTime _smtcRetryUtc = DateTime.MinValue;
+    int _lyricsGeneration;
+    string _failedKey = "";
+    DateTime _loadRetryUtc = DateTime.MinValue;
+    int _loadAttempts;
 
     public LyricsView(Settings settings, CardSettings config)
     {
@@ -288,14 +299,38 @@ internal sealed class LyricsView : Grid
         _busy = true;
         try
         {
+            DateTime now = DateTime.UtcNow;
+            // P0-5：失败后退避，不要每 200ms 撞同一个错误。
+            if (now < _smtcRetryUtc) return;
+
             if (_manager is null)
-                _manager = await GlobalSystemMediaTransportControlsSessionManager.RequestAsync();
+            {
+                try
+                {
+                    _manager = await GlobalSystemMediaTransportControlsSessionManager.RequestAsync();
+                    _smtcFailures = 0;
+                    _smtcLog.Success();
+                }
+                catch (Exception ex)
+                {
+                    _smtcFailures++;
+                    _smtcRetryUtc = now.AddSeconds(_smtcFailures <= 1 ? 2 : _smtcFailures == 2 ? 5 : 10);
+                    SetStatus("SMTC 不可用", "歌词 · 播放会话读取失败");
+                    _smtcLog.Failure(ex.Message);
+                    return;
+                }
+            }
+
             _session = _manager.GetCurrentSession();
             if (_session is null)
             {
                 SetStatus("未检测到正在播放", "歌词 · 无播放会话");
+                _smtcLog.Success();
                 return;
             }
+
+            // P0-2：标题只由当前会话决定，不随状态文案漂移。
+            SetHeader(_titleText, _artistText);
 
             if (DateTime.UtcNow >= _nextPropertiesUtc)
             {
@@ -313,10 +348,9 @@ internal sealed class LyricsView : Grid
                     _fallbackPosition = 0;
                     _fallbackAnchorUtc = DateTime.UtcNow;
                     _wasPlaying = false;
-                    _title.Text = string.IsNullOrWhiteSpace(title)
-                        ? "歌词 · 未知曲目"
-                        : $"♪ {title}" + (string.IsNullOrWhiteSpace(artist) ? "" : $" — {artist}");
-                    await LoadLyricsAsync(title, artist);
+                    SetHeader(title, artist);
+                    // P0-3：取词不阻塞时钟；失败由退避重试接管（P0-4 / P0-6）。
+                    StartLyricsLoad(title, artist);
                 }
             }
 
@@ -341,18 +375,18 @@ internal sealed class LyricsView : Grid
             else
             {
                 duration = _lyricsDuration;
-                DateTime now = DateTime.UtcNow;
+                DateTime clockNow = DateTime.UtcNow;
                 if (!_fallbackActive)
                 {
                     _fallbackActive = true;
-                    _fallbackAnchorUtc = now;
+                    _fallbackAnchorUtc = clockNow;
                     _fallbackPosition = 0;
                     _wasPlaying = playing;
                 }
                 else
                 {
-                    if (_wasPlaying) _fallbackPosition += Math.Max(0, (now - _fallbackAnchorUtc).TotalSeconds);
-                    _fallbackAnchorUtc = now;
+                    if (_wasPlaying) _fallbackPosition += Math.Max(0, (clockNow - _fallbackAnchorUtc).TotalSeconds);
+                    _fallbackAnchorUtc = clockNow;
                     _wasPlaying = playing;
                 }
                 position = _fallbackPosition;
@@ -363,12 +397,15 @@ internal sealed class LyricsView : Grid
             _duration = duration;
             UpdateLine(position);
             UpdateProgress();
+            _smtcLog.Success();
+            MaybeRetryLyrics();
         }
         catch (Exception ex)
         {
-            SetStatus("SMTC 读取失败", "歌词 · " + ex.Message);
-            _manager = null;
-            Log.Warn($"歌词卡读取播放会话失败: {ex.Message}");
+            // 单次属性 / 时间轴读取失败属良性竞态：不清空 manager，退避 2 秒再试。
+            _smtcRetryUtc = DateTime.UtcNow.AddSeconds(2);
+            SetStatus("SMTC 读取失败", "");
+            _smtcLog.Failure(ex.Message);
         }
         finally
         {
@@ -376,19 +413,39 @@ internal sealed class LyricsView : Grid
         }
     }
 
-    async Task LoadLyricsAsync(string title, string artist)
+    /// <summary>换歌：立即作废旧代次，清空行与粒子池，然后后台取词。</summary>
+    void StartLyricsLoad(string title, string artist)
     {
         string key = (title ?? "") + "\n" + (artist ?? "");
         if (string.Equals(key, _lyricsKey, StringComparison.Ordinal)) return;
+
         _lyricsKey = key;
+        _lyricsGeneration++;
         _lines = new List<LyricLine>();
         _lyricsDuration = 0;
-        // 换歌：粒子池与当前行一起作废，新歌第一句从静态开始（和宿主首池语义一致）。
+        _loadAttempts = 0;
+        _failedKey = "";
+        _loadRetryUtc = DateTime.MinValue;
         _particle.Reset();
         _lineIndex = -2;
         _current.Visibility = Visibility.Visible;
         if (string.IsNullOrWhiteSpace(title)) return;
 
+        _ = LoadLyricsAsync(key, title, artist, _lyricsGeneration);
+    }
+
+    void MaybeRetryLyrics()
+    {
+        if (_failedKey.Length == 0 || _loadAttempts >= 3 || DateTime.UtcNow < _loadRetryUtc) return;
+
+        _failedKey = "";
+        _ = LoadLyricsAsync(_lyricsKey, _titleText, _artistText, ++_lyricsGeneration);
+    }
+
+    bool Stale(int generation) => _disposed || generation != _lyricsGeneration;
+
+    async Task LoadLyricsAsync(string key, string title, string artist, int generation)
+    {
         try
         {
             string source = (_extras.Source ?? "Auto").Trim();
@@ -397,19 +454,59 @@ internal sealed class LyricsView : Grid
             {
                 if (System.IO.File.Exists(path))
                 {
-                    string text = await System.IO.File.ReadAllTextAsync(path);
-                    _lines = LrcParser.Parse(text, out _);
-                    if (_lines.Count > 0) _lyricsDuration = _lines[_lines.Count - 1].Time + 4;
-                    if (_lines.Count > 0) { SetStatus("本地 LRC", ""); return; }
+                    // P0-7：先 BOM，再严格 UTF-8，最后回退 GB18030（中文歌词站常见）。
+                    string text = await LrcFile.ReadAsync(path);
+                    if (Stale(generation)) return;
+
+                    List<LyricLine> parsed = LrcParser.Parse(text, out _);
+                    if (parsed.Count > 0)
+                    {
+                        ApplyLines(parsed, parsed[parsed.Count - 1].Time + 4, "本地 LRC");
+                        return;
+                    }
+                    SetStatus("本地 LRC 无时间轴", "");
+                }
+                else if (source == "Local")
+                {
+                    SetStatus("未找到本地 LRC", "");
+                    return;
                 }
             }
 
-            if (source == "Local") { SetStatus("未找到本地 LRC", ""); return; }
+            if (source == "Local")
+            {
+                if (path.Length == 0) SetStatus("未配置本地歌词", "");
+                return;
+            }
 
             string url = "https://lrclib.net/api/get?track_name=" + Uri.EscapeDataString(title)
                        + "&artist_name=" + Uri.EscapeDataString(artist ?? "");
             using var cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(8));
-            string json = await Http.GetStringAsync(url, cts.Token);
+            using HttpResponseMessage response = await Http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+            if (Stale(generation)) return;
+
+            int status = (int)response.StatusCode;
+            if (status == 404)
+            {
+                // P0-6：404 = “没有这首歌的歌词”，不是获取失败；不重试。
+                _loadAttempts = 0;
+                _failedKey = "";
+                SetStatus("LRCLIB 无歌词", "");
+                return;
+            }
+            if (status == 429)
+            {
+                TimeSpan wait = RetryAfter(response, TimeSpan.FromSeconds(10));
+                ScheduleRetry(key, wait);
+                SetStatus("请求过于频繁，稍后重试", "");
+                return;
+            }
+            if (!response.IsSuccessStatusCode)
+                throw new HttpRequestException($"LRCLIB HTTP {status}");
+
+            string json = await response.Content.ReadAsStringAsync(cts.Token);
+            if (Stale(generation)) return;
+
             using JsonDocument doc = JsonDocument.Parse(json);
             double lrclibDuration = 0;
             if (doc.RootElement.TryGetProperty("duration", out JsonElement dur)
@@ -417,10 +514,15 @@ internal sealed class LyricsView : Grid
             if (doc.RootElement.TryGetProperty("syncedLyrics", out JsonElement sync)
                 && sync.ValueKind == JsonValueKind.String)
             {
-                _lines = LrcParser.Parse(sync.GetString(), out string warning);
-                _lyricsDuration = lrclibDuration > 0 ? lrclibDuration
-                    : (_lines.Count > 0 ? _lines[_lines.Count - 1].Time + 4 : 0);
-                SetStatus(_lines.Count == 0 ? (warning ?? "歌词为空") : "LRCLIB", "");
+                List<LyricLine> lines = LrcParser.Parse(sync.GetString(), out string warning);
+                double duration = lrclibDuration > 0 ? lrclibDuration
+                    : (lines.Count > 0 ? lines[lines.Count - 1].Time + 4 : 0);
+                if (lines.Count == 0)
+                {
+                    SetStatus(warning ?? "歌词为空", "");
+                    return;
+                }
+                ApplyLines(lines, duration, "LRCLIB");
             }
             else if (doc.RootElement.TryGetProperty("plainLyrics", out JsonElement plain)
                      && plain.ValueKind == JsonValueKind.String
@@ -434,20 +536,63 @@ internal sealed class LyricsView : Grid
                     if (string.IsNullOrWhiteSpace(row)) continue;
                     estimated.Add(new LyricLine { Time = estimated.Count * 4.0, Text = row.Trim() });
                 }
-                _lines = estimated;
-                _lyricsDuration = Math.Max(lrclibDuration, estimated.Count * 4.0);
-                SetStatus("LRCLIB 无时间轴 · 按 4 秒估算", "");
+                ApplyLines(estimated, Math.Max(lrclibDuration, estimated.Count * 4.0),
+                           "LRCLIB 无时间轴 · 按 4 秒估算");
             }
             else
             {
                 SetStatus("LRCLIB 无歌词", "");
             }
         }
+        catch (OperationCanceledException)
+        {
+            if (Stale(generation)) return;
+            ScheduleRetry(key, TimeSpan.FromSeconds(10));
+            SetStatus("歌词获取超时", "");
+            Log.Warn("歌词卡获取歌词超时（8 秒）");
+        }
         catch (Exception ex)
         {
-            SetStatus("歌词获取失败", ex.Message);
+            if (Stale(generation)) return;
+            ScheduleRetry(key, TimeSpan.FromSeconds(10));
+            SetStatus("歌词获取失败", "");
             Log.Warn($"歌词卡获取歌词失败: {ex.Message}");
         }
+    }
+
+    void ApplyLines(List<LyricLine> lines, double duration, string status)
+    {
+        _loadAttempts = 0;
+        _failedKey = "";
+        _lines = lines;
+        _lyricsDuration = duration;
+        _lineIndex = -2;
+        _particle.Reset();
+        _current.Visibility = Visibility.Visible;
+        SetStatus(status, "");
+    }
+
+    void ScheduleRetry(string key, TimeSpan suggested)
+    {
+        _loadAttempts++;
+        _failedKey = key;
+        double seconds = _loadAttempts <= 1
+            ? Math.Max(5, suggested.TotalSeconds)
+            : _loadAttempts == 2 ? 15 : 60;
+        _loadRetryUtc = DateTime.UtcNow.AddSeconds(seconds);
+    }
+
+    static TimeSpan RetryAfter(HttpResponseMessage response, TimeSpan fallback)
+    {
+        var header = response.Headers.RetryAfter;
+        if (header is null) return fallback;
+        if (header.Delta.HasValue && header.Delta.Value > TimeSpan.Zero) return header.Delta.Value;
+        if (header.Date.HasValue)
+        {
+            TimeSpan delta = header.Date.Value - DateTimeOffset.UtcNow;
+            if (delta > TimeSpan.Zero) return delta;
+        }
+        return fallback;
     }
 
     void UpdateLine(double position)
@@ -523,6 +668,11 @@ internal sealed class LyricsView : Grid
         _progressBar.Value = ratio;
         _time.Text = CardFormat.Clock(_position) + " / " + CardFormat.Clock(_duration);
     }
+
+    void SetHeader(string title, string artist) =>
+        _title.Text = string.IsNullOrWhiteSpace(title)
+            ? "歌词 · 未知曲目"
+            : $"♪ {title}" + (string.IsNullOrWhiteSpace(artist) ? "" : $" — {artist}");
 
     void SetStatus(string status, string title)
     {
