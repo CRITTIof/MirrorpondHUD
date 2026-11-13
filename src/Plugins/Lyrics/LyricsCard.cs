@@ -56,19 +56,26 @@ public sealed class LyricsCard : RichCardModuleBase, ICardSettingsModule, ICardE
     {
         LyricsExtras extras = config.ExtrasAs<LyricsExtras>(SettingsKey);
         var panel = new StackPanel { Margin = new Thickness(0, 6, 0, 0) };
+        panel.Children.Add(new TextBlock
+        {
+            Text = "跟随系统正在播放的歌曲显示歌词。默认自动：先用本地歌词，没有就联网查找。",
+            TextWrapping = TextWrapping.Wrap,
+            Opacity = 0.65,
+            Margin = new Thickness(0, 0, 0, 6)
+        });
 
         var sourceRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
         sourceRow.Children.Add(new TextBlock { Text = "歌词来源", VerticalAlignment = VerticalAlignment.Center, Width = 78 });
         var source = new ComboBox { Width = 150 };
-        source.Items.Add("自动（本地优先）");
-        source.Items.Add("仅本地 LRC");
-        source.Items.Add("仅 LRCLIB");
+        source.Items.Add("自动（推荐）");
+        source.Items.Add("只用本地歌词");
+        source.Items.Add("只从网络获取");
         source.SelectedIndex = extras.Source == "Local" ? 1 : extras.Source == "Lrclib" ? 2 : 0;
         sourceRow.Children.Add(source);
         panel.Children.Add(sourceRow);
 
         var pathRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
-        pathRow.Children.Add(new TextBlock { Text = "本地 LRC", VerticalAlignment = VerticalAlignment.Center, Width = 78 });
+        pathRow.Children.Add(new TextBlock { Text = "本地歌词", VerticalAlignment = VerticalAlignment.Center, Width = 78 });
         var path = new TextBox { Width = 300, Text = extras.LrcPath ?? "" };
         var browse = new Button { Content = "选择…", Margin = new Thickness(6, 0, 0, 0), Padding = new Thickness(9, 2, 9, 2) };
         browse.Click += (s, e) =>
@@ -85,12 +92,12 @@ public sealed class LyricsCard : RichCardModuleBase, ICardSettingsModule, ICardE
         panel.Children.Add(pathRow);
 
         var offsetRow = new StackPanel { Orientation = Orientation.Horizontal };
-        offsetRow.Children.Add(new TextBlock { Text = "偏移 (ms)", VerticalAlignment = VerticalAlignment.Center, Width = 78 });
+        offsetRow.Children.Add(new TextBlock { Text = "时间偏移", VerticalAlignment = VerticalAlignment.Center, Width = 78 });
         var offset = new TextBox { Width = 80, Text = extras.OffsetMs.ToString(CultureInfo.InvariantCulture) };
         offsetRow.Children.Add(offset);
         offsetRow.Children.Add(new TextBlock
         {
-            Text = "正值 = 歌词提前",
+            Text = "歌词比声音快就调大；慢就调小（毫秒）",
             Margin = new Thickness(8, 0, 0, 0),
             VerticalAlignment = VerticalAlignment.Center,
             Opacity = 0.6
@@ -160,6 +167,11 @@ internal sealed class LyricsView : Grid
     List<LyricLine> _lines = new();
     bool _busy;
     bool _disposed;
+    bool _fallbackActive;
+    DateTime _fallbackAnchorUtc = DateTime.UtcNow;
+    double _fallbackPosition;
+    bool _wasPlaying;
+    double _lyricsDuration;
     double _position;
     double _duration;
 
@@ -258,6 +270,10 @@ internal sealed class LyricsView : Grid
                 {
                     _titleText = title;
                     _artistText = artist;
+                    _fallbackActive = false;
+                    _fallbackPosition = 0;
+                    _fallbackAnchorUtc = DateTime.UtcNow;
+                    _wasPlaying = false;
                     _title.Text = string.IsNullOrWhiteSpace(title)
                         ? "歌词 · 未知曲目"
                         : $"♪ {title}" + (string.IsNullOrWhiteSpace(artist) ? "" : $" — {artist}");
@@ -267,14 +283,42 @@ internal sealed class LyricsView : Grid
 
             GlobalSystemMediaTransportControlsSessionTimelineProperties timeline = _session.GetTimelineProperties();
             GlobalSystemMediaTransportControlsSessionPlaybackInfo playback = _session.GetPlaybackInfo();
-            double position = timeline.Position.TotalSeconds;
-            double duration = Math.Max(0, (timeline.EndTime - timeline.StartTime).TotalSeconds);
-            if (playback?.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing)
+            bool playing = playback?.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing;
+            // 网易云等播放器可能把 Position/EndTime/LastUpdatedTime 全部报成 0 / 1601。
+            // 这时不能外推（会得到几百亿秒，永远停在最后一句），改用“LRCLIB 时长 + 本地经过时间”兜底。
+            bool timelineValid = timeline.Position > TimeSpan.Zero
+                                 || timeline.EndTime > timeline.StartTime
+                                 || timeline.LastUpdatedTime.Year >= 2000;
+            double duration;
+            double position;
+            if (timelineValid)
             {
-                DateTimeOffset last = timeline.LastUpdatedTime;
-                if (last != DateTimeOffset.MinValue)
-                    position += Math.Max(0, (DateTimeOffset.Now - last).TotalSeconds);
+                duration = Math.Max(0, (timeline.EndTime - timeline.StartTime).TotalSeconds);
+                position = timeline.Position.TotalSeconds;
+                if (playing && timeline.LastUpdatedTime.Year >= 2000)
+                    position += Math.Max(0, (DateTimeOffset.Now - timeline.LastUpdatedTime).TotalSeconds);
+                _fallbackActive = false;
             }
+            else
+            {
+                duration = _lyricsDuration;
+                DateTime now = DateTime.UtcNow;
+                if (!_fallbackActive)
+                {
+                    _fallbackActive = true;
+                    _fallbackAnchorUtc = now;
+                    _fallbackPosition = 0;
+                    _wasPlaying = playing;
+                }
+                else
+                {
+                    if (_wasPlaying) _fallbackPosition += Math.Max(0, (now - _fallbackAnchorUtc).TotalSeconds);
+                    _fallbackAnchorUtc = now;
+                    _wasPlaying = playing;
+                }
+                position = _fallbackPosition;
+            }
+            if (duration <= 0.5) duration = _lyricsDuration;
             position = Math.Max(0, duration > 0 ? Math.Min(duration, position) : position);
             _position = position;
             _duration = duration;
@@ -299,6 +343,7 @@ internal sealed class LyricsView : Grid
         if (string.Equals(key, _lyricsKey, StringComparison.Ordinal)) return;
         _lyricsKey = key;
         _lines = new List<LyricLine>();
+        _lyricsDuration = 0;
         if (string.IsNullOrWhiteSpace(title)) return;
 
         try
@@ -311,6 +356,7 @@ internal sealed class LyricsView : Grid
                 {
                     string text = await System.IO.File.ReadAllTextAsync(path);
                     _lines = LrcParser.Parse(text, out _);
+                    if (_lines.Count > 0) _lyricsDuration = _lines[_lines.Count - 1].Time + 4;
                     if (_lines.Count > 0) { SetStatus("本地 LRC", ""); return; }
                 }
             }
@@ -322,15 +368,36 @@ internal sealed class LyricsView : Grid
             using var cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(8));
             string json = await Http.GetStringAsync(url, cts.Token);
             using JsonDocument doc = JsonDocument.Parse(json);
+            double lrclibDuration = 0;
+            if (doc.RootElement.TryGetProperty("duration", out JsonElement dur)
+                && dur.ValueKind == JsonValueKind.Number) lrclibDuration = dur.GetDouble();
             if (doc.RootElement.TryGetProperty("syncedLyrics", out JsonElement sync)
                 && sync.ValueKind == JsonValueKind.String)
             {
                 _lines = LrcParser.Parse(sync.GetString(), out string warning);
+                _lyricsDuration = lrclibDuration > 0 ? lrclibDuration
+                    : (_lines.Count > 0 ? _lines[_lines.Count - 1].Time + 4 : 0);
                 SetStatus(_lines.Count == 0 ? (warning ?? "歌词为空") : "LRCLIB", "");
+            }
+            else if (doc.RootElement.TryGetProperty("plainLyrics", out JsonElement plain)
+                     && plain.ValueKind == JsonValueKind.String
+                     && !string.IsNullOrWhiteSpace(plain.GetString()))
+            {
+                // 没有时间轴时按每行 4 秒估算，至少能随播放推进；状态行明确标注。
+                string[] rows = plain.GetString().Replace("\r\n", "\n").Split('\n');
+                var estimated = new List<LyricLine>();
+                foreach (string row in rows)
+                {
+                    if (string.IsNullOrWhiteSpace(row)) continue;
+                    estimated.Add(new LyricLine { Time = estimated.Count * 4.0, Text = row.Trim() });
+                }
+                _lines = estimated;
+                _lyricsDuration = Math.Max(lrclibDuration, estimated.Count * 4.0);
+                SetStatus("LRCLIB 无时间轴 · 按 4 秒估算", "");
             }
             else
             {
-                SetStatus("LRCLIB 无同步歌词", "");
+                SetStatus("LRCLIB 无歌词", "");
             }
         }
         catch (Exception ex)

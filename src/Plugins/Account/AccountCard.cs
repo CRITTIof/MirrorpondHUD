@@ -55,7 +55,7 @@ public sealed class AccountCard : RichCardModuleBase, ICardSettingsModule, ICard
         var panel = new StackPanel { Margin = new Thickness(0, 6, 0, 0) };
         panel.Children.Add(new TextBlock
         {
-            Text = "仅本地只读：cred / salt 只写入本机 settings.json，不发送到除森空岛外的任何服务。",
+            Text = "只读展示，不会签到或修改账号。请填写森空岛登录后的只读凭据（不是手机号密码），只保存在本机。",
             TextWrapping = TextWrapping.Wrap,
             Opacity = 0.65,
             Margin = new Thickness(0, 0, 0, 6)
@@ -64,17 +64,27 @@ public sealed class AccountCard : RichCardModuleBase, ICardSettingsModule, ICard
         var cred = new TextBox { Text = extras.Cred ?? "", Margin = new Thickness(0, 0, 0, 6) };
         var salt = new TextBox { Text = extras.Salt ?? "", Margin = new Thickness(0, 0, 0, 6) };
         var uid = new TextBox { Text = extras.Uid ?? "", Width = 160 };
-        panel.Children.Add(Label("cred"));
+        panel.Children.Add(Label("登录凭据（cred）"));
         panel.Children.Add(cred);
-        panel.Children.Add(Label("salt"));
+        panel.Children.Add(Label("凭据密钥（salt）"));
         panel.Children.Add(salt);
+        panel.Children.Add(new TextBlock
+        {
+            Text = "提示：在森空岛网页登录后的请求头里可以找到 cred 与 sign 对应的 salt；两者都是只读凭据。",
+            TextWrapping = TextWrapping.Wrap,
+            Opacity = 0.55,
+            FontSize = 11,
+            Margin = new Thickness(0, 0, 0, 4)
+        });
 
         var uidRow = new StackPanel { Orientation = Orientation.Horizontal };
-        uidRow.Children.Add(new TextBlock { Text = "UID", Width = 52, VerticalAlignment = VerticalAlignment.Center });
+        uidRow.Children.Add(new TextBlock { Text = "角色 UID", Width = 72, VerticalAlignment = VerticalAlignment.Center });
         uidRow.Children.Add(uid);
-        var auto = new Button { Content = "自动获取", Padding = new Thickness(9, 2, 9, 2), Margin = new Thickness(8, 0, 0, 0) };
+        var auto = new Button { Content = "自动识别", Padding = new Thickness(9, 2, 9, 2), Margin = new Thickness(8, 0, 0, 0) };
+        var test = new Button { Content = "测试连接", Padding = new Thickness(9, 2, 9, 2), Margin = new Thickness(6, 0, 0, 0) };
         var state = new TextBlock { Margin = new Thickness(8, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, Opacity = 0.65 };
         uidRow.Children.Add(auto);
+        uidRow.Children.Add(test);
         uidRow.Children.Add(state);
         panel.Children.Add(uidRow);
 
@@ -98,13 +108,39 @@ public sealed class AccountCard : RichCardModuleBase, ICardSettingsModule, ICard
             using var client = new SklandClient(cred.Text, salt.Text);
             (string foundUid, string nick, string error) =
                 await client.FindArknightsUidAsync(CancellationToken.None);
-            if (foundUid is null) state.Text = error ?? "未找到";
+            if (foundUid is null) state.Text = error ?? "未找到角色";
             else
             {
                 uid.Text = foundUid;
                 state.Text = string.IsNullOrWhiteSpace(nick) ? foundUid : $"{nick} ({foundUid})";
             }
             auto.IsEnabled = true;
+        };
+
+        test.Click += async (s, e) =>
+        {
+            test.IsEnabled = false;
+            state.Text = "连接中…";
+            using var client = new SklandClient(cred.Text, salt.Text);
+            if (string.IsNullOrWhiteSpace(uid.Text))
+            {
+                (string found, string nick, string findError) = await client.FindArknightsUidAsync(CancellationToken.None);
+                if (found is null) { state.Text = findError ?? "凭据无效"; test.IsEnabled = true; return; }
+                uid.Text = found;
+                state.Text = string.IsNullOrWhiteSpace(nick) ? "已识别 " + found : "已连接：" + nick;
+            }
+            else
+            {
+                (string json, string error) = await client.GetArknightsInfoAsync(uid.Text.Trim(), CancellationToken.None);
+                if (json is null) state.Text = error ?? "连接失败";
+                else
+                {
+                    AccountSnapshot snapshot = AccountSnapshot.Parse(json, out string parseError);
+                    state.Text = snapshot is null ? (parseError ?? "数据解析失败")
+                        : $"已连接：{snapshot.NickName} Lv.{snapshot.Level}";
+                }
+            }
+            test.IsEnabled = true;
         };
         return panel;
     }

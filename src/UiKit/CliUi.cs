@@ -150,7 +150,9 @@ public static class CliScrollBars
                 .Replace("<Thumb MinHeight=\"20\"", "<Thumb Width=\"6\" MinWidth=\"0\" MinHeight=\"20\"")
                 .Replace("<Grid Background=\"Transparent\" SnapsToDevicePixels=\"True\">",
                          "<Grid Background=\"Transparent\" SnapsToDevicePixels=\"True\">"
-                         + "<Border Width=\"6\" HorizontalAlignment=\"Right\" Background=\"#3A3A3F\"/>");
+                         + "<Border Width=\"6\" HorizontalAlignment=\"Center\" Background=\"%THUMBHOT%\"/>")
+                .Replace("<Thumb Width=\"6\" MinWidth=\"0\" MinHeight=\"20\"",
+                         "<Thumb Width=\"6\" MinWidth=\"0\" MinHeight=\"20\" HorizontalAlignment=\"Center\"");
         }
 
         string xaml = template

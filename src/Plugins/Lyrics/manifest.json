@@ -2,7 +2,7 @@
   "id": "builtin.lyrics",
   "name": "歌词",
   "apiVersion": 2,
-  "contractsVersion": "2.46.7",
+  "contractsVersion": "2.46.8",
   "entryType": "MirrorpondHUD.Cards.LyricsCard",
   "assembly": "MirrorpondHUD.Cards.Lyrics.dll",
   "author": "MirrorpondHUD",
