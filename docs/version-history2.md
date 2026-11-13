@@ -17,6 +17,7 @@
 | v2.45.6 | 2026-11-13 | `ee51124` | 字体切换思源黑体（嵌入 Noto Sans SC）、行为页“仅桌面/置顶”显示模式 | 17 文件，+168 / −41（另新增 17.7 MB 字体） |
 | v2.46.0 | 2026-11-13 | `b4f34a8` | 修复省略号误裁与仅桌面下富内容置顶；外观包（AppearancePack/Catalog/Runtime）前期脚手架 | 9 文件，+268 / −33 |
 | v2.46.1 | 2026-11-13 | `4565bd5` | 设置页外观包与 recipe 层（明暗 palette、几何令牌、导航/标题/按钮配方） | 10 文件，+398 / −39 |
+| v2.46.2 | 2026-11-13 | `aca4763` | 卡片轮廓三选项（切角/直角/圆角）与左侧强调条 | 9 文件，+209 / −11 |
 
 ---
 
@@ -440,3 +441,42 @@ P2 87 项与 P3 62 项覆盖玻璃线程、媒体状态机、文本布局、插�
 - 设置页与卡片外观仍是两个独立选择（`Behavior.SettingsAppearanceId` / `Style.AppearanceId`），
   可能出现“设置页是明日方舟、卡片是终末地”的组合；后续可用一个外层“主题组合”约束。
 - 真机需看 125%/150%/175% DPI 下 4px 硬边、1px 分隔线和导航宽度。
+
+---
+
+## 10. v2.46.2（卡片轮廓三选项 + 强调条，未合并 main）
+
+### 背景
+
+用户提供了三张深度终末地卡片构想（切角、直角、圆角）。三套设计共享底板 / 纹理 / 内容，差异集中在
+**外轮廓、1px 描边、左侧信号黄强调条**；因此不复制三套卡片布局，而是把差异抽成两个选项。
+
+### 改动
+
+1. **CardShape 三选项**：`EndfieldStyleSettings.CardShape`（默认 `RoundAngle`，保持旧观感）：
+   - `CutAngle`：右上 / 右下 45° 切角，切角 = `clamp(卡高 7%, 8, 28)`；
+   - `RightAngle`：四角方正；
+   - `RoundAngle`：沿用 `Overlay.CornerRadius` 全圆角。
+   `Settings.NormalizeCardShape` 兼容 cut/right/round 与中文值，未知值回退圆角。
+2. **统一轮廓裁切 + 描边**：`OverlaySurface` 不再让各层各画圆角，改由 `_root.Clip` 按 `CardShapeGeometry.Build`
+   裁切；新增 `CardFrame` 画 1px 轮廓（内缩 0.5px，避免半像素被裁）。默认“圆角 + 无强调条”隐藏描边，
+   保持旧观感；切角/直角或开启强调条时才显示。
+3. **左侧强调条**：`EndfieldStyleSettings.AccentBar`，3px 信号黄竖条，放在纹理之上、文字之下，随轮廓裁切。
+4. **设置入口**：外观 → 终末地视觉新增“卡片轮廓（切角/直角/圆角）”下拉与“左侧强调条”复选框；
+   `LoadEndfieldUi/ReadEndfieldUi` 持久化；卡片外观包 `AppearanceRuntime` 复制新字段，避免套包时丢配置。
+5. **自检**：`Settings.NormalizeCardShape` 三值 + 未知值回退断言并入配置域。
+
+### 验证
+
+- `--screenshot-cards` 分别以 CutAngle / RightAngle / RoundAngle + AccentBar=true 出图：
+  切角卡右上/右下斜边、直角卡方正、圆角卡沿用圆角；左侧黄条、1px 轮廓、纹理和内容裁切均正常。
+- 默认 RoundAngle + AccentBar=false：不新增描边，卡片观感与 2.46.1 一致。
+- `dotnet build -c Release` 0 警告 0 错误；`--selftest --isolated` 退出 0；`dotnet format` 通过。
+- 三张 SVG 仅作设计参照，未提交（保持未跟踪）。
+
+### 风险 / 未验证
+
+- 本轮只实现三套设计的**轮廓/描边/强调条**；设计稿中的标题排版、纹理浓度、媒体四角记号等仍由现有
+  卡片/主题令牌控制，未逐像素复刻。
+- 切角卡片的 1px 轮廓与阴影在 125%/150%/175% DPI 下需真机确认；切角处鼠标命中仍是矩形（视觉裁切不影响 hit test）。
+- 强调条默认关闭；要匹配设计稿需在设置中开启，三套设计也可分别搭配。
