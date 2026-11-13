@@ -16,6 +16,7 @@
 | v2.45.5 | 2026-11-13 | `52e209c` | 卡片折叠动效同步、信息卡省略号误判、DeepYellow 图标、底栏渐变、亮色分隔线、弹窗外描边与去符号 | 12 文件，+174 / −21 |
 | v2.45.6 | 2026-11-13 | `ee51124` | 字体切换思源黑体（嵌入 Noto Sans SC）、行为页“仅桌面/置顶”显示模式 | 17 文件，+168 / −41（另新增 17.7 MB 字体） |
 | v2.46.0 | 2026-11-13 | `b4f34a8` | 修复省略号误裁与仅桌面下富内容置顶；外观包（AppearancePack/Catalog/Runtime）前期脚手架 | 9 文件，+268 / −33 |
+| v2.46.1 | 2026-11-13 | `4565bd5` | 设置页外观包与 recipe 层（明暗 palette、几何令牌、导航/标题/按钮配方） | 10 文件，+398 / −39 |
 
 ---
 
@@ -390,3 +391,52 @@ P2 87 项与 P3 62 项覆盖玻璃线程、媒体状态机、文本布局、插�
 - 富内容 z 序修复只覆盖视频子窗口；DropStation 拖拽浮层、系统弹窗等其它顶层窗口未纳入。
 - 外观包目前是代码登记的内置目录，尚不支持外部 `.mppack`、settings.xaml 配方与卡片按 Kind 的 chrome 配方；
   这些是下一阶段工作。
+
+---
+
+## 9. v2.46.1（设置页外观包 + recipe 层，未合并 main）
+
+### 背景
+
+卡片已有“外观包”，但设置页仍是固定的 Endfield 调色板与 22px 圆角：`SettingsTheme` 写死一套 palette，
+`SettingsWindow.xaml` 的窗口圆角、220px 导航、导航模板、分组标题和按钮模板都是硬编码。本轮把设置页外观
+做成独立包，并落一个可替换的 recipe 层，默认 Endfield 观感不变。
+
+### 改动
+
+1. **设置页外观包模型**：`SettingsAppearancePack`（id/名称/字体/窗口与卡片圆角/导航宽/导航项高与圆角/
+   竖条宽/分隔线/按钮圆角/recipe 键/dark+light 颜色覆盖）。
+   `SettingsAppearanceCatalog` 内置两套：
+   - `endfield`：现有 22px 圆角、220px 导航、信号黄基线；
+   - `arknights`：4px 硬边、210px 窄导航、琥珀强调、方形选中块与粗分组标题。
+2. **调色板运行时**：`SettingsTheme.Apply` 增加包的颜色覆盖；只覆盖包声明的键，其余回退 Endfield 基线，
+   非法颜色 Warn 后回退。`Behavior.SettingsAppearanceId` 持久化，默认 `endfield`。
+3. **几何令牌化**：`Theme.xaml` 新增 `SettingsWindowRadius / InnerRadius / CardRadius /
+   NavItemRadius / PrimaryButtonRadius / NavWidth / NavItemHeight / NavBarWidth / DividerThickness /
+   DividerMargin`，`SettingsWindow.xaml` 改用 `DynamicResource`；`SettingsAppearanceRuntime` 在切换时写入资源。
+   首次实现踩过 `ColumnDefinition.Width` 需要 `GridLength` 而非 double 的坑，已用 `GridLength` 资源修正。
+4. **recipe 层**：
+   - `SettingsNavItemArknights`：硬边导航模板，保留 `Fill / Bar / HoverFill` 名称，SettingsMotion 过渡仍可用；
+   - `SectionTitleArknights`：粗体、琥珀、方形标题配方；
+   - `PrimaryButton` 的圆角改由 `SettingsPrimaryButtonRadius` 控制（Arknights=0）；
+   - 切回 Endfield 时导航样式落回窗口默认 `SettingsNavItem`，不会残留上一个模板。
+5. **UI 与切换**：外观页新增“设置页外观”下拉；选择后立即改资源并标记待保存，明暗切换按当前包的
+   dark/light palette 重新应用；`AppFontFamily` 同步当前包字体。
+6. **默认观感**：Endfield 包的令牌与默认值完全等于原 22px/220px/3px 基线，默认启动不发生布局变化。
+
+### 验证
+
+- `dotnet build -c Release`：0 警告 0 错误；`--selftest --isolated` 退出 0；`dotnet format --verify-no-changes` 通过。
+- 默认 Endfield：`--screenshot-settings` 正常，尺寸/圆角/导航与 2.46.0 一致。
+- Arknights：临时把 `Behavior.SettingsAppearanceId=arknights` 后截图，确认 4px 窗口硬边、210px 导航、
+  琥珀强调、方形选中块、粗分组标题、0px 主按钮圆角全部生效；切回 Endfield 不残留 Arknights 导航模板。
+- 运行时验证曾因主输出被用户实例锁定，使用独立 `bin/Check` 输出 + 临时互斥体后缀完成，验证后已还原测试 hook 并清理输出。
+
+### 风险 / 未验证
+
+- 当前只有 `endfield` / `arknights` 两套；recipe 只覆盖导航项、分组标题、按钮圆角、卡片/窗口半径，
+  还没有把每个控件都配方化。
+- 外部 `.mppack` / 用户 `settings.xaml` 未接入（出于 XAML 代码执行安全考虑，建议只允许数据 + recipe id）。
+- 设置页与卡片外观仍是两个独立选择（`Behavior.SettingsAppearanceId` / `Style.AppearanceId`），
+  可能出现“设置页是明日方舟、卡片是终末地”的组合；后续可用一个外层“主题组合”约束。
+- 真机需看 125%/150%/175% DPI 下 4px 硬边、1px 分隔线和导航宽度。
