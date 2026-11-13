@@ -460,7 +460,18 @@ public sealed class OverlaySurface : Border
     static string NormalizeNewlines(string text) =>
         (text ?? "").Replace("\r\n", "\n").Replace('\r', '\n');
 
-    /// <summary>按字符找变化位置；等长逐字比较，增删用公共前后缀。</summary>
+    /// <summary>
+    /// 按字符找变化位置（只服务粒子层：变化字符交给粒子，未变字符继续由画布绘制）。
+    ///
+    /// · 等长：逐字符比较，最精确（时钟 "11:08:21" → "11:08:23" 只标最后一位）；
+    /// · 不等长：行数相同时按行对齐，逐行取「行内公共前缀 + 公共后缀」之外的新字符。
+    ///   2.45.2 之前是全局公共前后缀包住一整段——多行各自变长/变短（指标卡同时改两行）
+    ///   时，中间没变的那一行也会被标成变化，整段重采、粒子多摊一片。
+    /// · 行数不同（有整行增删 / 行号已错位）时无法安全对齐，退回全局公共前后缀整段标记。
+    ///
+    /// 两种策略都只会多标、不会漏标：返回的下标一定覆盖新文本里所有真正变化的字符。
+    /// 纯删除某一行的字符时该行窗口为空（新文本里没有要重采的字符），不会退化成整行重采。
+    /// </summary>
     internal static int[] ChangedIndices(string oldText, string newText)
     {
         oldText ??= "";
@@ -476,6 +487,26 @@ public sealed class OverlaySurface : Border
             return changed.ToArray();
         }
 
+        List<(int Start, int Length)> oldLines = SplitLineSpans(oldText);
+        List<(int Start, int Length)> newLines = SplitLineSpans(newText);
+        if (oldLines.Count == newLines.Count)
+        {
+            List<int> refined = null;
+            for (int i = 0; i < newLines.Count; i++)
+            {
+                string oldLine = oldText.Substring(oldLines[i].Start, oldLines[i].Length);
+                string newLine = newText.Substring(newLines[i].Start, newLines[i].Length);
+                if (string.Equals(oldLine, newLine, StringComparison.Ordinal)) continue;
+
+                refined ??= new List<int>();
+                AddLineChange(oldLine, newLine, newLines[i].Start, refined);
+            }
+
+            // 行数相同时"所有行都相同"不可能（文本不等、且等长分支已排除），
+            // 但纯删除会让所有窗口为空：新文本里确实没有需要重采的字符。
+            if (refined is not null) return refined.ToArray();
+        }
+
         int prefix = 0;
         while (prefix < oldText.Length && prefix < newText.Length && oldText[prefix] == newText[prefix])
             prefix++;
@@ -488,6 +519,44 @@ public sealed class OverlaySurface : Border
         var result = new int[count];
         for (int i = 0; i < count; i++) result[i] = prefix + i;
         return result;
+    }
+
+    /// <summary>
+    /// 按 '\n' 切行并给出每行在原文里的 [Start, Start+Length)（不含行尾换行符）。
+    /// 与 <c>TextCanvas.Split</c> 同源：宿主在 SetText 已把 '\r' 归一成 '\n'，
+    /// 这里不再处理 '\r'，避免行起点与画布文本错位。
+    /// </summary>
+    static List<(int Start, int Length)> SplitLineSpans(string text)
+    {
+        var spans = new List<(int Start, int Length)>();
+        int start = 0;
+        for (int i = 0; i < text.Length; i++)
+        {
+            if (text[i] != '\n') continue;
+            spans.Add((start, i - start));
+            start = i + 1;
+        }
+        spans.Add((start, text.Length - start));
+        return spans;
+    }
+
+    /// <summary>
+    /// 一对不同行之间的最小变化窗口：行内公共前缀 + 公共后缀之外的新字符。
+    /// 前缀 / 后缀都不跨行，所以一行内的插入只标插入段，不会波及其它行。
+    /// </summary>
+    static void AddLineChange(string oldLine, string newLine, int newLineStart, List<int> result)
+    {
+        int prefix = 0;
+        while (prefix < oldLine.Length && prefix < newLine.Length && oldLine[prefix] == newLine[prefix])
+            prefix++;
+        int suffix = 0;
+        while (suffix < oldLine.Length - prefix && suffix < newLine.Length - prefix
+               && oldLine[oldLine.Length - 1 - suffix] == newLine[newLine.Length - 1 - suffix])
+        {
+            suffix++;
+        }
+
+        for (int i = prefix; i < newLine.Length - suffix; i++) result.Add(newLineStart + i);
     }
 
     /// <summary>当前文字层内容（只重画底层时用来原样恢复）。</summary>

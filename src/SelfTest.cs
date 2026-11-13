@@ -518,7 +518,45 @@ internal static class SelfTest
                 TextParticleGeometry = true
             };
             new Settings { Style = particleStyle }.Normalize();
+
+            // 2.45.2：不等长文本按行细化差集——多行各自变长时只标各行内的插入段，
+            // 不再把中间没变的那一行整段拉进重采样；行数不同（整行增删）则退回整段。
+            int[] twoLineDiff = OverlaySurface.ChangedIndices("A1\nB\nC2", "A100\nB\nC200");
+            int[] insertDiff = OverlaySurface.ChangedIndices("KEY", "KEY A");
+            int[] lineCountDiff = OverlaySurface.ChangedIndices("A\nB", "A\nX\nB");
+            bool lineDiffOk = twoLineDiff.Length == 4
+                           && twoLineDiff[0] == 2 && twoLineDiff[1] == 3
+                           && twoLineDiff[2] == 9 && twoLineDiff[3] == 10
+                           && insertDiff.Length == 2 && insertDiff[0] == 3 && insertDiff[1] == 4
+                           && lineCountDiff.Length == 2 && lineCountDiff[0] == 2 && lineCountDiff[1] == 3;
+
+            // 2.45.2：采样区域 = 变化元素包围盒并集 + padding，夹到卡片内；接近整卡时必须退回整卡。
+            Rect mergedBounds = ParticleTextLayer.MergeBounds(new Rect(10, 10, 5, 5), new Rect(20, 4, 3, 3));
+            Rect skipInvalid = ParticleTextLayer.MergeBounds(new Rect(10, 10, 5, 5),
+                                                             new Rect(0, 0, double.NaN, 4));
+            bool regionOk = Math.Abs(mergedBounds.X - 10) < 1e-9
+                         && Math.Abs(mergedBounds.Y - 4) < 1e-9
+                         && Math.Abs(mergedBounds.Width - 13) < 1e-9
+                         && Math.Abs(mergedBounds.Height - 11) < 1e-9
+                         && Math.Abs(skipInvalid.Width - 5) < 1e-9
+                         && ParticleTextLayer.TryClipSampleRegion(new Rect(100, 50, 10, 10), 4, 320, 200,
+                                                                   out Rect clippedRegion)
+                         && Math.Abs(clippedRegion.X - 96) < 1e-9
+                         && Math.Abs(clippedRegion.Y - 46) < 1e-9
+                         && Math.Abs(clippedRegion.Width - 18) < 1e-9
+                         && Math.Abs(clippedRegion.Height - 18) < 1e-9
+                         // padding 下限 2 DIP：传 0 也必须多采一圈，不让字形边缘压在位图边界上。
+                         && ParticleTextLayer.TryClipSampleRegion(new Rect(10, 10, 5, 5), 0, 320, 200,
+                                                                   out Rect minPadRegion)
+                         && Math.Abs(minPadRegion.Width - 9) < 1e-9
+                         // 接近整卡 / 完全在卡片外 / 无效矩形：必须拒绝收窄，由调用方退回整卡。
+                         && !ParticleTextLayer.TryClipSampleRegion(new Rect(0, 0, 320, 200), 2, 320, 200, out _)
+                         && !ParticleTextLayer.TryClipSampleRegion(new Rect(500, 500, 10, 10), 2, 320, 200, out _)
+                         && !ParticleTextLayer.TryClipSampleRegion(Rect.Empty, 2, 320, 200, out _);
+
             textEffectOk = textEffectOk
+                        && lineDiffOk
+                        && regionOk
                         // 2.43.2：末排目标中心按粒子半径夹取，不能越过图层边缘。
                         && Math.Abs(ParticleTextLayer.ClampCenter(20.5, 20.0, 2.2) - 18.9) < 1e-9
                         && Math.Abs(particleStyle.TextParticleSize - 4.0) < 1e-9
