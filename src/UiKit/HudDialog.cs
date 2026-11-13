@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Windows;
@@ -431,7 +431,7 @@ internal sealed class HudDialogPanel : Grid
         {
             Width = 3,
             Height = 16,
-            Background = CardPalette.Brush(theme.AccentColor),
+            Background = CardPalette.Brush(theme.AccentOnSurface),
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(0, 0, 10, 0)
         };
@@ -801,6 +801,8 @@ internal sealed class HudDialogTheme
     internal Color Line;
     internal Color RaisedColor;
     internal Color AccentColor;
+    // 浅色行动面上的强调色：亮黄在浅底几乎不可见，按 paper 版换成暗金。
+    internal Color AccentOnSurface;
     internal Color AccentInk;
     internal Color DangerColor;
     internal FontFamily Font;
@@ -844,6 +846,7 @@ internal sealed class HudDialogTheme
             // raised 只用于悬停底、关闭键底，不参与层级（层级靠字号 / 字重 + 3px 竖条）。
             RaisedColor = dark ? Color.FromRgb(0x19, 0x19, 0x19) : Colors.White,
             AccentColor = accent,
+            AccentOnSurface = dark || Luminance(accent) <= 0.60 ? accent : Color.FromRgb(0xB7, 0xA4, 0x00),
             AccentInk = Luminance(accent) > 0.58 ? Color.FromRgb(0x14, 0x14, 0x14) : Color.FromRgb(0xFA, 0xFA, 0xFA),
             // 角色色按规范固定值：红危险、橙提醒、蓝信息；状态另有方形字形标记。
             DangerColor = Color.FromRgb(0xF6, 0x2A, 0x2A),
