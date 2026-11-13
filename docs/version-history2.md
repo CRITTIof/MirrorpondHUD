@@ -14,6 +14,7 @@
 | v2.45.3 | 2026-11-13 | `e86e446` `4f45ac0` `3e03c9d` `3d11541` 等 | 弹窗改设置窗圆角并区分内外明暗、取色器风格化、设置窗动效、粒子动态掩码、黑色 ICO 重制 | 24 文件，+2,168 / −189 |
 | v2.45.4 | 2026-11-13 | `2e2a20b` `3777ba1` `1c28e5c` `80a7fe7` `40c499b` 等 | 玻璃冻结、焦点环、等高线低速卡顿、拖到底部吸回、信息卡偶发缺字 | 11 文件，+1,165 / −185 |
 | v2.45.5 | 2026-11-13 | `52e209c` | 卡片折叠动效同步、信息卡省略号误判、DeepYellow 图标、底栏渐变、亮色分隔线、弹窗外描边与去符号 | 12 文件，+174 / −21 |
+| v2.45.6 | 2026-11-13 | `ee51124` | 字体切换思源黑体（嵌入 Noto Sans SC）、行为页“仅桌面/置顶”显示模式 | 17 文件，+168 / −41（另新增 17.7 MB 字体） |
 
 ---
 
@@ -304,3 +305,44 @@ P2 87 项与 P3 62 项覆盖玻璃线程、媒体状态机、文本布局、插�
 - 外描边在 125%/150% DPI 与多屏下的 1px 显示需真机确认；取色器宽高增加 4px 后仍居中。
 - DeepYellow 图标在 Windows 深色任务栏的对比度依赖 `logo-light.ico` 分支，需真机看亮/暗任务栏切换。
 - 信息卡省略号修复覆盖“先渲染后 Arrange”的时序；若窗口被外部真正压窄，仍会在 Arrange 后按实际宽度省略。
+
+---
+
+## 7. v2.45.6（思源黑体、仅桌面/置顶，未合并 main）
+
+### 背景
+
+微软雅黑随 Windows 分发，应用内嵌/默认使用有版权风险；字体改为思源黑体（SIL OFL 1.1，Noto Sans SC 同源字形）。
+行为页原来只有“始终置顶”开关，用户需要“仅桌面”（贴在壁纸上、普通窗口下方）与“置顶”两种明确模式。
+
+### 改动
+
+1. **嵌入思源黑体**：`assets/fonts/NotoSansSC-VF.ttf`（17.7 MB，OFL）作为 Resource 编入；新增 `UiKit.HudFont`
+   统一把逻辑名 `Noto Sans SC` / `思源黑体` / `Source Han Sans SC` 解析到 `pack://application:,,,/assets/fonts/#Noto Sans SC`，
+   其它字体仍按系统字体解析，失败回退嵌入字体。
+2. **默认与迁移**：`StyleSettings.FontFamily` 默认 `Noto Sans SC`；`Settings.Normalize` 把旧默认
+   `Microsoft YaHei UI` / `微软雅黑` 迁移为思源黑体（用户显式选择的其它字体保留）；`Theme.xaml` 增加
+   `AppFontFamily`，设置页样式、弹窗、卡片回退统一走 `HudFont`；字体下拉首项显示“思源黑体 / Noto Sans SC”。
+3. **行为页显示模式**：把“始终置顶”复选框改为“显示模式”下拉，选项“仅桌面 / 置顶”，
+   仍以 `Overlay.Topmost` 为单一持久化状态（置顶 = true，仅桌面 = false）；保存后 `ApplyDisplayMode` 生效。
+4. **仅桌面实现**：`OverlayWindow.ApplyDisplayMode` 在 false 时 `Topmost=false` 并
+   `SetWindowPos(HWND_BOTTOM, SWP_NOMOVE|NOSIZE|NOACTIVATE|NOOWNERZORDER)`；`EnsureTopmost` /
+   `RefreshTopmostIfNeeded` 在仅桌面模式下直接返回，防止启动、换卡、命令结束或 2.5s 调度把窗口重新顶上去。
+   失败走 `_windowPosFailure` 可见日志。
+5. **设置页字体（回答）**：基线字体 `Microsoft YaHei UI` 13px 已改为嵌入 `Noto Sans SC` 13px；
+   版本号仍 `Cascadia Mono, Consolas` 10px（不再回退雅黑）；图标为 Lucide，键帽为 Reicon。
+
+### 验证
+
+- `dotnet build -c Release`：0 警告 0 错误；`--selftest --isolated` 退出 0；`dotnet format --verify-no-changes` 通过。
+- `--screenshot-settings` 字体明显切换为思源黑体（设置页与卡片），`--screenshot-cards` 正常。
+- 临时 `Overlay.Topmost=false` 运行 `--smoke-visible`：无 `HWND_BOTTOM`/SetWindowPos 失败日志；行为页截图显示“显示模式：仅桌面”。
+- 现有配置的 `Microsoft YaHei UI` 在 Normalize 后变成 Noto Sans SC。
+
+### 风险 / 未验证
+
+- NotoSansSC 是可变字体，WPF 只按默认/命名字重实例渲染；极粗/极细字重的视觉需真机确认。
+- 字体增加 17.7 MB 安装包/内存映射；若要缩体，可在发布阶段做子集（需另加工具链）。
+- “仅桌面”用 HWND_BOTTOM 实现：普通窗口会盖住它，但全屏游戏/桌面壁纸层级切换、多屏下 Z 序需真机确认；
+  与 Wallpaper Engine 之类直接改 WorkerW 的软件不保证同一层。
+- 切换显示模式后卡片叠层位置不变，只改 Z 序；设置页保存后立即生效，下次启动沿用。
