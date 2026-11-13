@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 
 namespace MirrorpondHUD.Core;
 
@@ -33,6 +33,15 @@ public sealed class EndfieldStyleSettings
     public bool CutCorners = true;
 
     /// <summary>
+    /// 2.46.2：卡片外轮廓。CutAngle = 右上/右下 45° 切角；RightAngle = 全直角；
+    /// RoundAngle = 全圆角（默认，保持现有观感）。只影响卡片外形，不改内容布局。
+    /// </summary>
+    public string CardShape = "RoundAngle";
+
+    /// <summary>2.46.2：左侧信号黄强调条（设计稿三套都有；默认关闭以保持旧观感）。</summary>
+    public bool AccentBar = false;
+
+    /// <summary>
     /// 页脚模板。空 = 默认 <c>v{version} · MON {monitor}</c>。
     /// 支持 <c>{version}</c> / <c>{monitor}</c> / <c>{code}</c> / <c>{name}</c>；
     /// 未知占位符原样保留，方便用户自己排查拼写。
@@ -43,6 +52,7 @@ public sealed class EndfieldStyleSettings
     {
         FooterText = (FooterText ?? "").Trim();
         if (FooterText.Length > 160) FooterText = FooterText.Substring(0, 160);
+        CardShape = Settings.NormalizeCardShape(CardShape);
     }
 
     public EndfieldStyleSettings Clone() => new()
@@ -54,6 +64,8 @@ public sealed class EndfieldStyleSettings
         Meta = Meta,
         CornerBrackets = CornerBrackets,
         CutCorners = CutCorners,
+        CardShape = CardShape,
+        AccentBar = AccentBar,
         FooterText = FooterText
     };
 }

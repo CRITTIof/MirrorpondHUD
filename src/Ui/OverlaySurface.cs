@@ -40,6 +40,10 @@ public sealed class OverlaySurface : Border
     /// </summary>
     ImageBrush _glassBrush;
     readonly ContourDecoration _contourLayer;
+    readonly CardFrame _cardFrame;
+    readonly Border _accentBar;
+    string _cardShape = CardShapeGeometry.RoundAngle;
+    double _shapeRadius = 10;
     readonly Border _contourHost;
     readonly TextBlock _metaTop;
     readonly TextBlock _metaBottom;
@@ -117,6 +121,15 @@ public sealed class OverlaySurface : Border
             Opacity = 0,
             RenderTransform = new TranslateTransform()
         };
+        _accentBar = new Border
+        {
+            Width = 3,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Stretch,
+            Visibility = Visibility.Collapsed,
+            IsHitTestVisible = false
+        };
+        _cardFrame = new CardFrame();
         _contourLayer = new ContourDecoration { Visibility = Visibility.Visible };
         _contourLayer.SizeChanged += (s, e) => _contourLayer.InvalidateVisual();
         _contourHost = new Border
@@ -156,11 +169,14 @@ public sealed class OverlaySurface : Border
         _root.Children.Add(_contourHost);
         _root.Children.Add(_loopLayer);
         _root.Children.Add(_loopBand);
+        _root.Children.Add(_accentBar);
         _root.Children.Add(_canvas);
         _root.Children.Add(_particleLayer);
         _root.Children.Add(_contentLayer);
         _root.Children.Add(_metaTop);
         _root.Children.Add(_metaBottom);
+        _root.Children.Add(_cardFrame);
+        _root.SizeChanged += (s, e) => UpdateCardShape();
         Unloaded += (s, e) => StopContourLoop();
         Unloaded += (s, e) => _particleLayer.Stop();
         Loaded += OnSurfaceLoaded;
@@ -737,10 +753,14 @@ public sealed class OverlaySurface : Border
         _canvas.CursorVisible = cursor;
 
         Background = Brushes.Transparent;
-        CornerRadius = new CornerRadius(Math.Max(0, overlay.CornerRadius));
+        // 2.46.2：外轮廓统一由 _root.Clip 负责（切角/直角/圆角），各层不再各自圆角，
+        // 否则切角卡片内部会露出圆角底。CornerRadius 仍保留为 0 交给自绘轮廓。
+        _shapeRadius = Math.Max(0, overlay.CornerRadius);
+        _cardShape = Settings.NormalizeCardShape(style.Endfield?.CardShape);
+        CornerRadius = new CornerRadius(0);
         _tintLayer.Background = GetBrush(style.Background, style.BackgroundOpacity);
-        _tintLayer.CornerRadius = CornerRadius;
-        _glassLayer.CornerRadius = CornerRadius;
+        _tintLayer.CornerRadius = new CornerRadius(0);
+        _glassLayer.CornerRadius = new CornerRadius(0);
         if (!style.Acrylic) ClearGlass();
         Padding = new Thickness(0);
 
@@ -757,9 +777,17 @@ public sealed class OverlaySurface : Border
         _metaBottom.Foreground = GetBrush(style.Foreground, 0.34);
         _metaBottom.Margin = new Thickness(0, 0, pad * 1.15, Math.Max(9, pad * 0.8));
         _contentLayer.Margin = new Thickness(0);
-        _contentLayer.CornerRadius = CornerRadius;
+        _contentLayer.CornerRadius = new CornerRadius(0);
 
-        _imageLayer.CornerRadius = CornerRadius;
+        _imageLayer.CornerRadius = new CornerRadius(0);
+        _accentBar.Background = new SolidColorBrush(tokens.Accent);
+        bool accentBar = style.Endfield?.AccentBar ?? false;
+        _accentBar.Visibility = accentBar ? Visibility.Visible : Visibility.Collapsed;
+        // 默认「圆角 + 无强调条」保持旧观感（不新增外描边）；选了三套设计之一才显示轮廓线。
+        _cardFrame.Visibility = accentBar || _cardShape != CardShapeGeometry.RoundAngle
+            ? Visibility.Visible : Visibility.Collapsed;
+        _cardFrame.Configure(_cardShape, _shapeRadius, GetBrush(style.Foreground, 0.22));
+        UpdateCardShape();
         ApplyImage(style);
         ApplyDecoration(style, tokens);
         ApplyLoopMotion(style, tokens);
@@ -911,6 +939,17 @@ public sealed class OverlaySurface : Border
     /// 低透明度纹样只作点缀：网格 / 扫描线 / 45° 斜纹 / 半调网点 / 等高线。
     /// 用冻结的 DrawingBrush 平铺，不建可视树、不参与命中测试；None 时整层折叠。
     /// </summary>
+    /// <summary>2.46.2：按当前 CardShape 重算裁切与 1px 轮廓；尺寸变化时调用。</summary>
+    void UpdateCardShape()
+    {
+        double w = _root.ActualWidth > 0 ? _root.ActualWidth : ActualWidth;
+        double h = _root.ActualHeight > 0 ? _root.ActualHeight : ActualHeight;
+        if (w < 1 || h < 1) return;
+
+        _root.Clip = CardShapeGeometry.Build(new Size(w, h), _cardShape, _shapeRadius);
+        _cardFrame.InvalidateVisual();
+    }
+
     void ApplyDecoration(StyleSettings style, ThemeTokens tokens)
     {
         string kind = Settings.NormalizeDecoration(style.Decoration);
@@ -928,7 +967,7 @@ public sealed class OverlaySurface : Border
             // 等高线不是平铺画刷：它是按卡片尺寸 + 地形场实时生成的几何。
             _decorLayer.Background = null;
             _decorLayer.Visibility = Visibility.Collapsed;
-            _contourHost.CornerRadius = CornerRadius;
+            _contourHost.CornerRadius = new CornerRadius(0);
             _contourHost.Visibility = Visibility.Visible;
             _contourLayer.Apply(style, ThemeResolver.WithAlpha(tokens.Border, 0.22));
             return;
@@ -945,7 +984,7 @@ public sealed class OverlaySurface : Border
             return;
         }
 
-        _decorLayer.CornerRadius = CornerRadius;
+        _decorLayer.CornerRadius = new CornerRadius(0);
         _decorLayer.Background = brush;
         // 纹样只做“坐标系”暗示：32% 是深色底上可见、又不压过文字的档位。
         _decorLayer.Opacity = 0.32;
@@ -966,7 +1005,7 @@ public sealed class OverlaySurface : Border
     /// </summary>
     void ApplyLoopMotion(StyleSettings style, ThemeTokens tokens)
     {
-        _loopLayer.CornerRadius = CornerRadius;
+        _loopLayer.CornerRadius = new CornerRadius(0);
         _loopLayer.BeginAnimation(UIElement.OpacityProperty, null);
         _loopLayer.Opacity = 0;
         _loopLayer.Background = null;

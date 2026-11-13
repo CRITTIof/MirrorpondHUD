@@ -1611,6 +1611,12 @@ internal static class SelfTest
                            && defaults.Cards[0].Kind == "infotext"
                            && defaults.Cards[0].Preset == "metrics"
                            && !string.IsNullOrWhiteSpace(defaults.Cards[0].Content);
+            // 2.46.2：三套卡片轮廓的归一化（切角/直角/圆角，未知值回退圆角）。
+            defaultsOk = defaultsOk
+                       && Settings.NormalizeCardShape("cut") == "CutAngle"
+                       && Settings.NormalizeCardShape("RightAngle") == "RightAngle"
+                       && Settings.NormalizeCardShape("round") == "RoundAngle"
+                       && Settings.NormalizeCardShape("unknown") == "RoundAngle";
 
             var source = new Settings();
             var card = new CardSettings

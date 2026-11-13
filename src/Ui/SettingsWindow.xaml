@@ -1093,6 +1093,21 @@
                                       ToolTip="M8：主行动按钮与角标的 45° 切角；关闭后保留圆角矩形。" />
                         </WrapPanel>
 
+                        <StackPanel Orientation="Horizontal" Margin="110,0,0,8">
+                            <TextBlock Text="卡片轮廓" VerticalAlignment="Center" Margin="0,0,8,0" />
+                            <ComboBox x:Name="CardShapeCombo" Width="128"
+                                      SelectionChanged="CardShapeChanged">
+                                <ComboBoxItem Content="切角" Tag="CutAngle" />
+                                <ComboBoxItem Content="直角" Tag="RightAngle" />
+                                <ComboBoxItem Content="圆角" Tag="RoundAngle" />
+                            </ComboBox>
+                            <CheckBox x:Name="CardAccentBarCheck" Content="左侧强调条"
+                                      Margin="18,0,0,0" VerticalAlignment="Center"
+                                      ToolTip="三套设计稿共用的 3px 信号黄竖条；放在卡片最左侧。" />
+                        </StackPanel>
+                        <TextBlock Style="{StaticResource Hint}" Margin="110,0,0,10" TextWrapping="Wrap"
+                                   Text="切角 = 右上/右下 45°；直角 = 四角方正；圆角 = 沿用卡片圆角。只改外轮廓，内容布局不变。" />
+
                         <Grid x:Name="FooterTextBoxRow" Margin="0,0,0,10">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="110" />

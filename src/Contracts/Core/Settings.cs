@@ -197,6 +197,24 @@ public sealed class Settings
     }
 
     /// <summary>卡片对齐：Auto / Left / Right。</summary>
+    /// <summary>2.46.2：卡片轮廓三种设计语言；未知值回退圆角。</summary>
+    public static string NormalizeCardShape(string value)
+    {
+        switch ((value ?? "").Trim().ToLowerInvariant())
+        {
+            case "cut":
+            case "cutangle":
+            case "切角":
+                return "CutAngle";
+            case "right":
+            case "rightangle":
+            case "直角":
+                return "RightAngle";
+            default:
+                return "RoundAngle";
+        }
+    }
+
     public static string NormalizeCardAlign(string value)
     {
         switch ((value ?? "").Trim().ToLowerInvariant())
