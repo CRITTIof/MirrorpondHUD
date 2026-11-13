@@ -298,7 +298,11 @@ internal sealed class AccountView : Grid
             if (snapshot is null) { SetStatus(parseError ?? "响应解析失败", "明日方舟 · 读取失败"); return; }
             IfNotDisposed(() => Apply(snapshot));
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException)
+        {
+            // 卡片被隐藏 / 重建时取消刷新，属于正常生命周期收尾。
+            Log.Debug("账号卡刷新已取消");
+        }
         catch (Exception ex)
         {
             SetStatus(ex.Message, "明日方舟 · 读取失败");
