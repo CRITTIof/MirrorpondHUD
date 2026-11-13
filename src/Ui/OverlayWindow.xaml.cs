@@ -407,6 +407,26 @@ public partial class OverlayWindow : Window
     }
 
     /// <summary>
+    /// 按物理像素绝对定位。拖动期间整叠位置由「被拖卡片的合法落点」统一重算，
+    /// 不能用增量累加：被工作区挡住时增量与实际位移不一致，其余卡片会越跟越偏。
+    /// </summary>
+    public void MoveToPhysical(int x, int y) => SetPhysicalPosition(x, y);
+
+    /// <summary>
+    /// 拖动预览的物理目标（未经工作区夹取）。夹取要按「用户真正想去的位置」判断，
+    /// 不能读窗口矩形——窗口已经被上一帧夹回边界内了。
+    /// </summary>
+    public bool TryGetDragTarget(out int x, out int y)
+    {
+        x = _dragging ? _dragTargetPhysX : 0;
+        y = _dragging ? _dragTargetPhysY : 0;
+        return _dragging;
+    }
+
+    /// <summary>给定物理点（窗口左上角）时该窗口中心落在哪台显示器；与松手判定同一套逻辑。</summary>
+    public int DetectMonitorAt(int physicalX, int physicalY) => DetectMonitor(physicalX, physicalY);
+
+    /// <summary>
     /// 窗口位置动画：从当前物理位置在 durationMs 内 ease-out 到目标。新的目标会取消旧动画，
     /// 从当前实际位置重新开始；拖动开始前由控制器统一 StopPositionMotion。
     /// </summary>

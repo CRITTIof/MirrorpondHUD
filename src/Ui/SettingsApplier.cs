@@ -52,6 +52,15 @@ internal sealed class SettingsApplier
     int _dragLastDy;
 
     /// <summary>
+    /// T-11：每张已显示卡片的拖动起点（物理像素）。拖动中整叠位置按「被拖卡片的合法落点」
+    /// 绝对重算，不能靠增量累加——被工作区挡住时增量与实际位移不一致，其余卡片会越跟越偏。
+    /// </summary>
+    readonly Dictionary<CardSlot, (int X, int Y)> _dragStartPhys = new();
+
+    /// <summary>本次拖动是否已经因工作区限制被夹过（只记一条 Debug，避免每帧刷日志）。</summary>
+    bool _dragLimitedLogged;
+
+    /// <summary>
     /// S-06：本次 Apply 中“设置已生效但附属动作失败”的原因（目前是开机自启写注册表）。
     /// 设置窗在成功后把它追加到状态行，避免出现“已保存并应用”但自启其实没写进去。
     /// </summary>
@@ -237,14 +246,17 @@ internal sealed class SettingsApplier
     }
 
     /// <summary>
-    /// 开始拖动：取消所有卡片正在跑的补位动画。拖动中的位置由
-    /// <see cref="OnCardDragging"/> 直接按增量平移，不能和旧动画抢窗口。
+    /// 开始拖动：取消所有卡片正在跑的补位动画，并记下每张已显示卡片的物理起点。
+    /// 拖动中的位置按「被拖卡片的合法落点」绝对重算，所以起点必须是布局落地后的位置
+    /// （<see cref="CardLayoutCoordinator.BeginDrag"/> 已把整叠落到上一轮目标位）。
     /// </summary>
     public void BeginCardDrag(CardSlot slot)
     {
         _dragSlot = slot;
         _dragLastDx = 0;
         _dragLastDy = 0;
+        _dragLimitedLogged = false;
+        _dragStartPhys.Clear();
 
         foreach (CardSlot card in _host.Cards)
         {
@@ -254,30 +266,101 @@ internal sealed class SettingsApplier
         // 停掉动画后先让整叠落到目标位并挂起布局，再读取拖动起点（OverlayWindow 已调整顺序）。
         // 否则残余动画中途的坐标会被当成起点，松手时锚点算错几像素。
         _layout.BeginDrag(slot);
+
+        foreach (CardSlot card in _host.Cards)
+        {
+            if (!card.Shown || card.Window is null) continue;
+            if (card.Window.TryGetPhysicalPosition(out int x, out int y)) _dragStartPhys[card] = (x, y);
+        }
+
+        if (!_dragStartPhys.ContainsKey(slot))
+            Log.Debug("拖动起点不可读（窗口句柄未就绪），本次拖动不做整叠限制");
     }
 
     /// <summary>
-    /// 拖动中：被拖窗口已经由 OverlayWindow 自己移动，这里把其余已显示窗口按总位移的
-    /// 增量平移，形成「整叠跟着走」；锚点保持不动，松手后才落盘并做补位/对齐动画。
+    /// 拖动中：把整叠限制在目标屏工作区内（T-11）。以前只让窗口跟手、松手后才夹取，
+    /// 用户能把卡片拖到「整叠放不下」的落点，松手时 Layout 把整叠拉回可容纳位置，
+    /// 表现为拖到屏幕下部松手被吸回原位。现在边界在拖动过程中就可见地挡住。
+    /// 锚点仍然只在松手时落盘。
     /// </summary>
     public void OnCardDragging(CardSlot slot, int dx, int dy)
     {
         if (slot is null || !ReferenceEquals(slot, _dragSlot)) return;
-
-        int stepX = dx - _dragLastDx;
-        int stepY = dy - _dragLastDy;
+        if (slot.Window is null) return;
+        if (dx == _dragLastDx && dy == _dragLastDy) return;
         _dragLastDx = dx;
         _dragLastDy = dy;
 
-        if (stepX == 0 && stepY == 0) return;
+        if (!_dragStartPhys.TryGetValue(slot, out (int X, int Y) draggedStart)) return;
+        if (!slot.Window.TryGetDragTarget(out int rawX, out int rawY)) return;
 
-        // 拖动事件给的是物理像素增量：其余卡片也按物理像素平移，
-        // 跨到不同缩放的显示器时不会因为 DIP 换算而错位。
+        (int targetX, int targetY) = ClampDragTarget(slot, rawX, rawY);
+
+        // 被拖窗口此时已被 OverlayWindow 摆到 raw 位置；这里按夹取后的绝对位置
+        // 把整叠（含被拖卡片）重新摆一次。不能用增量累加：被工作区挡住时
+        // 增量与实际位移不一致，其余卡片会越跟越偏。
         foreach (CardSlot card in _host.Cards)
         {
-            if (ReferenceEquals(card, slot) || !card.Shown || card.Window is null) continue;
-            card.Window.OffsetPhysical(stepX, stepY);
+            if (!card.Shown || card.Window is null) continue;
+            if (!_dragStartPhys.TryGetValue(card, out (int X, int Y) origin)) continue;
+            card.Window.MoveToPhysical(origin.X + (targetX - draggedStart.X),
+                                       origin.Y + (targetY - draggedStart.Y));
         }
+    }
+
+    /// <summary>
+    /// 拖动中的合法落点（物理像素）：纵向按整叠可容纳范围，横向按「至少留一部分可见」，
+    /// 与松手换算 / Layout 使用同一套纯函数（T-11）。
+    /// </summary>
+    (int X, int Y) ClampDragTarget(CardSlot slot, int physicalX, int physicalY)
+    {
+        // 落点在哪台屏：与松手时 OverlayWindow.FinishDrag 的 DetectMonitor 同一套判定，
+        // 否则跨屏拖动时「拖动中用的工作区」和「松手用的工作区」可能不是同一块。
+        ScreenInfo screen = ScreenGeometry.Get(slot.Window.DetectMonitorAt(physicalX, physicalY));
+        if (screen is null || screen.WorkWidth < 40 || screen.WorkHeight < 40)
+            return (physicalX, physicalY);
+
+        double scaleX = screen.ScaleX > 0.1 ? screen.ScaleX : 1.0;
+        double scaleY = screen.ScaleY > 0.1 ? screen.ScaleY : 1.0;
+        double workWidth = screen.WorkWidth / scaleX;
+        double workHeight = screen.WorkHeight / scaleY;
+        double cardLeft = CardLayoutCoordinator.PhysicalToDip(physicalX, scaleX, screen.WorkLeft);
+        double cardTop = CardLayoutCoordinator.PhysicalToDip(physicalY, scaleY, screen.WorkTop);
+        double cardWidth = slot.Window.CardWidth;
+
+        CardLayoutCoordinator.StackPlan plan = _layout.PlanVisible(workHeight, _host.Settings.Overlay.Y);
+        double targetLeft = CardLayoutCoordinator.ClampCardLeft(
+            cardLeft, cardWidth, workWidth, ResolveDragAlign(cardLeft, cardWidth, workWidth));
+        double targetTop = CardLayoutCoordinator.ClampCardTop(cardTop, _layout.ShownIndexOf(slot), plan);
+
+        // 没有被夹取时保留原始物理落点：DIP 往返在 125% / 175% 缩放下可能差 1px，
+        // 每帧重算会让拖动看起来抖一下。夹取时才按目标屏 DPI 重新换算。
+        if (Math.Abs(targetLeft - cardLeft) < 0.001 && Math.Abs(targetTop - cardTop) < 0.001)
+            return (physicalX, physicalY);
+
+        int x = CardLayoutCoordinator.DipToPhysical(targetLeft, scaleX, screen.WorkLeft);
+        int y = CardLayoutCoordinator.DipToPhysical(targetTop, scaleY, screen.WorkTop);
+
+        if (!_dragLimitedLogged)
+        {
+            _dragLimitedLogged = true;
+            Log.Debug($"拖动已在工作区内受限: 卡片=({physicalX},{physicalY})→({x},{y}) "
+                      + $"整叠={plan.StackHeight:0.#} 工作区={workWidth:0}x{workHeight:0} 屏={screen.DeviceName}");
+        }
+
+        return (x, y);
+    }
+
+    /// <summary>
+    /// 拖动中预判左 / 右对齐，与松手时 OnCardMoved 的 Auto 判定同一口径（都看未夹取的卡片中心）。
+    /// 右对齐时卡片左边缘不能为负：Layout 用 <c>max(0, 右边缘 - 卡宽)</c> 会把它推到 0。
+    /// </summary>
+    bool ResolveDragAlign(double cardLeft, double cardWidth, double workWidth)
+    {
+        string align = Settings.NormalizeCardAlign(_host.Settings.Style.CardAlign);
+        if (string.Equals(align, "Right", StringComparison.OrdinalIgnoreCase)) return true;
+        if (string.Equals(align, "Left", StringComparison.OrdinalIgnoreCase)) return false;
+        return cardLeft + cardWidth / 2 >= workWidth / 2;
     }
 
     /// <summary>拖拽整叠卡片后的新锚点：动画重排、落盘，并同步设置窗里的位置显示。</summary>
@@ -288,121 +371,85 @@ internal sealed class SettingsApplier
         _dragSlot = null;
         _dragLastDx = 0;
         _dragLastDy = 0;
+        _dragLimitedLogged = false;
+        _dragStartPhys.Clear();
 
         Settings settings = _host.Settings;
 
         // 落点是物理像素；锚点是「目标工作区左上角起的 DIP」，按目标屏 DPI 反算。
         // 被拖的不一定是第一张卡，先扣掉它在叠层里的对齐 / 间距偏移。
         ScreenInfo screen = ScreenGeometry.Get(monitor);
-        if (screen is null)
+        if (screen is null || slot.Window is null)
         {
             // 目标屏信息拿不到时也必须恢复布局，否则整叠会一直停在“拖动挂起”状态。
             _layout.EndDrag(slot, null);
             return;
         }
 
-        double landedX = (physicalX - screen.WorkLeft) / screen.ScaleX;
-        double landedY = (physicalY - screen.WorkTop) / screen.ScaleY;
-        double cardWidth = slot.Window is null ? 0 : slot.Window.CardWidth;
+        double scaleX = screen.ScaleX > 0.1 ? screen.ScaleX : 1.0;
+        double scaleY = screen.ScaleY > 0.1 ? screen.ScaleY : 1.0;
+        double workWidth = screen.WorkWidth / scaleX;
+        double workHeight = screen.WorkHeight / scaleY;
+        double landedX = CardLayoutCoordinator.PhysicalToDip(physicalX, scaleX, screen.WorkLeft);
+        double landedY = CardLayoutCoordinator.PhysicalToDip(physicalY, scaleY, screen.WorkTop);
+        double cardWidth = slot.Window.CardWidth;
         double cardCenterX = landedX + cardWidth / 2;
 
-        // 先量整叠宽度：右对齐时锚点 = 被抓卡左边缘 - (整叠宽 - 被抓卡宽)。
-        double stackWidth = 0;
-        foreach (CardSlot card in _host.Cards)
+        // 整叠宽度取 Layout 算出的那个值：EndDrag 重算右边缘用的就是它，
+        // 两处取不同宽度会让右对齐松手后横向跳。
+        double stackWidth = _layout.StackWidth;
+        if (stackWidth <= 0)
         {
-            if (card.Shown && card.Window is not null)
-                stackWidth = Math.Max(stackWidth, card.Window.CardWidth);
+            stackWidth = cardWidth;
+            foreach (CardSlot card in _host.Cards)
+            {
+                if (card.Shown && card.Window is not null)
+                    stackWidth = Math.Max(stackWidth, card.Window.CardWidth);
+            }
         }
-
-        double offsetY = slot.Dialog.Overlay.Y - settings.Overlay.Y;
-        settings.Overlay.Y = landedY - offsetY;
 
         // 自动对齐以“被抓住的卡片”为基准：它在屏幕左半边就整叠左对齐，
         // 在右半边就整叠右对齐；显式左 / 右对齐也统一用同一个公式，
         // 保证松手时被抓卡正好停在落点，其余卡片向它看齐。
         string align = Settings.NormalizeCardAlign(settings.Style.CardAlign);
-        double workWidthDip = screen.WorkWidth / (screen.ScaleX > 0.1 ? screen.ScaleX : 1.0);
         if (align == "Auto")
-            align = cardCenterX < workWidthDip / 2 ? "Left" : "Right";
+            align = cardCenterX < workWidth / 2 ? "Left" : "Right";
+
+        // T-11：锚点由「落点 - 卡片在整叠内的偏移」反算，偏移来自 PlanStack 的几何，
+        // 不再用 slot.Dialog.Overlay.Y - 锚点。后者是上一帧被夹取过的显示位置：
+        // 整叠一贴过底，这个偏移就永久带着夹取误差，之后即使落点合法也会被 Layout 吸回。
+        CardLayoutCoordinator.StackPlan plan = _layout.PlanVisible(workHeight, settings.Overlay.Y);
+        int index = _layout.ShownIndexOf(slot);
+        double cardTop = CardLayoutCoordinator.ClampCardTop(landedY, index, plan);
+        double cardLeft = CardLayoutCoordinator.ClampCardLeft(
+            landedX, cardWidth, workWidth, string.Equals(align, "Right", StringComparison.Ordinal));
+
+        double offsetY = index >= 0 && index < plan.Tops.Length ? plan.Tops[index] : 0.0;
+        double anchorY = cardTop - offsetY;
+        // 整叠超高时合法起始 Y 只有 0；锚点语义是「工作区左上角起的 DIP」，不写负值。
+        anchorY = Math.Max(0.0, Math.Min(anchorY, Math.Max(0.0, workHeight - plan.StackHeight)));
+        settings.Overlay.Y = anchorY;
 
         settings.Overlay.X = align == "Right"
-            ? landedX + cardWidth - stackWidth
-            : landedX;
+            ? cardLeft + cardWidth - stackWidth
+            : cardLeft;
 
         settings.Overlay.Monitor = monitor;
         // G-14：被拖到哪台显示器，就把那台的设备名一起落盘，之后枚举顺序变化也能找回来。
         settings.Overlay.MonitorDevice = ScreenGeometry.DeviceNameOf(monitor);
 
-        ClampAnchorToWorkArea(slot, settings, landedX, landedY);
+        // 拖动中已按同一口径限制过落点，这里不再做第二次「贴边吸附」：
+        // 两套 clamp 不一致正是松手回跳的来源；EndDrag 的 Layout 会复现同一结果。
+        Log.Debug($"拖动落点: 卡片({landedX:0.#},{landedY:0.#})→({cardLeft:0.#},{cardTop:0.#}) "
+                  + $"卡内偏移={offsetY:0.#} 锚点=({settings.Overlay.X:0.#},{anchorY:0.#}) "
+                  + $"整叠={plan.StackHeight:0.#} 工作区={workWidth:0}x{workHeight:0} 对齐={align}");
 
-        // 松手后才重排：把本次解析出的左 / 右对齐交给协调器，其余卡片用 180ms ease-out
-        // 跟过去；被拖卡按公式已经落在落点。CardMotion.Enabled=false 时直接落位。
         _layout.EndDrag(slot, align);
         SaveSettings();
 
         _host.SyncSettingsWindowAnchor(settings.Overlay.X, settings.Overlay.Y, settings.Overlay.Monitor);
 
         Log.Info($"叠层移动，锚点={settings.Overlay.X},{settings.Overlay.Y} 显示器={monitor}");
-    }
-
-    /// <summary>
-    /// 拖动松手后把锚点钳在目标显示器工作区内：至少保留一部分卡片可见，
-    /// 并在离边缘 16px 内吸附。只影响锚点，不改变卡片顺序 / 间距。
-    /// </summary>
-    void ClampAnchorToWorkArea(CardSlot slot, Settings settings, double landedX, double landedY)
-    {
-        if (slot is null || slot.Window is null) return;
-
-        try
-        {
-            // G-14：按设备名优先解析目标屏；序号越界时 Get 会 Warn 并回退主屏，
-            // 不再像旧实现那样用 AllScreens 的序号静默钳到最后一台。
-            ScreenInfo screen = ScreenGeometry.Get(settings.Overlay.Monitor, settings.Overlay.MonitorDevice);
-            if (screen is null) return;
-
-            double scaleX = screen.ScaleX > 0.1 ? screen.ScaleX : 1.0;
-            double scaleY = screen.ScaleY > 0.1 ? screen.ScaleY : 1.0;
-
-            double workWidth = screen.WorkWidth / scaleX;
-            double workHeight = screen.WorkHeight / scaleY;
-            if (workWidth < 40 || workHeight < 40) return;
-
-            double cardWidth = Math.Max(40, slot.Window.CardWidth);
-            double cardHeight = Math.Max(40, slot.Window.CardHeight);
-            double visible = Math.Min(80, workWidth / 3.0);
-
-            // 右对齐时 settings.Overlay.X 是整叠左锚点，不是被抓卡片的左边缘。
-            // 以前直接夹锚点，宽卡拖到右边会被拉回屏幕中部；这里按被抓卡片的实际矩形夹取，
-            // 再把修正量回写到锚点。
-            // 拖动过程中 Dialog.Overlay.X/Y 仍是旧锚点，不能用；落点由 OnCardMoved
-            // 按目标屏 WorkLeft 反算成 DIP 后传进来。多显示器时这正是旧实现会算错的地方。
-            double cardX = landedX;
-            double cardY = landedY;
-            double minX = visible - cardWidth;
-            double maxX = workWidth - visible;
-            double minY = 0;
-            double maxY = Math.Max(0, workHeight - 40);
-
-            double x = cardX;
-            double y = cardY;
-            if (x < minX + 16) x = minX;
-            else if (x > maxX - 16) x = maxX;
-            if (y < minY + 16) y = minY;
-            else if (y > maxY - 16) y = maxY;
-
-            double dx = x - cardX;
-            double dy = y - cardY;
-            if (Math.Abs(dx) > 0.5 || Math.Abs(dy) > 0.5)
-            {
-                settings.Overlay.X += dx;
-                settings.Overlay.Y += dy;
-                Log.Info($"叠层位置贴边吸附，卡片={Math.Round(x)},{Math.Round(y)} 锚点={Math.Round(settings.Overlay.X)},{Math.Round(settings.Overlay.Y)}");
-            }
-        }
-        catch (Exception ex)
-        {
-            Log.Warn($"叠层边缘吸附失败，保留原锚点: {ex.Message}");
-        }
     }
 
     /// <summary>写设置文件并如实记录失败；调用方（设置窗 / 卡片宿主）按返回值提示（P0-2）。</summary>

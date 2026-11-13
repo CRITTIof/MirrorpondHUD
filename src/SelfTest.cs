@@ -227,6 +227,7 @@ internal static class SelfTest
         results.ThemeRejectOk = RunThemeRejectChecks();
         results.ThemeCatalogOk = RunThemeCatalogChecks();
         results.CloneGuardOk = RunCloneGuardChecks();
+        results.CardLayoutOk = RunCardLayoutChecks();
         results.SingleInteractiveOk = RunSingleInteractiveChecks();
         results.WidgetsOk = RunSharedWidgetChecks();
         results.Widgets2Ok = RunInteractiveWidgetChecks();
@@ -1031,6 +1032,114 @@ internal static class SelfTest
             Log.Error("设置副本自检异常", ex);
         }
         return cloneGuardOk;
+    }
+
+    /// <summary>
+    /// T-11：卡片拖动 / 布局的工作区夹取口径（不需要窗口，纯函数）。
+    /// 复现「拖到屏幕下部松手被吸回」：落点必须可复现（Layout 结果 == 落点），
+    /// 整叠放不下时在拖动中就被挡住，而不是松手后跳回去。
+    /// </summary>
+    static bool RunCardLayoutChecks()
+    {
+        bool layoutOk = false;
+        try
+        {
+            // 1080p 减任务栏：三张 200 高、间距 10 的卡片，整叠 620。
+            double[] heights = { 200, 200, 200 };
+            double[] spacings = { 0, 10, 10 };
+            const double work = 1040.0;
+
+            CardLayoutCoordinator.StackPlan plan = CardLayoutCoordinator.PlanStack(420, work, heights, spacings);
+            bool measured = Math.Abs(plan.StackHeight - 620) < 0.01
+                         && Math.Abs(plan.StartY - 420) < 0.01
+                         && Math.Abs(plan.Tops[2] - 420) < 0.01
+                         && plan.HasWorkArea;
+
+            // 1) 合法落点：夹取后再按锚点反算 Layout 的卡片位置，必须与落点一致（不再吸回）。
+            //    420 / 500 / 700 / 840 覆盖叠顶、中部、贴底。
+            bool legalDrops = true;
+            foreach (double dropped in new[] { 420.0, 500.0, 700.0, 840.0 })
+            {
+                double top = CardLayoutCoordinator.ClampCardTop(dropped, 2, plan);
+                CardLayoutCoordinator.StackPlan laid =
+                    CardLayoutCoordinator.PlanStack(top - plan.Tops[2], work, heights, spacings);
+                double cardY = laid.StartY + laid.Tops[2];
+                if (Math.Abs(top - dropped) > 0.01 || Math.Abs(cardY - top) > 0.01) legalDrops = false;
+            }
+
+            // 2) 拖到工作区底边以下：拖动中就被夹到 840，松手后 Layout 仍落在 840（不跳）。
+            double clampedBottom = CardLayoutCoordinator.ClampCardTop(1200, 2, plan);
+            CardLayoutCoordinator.StackPlan bottom =
+                CardLayoutCoordinator.PlanStack(clampedBottom - plan.Tops[2], work, heights, spacings);
+            bool bottomOk = Math.Abs(clampedBottom - 840) < 0.01
+                         && Math.Abs(bottom.StartY + bottom.Tops[2] - 840) < 0.01;
+
+            // 3) 顶部：卡片不能拖出上沿；起始 Y 与卡片位置都回到 0。
+            double clampedTop = CardLayoutCoordinator.ClampCardTop(-120, 0, plan);
+            bool topOk = Math.Abs(clampedTop) < 0.01
+                      && Math.Abs(CardLayoutCoordinator.PlanStack(clampedTop, work, heights, spacings).StartY) < 0.01;
+
+            // 4) 整叠超高：间距压到 0 仍超出 → 起始 Y 只能为 0，逐卡夹取，
+            //    拖动只有一个合法位置（最下面那张 600-220=380）。
+            double[] tall = { 220, 220, 220 };
+            double[] tallGap = { 0, 10, 10 };
+            CardLayoutCoordinator.StackPlan overflow = CardLayoutCoordinator.PlanStack(500, 600, tall, tallGap);
+            double overflowTop = CardLayoutCoordinator.ClampCardTop(999, 2, overflow);
+            bool overflowOk = Math.Abs(overflow.StackHeight - 660) < 0.01
+                           && Math.Abs(overflow.StartY) < 0.01
+                           && Math.Abs(overflowTop - 380) < 0.01;
+
+            // 5) 单卡比工作区还高：只能贴顶显示，不能算成负数。
+            CardLayoutCoordinator.StackPlan single = CardLayoutCoordinator.PlanStack(200, 300, new[] { 400.0 }, new[] { 0.0 });
+            bool singleOk = Math.Abs(single.StartY) < 0.01
+                         && Math.Abs(CardLayoutCoordinator.ClampCardTop(250, 0, single)) < 0.01;
+
+            // 6) 横向：左 / 右边缘至少留 visible 可见并 16 DIP 吸附；右对齐时左边缘不为负。
+            bool horizontalOk =
+                Math.Abs(CardLayoutCoordinator.ClampCardLeft(-500, 400, 1920, false) - (-320)) < 0.01
+                && Math.Abs(CardLayoutCoordinator.ClampCardLeft(1900, 400, 1920, false) - 1840) < 0.01
+                && Math.Abs(CardLayoutCoordinator.ClampCardLeft(1000, 400, 1920, false) - 1000) < 0.01
+                && Math.Abs(CardLayoutCoordinator.ClampCardLeft(-100, 400, 1920, true)) < 0.01;
+
+            // 7) DPI / 多屏往返：100% / 150% / 200%，以及位于主屏上方（WorkTop 为负）的屏。
+            bool dpiOk = true;
+            var screens = new[] { (left: 0, top: 0, scale: 1.0), (left: 1920, top: 0, scale: 1.5), (left: 0, top: -1080, scale: 2.0) };
+            foreach (var screen in screens)
+            {
+                foreach (double dip in new[] { 0.0, 420.0, 840.0 })
+                {
+                    int physical = CardLayoutCoordinator.DipToPhysical(dip, screen.scale, screen.top);
+                    double back = CardLayoutCoordinator.PhysicalToDip(physical, screen.scale, screen.top);
+                    if (Math.Abs(back - dip) > 0.5 / screen.scale + 0.01) dpiOk = false;
+                }
+            }
+
+            // 8) 连续拖动收敛：反复把最底下的卡拖到底边，锚点必须一直合法，
+            //    每一次显示位置都等于夹取后的落点（旧实现会越拖越偏、最后吸回原位）。
+            bool convergeOk = true;
+            double anchorY = 300;
+            for (int i = 0; i < 20; i++)
+            {
+                CardLayoutCoordinator.StackPlan current =
+                    CardLayoutCoordinator.PlanStack(anchorY, work, heights, spacings);
+                double drop = CardLayoutCoordinator.ClampCardTop(900 + i * 10, 2, current);
+                double newAnchor = drop - current.Tops[2];
+                newAnchor = Math.Max(0, Math.Min(newAnchor, work - current.StackHeight));
+                CardLayoutCoordinator.StackPlan next =
+                    CardLayoutCoordinator.PlanStack(newAnchor, work, heights, spacings);
+                if (Math.Abs(next.StartY + next.Tops[2] - drop) > 0.01) convergeOk = false;
+                if (newAnchor < -0.01 || newAnchor > work - next.StackHeight + 0.01) convergeOk = false;
+                anchorY = newAnchor;
+            }
+
+            layoutOk = measured && legalDrops && bottomOk && topOk && overflowOk && singleOk
+                       && horizontalOk && dpiOk && convergeOk;
+        }
+        catch (Exception ex)
+        {
+            Log.Error("卡片布局夹取自检异常", ex);
+        }
+        return layoutOk;
     }
 
     /// <summary>交互卡唯一：默认配置一张，再加一张应被计数拦下。</summary>
@@ -1880,6 +1989,8 @@ internal static class SelfTest
         Fix(sb, "主题文件校验", results.ThemeRejectOk ? "OK（高版本 / 坏颜色 / 越界 / 缺 appearance 均拒绝，坏文件不动当前设置）" : "FAIL");
         Fix(sb, "内置主题", results.ThemeCatalogOk ? "OK（已编进程序集并全部解析）" : "FAIL");
         Fix(sb, "设置副本", results.CloneGuardOk ? "OK（克隆失败返回 null + 原因，不退回默认值）" : "FAIL");
+        Fix(sb, "卡片布局夹取", results.CardLayoutOk
+            ? "OK（落点=松手位置；拖到底/顶/左右与整叠超高都在拖动中受限；DPI 往返无双重缩放）" : "FAIL");
         Fix(sb, "交互卡唯一", results.SingleInteractiveOk ? "OK（默认一张；第二张会被设置页 / 校验拦住）" : "FAIL");
         Fix(sb, "共享控件", results.WidgetsOk ? "OK（CardList 空态/计数/选中；CardStatus 忙碌/进度/错误）" : "FAIL");
         Fix(sb, "共享控件（交互）", results.Widgets2Ok ? "OK（Header 按钮可点；Input 提交；DropOverlay 显隐）" : "FAIL");
@@ -1916,6 +2027,7 @@ internal static class SelfTest
         public bool ThemeRejectOk;
         public bool ThemeCatalogOk;
         public bool CloneGuardOk;
+        public bool CardLayoutOk;
         public bool SingleInteractiveOk;
         public bool WidgetsOk;
         public bool Widgets2Ok;
@@ -1950,6 +2062,7 @@ internal static class SelfTest
             yield return new KeyValuePair<string, bool>("主题文件校验", ThemeRejectOk);
             yield return new KeyValuePair<string, bool>("内置主题", ThemeCatalogOk);
             yield return new KeyValuePair<string, bool>("设置副本", CloneGuardOk);
+            yield return new KeyValuePair<string, bool>("卡片布局夹取", CardLayoutOk);
             yield return new KeyValuePair<string, bool>("交互卡唯一", SingleInteractiveOk);
             yield return new KeyValuePair<string, bool>("共享控件", WidgetsOk);
             yield return new KeyValuePair<string, bool>("共享控件（交互）", Widgets2Ok);
