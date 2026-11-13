@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Net.Http;
@@ -22,6 +22,9 @@ public sealed class LyricsExtras
     public string Source = "Auto";
     public string LrcPath = "";
     public int OffsetMs;
+
+    /// <summary>2.47.0：换行时是否播放粒子聚字；只作用于当前歌词，不影响标题 / 时间。</summary>
+    public bool Particle = true;
 }
 
 /// <summary>
@@ -104,12 +107,28 @@ public sealed class LyricsCard : RichCardModuleBase, ICardSettingsModule, ICardE
         });
         panel.Children.Add(offsetRow);
 
+        var particleRow = new CheckBox
+        {
+            Content = "换行时粒子聚字",
+            IsChecked = extras.Particle,
+            Margin = new Thickness(0, 10, 0, 2)
+        };
+        panel.Children.Add(particleRow);
+        panel.Children.Add(new TextBlock
+        {
+            Text = "只作用于当前歌词，标题与时间不动；开启「减少动效」时不播放。",
+            TextWrapping = TextWrapping.Wrap,
+            Opacity = 0.6,
+            Margin = new Thickness(22, 0, 0, 0)
+        });
+
         void Commit()
         {
             extras.Source = source.SelectedIndex == 1 ? "Local" : source.SelectedIndex == 2 ? "Lrclib" : "Auto";
             extras.LrcPath = (path.Text ?? "").Trim();
             extras.OffsetMs = int.TryParse(offset.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int ms)
                 ? Math.Max(-30000, Math.Min(30000, ms)) : 0;
+            extras.Particle = particleRow.IsChecked == true;
             config.SetExtras(SettingsKey, extras);
             onChanged?.Invoke();
         }
@@ -117,6 +136,8 @@ public sealed class LyricsCard : RichCardModuleBase, ICardSettingsModule, ICardE
         source.SelectionChanged += (s, e) => Commit();
         path.TextChanged += (s, e) => Commit();
         offset.TextChanged += (s, e) => Commit();
+        particleRow.Checked += (s, e) => Commit();
+        particleRow.Unchecked += (s, e) => Commit();
         return panel;
     }
 
@@ -154,7 +175,8 @@ internal sealed class LyricsView : Grid
     readonly TextBlock _current;
     readonly TextBlock _next;
     readonly TextBlock _status;
-    readonly Border _progressFill;
+    readonly CardProgressBar _progressBar;
+    readonly CardParticleText _particle;
     readonly TextBlock _time;
     readonly DispatcherTimer _timer;
 
@@ -174,6 +196,9 @@ internal sealed class LyricsView : Grid
     double _lyricsDuration;
     double _position;
     double _duration;
+    int _lineIndex = -2;
+    bool _particleEnabled;
+    Color _particleColor;
 
     public LyricsView(Settings settings, CardSettings config)
     {
@@ -181,6 +206,8 @@ internal sealed class LyricsView : Grid
         _config = config;
         _style = _settings.Style ?? new StyleSettings();
         _extras = config is null ? new LyricsExtras() : config.ExtrasAs<LyricsExtras>(LyricsCard.SettingsKey);
+        _particleEnabled = _extras.Particle && _settings.Behavior is not null && !_settings.Behavior.ReduceMotion;
+        _particleColor = CardPalette.TryColor(_style.Foreground, Colors.White);
 
         Width = Math.Max(320, Math.Min(520, _style.FixedWidth > 0 ? _style.FixedWidth : 420));
         Background = Brushes.Transparent;
@@ -194,28 +221,33 @@ internal sealed class LyricsView : Grid
 
         _current = MakeText(_style.FontSize + 4, 1.0, true);
         _current.Text = "未检测到正在播放";
-        _current.Margin = new Thickness(0, 4, 0, 2);
-        panel.Children.Add(_current);
+
+        // 当前歌词与粒子层同格：粒子收敛前隐藏文字，收敛后由 Settled 恢复。
+        _particle = new CardParticleText
+        {
+            TextFont = HudFont.Resolve(_style.FontFamily),
+            TextSize = _style.FontSize + 4,
+            TextWeight = FontWeights.SemiBold,
+            ParticleSize = _style.TextParticleSize,
+            ParticleCount = Math.Min(900, Math.Max(120, _style.TextParticleCount)),
+            Speed = _style.TextParticleSpeed
+        };
+        _particle.Settled += OnParticleSettled;
+
+        var currentHost = new Grid { Margin = new Thickness(0, 4, 0, 2) };
+        currentHost.Children.Add(_current);
+        currentHost.Children.Add(_particle);
+        panel.Children.Add(currentHost);
 
         _next = MakeText(_style.FontSize, 0.55, false);
         _next.Text = "";
         _next.Margin = new Thickness(0, 0, 0, 6);
         panel.Children.Add(_next);
 
-        var bar = new Grid { Height = 3, Margin = new Thickness(0, 2, 0, 4) };
-        bar.Children.Add(new Border
-        {
-            Background = CardPalette.Brush(ThemeResolver.Resolve(_style).Border),
-            CornerRadius = new CornerRadius(1.5)
-        });
-        _progressFill = new Border
-        {
-            Background = CardPalette.Brush(ThemeResolver.Resolve(_style).Accent),
-            CornerRadius = new CornerRadius(1.5),
-            HorizontalAlignment = HorizontalAlignment.Left
-        };
-        bar.Children.Add(_progressFill);
-        panel.Children.Add(bar);
+        // 2.47.0：和媒体卡 / 中转站共用一条进度条（分段开关、进度条颜色都走同一处）。
+        _progressBar = new CardProgressBar { Margin = new Thickness(0, 2, 0, 4) };
+        _progressBar.ApplyStyle(_style);
+        panel.Children.Add(_progressBar);
 
         var bottom = new Grid();
         _time = MakeText(Math.Max(9, _style.FontSize - 4), 0.48, false);
@@ -231,7 +263,14 @@ internal sealed class LyricsView : Grid
         _timer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(200) };
         _timer.Tick += (s, e) => Tick();
         Loaded += (s, e) => _timer.Start();
-        Unloaded += (s, e) => { _timer.Stop(); _disposed = true; };
+        Unloaded += (s, e) =>
+        {
+            _timer.Stop();
+            _particle.Stop();
+            // 动画中途被卸载时文字可能还藏着；恢复可见，重新上树不能缺字。
+            _current.Visibility = Visibility.Visible;
+            _disposed = true;
+        };
     }
 
     TextBlock MakeText(double size, double alpha, bool bold) => new()
@@ -344,6 +383,10 @@ internal sealed class LyricsView : Grid
         _lyricsKey = key;
         _lines = new List<LyricLine>();
         _lyricsDuration = 0;
+        // 换歌：粒子池与当前行一起作废，新歌第一句从静态开始（和宿主首池语义一致）。
+        _particle.Reset();
+        _lineIndex = -2;
+        _current.Visibility = Visibility.Visible;
         if (string.IsNullOrWhiteSpace(title)) return;
 
         try
@@ -411,7 +454,7 @@ internal sealed class LyricsView : Grid
     {
         if (_lines.Count == 0)
         {
-            _current.Text = "暂无歌词";
+            SetCurrentLine("暂无歌词", -1);
             _next.Text = "";
             return;
         }
@@ -424,21 +467,62 @@ internal sealed class LyricsView : Grid
             else break;
         }
 
-        _current.Text = index < 0 ? "♪" : _lines[index].Text;
+        string text = index < 0 ? "♪" : _lines[index].Text;
+        SetCurrentLine(text, index);
         _next.Text = index + 1 < _lines.Count ? _lines[index + 1].Text : "";
-        _current.Opacity = 1.0;
         _next.Opacity = 0.55;
+    }
+
+    /// <summary>
+    /// 换行统一入口：只在歌词真的换了才触发粒子。
+    /// 先让粒子层采样并起播，再隐藏文字——顺序反了会闪一帧“只有粒子没有字”。
+    /// </summary>
+    void SetCurrentLine(string text, int index)
+    {
+        if (index == _lineIndex && string.Equals(_current.Text, text, StringComparison.Ordinal)) return;
+        _lineIndex = index;
+        _current.Text = text;
+        _current.Opacity = 1.0;
+
+        if (index < 0)
+        {
+            // 前奏 / 间奏的占位符不参与聚字：清空粒子池，新歌第一句从静态开始。
+            _particle.Stop();
+            _particle.Reset();
+            _current.Visibility = Visibility.Visible;
+            return;
+        }
+
+        if (!_particleEnabled || string.IsNullOrWhiteSpace(text))
+        {
+            _particle.Stop();
+            _current.Visibility = Visibility.Visible;
+            return;
+        }
+
+        ParticlePlayResult result = _particle.Play(text, _particleColor);
+        if (result == ParticlePlayResult.Animated)
+        {
+            _current.Visibility = Visibility.Hidden;
+            return;
+        }
+
+        // 首池（Primed）或采样不可用：文字照常显示，下一句再聚。
+        _current.Visibility = Visibility.Visible;
+    }
+
+    void OnParticleSettled()
+    {
+        if (_disposed) return;
+        _current.Visibility = Visibility.Visible;
     }
 
     void UpdateProgress()
     {
         double ratio = _duration > 0 ? Math.Max(0, Math.Min(1, _position / _duration)) : 0;
-        _progressFill.Width = Math.Max(0, ActualWidth * ratio);
-        _time.Text = Format(_position) + " / " + Format(_duration);
+        _progressBar.Value = ratio;
+        _time.Text = CardFormat.Clock(_position) + " / " + CardFormat.Clock(_duration);
     }
-
-    static string Format(double seconds) =>
-        TimeSpan.FromSeconds(Math.Max(0, seconds)).ToString(@"m\:ss", CultureInfo.InvariantCulture);
 
     void SetStatus(string status, string title)
     {
