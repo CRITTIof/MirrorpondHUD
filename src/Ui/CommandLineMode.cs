@@ -57,8 +57,10 @@ internal static class CommandLineMode
         }
 
         // 顺序与旧实现一致：--screenshot-cards 必须先于 --screenshot 判断。
-        // S-20：五种模式的参数都是「输出文件路径」，统一先做绝对路径 / 扩展名 / 目录可写校验；
+        // S-20：六种模式的参数都是「输出文件路径」，统一先做绝对路径 / 扩展名 / 目录可写校验；
         // 校验失败必须 Log.Error + 非 0 退出，不能把配置或任意文件当 PNG 覆盖掉。
+        // --screenshot-dialog 先判：避免 --screenshot 的前缀匹配误收，也让它独占自己的 --dialog-light。
+        if (TryRunDialogScreenshot(args, out exitCode)) return true;
         if (TryRunScreenshot(args, "--screenshot-cards", Screenshots.CaptureCards, out exitCode)) return true;
         if (TryRunScreenshot(args, "--screenshot", Screenshots.CaptureOverlay, out exitCode)) return true;
         if (TryRunScreenshot(args, "--screenshot-settings", Screenshots.CaptureSettings, out exitCode)) return true;
@@ -95,6 +97,40 @@ internal static class CommandLineMode
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// --screenshot-dialog &lt;path&gt; [--dialog-light]：单张图渲染四种对话框变体。
+    /// 路径校验复用 S-20（绝对路径 / .png / 目录可写），非法路径按失败退出，不落回正常启动。
+    /// </summary>
+    static bool TryRunDialogScreenshot(List<string> args, out int exitCode)
+    {
+        exitCode = 0;
+        string raw = GetOption(args, "--screenshot-dialog");
+        if (raw is null)
+        {
+            // 只写了选项没写路径：必须明确失败。否则会落回正常启动，
+            // 用户以为“截图失败”，实际却常驻了一个 GUI 进程。
+            bool present = args.Contains("--screenshot-dialog") ||
+                           args.Exists(a => a.StartsWith("--screenshot-dialog=", StringComparison.OrdinalIgnoreCase));
+            if (!present) return false;
+
+            Log.Error("--screenshot-dialog 缺少输出路径");
+            exitCode = 1;
+            return true;
+        }
+
+        bool light = args.Remove("--dialog-light");
+        if (!Screenshots.TryResolveOutputPath(raw, out var path, out var error))
+        {
+            Log.Error($"--screenshot-dialog 输出路径非法：{error}（参数：{raw}）");
+            exitCode = 1;
+            return true;
+        }
+
+        Log.Info($"--screenshot-dialog 输出到 {path}（{(light ? "亮色" : "暗色")}）");
+        exitCode = Screenshots.CaptureDialogs(path, light) ? 0 : 1;
+        return true;
     }
 
     /// <summary>

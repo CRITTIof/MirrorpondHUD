@@ -2,6 +2,7 @@ using System;
 using System.Windows;
 using System.Windows.Threading;
 using MirrorpondHUD.Core;
+using MirrorpondHUD.Ui.Controls;
 
 namespace MirrorpondHUD.Ui;
 
@@ -89,10 +90,10 @@ internal sealed class TrayController : IDisposable
             _unavailableNotified = true;
             string reason = "Shell_NotifyIcon 添加失败，可能被安全策略 / 资源管理器拒绝";
             Log.Warn($"运行期重新启用托盘失败: {reason}");
-            MessageBox.Show(
+            HudDialog.ShowWarning(null, "镜潭一览 · 托盘不可用",
                 "托盘图标添加失败，程序仍在运行，但托盘入口没有出现。\n\n" +
                 reason + "\n\n可以按 " + _host.Settings.Hotkeys.OpenSettings + " 打开设置，或重新登录 Windows 后重试。",
-                "镜潭一览 · 托盘不可用", MessageBoxButton.OK, MessageBoxImage.Warning);
+                _host.Settings.Style);
         }
         else if (!_tray.AddFailed)
         {

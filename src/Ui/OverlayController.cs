@@ -854,19 +854,20 @@ public sealed class OverlayController : IDisposable
             {
                 _settingsWindow.CloseForReal();
                 _settingsWindow = null;
-                MessageBox.Show(
+                // 设置窗刚被关掉，不能再当 Owner；传 null 让提示置顶居中，避免又一次打不开。
+                HudDialog.ShowWarning(null, "MirrorpondHUD",
                     "无法读取当前设置，设置窗口没有打开（详情见日志）。\n" +
                     "为避免把默认值写回 settings.json，本次不允许保存。",
-                    "MirrorpondHUD", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    _settings.Style);
                 return;
             }
         }
         else if (!_settingsWindow.Reload(_settings))
         {
-            MessageBox.Show(
+            HudDialog.ShowWarning(_settingsWindow, "MirrorpondHUD",
                 "无法读取当前设置，设置窗口没有刷新（详情见日志）。\n" +
                 "为避免把默认值写回 settings.json，本次不允许保存。",
-                "MirrorpondHUD", MessageBoxButton.OK, MessageBoxImage.Warning);
+                _settings.Style);
             return;
         }
 

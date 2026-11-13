@@ -11,6 +11,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using MirrorpondHUD.Cards;
 using MirrorpondHUD.Core;
+using MirrorpondHUD.Ui.Controls;
 
 namespace MirrorpondHUD.Ui;
 
@@ -544,24 +545,25 @@ public partial class SettingsWindow : Window
         {
             if (IsDirty())
             {
-                MessageBoxResult answer = MessageBox.Show(this,
-                    "设置还有未保存的修改。\n\n是 = 保存并应用后关闭；否 = 放弃修改；取消 = 继续编辑。",
+                HudDialogResult answer = HudDialog.Show(this,
                     "镜潭一览 · 未保存的修改",
-                    MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
+                    "设置还有未保存的修改。\n\n是 = 保存并应用后关闭；否 = 放弃修改；取消 = 继续编辑。",
+                    HudDialogButtons.YesNoCancel, HudDialogIcon.Question,
+                    _working is null ? null : _working.Style);
 
-                if (answer == MessageBoxResult.Cancel)
+                if (answer == HudDialogResult.Cancel)
                 {
                     e.Cancel = true;
                     return;
                 }
 
-                if (answer == MessageBoxResult.Yes && !TrySaveSettings())
+                if (answer == HudDialogResult.Yes && !TrySaveSettings())
                 {
                     e.Cancel = true;
                     return;
                 }
 
-                if (answer == MessageBoxResult.No)
+                if (answer == HudDialogResult.No)
                 {
                     ClearDirty();
                     // S-11：判脏 / 主题预览可能已经动过 _working（读回控件、归一化、草稿提交）。

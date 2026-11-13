@@ -18,14 +18,18 @@ internal sealed class StationFileActions
     readonly StationSettings _station;
     readonly Action<string, CardStatusKind> _setStatus;
     readonly Action _persistAndRebuild;
+    /// <summary>宿主主题：对话框跟着卡片配色走；null 时 HudDialog 用 Endfield 墨版默认值。</summary>
+    readonly StyleSettings _style;
 
     public StationFileActions(ICardHost host, StationSettings station,
-                              Action<string, CardStatusKind> setStatus, Action persistAndRebuild)
+                              Action<string, CardStatusKind> setStatus, Action persistAndRebuild,
+                              StyleSettings style = null)
     {
         _host = host;
         _station = station;
         _setStatus = setStatus;
         _persistAndRebuild = persistAndRebuild;
+        _style = style;
     }
 
     /// <summary>打开条目；文件已不存在时把 Missing 标回列表并提示，不再尝试 Shell 打开。</summary>
@@ -134,7 +138,6 @@ internal sealed class StationFileActions
             return 0;
         }
 
-        MessageBoxResult answer;
         string message;
         if (recyclable.Count == 1)
         {
@@ -147,12 +150,11 @@ internal sealed class StationFileActions
             message = "确定把选中的 " + recyclable.Count + " 项移到回收站？\n\n文件夹会连同内容一起移到回收站（可从回收站还原）。";
         }
 
-        if (owner is null)
-            answer = MessageBox.Show(message, "文件中转站", MessageBoxButton.YesNo, MessageBoxImage.Warning);
-        else
-            answer = MessageBox.Show(owner, message, "文件中转站", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+        // 删除是破坏性操作：主行动用红描边 + 红字（danger），但按钮仍是“是 / 否”，语义不变。
+        HudDialogResult answer = HudDialog.Show(owner, "文件中转站", message,
+            HudDialogButtons.YesNo, HudDialogIcon.Warning, _style, danger: true);
 
-        if (answer != MessageBoxResult.Yes) return 0;
+        if (answer != HudDialogResult.Yes) return 0;
 
         int recycled = 0;
         int failed = 0;

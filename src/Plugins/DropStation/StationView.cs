@@ -104,7 +104,7 @@ internal sealed class StationView : Grid, IDisposable, IStationCopySink
 
         _store = new StationStore(_host, _station.MaxEntries);
         _copy = new StationCopyController(_store, _station, Dispatcher, this);
-        _files = new StationFileActions(_host, _station, SetStatus, PersistAndRebuild);
+        _files = new StationFileActions(_host, _station, SetStatus, PersistAndRebuild, _settings.Style);
 
         _content = new Grid();
         _content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
