@@ -1,4 +1,6 @@
 using System;
+using System.Diagnostics;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Media;
@@ -36,18 +38,31 @@ internal sealed class ContourDecoration : FrameworkElement
     public double LineThickness = 0.8;
 
     /// <summary>
-    /// T-4：相位量化步长 = 2π/256。相位是连续量，原来的 1e-9 阈值等于"每帧都变"，
-    /// 闸门实际失效；量化到 1/256 周期后，1.0x 速度（10 秒一个周期）大约每 39ms
-    /// 才跨一格，肉眼看不出跳变，却把重建次数压到 1/1~1/2。
+    /// 相位量化步长 = 2π/256。量化本身不是问题，问题是它和固定闸门叠加：
+    /// 0.2x 速度下一个形变周期 50 秒，跨一格要 195ms，于是"30fps 调用、只有 5fps 重建"。
+    /// 现在量化只在"跨一格不比出帧间隔慢"时才启用（见 <see cref="PolicyFor"/>）。
     /// </summary>
     const double PhaseQuantum = Math.PI * 2.0 / 256.0;
 
+    /// <summary>一个形变周期被量化成多少格（1/256 周期的倒数）。</summary>
+    const double PhaseSteps = 256.0;
+
+    /// <summary>慢速档出帧间隔 33ms（约 30fps）：低速率下的平滑度靠它，不能被量化拖到 5fps。</summary>
+    internal const double SlowIntervalMs = 33.0;
+
+    /// <summary>快速档出帧间隔 66ms（约 15fps）：高速下每帧形状变化大，15fps 已看不出台阶，还能省一半 CPU。</summary>
+    internal const double FastIntervalMs = 66.0;
+
     /// <summary>
-    /// T-4：两次相位重建之间的最小间隔（66ms ≈ 15fps）。量化在高速档（4x）时每帧都会
-    /// 跨格，仍需一个硬上限兜住"常态占一核"；形变周期不受影响——相位按真实时间推进，
-    /// 只是中间几帧继续画上一帧几何。
+    /// 单次后台生成的耗时预算（毫秒）。超过它说明"33ms 出一帧"已经算不过来，
+    /// 与其让后台线程被 30fps 追着跑，不如退回 15fps——这是"不把常态 CPU 拉回过一核"的兜底。
     /// </summary>
-    const double MinPhaseBuildIntervalMs = 66.0;
+    internal const double BuildBudgetMs = 15.0;
+
+    /// <summary>相位去重阈值：未量化时只有超过它才算"相位真的变了"，避免同相位重复请求。</summary>
+    const double PhaseEpsilon = 1e-9;
+
+    const double TwoPi = Math.PI * 2.0;
 
     /// <summary>构造时（UI 线程）捕获；后台线程只碰它，不碰任何 DependencyObject。</summary>
     readonly Dispatcher _dispatcher;
@@ -56,6 +71,20 @@ internal sealed class ContourDecoration : FrameworkElement
     /// <summary>生成失败日志节流：确定性错误在 30fps 下不能每帧写一条。</summary>
     readonly LogThrottle _failLog = new("等高线生成", 30000);
 
+    /// <summary>成本闸门当前是否生效，以及上次状态切换日志的时刻（5 秒防抖用）。</summary>
+    bool _costGuardEngaged;
+    DateTime _costGuardLogUtc = DateTime.MinValue;
+
+    /// <summary>
+    /// P6 观测窗口：相位更新次数 / 重建次数 / 单次生成耗时。每秒重建几次是本次修复的
+    /// 唯一硬指标，光看"卡不卡"没法比较低/高速两档，所以必须能打出来。
+    /// 只写 Debug（默认 Info 等级下一条都不落盘），并且按 5 秒窗口节流。
+    /// </summary>
+    long _phaseUpdates;
+    long _buildStarts;
+    long _buildCostEmaTicks;
+    DateTime _statWindowUtc = DateTime.UtcNow;
+
     ContourFrame _frame;
     ContourBuildRequest _currentRequest;
     ContourBuildRequest _inFlightRequest;
@@ -63,7 +92,7 @@ internal sealed class ContourDecoration : FrameworkElement
     ContourBuildRequest _failedRequest;
     DateTime _retryNotBeforeUtc = DateTime.MinValue;
 
-    /// <summary>T-4：下一次允许因相位变化重建的时刻（66ms 降频闸门）。</summary>
+    /// <summary>P6：下一次允许因相位变化重建的时刻（由 <see cref="PolicyFor"/> 的间隔决定）。</summary>
     DateTime _nextPhaseBuildUtc = DateTime.MinValue;
 
     bool _inFlight;
@@ -105,35 +134,97 @@ internal sealed class ContourDecoration : FrameworkElement
     /// <summary>
     /// 每帧（约 30fps）调用。只记录相位并发起/合并一次后台生成，不做任何几何计算。
     ///
-    /// T-4：相位先量化到 1/256 周期，只有跨过量化格才重建；再叠一个 66ms（约 15fps）
-    /// 的最小重建间隔。没跨格 / 被降频跳过的帧继续画上一帧几何（<see cref="_frame"/>），
-    /// 画面不会闪空，形变周期也仍按真实时间推进。
+    /// P6（2.45.4）：重建节奏由 <see cref="PolicyFor"/> 按"相位速度 + 实测生成耗时"决定，
+    /// 不再是固定的 1/256 量化 + 66ms。慢速去掉量化、33ms 出帧（接近 30fps）；
+    /// 快速保留量化、66ms 出帧。形变周期仍按真实时间推进——这里只决定"画哪一帧"，
+    /// 不改变相位速度本身；被闸门跳过的帧继续画上一帧几何，不会闪空。
     /// </summary>
-    public void SetPhase(double phase)
+    public void SetPhase(double phase, double speed)
     {
-        double quantized = QuantizePhase(phase);
-        if (quantized == Phase) return;
+        double wrapped = WrapPhase(phase);
+        double buildCostMs = BuildCostMs();
+        ContourPhasePolicy policy = PolicyFor(speed, buildCostMs);
+        UpdateCostGuard(buildCostMs);
 
-        // 降频闸门：后台重建是整网格混合 + 12 级提取，常态 30fps 会稳定吃掉一核。
-        // 跳过的只是这次相位更新，下一次 tick 会带着更新的相位再来（不会累积误差）。
+        double next = policy.Quantum > 0.0 ? QuantizeTo(wrapped, policy.Quantum) : wrapped;
+        if (Math.Abs(next - Phase) < PhaseEpsilon) return;
+
+        Interlocked.Increment(ref _phaseUpdates);
+        MaybeLogStats(policy, buildCostMs);
+
+        // 时间闸门：跳过的只是这次相位更新，下一次 tick 会带着更新的相位再来（不累积误差）。
         if (DateTime.UtcNow < _nextPhaseBuildUtc) return;
 
-        Phase = quantized;
-        _nextPhaseBuildUtc = DateTime.UtcNow.AddMilliseconds(MinPhaseBuildIntervalMs);
+        Phase = next;
+        _nextPhaseBuildUtc = DateTime.UtcNow.AddMilliseconds(policy.MinIntervalMs);
+        Interlocked.Increment(ref _buildStarts);
         RequestBuild();
     }
 
-    /// <summary>
-    /// 相位量化：先归一化到 [0, 2π)（地形混合只读 cos，2π 与 0 等价），再四舍五入到
-    /// <see cref="PhaseQuantum"/>。1/256 周期的相位误差在当前形变速度下约 39ms，
-    /// 肉眼看不出，也不会改变层级 / 形状语义。
-    /// </summary>
-    static double QuantizePhase(double phase)
+    /// <summary>归一化到 [0, 2π)：地形混合只读 cos，2π 与 0 等价。</summary>
+    internal static double WrapPhase(double phase)
     {
         if (double.IsNaN(phase) || double.IsInfinity(phase)) return 0.0;
-        double wrapped = phase % (Math.PI * 2.0);
-        if (wrapped < 0) wrapped += Math.PI * 2.0;
-        return Math.Round(wrapped / PhaseQuantum) * PhaseQuantum;
+        double wrapped = phase % TwoPi;
+        if (wrapped < 0) wrapped += TwoPi;
+        return wrapped;
+    }
+
+    /// <summary>量化到 <paramref name="quantum"/> 的整数倍；正好落在 2π 时折回 0，避免接缝处多重建一次。</summary>
+    static double QuantizeTo(double phase, double quantum)
+    {
+        double quantized = Math.Round(phase / quantum) * quantum;
+        return quantized >= TwoPi ? 0.0 : quantized;
+    }
+
+    /// <summary>
+    /// 相位速度 → 重建节奏（P6）。纯函数，<c>SelfTest</c> 直接断言。
+    ///
+    /// 取值链：
+    /// · 出帧间隔随速度从 33ms 线性放大到 66ms（1x 仍是 30fps，2x 起 15fps）；
+    /// · 单次生成超过 <see cref="BuildBudgetMs"/> 时一律退回 66ms，避免后台线程被 30fps 追着跑；
+    /// · 只有"跨一格的时间"不慢于出帧间隔时才量化——这正是低速率卡顿的判定条件：
+    ///   0.2x 跨一格约 195ms，量化会把 30fps 的调用变成 5fps 的重建。
+    /// </summary>
+    internal static ContourPhasePolicy PolicyFor(double speed, double buildCostMs)
+    {
+        double clamped = Math.Max(0.1, Math.Min(4.0, speed));
+        double intervalMs = Math.Max(SlowIntervalMs, Math.Min(FastIntervalMs, SlowIntervalMs * clamped));
+        if (buildCostMs > BuildBudgetMs) intervalMs = FastIntervalMs;
+
+        double quantum = QuantumCrossingMs(clamped) <= intervalMs ? PhaseQuantum : 0.0;
+        return new ContourPhasePolicy(quantum, intervalMs);
+    }
+
+    /// <summary>跨一个 1/256 量化格需要的时间（毫秒）= 形变周期 ÷ 格数。纯函数，策略与自检共用。</summary>
+    internal static double QuantumCrossingMs(double speed)
+    {
+        double clamped = Math.Max(0.1, Math.Min(4.0, speed));
+        return StyleSettings.ContourPeriodSeconds(clamped) * 1000.0 / PhaseSteps;
+    }
+
+    /// <summary>
+    /// 成本闸门状态切换日志。用 Debug 而不是 Warn：冷启动首帧（含基础网格采样）几乎必然
+    /// 超预算，但一两秒后会自行恢复——这不是错误，默认 Info 等级下不该为此刷一条警告。
+    /// 状态真的反复抖动时由 5 秒防抖兜住。
+    /// </summary>
+    void UpdateCostGuard(double buildCostMs)
+    {
+        bool engaged = buildCostMs > BuildBudgetMs;
+        if (engaged == _costGuardEngaged) return;
+
+        DateTime now = DateTime.UtcNow;
+        if ((now - _costGuardLogUtc).TotalSeconds < 5.0)
+        {
+            _costGuardEngaged = engaged;
+            return;
+        }
+
+        _costGuardEngaged = engaged;
+        _costGuardLogUtc = now;
+        Log.Debug(engaged
+            ? $"等高线成本闸门：单次生成 {buildCostMs:0.0}ms 超过 {BuildBudgetMs:0}ms 预算，相位重建降级到 15fps"
+            : $"等高线成本闸门：单次生成 {buildCostMs:0.0}ms 回到预算内，恢复 30fps 出帧");
     }
 
     protected override void OnRender(DrawingContext dc)
@@ -209,6 +300,7 @@ internal sealed class ContourDecoration : FrameworkElement
     {
         ContourFrame frame = null;
         string error = null;
+        long started = Stopwatch.GetTimestamp();
         try
         {
             frame = _builder.Build(request);
@@ -219,6 +311,7 @@ internal sealed class ContourDecoration : FrameworkElement
             error = $"{ex.GetType().Name}: {ex.Message}";
             _failLog.Failure(error);
         }
+        RecordBuildCost(Stopwatch.GetTimestamp() - started);
 
         try
         {
@@ -231,6 +324,40 @@ internal sealed class ContourDecoration : FrameworkElement
             // 进程退出时 Dispatcher 已关闭，结果无人接收；此时没有可更新的 UI 状态，
             // 属良性竞态（真正的失败已在上面的 catch 里落过日志）。
         }
+    }
+
+    /// <summary>5 秒一条 Debug：相位更新 / 重建次数与单次生成耗时（默认 Info 等级下不落盘）。</summary>
+    void MaybeLogStats(ContourPhasePolicy policy, double buildCostMs)
+    {
+        DateTime now = DateTime.UtcNow;
+        double seconds = (now - _statWindowUtc).TotalSeconds;
+        if (seconds < 5.0) return;
+        _statWindowUtc = now;
+
+        long updates = Interlocked.Exchange(ref _phaseUpdates, 0);
+        long builds = Interlocked.Exchange(ref _buildStarts, 0);
+        if (updates == 0 && builds == 0) return;
+
+        double ratio = updates <= 0 ? 0.0 : (double)builds / updates;
+        Log.Debug($"等高线相位：{seconds:0.0}s 内更新 {updates} 次 / 重建 {builds} 次"
+                  + $"（{builds / seconds:0.0} 次/秒，重建/更新={ratio:0.00}），"
+                  + $"单次生成 {buildCostMs:0.0}ms，闸门 {policy.MinIntervalMs:0}ms，"
+                  + $"量化 {(policy.Quantum > 0.0 ? "1/256" : "关")}，画布 {ActualWidth:0}×{ActualHeight:0}");
+    }
+
+    /// <summary>单次生成耗时的指数滑动平均（后台线程写、UI 线程读），用于成本闸门与日志。</summary>
+    double BuildCostMs()
+    {
+        long ticks = Interlocked.Read(ref _buildCostEmaTicks);
+        return ticks <= 0 ? 0.0 : ticks * 1000.0 / Stopwatch.Frequency;
+    }
+
+    void RecordBuildCost(long ticks)
+    {
+        if (ticks <= 0) return;
+        long previous = Interlocked.Read(ref _buildCostEmaTicks);
+        long next = previous <= 0 ? ticks : previous + ((ticks - previous) / 8);
+        Interlocked.Exchange(ref _buildCostEmaTicks, next);
     }
 
     /// <summary>UI 线程：只接受当前代的结果；旧代 / 卸载后的结果直接丢弃。</summary>
@@ -285,9 +412,10 @@ internal sealed class ContourDecoration : FrameworkElement
         ContourBuildRequest request = new();
         request.Width = width;
         request.Height = height;
-        // Phase 是 public 字段，外部直接赋值时也可能不是量化值；统一在快照里再量化一次，
-        // 保证"请求相等"判定与 SetPhase 的闸门语义一致。
-        request.Phase = QuantizePhase(Phase);
+        // Phase 是 public 字段，外部直接赋值时可能不在 [0, 2π)；统一归一化一次，
+        // 保证"请求相等"判定与 SetPhase 写入的值同域。量化已经在 SetPhase 按策略做过，
+        // 这里不能再按 1/256 粗量化，否则慢速档又被拉回 5fps。
+        request.Phase = WrapPhase(Phase);
         request.Levels = LevelCount;
         request.Evening = Evening;
         request.Relief = Relief;
@@ -322,3 +450,20 @@ internal sealed class ContourDecoration : FrameworkElement
             && Math.Abs(a.Thickness - b.Thickness) < 1e-9;
     }
 }
+
+/// <summary>
+/// P6：一次相位更新应采用的节奏。是值类型 + 只读，避免每帧给 GC 添对象。
+/// <see cref="Quantum"/> ≤ 0 表示"只归一化、不量化"；<see cref="MinIntervalMs"/> 是两次重建的最小间隔。
+/// </summary>
+internal readonly struct ContourPhasePolicy
+{
+    public readonly double Quantum;
+    public readonly double MinIntervalMs;
+
+    public ContourPhasePolicy(double quantum, double minIntervalMs)
+    {
+        Quantum = quantum;
+        MinIntervalMs = minIntervalMs;
+    }
+}
+
