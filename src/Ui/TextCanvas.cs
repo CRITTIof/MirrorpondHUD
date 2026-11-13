@@ -516,6 +516,23 @@ public sealed class TextCanvas : FrameworkElement
 
     // ==================== 度量 ====================
 
+    /// <summary>
+    /// 2.45.5：上一次 Arrange 对应的文本与宽度。窗口是 SizeToContent，文本变长后
+    /// 会先触发一次 OnRender、后完成新的 Arrange；如果直接用旧的 ActualWidth 判裁剪，
+    /// 正常内容会在那一瞬被加上省略号（用户看到的“偶发截断”）。
+    /// 只有“当前文本已经按这个宽度 Arrange 过”时，ActualWidth 才可信。
+    /// </summary>
+    string _arrangedText;
+    double _arrangedWidth;
+
+    protected override Size ArrangeOverride(Size finalSize)
+    {
+        Size size = base.ArrangeOverride(finalSize);
+        _arrangedText = _text;
+        _arrangedWidth = finalSize.Width;
+        return size;
+    }
+
     protected override Size MeasureOverride(Size availableSize)
     {
         PerformanceProbe.TextMeasure();
@@ -583,8 +600,13 @@ public sealed class TextCanvas : FrameworkElement
     double AvailableBlockWidth(double textWidth)
     {
         double limit = LayoutWidthLimit();
-        double available = ActualWidth > 0 ? ActualWidth : textWidth;
-        if (limit > 0 && limit < available) available = limit;
+        double available = limit > 0 ? limit : Math.Max(1, textWidth);
+
+        // 只有当前文本已经按这个 Arrange 宽度布局过，ActualWidth 才代表“真的被压窄”；
+        // 文本刚变、Arrange 还没跟上时它还是上一段文本的宽度，用它裁会误伤正常内容。
+        if (_arrangedText == _text && _arrangedWidth > 0 && _arrangedWidth < available)
+            available = _arrangedWidth;
+
         if (available <= 0) available = Math.Max(1, textWidth);
         return available;
     }

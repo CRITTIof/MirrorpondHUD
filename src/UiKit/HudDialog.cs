@@ -413,8 +413,8 @@ internal sealed class HudDialogPanel : Grid
         Grid.SetRow(header, 0);
         layout.Children.Add(header);
 
-        // 外部弹窗不画图标：showIcon=false 时按 None 处理，图标列宽度归零，正文与标题都不偏移。
-        Grid body = BuildBody(theme, message, showIcon ? icon : HudDialogIcon.None);
+        // 2.45.5：用户要求所有弹窗都不再显示“？”“！”等状态符号；参数保留只为兼容调用签名。
+        Grid body = BuildBody(theme, message, HudDialogIcon.None);
         Grid.SetRow(body, 1);
         layout.Children.Add(body);
 
@@ -424,7 +424,8 @@ internal sealed class HudDialogPanel : Grid
 
         // 与设置主界面同一档圆角：22px 表面 + 1px 线，内容按圆角裁切。
         // 上下各留 20px，3px 强调竖条落在弧线之内，不会被圆角吃掉。
-        Children.Add(HudDialogSurface.Wrap(layout, theme.Surface, theme.Line, new Thickness(24, 20, 24, 20)));
+        Children.Add(HudDialogSurface.Wrap(layout, theme.Surface, theme.Line, theme.OuterLine,
+                                           new Thickness(24, 20, 24, 20)));
     }
 
     /// <summary>标题行：3px 信号黄竖条 + 14 SemiBold 标题 + 可选关闭键；整行是拖动区。</summary>
@@ -803,7 +804,8 @@ internal static class HudDialogSurface
     internal const double Radius = 22;
 
     /// <summary>把内容放进圆角表面；内容按缩进后的矩形裁切，圆角本身由 Border 画。</summary>
-    internal static Border Wrap(FrameworkElement content, Color background, Color line, Thickness padding)
+    internal static Border Wrap(FrameworkElement content, Color background, Color line, Color outerLine,
+                               Thickness padding)
     {
         var surface = new Border
         {
@@ -826,7 +828,19 @@ internal static class HudDialogSurface
         };
 
         surface.Child = content;
-        return surface;
+
+        // 2.45.5：外侧再加 1px 描边（2px 的呼吸），与表面 1px 线形成双线；
+        // 深色/浅色各用一档中性色，足够把对话框从背景里“拎出来”又不抢内容。
+        var outline = new Border
+        {
+            CornerRadius = new CornerRadius(Radius + 2),
+            BorderThickness = new Thickness(1),
+            BorderBrush = CardPalette.Brush(outerLine),
+            Padding = new Thickness(2),
+            Background = Brushes.Transparent
+        };
+        outline.Child = surface;
+        return outline;
     }
 }
 
@@ -845,6 +859,8 @@ internal sealed class HudDialogTheme
     internal Color Text;
     internal Color Secondary;
     internal Color Line;
+    /// <summary>2.45.5：表面外侧 1px 描边，用来把对话框和背后的设置页/桌面区分开。</summary>
+    internal Color OuterLine;
     internal Color AccentColor;
     // 浅色行动面上的强调色：亮黄在浅底几乎不可见，按 paper 版换成暗金 #B7A400。
     internal Color AccentOnSurface;
@@ -873,6 +889,7 @@ internal sealed class HudDialogTheme
             Text = dark ? Color.FromRgb(0xF5, 0xF5, 0xF0) : Color.FromRgb(0x15, 0x15, 0x15),
             Secondary = dark ? Color.FromRgb(0x8A, 0x8A, 0x8A) : Color.FromRgb(0x62, 0x62, 0x62),
             Line = dark ? Color.FromRgb(0x38, 0x38, 0x38) : Color.FromRgb(0xE6, 0xE6, 0xE6),
+            OuterLine = dark ? Color.FromRgb(0x5E, 0x5E, 0x5E) : Color.FromRgb(0xC8, 0xC8, 0xC0),
             AccentColor = accent,
             AccentOnSurface = dark ? accent : Color.FromRgb(0xB7, 0xA4, 0x00),
             AccentInk = dark ? Color.FromRgb(0x14, 0x14, 0x14) : Color.FromRgb(0x11, 0x11, 0x11),

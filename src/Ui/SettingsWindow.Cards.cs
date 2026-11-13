@@ -44,7 +44,11 @@ public partial class SettingsWindow
             string id = config.Id;
             editor.PropertyChanged += (s, e) =>
             {
-                if (e.PropertyName == "IsExpanded") _expanded[id] = editor.IsExpanded;
+                if (e.PropertyName == "IsExpanded")
+                {
+                    _expanded[id] = editor.IsExpanded;
+                    AnimateCardBody(editor);
+                }
                 else MarkDirty();
             };
             _editors.Add(editor);
@@ -558,6 +562,30 @@ public partial class SettingsWindow
         _dragStride = 0;
         _dragInsertIndex = -1;
         _dragEditor = null;
+    }
+
+    /// <summary>2.45.5：卡片设置体折叠与设置分组同节奏（200ms 高度动画）。</summary>
+    void AnimateCardBody(CardEditor editor)
+    {
+        var container = CardList.ItemContainerGenerator.ContainerFromItem(editor) as FrameworkElement;
+        if (container is null) return;
+        FrameworkElement body = FindCardBody(container);
+        if (body is not null) SettingsMotion.AnimateBody(body, editor.IsExpanded);
+    }
+
+    static FrameworkElement FindCardBody(FrameworkElement container)
+    {
+        if (container is null) return null;
+        int count = VisualTreeHelper.GetChildrenCount(container);
+        for (int i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(container, i) as FrameworkElement;
+            if (child is null) continue;
+            if (string.Equals(child.Name, "CardBodyPanel", StringComparison.Ordinal)) return child;
+            FrameworkElement nested = FindCardBody(child);
+            if (nested is not null) return nested;
+        }
+        return null;
     }
 
     static FrameworkElement FindCardHeader(FrameworkElement container)

@@ -433,7 +433,8 @@ public sealed class TrayIcon : IDisposable
     static (Icon Icon, bool OwnsHandle) LoadIcon()
     {
         // 深色任务栏用浅色版本，浅色任务栏用深色版本
-        string name = IsLightTaskbar() ? "assets/logo.ico" : "assets/logo-light.ico";
+        // 2.45.5：亮色任务栏用 DeepYellow 品牌图标；暗色任务栏仍用白色线稿，避免黄底发闷。
+        string name = IsLightTaskbar() ? "assets/MirrorpondHUDLogoDeepYellow.ico" : "assets/logo-light.ico";
         try
         {
             System.Windows.Resources.StreamResourceInfo info =

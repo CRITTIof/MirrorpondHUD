@@ -229,6 +229,74 @@ internal static class SettingsMotion
     // ==================== 折叠分组 ====================
 
     /// <summary>
+    /// 2.45.5：卡片设置体的展开 / 收起，复用分组折叠的同一套高度动画。
+    /// 卡片的 Body 是带 Visibility 绑定的 StackPanel（不是 Expander 模板部件），
+    /// 所以这里自己接管本地 Visibility：收起动画结束后再清掉本地值，让绑定恢复 Collapsed。
+    /// </summary>
+    public static void AnimateBody(FrameworkElement body, bool expand)
+    {
+        if (body is null) return;
+
+        double current = Math.Max(0, body.ActualHeight);
+        body.BeginAnimation(FrameworkElement.HeightProperty, null);
+
+        if (!Enabled)
+        {
+            body.ClearValue(FrameworkElement.HeightProperty);
+            body.ClipToBounds = false;
+            body.ClearValue(UIElement.VisibilityProperty);
+            return;
+        }
+
+        double width = body.ActualWidth > 1
+            ? body.ActualWidth
+            : Math.Max(1, (body.Parent as FrameworkElement)?.ActualWidth ?? body.DesiredSize.Width);
+
+        if (expand)
+        {
+            body.Visibility = Visibility.Visible;
+            body.ClearValue(FrameworkElement.HeightProperty);
+            body.Measure(new Size(width, double.PositiveInfinity));
+            double target = Math.Max(0, body.DesiredSize.Height);
+
+            body.ClipToBounds = true;
+            body.Height = current;
+            var grow = new DoubleAnimation(current, target, Ms(SectionMs))
+            {
+                EasingFunction = EaseOut,
+                FillBehavior = FillBehavior.Stop
+            };
+            grow.Completed += (sender, args) =>
+            {
+                body.BeginAnimation(FrameworkElement.HeightProperty, null);
+                body.ClearValue(FrameworkElement.HeightProperty);
+                body.ClipToBounds = false;
+                // 本地 Visibility 必须清掉，否则绑定永远看不到 Collapsed。
+                body.ClearValue(UIElement.VisibilityProperty);
+            };
+            body.BeginAnimation(FrameworkElement.HeightProperty, grow);
+            return;
+        }
+
+        body.Visibility = Visibility.Visible;
+        body.Height = current;
+        body.ClipToBounds = true;
+        var shrink = new DoubleAnimation(current, 0, Ms(SectionMs))
+        {
+            EasingFunction = EaseOut,
+            FillBehavior = FillBehavior.Stop
+        };
+        shrink.Completed += (sender, args) =>
+        {
+            body.BeginAnimation(FrameworkElement.HeightProperty, null);
+            body.ClearValue(FrameworkElement.HeightProperty);
+            body.ClipToBounds = false;
+            body.ClearValue(UIElement.VisibilityProperty);
+        };
+        body.BeginAnimation(FrameworkElement.HeightProperty, shrink);
+    }
+
+    /// <summary>
     /// 折叠分组展开 / 收起：对模板里的内容呈现器做高度动画 + 裁切，避免瞬间跳变。
     ///
     /// 关键取舍：

@@ -1,4 +1,4 @@
-<Window x:Class="MirrorpondHUD.Ui.OverlayWindow"
+﻿<Window x:Class="MirrorpondHUD.Ui.OverlayWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="clr-namespace:MirrorpondHUD.Ui"
@@ -13,7 +13,7 @@
         SizeToContent="WidthAndHeight"
         WindowStartupLocation="Manual"
         Focusable="False"
-        Icon="/assets/logo.ico"
+        Icon="/assets/MirrorpondHUDLogoDeepYellow.ico"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True">
     <!-- 背景 Transparent 让投影留白区域也能接住鼠标，否则贴边拖动会"没反应" -->

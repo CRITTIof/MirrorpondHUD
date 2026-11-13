@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Windows;
@@ -196,7 +196,8 @@ internal sealed class ColorPickerPanel : Grid
         layout.Children.Add(footer);
 
         // 与对话框同一条圆角：22px 表面 + 1px 线，内容按圆角裁切。
-        Children.Add(HudDialogSurface.Wrap(layout, _theme.Surface, _theme.Line, new Thickness(24, 20, 24, 20)));
+        Children.Add(HudDialogSurface.Wrap(layout, _theme.Surface, _theme.Line, _theme.OuterLine,
+                                           new Thickness(24, 20, 24, 20)));
 
         // 初始色相在灰色（饱和度为 0）时无处可推，用 0 起手；之后拖色板会保留上一帧色相。
         double hue = 0;
