@@ -604,6 +604,93 @@ public static class Screenshots
         return grid;
     }
 
+    /// <summary>
+    /// 对话框验收样张：一张图里并排四种变体（信息 / 警告 / 错误 / 询问），
+    /// 用于目检切角、1px 描边、按钮层级与状态色对比度。
+    ///
+    /// 直接用 <see cref="HudDialogPanel"/> 离屏渲染，而不是真的弹四个窗口：
+    /// 截图模式必须能在没有用户交互的 CI / 远程桌面上跑完，且渲染结果与窗口内面板是同一份布局。
+    /// </summary>
+    public static bool CaptureDialogs(string path, bool light)
+    {
+        try
+        {
+            // 暗色走「style = null」的 Endfield 墨版默认值（#141414 底 / #F5F5F0 字 / #FFFA00），
+            // 亮色显式给一套纸版 StyleSettings —— 同一张图同时验证默认路径与主题跟随路径。
+            StyleSettings style = light ? LightDialogStyle() : null;
+
+            var column = new StackPanel { Width = HudDialog.DefaultWidth };
+            AddDialogSample(column, style, "文件中转站 · 收纳完成",
+                "12 个文件已收纳到接收目录。\n文件保留 24 小时后自动清理。",
+                HudDialogButtons.Ok, HudDialogIcon.Info);
+            AddDialogSample(column, style, "镜潭一览 · 托盘不可用",
+                "托盘图标添加失败，程序仍在运行，但托盘入口没有出现。\n" +
+                "可以按 Ctrl+Alt+S 打开设置，或重新登录 Windows 后重试。",
+                HudDialogButtons.Ok, HudDialogIcon.Warning);
+            AddDialogSample(column, style, "镜潭一览 · 启动失败",
+                "启动失败：无法读取配置文件 settings.json。\n" +
+                "详细信息已写入日志：bin\\Release\\mirrorpond.log",
+                HudDialogButtons.Ok, HudDialogIcon.Error);
+            AddDialogSample(column, style, "镜潭一览 · 未保存的修改",
+                "设置还有未保存的修改。\n保存并应用后关闭，放弃修改，或继续编辑。",
+                HudDialogButtons.YesNoCancel, HudDialogIcon.Question);
+
+            var stage = new Grid
+            {
+                Width = 560,
+                Background = new SolidColorBrush(light
+                    ? Color.FromRgb(0xEF, 0xEF, 0xEA)
+                    : Color.FromRgb(0x0B, 0x0B, 0x0B))
+            };
+            column.HorizontalAlignment = HorizontalAlignment.Center;
+            column.VerticalAlignment = VerticalAlignment.Center;
+            stage.Children.Add(column);
+
+            // 先量内容再定高：四个面板行数不同，固定高度会把最后一张裁掉。
+            stage.Measure(new Size(560, double.PositiveInfinity));
+            stage.Height = Math.Max(600, Math.Ceiling(column.DesiredSize.Height) + 48);
+            stage.Measure(new Size(560, stage.Height));
+            stage.Arrange(new Rect(0, 0, 560, stage.Height));
+            stage.UpdateLayout();
+
+            const double scale = 2.0;
+            var rtb = new RenderTargetBitmap(
+                (int)Math.Ceiling(560 * scale),
+                (int)Math.Ceiling(stage.Height * scale),
+                96 * scale, 96 * scale, PixelFormats.Pbgra32);
+            rtb.Render(stage);
+
+            if (!SavePng(rtb, path)) return false;
+            Log.Info($"已生成对话框截图（{(light ? "亮色" : "暗色")}）: {path}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log.Error("生成对话框截图失败", ex);
+            return false;
+        }
+    }
+
+    static void AddDialogSample(StackPanel column, StyleSettings style, string title, string message,
+                                HudDialogButtons buttons, HudDialogIcon icon)
+    {
+        var panel = new HudDialogPanel(title, message, buttons, icon, style, null, null, false)
+        {
+            Margin = new Thickness(0, 0, 0, 16)
+        };
+        column.Children.Add(panel);
+    }
+
+    /// <summary>亮色样张用纸版取值：neutral-50 底、墨字、线 #E6E6E6。</summary>
+    static StyleSettings LightDialogStyle() => new()
+    {
+        Foreground = "#101110",
+        Background = "#FAFAFA",
+        BackgroundOpacity = 1.0,
+        Accent = "#F2E900",
+        FontFamily = "Microsoft YaHei UI"
+    };
+
     /// <summary>四种中转站显示方式的验收样张：每个视图一份，共用同一批假文件。</summary>
     public static bool CaptureStationViews(string path)
     {
@@ -928,7 +1015,7 @@ public static class Screenshots
     }
 
     /// <summary>
-    /// S-20：截图参数其实是「输出文件路径」，不是 AGENTS 里写的“标题”。五种截图模式共用这条校验：
+    /// S-20：截图参数其实是「输出文件路径」，不是 AGENTS 里写的“标题”。六种截图模式共用这条校验：
     /// · 解析成绝对路径（相对路径按进程 cwd 展开，并在日志里回显最终落点）；
     /// · 没扩展名补 <c>.png</c>，扩展名必须是 <c>.png</c> —— 否则误传 settings.json 会把配置写成 PNG 字节；
     /// · 目录不存在则创建，创建失败 / 目录不可写 / 目标是目录 / 目标是只读文件都算失败。

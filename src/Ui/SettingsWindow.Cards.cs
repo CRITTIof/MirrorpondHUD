@@ -164,10 +164,11 @@ public partial class SettingsWindow
             return;
         }
 
-        MessageBoxResult answer = MessageBox.Show(this,
-            "删除卡片「" + editor.DisplayName + "」？\n保存并应用后生效。",
-            "镜潭一览", MessageBoxButton.OKCancel, MessageBoxImage.Question);
-        if (answer != MessageBoxResult.OK) return;
+        // 原系统弹窗是 OKCancel：保持“确定 / 取消”的按钮语义与结果判断，不改成 Yes/No。
+        HudDialogResult answer = HudDialog.Show(this,
+            "镜潭一览", "删除卡片「" + editor.DisplayName + "」？\n保存并应用后生效。",
+            HudDialogButtons.OkCancel, HudDialogIcon.Question, _working.Style);
+        if (answer != HudDialogResult.Ok) return;
 
         _working.Cards.Remove(editor.Config);
         _expanded.Remove(editor.Config.Id);

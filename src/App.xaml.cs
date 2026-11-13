@@ -6,6 +6,7 @@ using System.Windows;
 using MirrorpondHUD.Cards;
 using MirrorpondHUD.Core;
 using MirrorpondHUD.Ui;
+using MirrorpondHUD.Ui.Controls;
 
 namespace MirrorpondHUD;
 
@@ -51,11 +52,11 @@ public partial class App : Application
             }
 
             Log.Error("UI 线程异常不可恢复（白名单外 / 超限 / 主界面未启动），应用将退出", ex);
-            MessageBox.Show(
+            // 自绘对话框失败时会自行回退系统窗口（见 HudDialog.Show），提示不会静默消失。
+            HudDialog.ShowError(null, "镜潭一览 · 退出",
                 "应用已处于不可信状态，即将退出。\n\n异常：" +
                 (ex is null ? "(null)" : ex.Message) +
-                "\n\n详细信息已写入日志：\n" + Log.FilePath,
-                "镜潭一览 · 退出", MessageBoxButton.OK, MessageBoxImage.Error);
+                "\n\n详细信息已写入日志：\n" + Log.FilePath);
             // Handled=false 会让 CLR 继续终止进程（并可能弹 WER），Shutdown(1) 的退出码不会生效。
             // 已记录日志并告知用户，这里接管退出，保证退出码可控（X-2）。
             args.Handled = true;
@@ -68,13 +69,12 @@ public partial class App : Application
         if (ProcessIntegrity.IsRestricted)
         {
             Log.Warn("进程运行在低完整性级别，Windows 会拒绝托盘图标、全局热键和键盘钩子");
-            MessageBox.Show(
+            HudDialog.ShowWarning(null, "镜潭一览 · 权限受限",
                 "程序当前运行在低完整性级别（Low Integrity）环境中。\n\n" +
                 "这种情况下 Windows 会禁止：托盘图标、全局热键、全局键盘钩子。\n\n" +
                 "请把整个 bin\\Release 目录复制到一个你有完全控制权的普通文件夹\n" +
                 "（例如「文档」）后再运行。\n\n" +
-                "日志：" + Log.FilePath,
-                "镜潭一览 · 权限受限", MessageBoxButton.OK, MessageBoxImage.Warning);
+                "日志：" + Log.FilePath);
         }
 
         // X-16：唤醒事件必须在本进程拿到互斥体之前创建。这样只要首实例还活着，
@@ -167,19 +167,17 @@ public partial class App : Application
             Log.Info($"配置已加载  文件={ConfigStore.Path}  schema={settings.SchemaVersion}/{Settings.CurrentSchemaVersion}  插件={_plugins.Count} 个");
             if (!string.IsNullOrEmpty(ConfigStore.LastLoadWarning))
             {
-                MessageBox.Show(
+                HudDialog.ShowWarning(null, "镜潭一览 · 设置文件需要处理",
                     ConfigStore.LastLoadWarning + "\n\n配置位置：" + ConfigStore.Path,
-                    "镜潭一览 · 设置文件需要处理",
-                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                    settings.Style);
             }
         }
         catch (Exception ex)
         {
             // P1-1：初始化阶段任何失败都必须落地（日志 + 用户可见提示），绝不静默。
             Log.Error("启动初始化失败（插件加载 / 配置读取）", ex);
-            MessageBox.Show(
-                "启动失败：" + ex.Message + "\n\n详细信息已写入日志：\n" + Log.FilePath,
-                "镜潭一览 · 启动失败", MessageBoxButton.OK, MessageBoxImage.Error);
+            HudDialog.ShowError(null, "镜潭一览 · 启动失败",
+                "启动失败：" + ex.Message + "\n\n详细信息已写入日志：\n" + Log.FilePath);
             Shutdown(1);
             return;
         }
@@ -196,9 +194,8 @@ public partial class App : Application
         catch (Exception ex)
         {
             Log.Error("启动失败", ex);
-            MessageBox.Show(
-                "启动失败：" + ex.Message + "\n\n详细信息已写入日志：\n" + Log.FilePath,
-                "镜潭一览", MessageBoxButton.OK, MessageBoxImage.Error);
+            HudDialog.ShowError(null, "镜潭一览",
+                "启动失败：" + ex.Message + "\n\n详细信息已写入日志：\n" + Log.FilePath);
             Shutdown(1);
         }
     }
