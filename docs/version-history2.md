@@ -20,6 +20,9 @@
 | v2.46.2 | 2026-11-13 | `aca4763` | 卡片轮廓三选项（切角/直角/圆角）与左侧强调条 | 9 文件，+209 / −11 |
 | v2.46.3 | 2026-11-13 | `26b24c3` | 修复启动动画后信息卡宽度塌陷；溢出可见与回归断言 | 4 文件，+81 / −7 |
 | v2.46.4 | 2026-11-13 | `a4efae7` | 边缘条可调/随对齐、角处理合并背景组、AI 对话滚动条与轮次角括号 | 18 文件，+306 / −123 |
+| v2.46.5 | 2026-11-13 | `5997dda` | 窄方滚动条滑块等宽、角括号竖线加长 | 3 文件，+5 / −3 |
+| v2.46.6 | 2026-11-13 | `c0f9672` | 歌词卡：SMTC 播放会话 + 本地 LRC/LRCLIB 回退 | 6 文件，+484 / −2（TFM 升 WinRT，产物约 +25 MB） |
+| v2.46.7 | 2026-11-13 | `5248049` | 明日方舟账号状态卡：森空岛只读 binding/player info | 6 文件，+534 / −1 |
 
 ---
 
@@ -578,3 +581,72 @@ P2 87 项与 P3 62 项覆盖玻璃线程、媒体状态机、文本布局、插�
 - `CliScrollBars.Mode` 是全局单值；不同卡片若想各自不同滚动条，需要下一步改成按样式实例。
 - 每轮角括号在 `CliEntryPanel` 的渲染层绘制，滚动时随面板滚动；与设计稿的四角外扩位置略有差异。
 - 切角处鼠标命中仍是矩形；125%/150%/175% DPI 的外廓与 1px 线需真机确认。
+
+---
+
+## 13. v2.46.6（歌词卡，未合并 main）
+
+### 背景
+
+按 [`lyrics-research.md`](lyrics-research.md) 落地首版歌词卡：SMTC 识别播放会话、外推播放时钟，
+本地 LRC 优先、LRCLIB 回退；在线音源专用接口与逐字加密格式不做内置。
+
+### 改动
+
+1. **TFM 升到 `net8.0-windows10.0.19041.0`**：使用 SDK 自带 WinRT 投影访问
+   `Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager`，仍无 NuGet 依赖；
+   代价是产物增加 `Microsoft.Windows.SDK.NET.dll` / `WinRT.Runtime.dll`（约 25 MB）。
+2. **播放时钟**：`GetTimelineProperties().Position` 是约 6 秒一跳的快照；卡片在 Playing 时用
+   `Position + (now - LastUpdatedTime)` 外推，暂停时用快照，避免歌词卡在两次快照间停顿。
+3. **歌词来源**：`Auto` 先读设置的本地 `.lrc`，否则请求 LRCLIB `/api/get`；`Local` / `Lrclib` 可强制。
+   LRC 解析兼容一行多时间戳、10ms/1ms、乱序、`[offset:]`，增强 LRC 的逐字标签降级为整行。
+4. **卡片 UI**：曲名/艺人、当前行、下一行、进度与时间、状态行；SMTC/LRCLIB 失败进状态行与日志，
+   不抛到卡片。设置区块提供来源、LRC 路径、偏移。
+5. **插件工程**：`src/Plugins/Lyrics`，manifest `builtin.lyrics`，宿主以普通运行时插件加载；
+   新增 `Icons.Play` 入口与 `builtin.lyrics` 的 BundledCardPluginFile。
+
+### 验证
+
+- `dotnet build -c Release` 0/0；`--selftest --isolated` 0；8 个插件加载成功（含 lyrics）。
+- LRC 解析自检（多时间戳/排序）通过；无播放会话时截图显示“未检测到正在播放”，不崩溃。
+- 未在真实播放器播放中验证歌词跟随（本机截图时无 SMTC 会话）。
+
+### 风险 / 未验证
+
+- TFM 升到 Windows 10 19041 后，旧系统不再受支持；WinRT 投影使安装包明显变大。
+- LRCLIB 限流/版权与歌词数据许可需用户自行判断；默认不接入网易云/QQ 等逆向接口。
+- 本地 LRC 目前需要手动指定路径，未按媒体文件名自动匹配；逐字歌词只做行级降级。
+- SMTC 的 Position 外推在不同播放器上可能有偏差，需要真机长时间听歌校准。
+
+---
+
+## 14. v2.46.7（明日方舟账号状态卡，未合并 main）
+
+### 背景
+
+按 [`arknights-account-data-research.md`](arknights-account-data-research.md) 做方舟账号状态卡：
+只读、用户自带森空岛凭据、不实现签到/战斗/抽卡等写接口。
+
+### 改动
+
+1. **SklandClient**：`cred + salt` → V2 签名请求 `/api/v1/game/player/binding` 自动找 UID；
+   V1 签名请求 `/api/v1/game/player/info?uid=`，只发 GET。
+2. **卡片 UI**：昵称、等级、UID、理智与回满时间、干员数、六星数；每 5 分钟刷新；
+   未配置/网络失败/业务错误都进状态行与日志。
+3. **设置区块**：cred、salt、UID 与“自动获取 UID”；凭据写入 `CardSettings.Extras["account"]`。
+4. **插件工程**：`src/Plugins/Account`，manifest `builtin.account`，宿主打包与插件加载同歌词卡。
+5. **自检**：`AccountSnapshot.Parse` 用内置玩家快照断言昵称/等级/干员数/六星数；不触网。
+
+### 验证
+
+- `dotnet build -c Release` 0/0；`--selftest --isolated` 0；8 个插件全部加载。
+- 未配置凭据时账号卡截图正常（等待森空岛数据），不崩溃。
+- **未用真实账号验证** binding/player.info 的签名、UA、dId/vName 与字段结构；接口可能随版本漂移。
+
+### 风险 / 未验证
+
+- 凭据目前明文存在 `settings.json`（符合“本地只读工具”的方向，但没有 DPAPI/钥匙串加密）；
+  共享配置文件会泄露 cred/salt。
+- 只实现 binding + player/info；没有扫码登录、cred refresh、抽卡归档/出率统计。
+- 森空岛签名/UA 是公开资料实现，存在风控与接口变更风险；不做任何写操作或托管服务。
+- 自动 UID 是递归找第一个 `uid`，可能命中账号 UID 而非角色 UID；建议用户手动确认。
