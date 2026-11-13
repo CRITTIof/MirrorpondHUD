@@ -108,6 +108,8 @@
     <Resource Include="assets\logo.ico" />
     <Resource Include="assets\logo-light.ico" />
     <Resource Include="assets\logo-black.png" />
+    <Resource Include="assets\MirrorpondHUDLogoBlack.ico" />
+    <Resource Include="assets\MirrorpondHUDLogoBlack.png" />
     <Resource Include="assets\logo-white.png" />
     <Resource Include="assets\MirrorpondHUDLogoYellow.png" />
     <Resource Include="assets\MirrorpondHUDLogoYellow.ico" />
