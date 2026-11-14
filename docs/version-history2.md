@@ -783,3 +783,21 @@ P2 87 项与 P3 62 项覆盖玻璃线程、媒体状态机、文本布局、插�
 - 二维码固定 v4-L，内容必须 1–78 字节；当前 `scanUrl` 约 63 字节。若官方把 scanUrl 加长会抛错并提示。
 - 凭据仍明文存 `settings.json`；扫码只是省去“找请求头”，没有改变存储方式。
 - SMTC 兜底时钟仍无法感知 seek；本轮只修第二批，P0-8/9/10 与 P1 未做。
+
+## 18. 并行审阅方法与 tests 入库（2026-11-14）
+
+### 改动
+
+1. **tests 入库**：`tests/` 移出 `.gitignore`，8 个源码 `.cs` + 2 个 csproj + README 入库；`TestRunner` 先验 26/26 通过（`df38559`）。
+2. **并行审阅工作法**：`docs/superpowers/specs/2026-11-14-parallel-review-method-design.md` + 实施计划 + `AGENTS.md` §13 引用；三道收口（写域/审阅/串行门禁）与 finding 结果信封（`86411a2`）。
+3. **并行审阅报告**：3 个只读 Worker + 交叉复核 + 误报率抽样，产出 `docs/review/2026-11-14-parallel-review.md`，0 P0 / 0 P1 / 8 P2 / 12 P3（`c9a6d3d`）。
+
+### 验证
+
+- `dotnet run --project tests\TestRunner\TestRunner.csproj -c Release` = 26/26，退出 0。
+- 必查清单 7 项全覆盖；空 catch 棘轮实跑 31/31 通过；`catch { return X; }` 实测 36 处未进门禁（P2 W2-01/W2-03）。
+
+### 风险 / 未验证
+
+- 报告为静态审阅，未 build、未跑 `--selftest`/`--smoke`。
+- `tests/` 入库带来测试期 xunit 依赖（生产仍零 NuGet）。
