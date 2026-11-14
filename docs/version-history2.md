@@ -788,9 +788,9 @@ P2 87 项与 P3 62 项覆盖玻璃线程、媒体状态机、文本布局、插�
 
 ### 改动
 
-1. **tests 入库**：`tests/` 移出 `.gitignore`，8 个源码 `.cs` + 2 个 csproj + README 入库；`TestRunner` 先验 26/26 通过（`df38559`）。
-2. **并行审阅工作法**：`docs/superpowers/specs/2026-11-14-parallel-review-method-design.md` + 实施计划 + `AGENTS.md` §13 引用；三道收口（写域/审阅/串行门禁）与 finding 结果信封（`86411a2`）。
-3. **并行审阅报告**：3 个只读 Worker + 交叉复核 + 误报率抽样，产出 `docs/review/2026-11-14-parallel-review.md`，0 P0 / 0 P1 / 8 P2 / 12 P3（`c9a6d3d`）。
+1. **tests 入库**：`tests/` 移出 `.gitignore`，8 个源码 `.cs` + 2 个 csproj + README 入库；`TestRunner` 先验 26/26 通过（`0580a9f`）。
+2. **并行审阅工作法**：`docs/superpowers/specs/2026-11-14-parallel-review-method-design.md` + 实施计划 + `AGENTS.md` §13 引用；三道收口（写域/审阅/串行门禁）与 finding 结果信封（`673d461`）。
+3. **并行审阅报告**：3 个只读 Worker + 交叉复核 + 误报率抽样，产出 `docs/review/2026-11-14-parallel-review.md`，0 P0 / 0 P1 / 8 P2 / 12 P3（`59fdefa`）。
 
 ### 验证
 

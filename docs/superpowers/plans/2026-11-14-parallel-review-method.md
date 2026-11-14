@@ -46,7 +46,7 @@ Expected: 无输出（有输出则先让用户关闭实例，再继续）
 - [ ] **Step 2: 记录基线**
 
 Run: `git rev-parse --short HEAD; git branch --show-current; git status --porcelain`
-Expected: `b27e67d`、`review/2.45.1-fixes`、22 行 porcelain（2 修改 + 20 个目录折叠项；`-uall` 实为 36 个文件）；把三行输出存进报告附录
+Expected: `b27e67d`、`review/2.45.1-fixes`、21 行 porcelain（2 修改 + 19 个未跟踪项；`-uall` 实为 36 个文件）；把三行输出存进报告附录
 
 - [ ] **Step 3: 确认体裁文件未变**
 
