@@ -27,7 +27,7 @@
 
 ## ✨ 功能
 
-- **卡片化** — 信息与文本 / 命令行 / 媒体 / AI 对话 / 文件中转站 / 按钮演示六种卡片，可随时添加、删除、上下移动；同一种卡片可以有任意多张，名称也可以重名
+- **卡片化** — 信息与文本 / 命令行 / 媒体 / 歌词 / 明日方舟账号 / AI 对话 / 文件中转站 / 按钮演示八种卡片，可随时添加、删除、上下移动；同一种卡片可以有任意多张，名称也可以重名
 - **常驻或呼出** — 每张卡片可以「常驻」在屏幕上，也可以关掉常驻、绑定一个全局热键按需呼出；两张卡片设成同一个热键时，按下会**同时**显示
 - **按顺序堆叠** — 设置页里的顺序就是叠层上的顺序；第一张对齐到锚点，其余按各自的「与上方卡片间距」向下排列，解锁后拖动任意一张会移动整叠；「对齐方式」可选自动 / 左对齐 / 右对齐，让所有卡片共线的是卡片边缘而不是文字边缘
 - **实时数据** — CPU / GPU / 磁盘 / 网络 / 内存 / 分区空间 / 时间 / 运行时长，PDH 性能计数器采样，独立线程不卡 UI
@@ -36,6 +36,8 @@
 - **按键显示** — 全局键盘钩子，最近按键、重复折叠（`A×6`）、最大字符数限制，按键以键帽字形显示
 - **快捷命令行** — 命令行是一张普通卡片，按自己的热键展开；**工具 / 工作目录 / 超时都在这张卡片自己身上**，所以可以同时放 CMD、PowerShell、WSL 三张卡片各用各的
 - **CLI 交互面板** — AI 对话与命令行现在是**同一套面板**（终端版式、同一套角色与滑块）：每一条命令 / 每一轮问答都是一块**内部小面板**，各带自己的滚动条，互不挤占；整块面板的宽度、高度上限、小面板高度、最多保留条数都在「外观 → CLI 交互面板」里调
+- **歌词卡片** — 跟随系统当前播放（SMTC）显示歌词：优先本地 LRC，没有就查 LRCLIB；支持时间偏移与「换行时粒子聚字」，网易云这类不报时间轴的播放器有本地兜底时钟
+- **明日方舟账号卡片** — 森空岛只读档案：昵称 / 等级 / 理智 / 六星数量；设置里直接「扫码登录」，自动回填 cred 与 salt，不用再翻浏览器请求头
 - **媒体卡片** — 一张卡片显示图片 / 位图 / 动图（GIF）/ 视频，可调缩放方式、宽高、透明度、循环、静音、倍速，并可选择是否按外观的圆角裁圆；卡片顶部显示文件名（过长省略），视频底部带播放进度条；系统解不开的视频会自动改用 ffmpeg
 - **AI 对话卡片** — 一张**命令行样式**的终端卡：第一行模型名、第二行 `>` 提示符输入、下面每轮问答各一块内部小面板（各自滚动）。走 OpenAI 兼容接口，**每张卡自己一套**接口地址 / 模型 / Key（所以能同时挂两个模型）；单次（每次不带历史）与轮询（保留上下文连续对话）用全局热键切换，卡片上不放按钮
 - **Key 加密** — API Key 用 Windows DPAPI（当前用户）加密后再写进 `settings.json`，文件里只有 `dpapi:…` 密文；设置页也不回显，已填过就显示「已填写 API Key，重新输入以更换」
@@ -48,13 +50,16 @@
 
 ## 🚀 快速开始
 
-**下载即用**：到 [Releases](https://github.com/CRITTIof/MirrorpondHUD/releases) 下载最新版 `v2.9.2`。
-自 v2.1.0 起只提供**需要手动安装 .NET 8 桌面运行时**的版本（体积小）；先装运行时，再双击 exe：
+**下载即用**：到 [Releases](https://github.com/CRITTIof/MirrorpondHUD/releases) 下载最新版 `v2.48.0`。
+提供「自带运行时」与「依赖运行时」两种包：前者体积大但双击即用，后者需先装
+[.NET 8 桌面运行时](https://dotnet.microsoft.com/download/dotnet/8.0)。
 
 | 文件 | 适用 | 说明 |
 | --- | --- | --- |
-| `MirrorpondHUD-x64-requires-dotnet.exe` | 普通电脑（x64） | 需要 [.NET 8 桌面运行时](https://dotnet.microsoft.com/download/dotnet/8.0) |
-| `MirrorpondHUD-arm64-requires-dotnet.exe` | Windows on ARM | 需要 [.NET 8 桌面运行时](https://dotnet.microsoft.com/download/dotnet/8.0) |
+| `MirrorpondHUD-x64.zip` | 普通电脑（x64） | 自带 .NET 8 运行时，解压即用 |
+| `MirrorpondHUD-arm64.zip` | Windows on ARM | 自带 .NET 8 运行时，解压即用 |
+| `MirrorpondHUD-x64-requires-dotnet.zip` | 普通电脑（x64） | 体积小，需要 .NET 8 桌面运行时 |
+| `MirrorpondHUD-arm64-requires-dotnet.zip` | Windows on ARM | 体积小，需要 .NET 8 桌面运行时 |
 
 **从源码运行**：
 
@@ -98,13 +103,15 @@ run.bat
 - **常驻**：勾选后一直显示；取消后必须设置「呼出热键」
 - **不再有实时预览**：内容在叠层上直接看效果，设置页只做编辑
 
-六种卡片：
+八种卡片：
 
 | 卡片 | 内容 | 说明 |
 | --- | --- | --- |
 | 信息与文本 | 系统信息（CPU / 内存 / GPU / 网络 / 磁盘）、时钟、按键、任意文字 | 一张卡片，用「预设」切换：系统信息 / 时钟 / 按键 / 文本信息；四种内容都支持全部占位符 |
 | 命令行 | 提示符 / 历史 / 输入 | 独占键盘，按自己的热键展开；工具与超时是**每张卡片独立**的 |
 | 媒体 | 图片 / 位图 / 动图 / 视频 | 顶部文件名、视频进度条；文件、缩放、透明度、解码器都在卡片里 |
+| 歌词 | 当前行 / 下一行 / 进度 | 跟随系统播放（SMTC），本地 LRC 或 LRCLIB；支持时间偏移、粒子聚字；来源与偏移在卡片里 |
+| 明日方舟账号 | 昵称 / 等级 / 理智 / 六星数量 | 森空岛只读档案；设置里扫码登录，自动回填 cred / salt，不签到、不写账号 |
 | AI 对话 | 模型名 / `>` 输入行 / 终端记录 | 命令行样式；OpenAI 兼容接口，每张卡一套地址 / 模型 / Key；单次 / 轮询走全局热键，Key 用 DPAPI 加密存储 |
 | 文件中转站 | 拖入的文件 / 文件夹列表（图标 / 名称 / 大小） | 引用 / 复制 / 移动；拖入 / 拖出 / 从剪贴板粘贴；搜索过滤、Ctrl/Shift 多选与批量移除 / 移到回收站 / 复制路径；文件夹递归收纳（保留子目录）；复制显示进度与速度、可取消；列表存每卡状态文件，不塞 settings.json |
 | 按钮演示（实验） | 三种语气的按钮 + 输入框回显 | 验证 `CardButton` / `CardTextBox` 与「不点击穿透」的交互卡片 |
@@ -255,15 +262,15 @@ build.bat          :: 只编译
 publish.bat        :: 生成 publish\ 下的四个单文件
 ```
 
-运行时插件（`plugins/cards`）是宿主唯一的卡片来源：**2.16.0 起 6 张内置卡全部是独立 DLL 插件**
-（`src/Plugins/{InfoText,Buttons,Command,Chat,Media,DropStation}`，程序集 `MirrorpondHUD.Cards.*.dll`，
-manifest id `builtin.*`），宿主本身不再内置任何卡片实现。宿主构建后会把这 6 个插件复制到
+运行时插件（`plugins/cards`）是宿主唯一的卡片来源：**2.16.0 起 8 张内置卡全部是独立 DLL 插件**
+（`src/Plugins/{InfoText,Buttons,Command,Chat,Media,DropStation,Lyrics,Account}`，程序集 `MirrorpondHUD.Cards.*.dll`，
+manifest id `builtin.*`），宿主本身不再内置任何卡片实现。宿主构建后会把这 8 个插件复制到
 `<exe>/plugins/cards/builtin.*/`（single-file 发布同样复制到发布目录）。用户插件与内置插件走同一条加载路径：
 插件工程引用 `src/Contracts/MirrorpondHUD.Contracts.csproj`，需要共享控件（含媒体控件）时再加
-`src/UiKit/MirrorpondHUD.UiKit.csproj`；不要把 Contracts / UiKit 的 DLL 复制进插件目录。示例：
+`src/UiKit/MirrorpondHUD.UiKit.csproj`；不要把 Contracts / UiKit 的 DLL 复制进插件目录。示例工程在本地 `samples/` 维护，不随仓库发布；编译宿主：
 
 ```bat
-dotnet build samples\RuntimeCardExample\RuntimeCardExample.csproj -c Release
+dotnet build MirrorpondHUD.csproj -c Release
 ```
 
 ## 🩺 故障排查
@@ -296,7 +303,7 @@ dotnet build samples\RuntimeCardExample\RuntimeCardExample.csproj -c Release
   **设置 → 外观 → 高级（实验性）** 里可调。三条路的实测与选择建议见
   **[docs/glass-implementations.md](docs/glass-implementations.md)**。只想要半透明卡片的话，把「背景不透明度」
   调到 0.5–0.7 即可，没有额外开销
-- 运行期插件（`plugins/cards/*.dll`）：把可信本地插件放进 `plugins/cards/<id>/`（便携目录）或 `%LOCALAPPDATA%\MirrorpondHUD\plugins\cards\<id>/`（manifest + DLL），**重启宿主后**出现在「添加卡片」。插件只引用 `MirrorpondHUD.Contracts`（需要共享控件时再加 `MirrorpondHUD.UiKit`），不引用宿主 DLL；宿主会拒绝仍引用 `MirrorpondHUD` 的插件。2.16.0 起 6 张内置卡也全部是 DLL 插件（宿主内置 0、运行时插件 6），2.17.0–2.19.0 陆续补齐数据展示、图表、树/时间线、浮层交互等 UiKit 控件；2.21.0 引入 Lucide 开源图标字体（ISC）与 `CardIcon` / `LucideIcons`。**本项目不提供热插拔 / 热重载**：安装、更新、删除插件都通过替换目录并重启宿主生效；`--plugin-dev` 已移除。插件缺失时卡片显示「插件不可用」占位并保留原 `Kind` / `Extras`。完整制作指南见根目录 [DLL-CARD-PLUGIN-GUIDE.md](DLL-CARD-PLUGIN-GUIDE.md)，设计与安全边界见 [docs/runtime-card-extensions.md](docs/runtime-card-extensions.md)。`AssemblyLoadContext` 不是安全沙箱，只加载可信本地插件；加一种内置卡片 = 在 `src/Plugins` 新增一个插件工程（manifest id `builtin.*`），文字卡继承 `CardModuleBase`，图片 / 视频等富内容卡继承 `RichCardModuleBase`。 两个可直接参考的示例工程：`samples/RuntimeCardExample`（最小文字卡）与 `samples/UiKitGallery`（27 个 UiKit 控件类的画廊，不并入宿主构建）。
+- 运行期插件（`plugins/cards/*.dll`）：把可信本地插件放进 `plugins/cards/<id>/`（便携目录）或 `%LOCALAPPDATA%\MirrorpondHUD\plugins\cards\<id>/`（manifest + DLL），**重启宿主后**出现在「添加卡片」。插件只引用 `MirrorpondHUD.Contracts`（需要共享控件时再加 `MirrorpondHUD.UiKit`），不引用宿主 DLL；宿主会拒绝仍引用 `MirrorpondHUD` 的插件。2.16.0 起 8 张内置卡也全部是 DLL 插件（宿主内置 0、运行时插件 8），2.17.0–2.19.0 陆续补齐数据展示、图表、树/时间线、浮层交互等 UiKit 控件；2.21.0 引入 Lucide 开源图标字体（ISC）与 `CardIcon` / `LucideIcons`。**本项目不提供热插拔 / 热重载**：安装、更新、删除插件都通过替换目录并重启宿主生效；`--plugin-dev` 已移除。插件缺失时卡片显示「插件不可用」占位并保留原 `Kind` / `Extras`。完整制作指南见根目录 [DLL-CARD-PLUGIN-GUIDE.md](DLL-CARD-PLUGIN-GUIDE.md)，设计与安全边界见 [docs/runtime-card-extensions.md](docs/runtime-card-extensions.md)。`AssemblyLoadContext` 不是安全沙箱，只加载可信本地插件；加一种内置卡片 = 在 `src/Plugins` 新增一个插件工程（manifest id `builtin.*`），文字卡继承 `CardModuleBase`，图片 / 视频等富内容卡继承 `RichCardModuleBase`。示例工程在本地 `samples/` 维护，不随仓库发布。
   图片 / 视频这类富内容卡继承 `RichCardModuleBase`，宿主不用改
 
 ## 🗂️ 目录结构
@@ -307,7 +314,7 @@ src/
   Cards/                 卡片加载器 / 注册表 / 配置模型（宿主不含任何具体卡片实现）
   Contracts/             插件契约、通用设置 DTO、宿主服务契约、Json / Log / AsyncProcess / SecretStore
   UiKit/                 共享 WPF 控件（表单控件、媒体控件 CardMediaView 等）
-  Plugins/               6 张内置卡，各自独立 DLL 插件工程（InfoText / Buttons / Command / Chat / Media / DropStation）
+  Plugins/               8 张内置卡，各自独立 DLL 插件工程（InfoText / Buttons / Command / Chat / Media / DropStation / Lyrics / Account）
   Core/                  设置读写、主题、卡片状态、公共工具
   Metrics/               PDH / nvidia-smi 采样
   Text/                  模板引擎、占位符、按键名
@@ -441,7 +448,7 @@ Everything is stored in `settings.json` next to the executable (`SchemaVersion: 
   screenshots or recordings** — a self-capturing window has to exclude itself. Measured numbers, the full list
   of flaws and how to choose: **[docs/glass-implementations.md](docs/glass-implementations.md)** (bilingual).
   If all you want is a translucent card, set *Background opacity* to 0.5–0.7 — it costs nothing
-- Runtime plugins (`plugins/cards/*.dll`): install a trusted local plugin under `plugins/cards/<id>/` or `%LOCALAPPDATA%\MirrorpondHUD\plugins\cards\<id>/` (manifest + DLL), then **restart the host**; it appears in *Add card*. Plugins reference `MirrorpondHUD.Contracts` (plus optional `MirrorpondHUD.UiKit` for shared controls) and never the host DLL; plugins that still reference `MirrorpondHUD` are rejected. Since 2.16.0 the six built-in cards are DLL plugins too (host ships 0 built-in / 6 runtime plugins). **There is no hot reload / hot swap**: install, update or remove plugins by replacing the folder and restarting; `--plugin-dev` has been removed. A missing plugin keeps its `Kind` / `Extras` and renders a "plugin unavailable" placeholder. Full authoring guide: [DLL-CARD-PLUGIN-GUIDE.md](DLL-CARD-PLUGIN-GUIDE.md); design/security notes: [docs/runtime-card-extensions.md](docs/runtime-card-extensions.md). The ALC is not a sandbox — only trusted local plugins. Adding a built-in card means a new plugin project under `src/Plugins` with a `builtin.*` manifest id.
+- Runtime plugins (`plugins/cards/*.dll`): install a trusted local plugin under `plugins/cards/<id>/` or `%LOCALAPPDATA%\MirrorpondHUD\plugins\cards\<id>/` (manifest + DLL), then **restart the host**; it appears in *Add card*. Plugins reference `MirrorpondHUD.Contracts` (plus optional `MirrorpondHUD.UiKit` for shared controls) and never the host DLL; plugins that still reference `MirrorpondHUD` are rejected. Since 2.16.0 the eight built-in cards are DLL plugins too (host ships 0 built-in / 8 runtime plugins). **There is no hot reload / hot swap**: install, update or remove plugins by replacing the folder and restarting; `--plugin-dev` has been removed. A missing plugin keeps its `Kind` / `Extras` and renders a "plugin unavailable" placeholder. Full authoring guide: [DLL-CARD-PLUGIN-GUIDE.md](DLL-CARD-PLUGIN-GUIDE.md); design/security notes: [docs/runtime-card-extensions.md](docs/runtime-card-extensions.md). The ALC is not a sandbox — only trusted local plugins. Adding a built-in card means a new plugin project under `src/Plugins` with a `builtin.*` manifest id.
 
 ## Build
 
@@ -456,7 +463,7 @@ for the shared WPF controls (building the plugin brings both along); it must not
 `MirrorpondHUD.Contracts.dll` / `MirrorpondHUD.UiKit.dll` into the plugin folder:
 
 ```bat
-dotnet build samples\RuntimeCardExample\RuntimeCardExample.csproj -c Release
+dotnet build MirrorpondHUD.csproj -c Release
 ```
 
 ## Credits and license
