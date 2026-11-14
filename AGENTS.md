@@ -18,6 +18,7 @@ dotnet run --project tests\TestRunner\TestRunner.csproj -c Release  :: 纯逻辑
 run.bat / build.bat / publish.bat                        :: 运行 / 构建 / 发布
 ```
 
+- 测试工程用 xunit（仅测试期依赖，fresh clone 需 `dotnet restore`；生产代码仍零 NuGet），说明见 `tests\README.md`。
 - 配置与日志在 `bin\Release\`：`settings.json`、`mirrorpond.log`，排查先看这两处。
 - UI 自查：`--screenshot-cards|--screenshot-settings|--screenshot-widgets|--screenshot-dialog <路径>`。
 - `--selftest` / `--screenshot` 是立即模式：已有实例时**退出 2**，不伪造绿灯；并行跑多个会撞单实例互斥体，需串行。
@@ -142,3 +143,8 @@ run.bat / build.bat / publish.bat                        :: 运行 / 构建 / �
 
 - 2.24.0 已清理 `GlassRuntimeState` 单源、Acrylic/Glass 双套模糊参数与旧 GlassMode 值；不得再引入旧字段/旧 mode。
 - “宿主提供的 Config 永远是新树”；Cards↔UiKit 渲染管线是长期约束，改前先读注释。
+
+## 13. 并行作业
+
+- 多 agent 并行处理与审阅的流程见 `docs/superpowers/specs/2026-11-14-parallel-review-method-design.md`：写域互斥（公共文件归 Lead）、作者 ≠ 审阅者、build / `--selftest` / 截图由 Lead 串行收口。
+- 审阅报告落 `docs/review/YYYY-MM-DD-<主题>.md`，定级 P0–P3；P0/P1 必须交叉复核后才进正文。
