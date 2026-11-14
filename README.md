@@ -385,7 +385,7 @@ tools/                   开发脚本（make_logo.py 生成多尺寸 logo.ico）
 
 ## Quick start
 
-Download the latest release from [Releases](https://github.com/CRITTIof/MirrorpondHUD/releases) (`MirrorpondHUD-x64-requires-dotnet.exe` is the usual choice; since `v2.1.0` only framework-dependent builds are published, so install the [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0) first), or build from source:
+Download the latest release from [Releases](https://github.com/CRITTIof/MirrorpondHUD/releases) (`MirrorpondHUD-x64-requires-dotnet.zip` is the usual choice; since `v2.1.0` only framework-dependent builds are published, so install the [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0) first), or build from source:
 
 ```bat
 git clone https://github.com/CRITTIof/MirrorpondHUD.git
