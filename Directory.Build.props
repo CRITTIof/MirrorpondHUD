@@ -1,0 +1,38 @@
+<Project>
+
+  <!--
+    全仓构建基线（2026-11 现代化治理 A）：
+    - 固定 LangVersion，避免 SDK 升级把 C# 14 语法悄悄放进源码；
+    - Nullable / ImplicitUsings 暂时仍关闭：评估报告实测全开会产生 902 处
+      Nullable 诊断与 227 个 CS0104 二义错误，不能混在风格改造里做；
+    - 输出路径 / 符号 / 文档文件统一，各 csproj 不再重复这些属性。
+  -->
+  <PropertyGroup>
+    <!-- X-4：版本号唯一来源；6 个 manifest 由构建生成。 -->
+    <Version>2.48.0</Version>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <LangVersion>12.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <DebugType>portable</DebugType>
+    <!--
+      X-6：把“0 警告”从人工纪律变成门禁。
+      TreatWarningsAsErrors 让任何新警告直接挡住构建；EnforceCodeStyleInBuild 让
+      .editorconfig 里的 IDE 规则真正参与编译；AnalysisLevel=latest 用当前 SDK 的最新分析器。
+      如果某条规则确实不适合本仓库，应在 .editorconfig 里显式降级并写明原因，而不是关掉整个门禁。
+    -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <AnalysisLevel>latest</AnalysisLevel>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <Optimize>true</Optimize>
+  </PropertyGroup>
+
+</Project>

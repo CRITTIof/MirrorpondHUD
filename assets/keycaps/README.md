@@ -1,5 +1,7 @@
 <h1 align="center">ReiconFont</h1>
 
+> 本项目只保留字体文件、`MAPPING.md` 与 `OFL.txt`；下方 README 来自 ReiconFont 原仓库，其中 `demo.html`、`requirements.txt`、`src/*.py` 等开发文件不随本仓库分发。
+
 <p align="center">
   <b>透明、贴合内容的键帽与系统图标字体：87 个键帽 + 32 个图标，共用一套 1em 网格。</b><br>
   <sub>A transparent, content-fitted keycap and system-icon font with 87 keycaps and 32 icons on a single 1em grid.</sub>
@@ -42,7 +44,7 @@
 | `ReiconFont-Regular.woff2` | 网页字体 | 体积小，适合 `@font-face` |
 | `MAPPING.md` | 映射文档 | 119 个 PUA、62 个 ASCII 别名、106 个 `event.code` |
 
-许可证见仓库根目录的 [LICENSE](LICENSE)。
+许可证见仓库根目录的 [OFL.txt](OFL.txt)。
 
 **桌面安装**：Windows 双击 TTF 选择“安装”；macOS 用“字体册”打开后选择“安装字体”。
 
@@ -65,7 +67,7 @@
 
 `font-size` 就是键帽的视觉高度。保持 `line-height: 1`，颜色用 `color` / `currentColor` 控制。
 
-**本地演示**：打开仓库里的 [demo.html](demo.html)，支持物理按键、点击键帽、明暗主题和字号调节，无需构建或本地服务器。
+**本地演示**：打开仓库里的 `demo.html`，支持物理按键、点击键帽、明暗主题和字号调节，无需构建或本地服务器。
 
 ## 🧩 映射
 
@@ -116,7 +118,7 @@ document.addEventListener("keydown", (event) => {
 
 ## 🔨 构建
 
-需要 Python 3.10+ 和 [requirements.txt](requirements.txt) 中的依赖。
+需要 Python 3.10+ 和 `requirements.txt` 中的依赖。
 
 ```bash
 python -m venv .venv
@@ -178,7 +180,7 @@ Download the fonts from **[Releases](https://github.com/CRITTIof/reicon-font/rel
 | `ReiconFont-Regular.woff2` | Web font |
 | `MAPPING.md` | Full Chinese mapping reference |
 
-The license is the [LICENSE](LICENSE) file at the repository root.
+The license is the [OFL.txt](OFL.txt) file at the repository root.
 
 ```css
 @font-face {
@@ -194,7 +196,7 @@ The license is the [LICENSE](LICENSE) file at the repository root.
 <span class="key">A</span>         <!-- A keycap -->
 ```
 
-Use PUA codepoints for exact glyphs. ASCII letters and digits are aliases for the matching keycaps. **Do not use this font for body text.** See **[MAPPING.md](MAPPING.md)** for the full PUA / ASCII / `event.code` tables, or copy the `KEYS` array from [demo.html](demo.html).
+Use PUA codepoints for exact glyphs. ASCII letters and digits are aliases for the matching keycaps. **Do not use this font for body text.** See **[MAPPING.md](MAPPING.md)** for the full PUA / ASCII / `event.code` tables, or copy the `KEYS` array from `demo.html`.
 
 ### Build
 

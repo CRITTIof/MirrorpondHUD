@@ -1,7 +1,7 @@
 # 文件中转站：调研与设计（2026-10-31）
 
 > 目标：在现有卡片框架里做一个**文件中转站**——把文件从资源管理器拖进卡片、暂存成列表，
-> 之后可以打开 / 在资源管理器中定位 / 拖出 / 删除。本文回答：它要什么、接哪些现有契约、
+> 之后可以打开 / 在资源管理器中定位 / 拖出 / 移到回收站。本文回答：它要什么、接哪些现有契约、
 > 有哪些坑、分几步做。
 >
 > 定位：**本地暂存**，不是 PC ↔ 手机的局域网传输。后者需要 HTTP 服务、防火墙、配对与二维码，
@@ -26,7 +26,7 @@ M1 约 500–700 行，不碰宿主大文件。
 ### 目标（M1 内）
 
 - 从资源管理器把文件 / 多选拖进卡片 → 出现列表（名称、大小、来源）；
-- 列表可滚动、可删除单条、可清空；双击打开，右键「在资源管理器中显示 / 复制路径 / 删除」；
+- 列表可滚动、可移除单条、可移到回收站、可清空；双击打开，右键「在资源管理器中显示 / 复制路径 / 从列表移除 / 移到回收站」；
 - 三种收纳方式：**引用**（只记路径，不动文件）、**复制**（收进接收目录）与**移动**（复制成功后删源）；
 - 列表持久化在每卡状态目录，重启后还在；源文件被删 / 移走时标记「已丢失」；
 - 卡片设置：模式、接收目录、最多保留条数、是否显示图标；
@@ -46,7 +46,7 @@ M1 约 500–700 行，不碰宿主大文件。
 | `ICardDropTarget` | v2.6.3；宿主统一注册 `AllowDrop` / `DragOver` / `Drop` | 模块只写 `CanDrop` / `Drop`，不碰窗口 |
 | `HandlesOwnDrag` | v2.6.3；关掉整卡拖动 | **慎用**：一开就没法拖整张卡片（见 §7.2） |
 | `NeedsMouseInput` | 已有；关掉点击穿透，内容能收鼠标 | 列表 / 右键 / 双击需要它 |
-| `ICardHost` + `ICardHostAware` | v2.7.0；每卡状态目录、原子写、`RequestLayout` / `RequestRender` | 列表持久化、列表变长后重排 |
+| `ICardHost` | v2.7.0；每卡状态目录、原子写、`RequestLayout` / `RequestRender`（`ICardHostAware` 已于 2.29.0 删除） | 列表持久化、列表变长后重排 |
 | `CardStateStore` | 原子写（`.tmp` + 替换）+ 文件名 / Id 校验 | `items.json` 就放这里，不塞 `settings.json` |
 | `Extras` + `ICardSettingsModule` / `ICardEditorSection` / `ICardSettingsValidator` | v2.6.0–2.6.2 | 模式 / 目录 / 条数由模块自己管 |
 | `ICardStyleAware` | v2.8.0 起；v2.9.4 起 CLI 也能就地换肤 | 换主题时列表不重建、不闪 |
@@ -66,7 +66,7 @@ M1 约 500–700 行，不碰宿主大文件。
 ### 3.2 列表操作
 
 - 双击：`ShellExecute` 打开（等价于资源管理器双击）；
-- 右键菜单：打开 / 在资源管理器中显示（`explorer /select,`）/ 复制路径 / 从列表移除 / 删除文件（仅当文件在接收目录里，需确认）；
+- 右键菜单：打开 / 在资源管理器中显示（`explorer /select,`）/ 复制路径 / 从列表移除 / 移到回收站（仅当文件在接收目录里，需确认）；
 - 顶部按钮：清空列表 / 打开接收目录 / 从剪贴板添加（M2）；
 - 空状态：「把文件拖进来」+ 一行说明当前模式。
 
@@ -123,6 +123,8 @@ public sealed class StationSettings
 
 - 写：`ICardHost.WriteState("items.json", json)`，每次增删 / 复制完成 / 剪枝后写；
 - 读：`ReadState`，失败 / 损坏 → 空列表 + 日志（不要因为状态坏了打不开卡片）；
+- 版本：`formatVersion` 高于当前支持的 1 时拒绝加载、只记一条 Warn、后续所有写盘为空操作
+  （绝不覆盖原文件），卡片状态行显示只读提示；缺字段按 1 处理；
 - 剪枝：超过 `MaxEntries` 从最旧开始丢**列表项**，不删文件；
 - 启动时轻量校验：`File.Exists(storedPath)` → 不在就标 `missing`，不自动删；
 - 不把列表塞进 `settings.json`（配置会变大、和 `Normalize` 打架，见 P1-12）。
@@ -196,8 +198,9 @@ public sealed class DropStationCard : RichCardModuleBase,
 ### 6.2 内容控件拿不到 `ICardHost`（v2.10.2 已补）
 
 原始缺口：`CardRenderContext` 只有 `Settings / MetricsSnapshot / KeyHistory / CardSettings / Variables`，
-没有 `ICardHost`；而 `ICardHostAware.Attach(host)` 又约定「模块是单例，不要把 host 存进字段」。
-结果是列表变长、需要 `host.RequestLayout()` 时，内容控件拿不到 host。
+没有 `ICardHost`；而当时的 `ICardHostAware.Attach(host)` 又约定「模块是单例，不要把 host 存进字段」。
+结果是列表变长、需要 `host.RequestLayout()` 时，内容控件拿不到 host。该接口已于 2.29.0 删除，
+现在只保留 `CardRenderContext.Host` 这一条路径。
 
 **v2.10.2 已按方案 A 落地**：`CardRenderContext.Host`（可空），宿主在 `EnsureContent` / `RenderCardText` /
 `SyncCards` 构造上下文时传 `slot.Host`；内容控件在构造函数里保存这份 host 即可，
@@ -268,7 +271,9 @@ M2 如果要在 UI 上尊重 Shift / Ctrl，需要把接口扩成 `DragDropEffec
 ## 9. 安全与隐私
 
 - 拖进来的路径是**不可信输入**：只当文件路径用，不拼命令行、不执行、不解压；
-- 「打开」走 `ShellExecute`，是用户显式动作；「删除」默认二次确认，且只允许删接收目录内的文件；
+- 「打开」走 `ShellExecute`，是用户显式动作；「移到回收站」默认二次确认，且只允许处理接收目录内的文件 / 文件夹：
+  通过 `SHFileOperationW`（`FO_DELETE` + `FOF_ALLOWUNDO`）交给系统回收站，可从回收站还原；
+  失败项保留在列表、**不永久删除**，也不回退到 `File.Delete` / `Directory.Delete`，状态行与日志同时给出失败项与返回码；
 - 状态文件只记录路径 / 名称 / 大小，不记录文件内容；日志默认只写文件名，不写完整用户路径（可调试开关）；
 - 接收目录权限继承用户配置目录；不要把中转站目录设到 `Program Files` 这类需要管理员的位置（`Validate` 提示）；
 - 拖入 `.lnk` / `.bat` 不特殊处理，打开仍由系统确认。
@@ -362,7 +367,7 @@ M2 如果要在 UI 上尊重 Shift / Ctrl，需要把接口扩成 `DragDropEffec
   无匹配时显示「没有匹配的文件。」。
 - **多选**：`CardList.SelectionMode = Extended`；Ctrl 点选、Shift 连选（过滤后按可见列表连选），
   右键点在已选行上保留多选，点在未选行上只选该行。
-- **批量操作**：复制选中路径（多行）、移除选中项、删除选中文件（只允许接收目录内，一次确认）、
+- **批量操作**：复制选中路径（多行）、移除选中项、移到回收站（只允许接收目录内，一次确认）、
   多文件拖出；菜单标题显示选中数量。
 - **自动清理 / 图标**：设置「加载列表时移除丢失项（只清列表）」与「显示文件图标」；
   自动清理只在加载状态时执行，不会碰磁盘文件。
@@ -376,11 +381,19 @@ M2 如果要在 UI 上尊重 Shift / Ctrl，需要把接口扩成 `DragDropEffec
   跳过重解析点（符号链接 / junction）；按字节进度 / 速度显示，取消 / 失败递归删除半成品；
 - Move：复制成功后递归删除源目录；删源失败保留目标并警告；
 - 防自嵌套：接收目录位于源文件夹内部时拒绝该文件夹；
-- 删除：接收目录内的文件夹可连同内容删除，二次确认；
+- 删除：接收目录内的文件夹连同内容移到回收站，二次确认；
 - 自检：带子目录 / 空目录的 Copy / Move、Reference 目录项、文件夹名冲突。
+
+### 回收站（删除语义）
+
+- 右键「移到回收站」只处理**接收目录内、且仍存在**的条目；接收目录外的路径（引用模式、手动改过的 `storedPath`）菜单项不可用；
+- 逐项调用 `SHFileOperationW`（`FO_DELETE` + `FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT | FOF_NOERRORUI`），
+  成功才从列表移除并持久化 `items.json`；失败项留在列表，状态行「已移到回收站 N 项，失败 M 项」，日志带文件名与返回码；
+- 失败**绝不回退**到 `File.Delete` / `Directory.Delete`：回收站失败时必须保持可还原，不能悄悄变成永久删除；
+- 文件夹连同内容整体移入回收站；确认框文案为「移到回收站（可从回收站还原）」。
 
 ### 还没做
 
 - 缩略图、每卡热键动作、复制队列持久化；
 - 拖放时按 Shift / Ctrl 显示 Move / Copy（宿主契约仍只回 Copy）；
-- 复制过程中对单条 pending 项执行删除 / 清空时，后台任务与列表的一致性还需收口。
+- 复制过程中对单条 pending 项执行移到回收站 / 清空时，后台任务与列表的一致性还需收口。

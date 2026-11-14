@@ -13,7 +13,7 @@
             <TextBlock Text="文件" VerticalAlignment="Center" />
             <TextBox Grid.Column="1"
                      Text="{Binding MediaPath, UpdateSourceTrigger=PropertyChanged}"
-                     ToolTip="支持的图片：png / jpg / bmp / gif / tif；视频：mp4 / wmv / avi / mkv（取决于系统解码器）" />
+                     ToolTip="图片：png / jpg / bmp / gif / tif；视频：mp4 / wmv / avi / mkv，取决于系统解码器" />
             <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="8,0,0,0">
                 <Button Content="选择…" Click="PickMediaFileClick" />
                 <Button Content="清除" Margin="6,0,0,0" Click="ClearMediaFileClick" />
@@ -58,7 +58,7 @@
             <Slider Width="100" Minimum="0.25" Maximum="4" Margin="6,0,6,0"
                     Value="{Binding MediaSpeed}" VerticalAlignment="Center" />
             <TextBlock Text="{Binding MediaSpeedText}" VerticalAlignment="Center"
-                       Foreground="{StaticResource TextSecondary}" />
+                       Foreground="{DynamicResource TextSecondary}" />
         </WrapPanel>
         <TextBlock Text="解码器" Style="{StaticResource SectionTitle}" Margin="0,12,0,6" />
 
@@ -72,8 +72,8 @@
             <TextBlock Text="视频 / 图片" VerticalAlignment="Center" />
             <ComboBox Grid.Column="1" Width="150" VerticalAlignment="Center"
                       SelectedIndex="{Binding MediaDecoderIndex}"
-                      ToolTip="自动：系统放不了的格式（mkv / webm / av1 …）改用 ffmpeg&#x0a;仅 ffmpeg：所有视频都交给 ffmpeg（无声音、固定 1× 速度）">
-                <ComboBoxItem Content="自动（系统优先）" />
+                      ToolTip="自动：系统放不了的格式如 mkv / webm / av1 改用 ffmpeg&#x0a;仅 ffmpeg：所有视频都交给 ffmpeg，无声音、固定 1× 速度">
+                <ComboBoxItem Content="自动" />
                 <ComboBoxItem Content="仅系统 Media Foundation" />
                 <ComboBoxItem Content="仅 ffmpeg" />
             </ComboBox>
@@ -89,7 +89,7 @@
 
         <TextBlock Text="{Binding DecoderHint}" Margin="0,0,0,2"
                    FontSize="12" TextWrapping="Wrap"
-                   Foreground="{StaticResource TextSecondary}"
+                   Foreground="{DynamicResource TextSecondary}"
                    ToolTip="{Binding DecoderHint}" />
 
         <TextBlock Style="{StaticResource Hint}" Margin="0,2,0,0" TextWrapping="Wrap"

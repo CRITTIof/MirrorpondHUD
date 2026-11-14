@@ -1,35 +1,21 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
-    <Nullable>disable</Nullable>
-    <LangVersion>latest</LangVersion>
-    <ImplicitUsings>disable</ImplicitUsings>
     <AssemblyName>MirrorpondHUD</AssemblyName>
     <RootNamespace>MirrorpondHUD</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <ApplicationIcon>assets\logo.ico</ApplicationIcon>
+    <ApplicationIcon>assets\MirrorpondHUDLogoDeepYellow.ico</ApplicationIcon>
     <!-- x64 by default; publish -r win-arm64 switches PlatformTarget automatically. -->
     <Platforms>x64;ARM64</Platforms>
     <PlatformTarget Condition="'$(RuntimeIdentifier)' == ''">x64</PlatformTarget>
     <PlatformTarget Condition="'$(RuntimeIdentifier)' == 'win-arm64'">arm64</PlatformTarget>
     <NoWarn>$(NoWarn);WFAC010</NoWarn>
-    <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
-    <Version>2.21.0</Version>
     <Product>镜潭一览 (MirrorpondHUD)</Product>
     <AssemblyTitle>MirrorpondHUD</AssemblyTitle>
-    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
     <SatelliteResourceLanguages>en;zh-Hans</SatelliteResourceLanguages>
-    <GenerateDocumentationFile>false</GenerateDocumentationFile>
-    <DebugType>portable</DebugType>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
-    <Optimize>true</Optimize>
   </PropertyGroup>
 
   <ItemGroup>
@@ -39,6 +25,10 @@
     <Compile Remove="samples\**\*.cs" />
     <Page Remove="samples\**\*.xaml" />
     <None Remove="samples\**\*" />
+    <!-- 测试工程独立构建，不编进宿主。 -->
+    <Compile Remove="tests\**\*.cs" />
+    <Page Remove="tests\**\*.xaml" />
+    <None Remove="tests\**\*" />
     <!-- 契约 / DTO 已在独立程序集 MirrorpondHUD.Contracts 里。 -->
     <Compile Remove="src\Contracts\**\*.cs" />
     <Page Remove="src\Contracts\**\*.xaml" />
@@ -54,6 +44,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- X-7：测试工程访问宿主内部纯逻辑（AtomicFile / SettingsTheme / CardStateStore）。 -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>MirrorpondHUD.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="src\Contracts\MirrorpondHUD.Contracts.csproj" />
     <ProjectReference Include="src\UiKit\MirrorpondHUD.UiKit.csproj" />
   </ItemGroup>
@@ -63,12 +60,14 @@
     构建 / 发布后复制到 <exe>/plugins/cards/<id>/，由 CardPluginLoader 走普通运行时插件路径加载。
   -->
   <ItemGroup>
-    <ProjectReference Include="src\Plugins\InfoText\plugin.csproj" ReferenceOutputAssembly="false" />
-    <ProjectReference Include="src\Plugins\Buttons\plugin.csproj" ReferenceOutputAssembly="false" />
-    <ProjectReference Include="src\Plugins\Command\plugin.csproj" ReferenceOutputAssembly="false" />
-    <ProjectReference Include="src\Plugins\Chat\plugin.csproj" ReferenceOutputAssembly="false" />
-    <ProjectReference Include="src\Plugins\Media\plugin.csproj" ReferenceOutputAssembly="false" />
-    <ProjectReference Include="src\Plugins\DropStation\plugin.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="src\Plugins\InfoText\MirrorpondHUD.Cards.InfoText.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="src\Plugins\Buttons\MirrorpondHUD.Cards.Buttons.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="src\Plugins\Command\MirrorpondHUD.Cards.Command.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="src\Plugins\Chat\MirrorpondHUD.Cards.Chat.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="src\Plugins\Media\MirrorpondHUD.Cards.Media.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="src\Plugins\DropStation\MirrorpondHUD.Cards.DropStation.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="src\Plugins\Lyrics\MirrorpondHUD.Cards.Lyrics.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="src\Plugins\Account\MirrorpondHUD.Cards.Account.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>
@@ -90,43 +89,49 @@
     <BundledCardPluginFile Include="src\Plugins\DropStation\bin\$(Configuration)\MirrorpondHUD.Cards.DropStation.dll">
       <PluginId>builtin.dropstation</PluginId>
     </BundledCardPluginFile>
-    <BundledCardPluginManifest Include="src\Plugins\InfoText\manifest.json"><PluginId>builtin.infotext</PluginId></BundledCardPluginManifest>
-    <BundledCardPluginManifest Include="src\Plugins\Buttons\manifest.json"><PluginId>builtin.buttons</PluginId></BundledCardPluginManifest>
-    <BundledCardPluginManifest Include="src\Plugins\Command\manifest.json"><PluginId>builtin.command</PluginId></BundledCardPluginManifest>
-    <BundledCardPluginManifest Include="src\Plugins\Chat\manifest.json"><PluginId>builtin.chat</PluginId></BundledCardPluginManifest>
-    <BundledCardPluginManifest Include="src\Plugins\Media\manifest.json"><PluginId>builtin.media</PluginId></BundledCardPluginManifest>
-    <BundledCardPluginManifest Include="src\Plugins\DropStation\manifest.json"><PluginId>builtin.dropstation</PluginId></BundledCardPluginManifest>
+    <BundledCardPluginFile Include="src\Plugins\Lyrics\bin\$(Configuration)\MirrorpondHUD.Cards.Lyrics.dll">
+      <PluginId>builtin.lyrics</PluginId>
+    </BundledCardPluginFile>
+    <BundledCardPluginFile Include="src\Plugins\Account\bin\$(Configuration)\MirrorpondHUD.Cards.Account.dll">
+      <PluginId>builtin.account</PluginId>
+    </BundledCardPluginFile>
   </ItemGroup>
 
   <Target Name="CopyBundledCardPlugins" AfterTargets="Build" Condition="'$(DesignTimeBuild)' != 'true'">
     <Copy SourceFiles="@(BundledCardPluginFile)"
           DestinationFiles="@(BundledCardPluginFile->'$(OutDir)plugins\cards\%(PluginId)\%(Filename)%(Extension)')"
           SkipUnchangedFiles="true" />
-    <Copy SourceFiles="@(BundledCardPluginManifest)"
-          DestinationFiles="@(BundledCardPluginManifest->'$(OutDir)plugins\cards\%(PluginId)\manifest.json')"
-          SkipUnchangedFiles="true" />
+    <!-- X-4：manifest 的 version 从 $(Version) 生成，源码 manifest 不再手写版本。 -->
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\tools\write-manifests.ps1&quot; -Version &quot;$(Version)&quot; -Source &quot;$(MSBuildProjectDirectory)\src\Plugins&quot; -Dest &quot;$(OutDir)plugins\cards&quot;" />
   </Target>
 
   <Target Name="CopyBundledCardPluginsToPublish" AfterTargets="Publish" Condition="'$(PublishDir)' != ''">
     <Copy SourceFiles="@(BundledCardPluginFile)"
           DestinationFiles="@(BundledCardPluginFile->'$(PublishDir)plugins\cards\%(PluginId)\%(Filename)%(Extension)')"
           SkipUnchangedFiles="true" />
-    <Copy SourceFiles="@(BundledCardPluginManifest)"
-          DestinationFiles="@(BundledCardPluginManifest->'$(PublishDir)plugins\cards\%(PluginId)\manifest.json')"
-          SkipUnchangedFiles="true" />
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\tools\write-manifests.ps1&quot; -Version &quot;$(Version)&quot; -Source &quot;$(MSBuildProjectDirectory)\src\Plugins&quot; -Dest &quot;$(PublishDir)plugins\cards&quot;" />
   </Target>
 
   <ItemGroup>
     <Resource Include="assets\logo.ico" />
     <Resource Include="assets\logo-light.ico" />
+    <Resource Include="assets\logo-black.png" />
+    <Resource Include="assets\MirrorpondHUDLogoBlack.ico" />
+    <Resource Include="assets\MirrorpondHUDLogoBlack.png" />
+    <Resource Include="assets\logo-white.png" />
+    <Resource Include="assets\MirrorpondHUDLogoYellow.png" />
+    <Resource Include="assets\MirrorpondHUDLogoYellow.ico" />
+    <Resource Include="assets\MirrorpondHUDLogoDeepYellow.png" />
+    <Resource Include="assets\MirrorpondHUDLogoDeepYellow.ico" />
     <Resource Include="assets\keycaps\ReiconFont-Regular.ttf" />
     <!-- Lucide 图标字体（ISC）；见 assets/icons/README.md。 -->
     <Resource Include="assets\icons\Lucide.ttf" />
+    <Resource Include="assets\fonts\NotoSansSC-VF.ttf" />
   </ItemGroup>
 
   <!-- 内置主题：docs/themes/*.mptheme 编进程序集，发布版不依赖 docs 目录。 -->
   <ItemGroup>
-    <EmbeddedResource Include="docs\themes\*.mptheme" />
+    <EmbeddedResource Include="docs\themes\*.mptheme" LogicalName="themes/%(Filename)%(Extension)" />
   </ItemGroup>
 
 </Project>

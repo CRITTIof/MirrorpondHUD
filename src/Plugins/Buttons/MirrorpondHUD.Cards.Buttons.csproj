@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <UseWPF>true</UseWPF>
+    <OutputType>Library</OutputType>
+    <AssemblyName>MirrorpondHUD.Cards.Buttons</AssemblyName>
+    <RootNamespace>MirrorpondHUD.Cards</RootNamespace>
+    <Product>镜潭一览 (MirrorpondHUD) 内置卡片插件</Product>
+    <NoWarn>$(NoWarn);WFAC010</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Contracts / UiKit 由宿主默认 ALC 提供，插件目录不重复带一份。 -->
+    <ProjectReference Include="../../Contracts/MirrorpondHUD.Contracts.csproj" Private="false" />
+    <ProjectReference Include="../../UiKit/MirrorpondHUD.UiKit.csproj" Private="false" />
+  </ItemGroup>
+
+</Project>

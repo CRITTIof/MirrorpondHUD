@@ -9,16 +9,14 @@ settings.json.broken-*
 
 # 运行时卡片插件（用户本地安装，不跟仓库）
 plugins/
+
 # 仓库内自带卡片插件源码：src/Plugins 不跟用户的 plugins/ 目录混淆
 !src/Plugins/
 !src/Plugins/**
 src/Plugins/**/bin/
 src/Plugins/**/obj/
 
-# 源码说明文档放在独立仓库里，不随主仓库发布
-docs/source/
-
-# 毛玻璃调研笔记、探针截图与一次性 PoC 工程：只留本地，不进主仓库
+# 毛玻璃调研笔记、探针截图与一次性 PoC 工程
 .proto/
 docs/blockhelm-glass.md
 docs/glass-options.md
@@ -29,3 +27,32 @@ docs/glass-probe-*.png
 # WPF 编译期临时工程与本地构建日志
 *_wpftmp.csproj
 publish-run.log
+
+# 审阅报告：正文与清单入库，临时工作稿仍忽略（X-13）
+docs/review/.work/
+
+# 临时工作区
+.superpowers/
+
+samples/ParticleToText/
+samples/EndfieldDesign/
+samples/ContourLine/
+# 歌词调研用的第三方仓库克隆（本地核对，不入库）
+samples/netease-lyrics-research/
+
+# Affinity Logo资源文件
+assets/*.af
+assets/*.af~lock~
+
+
+# 终末地风格卡片出场动画（Remotion 独立示例）
+samples/EndfieldCardReveal/
+# 卡片出场动效的纯前端版本（独立示例，含 68 个衍生图层）
+samples/EndfieldCardStackWeb/
+samples/EndfieldCardStackWeb.zip
+
+# 并行审阅临时产物与调试截图（W1-01 / W1-03）
+/.tmp/
+/scroll-fix.png
+# 第三方克隆（本地核对，不入库；W1-02）
+/samples/arknights-ui/

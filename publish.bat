@@ -4,6 +4,16 @@ rem   publish\x64, publish\arm64
 rem       self-contained: .NET 8 runtime is bundled, target machine needs nothing.
 rem   publish\x64-requires-dotnet, publish\arm64-requires-dotnet
 rem       framework-dependent: small exe, needs .NET 8 Desktop Runtime installed.
+rem
+rem X-5：旧版在发布前 rd /s /q bin obj，把用户 settings.json / 日志 / 便携插件
+rem 先搬到 %TEMP% 再恢复。中途失败或断电时用户数据只剩 TEMP 一份；应用正在运行时
+rem 删除还会静默失败（2>nul），下一轮发布就可能混架构。
+rem 现在：
+rem   - 用户数据始终留在 bin\Release，不再经过 TEMP。
+rem   - 每个 RID 发布前只清理构建产物（obj + bin\Release 里的 exe/dll/pdb/json），
+rem     避免上一架构的 apphost / 缓存被复用。
+rem   - 发布前检测 MirrorpondHUD.exe 是否在运行；在运行就明确报错退出，
+rem     不再静默删除失败后继续发布。
 setlocal
 cd /d "%~dp0"
 
@@ -14,16 +24,9 @@ if errorlevel 1 (
     exit /b 1
 )
 
-rem bin\Release is wiped below; keep the user's settings, log and portable plugins across the build.
-set "DATA_BACKUP=%TEMP%\mirrorpondhud-publish-data"
-if exist "%DATA_BACKUP%" rd /s /q "%DATA_BACKUP%" >nul 2>&1
-mkdir "%DATA_BACKUP%" >nul 2>&1
-for %%F in (settings.json settings.json.bak mirrorpond.log) do (
-    if exist "%~dp0bin\Release\%%F" copy /y "%~dp0bin\Release\%%F" "%DATA_BACKUP%\%%F" >nul 2>&1
-)
-if exist "%~dp0bin\Release\plugins" (
-    xcopy /e /i /q /y "%~dp0bin\Release\plugins" "%DATA_BACKUP%\plugins" >nul 2>&1
-)
+rem 发布要清理 bin\Release 的构建产物；程序在运行时文件被锁，绝不能继续。
+call :checkrunning
+if errorlevel 1 exit /b 1
 
 rem Self-contained first, framework-dependent last.
 call :build win-arm64 arm64 true
@@ -38,33 +41,15 @@ if errorlevel 1 goto :fail
 call :build win-x64 x64-requires-dotnet false
 if errorlevel 1 goto :fail
 
-rem publish leaves a self-contained build in bin\Release; restore the normal
-rem x64 build there so run.bat keeps deploying a small framework-dependent copy.
+rem 发布过程清掉了 bin\Release 的构建产物；恢复一份正常 x64 构建给 run.bat。
+rem 用户 settings.json / 日志 / 插件目录从未被删除，不需要备份恢复。
 echo.
 echo [INFO] Restoring x64 build in bin\Release for run.bat ...
-if exist "%~dp0bin" rd /s /q "%~dp0bin" >nul 2>&1
-if exist "%~dp0obj" rd /s /q "%~dp0obj" >nul 2>&1
+call :cleanbuild
 dotnet build MirrorpondHUD.csproj -c Release -nologo
 if errorlevel 1 goto :fail
 if exist "%~dp0sign.ps1" (
     powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0sign.ps1"
-)
-
-rem Put the user's settings, log and portable plugins back into the rebuilt bin\Release.
-for %%F in (settings.json settings.json.bak mirrorpond.log) do (
-    if exist "%DATA_BACKUP%\%%F" copy /y "%DATA_BACKUP%\%%F" "%~dp0bin\Release\%%F" >nul 2>&1
-)
-if exist "%DATA_BACKUP%\plugins" (
-    rem 内置卡片插件由构建目标重新生成，不能拿备份里的旧 builtin.* 覆盖新版本；
-    rem 只恢复用户自己安装的插件目录。
-    if exist "%DATA_BACKUP%\plugins\cards" (
-        for /d %%D in ("%DATA_BACKUP%\plugins\cards\*") do (
-            echo %%~nxD | findstr /b /i "builtin." >nul
-            if errorlevel 1 (
-                xcopy /e /i /q /y "%%D" "%~dp0bin\Release\plugins\cards\%%~nxD" >nul 2>&1
-            )
-        )
-    )
 )
 
 echo.
@@ -76,14 +61,32 @@ echo      publish\x64-requires-dotnet\MirrorpondHUD.exe     needs .NET 8 Desktop
 pause
 exit /b 0
 
+:checkrunning
+tasklist /FI "IMAGENAME eq MirrorpondHUD.exe" 2>nul | find /i "MirrorpondHUD.exe" >nul
+if not errorlevel 1 (
+    echo.
+    echo [ERROR] MirrorpondHUD.exe is running. Publish needs to replace build outputs.
+    echo         Close the running window first, then publish again.
+    exit /b 1
+)
+exit /b 0
+
+:cleanbuild
+rem 只删构建产物：用户数据（settings.json / settings.json.bak / mirrorpond.log*）
+rem 和 plugins\cards 下用户自己的插件目录都不匹配，保持原地不动。
+if exist "%~dp0obj" rd /s /q "%~dp0obj" >nul 2>&1
+if exist "%~dp0bin\Release" (
+    del /q "%~dp0bin\Release\*.exe" 2>nul
+    del /q "%~dp0bin\Release\*.dll" 2>nul
+    del /q "%~dp0bin\Release\*.pdb" 2>nul
+    del /q "%~dp0bin\Release\MirrorpondHUD.*.json" 2>nul
+)
+exit /b 0
+
 :build
 echo.
 echo [INFO] Publishing %~1 (self-contained=%~3) ...
-
-rem All RIDs share bin\Release / obj (AppendRuntimeIdentifierToOutputPath=false),
-rem so a previous architecture's apphost could be reused. Wipe both first.
-if exist "%~dp0bin" rd /s /q "%~dp0bin" >nul 2>&1
-if exist "%~dp0obj" rd /s /q "%~dp0obj" >nul 2>&1
+call :cleanbuild
 
 if /i "%~3"=="true" (
     dotnet publish MirrorpondHUD.csproj -c Release -r %~1 --self-contained true ^

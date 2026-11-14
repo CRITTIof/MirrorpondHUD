@@ -1,0 +1,4 @@
+# git blame 忽略的纯格式化提交；启用方式：
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+# 部分 IDE / GitHub 也识别同名文件。
+959af6e5d86dccce729fc4b9a4fef3a163c956a6

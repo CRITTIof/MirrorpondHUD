@@ -1,4 +1,4 @@
-# 版本修改记录（2.4.1 → 2.21.0）
+# 版本修改记录（2.4.1 → 2.44.2）
 
 > 范围：本文只记录**这一轮接手后我做的版本**（v2.4.1 起）。v2.4.0 及更早是既有历史，不在本文档里。
 > 数据全部取自仓库真实提交（`git diff --shortstat <上一版>..<本版>`），文件行的 `+ / -` 就是实际增删行数。
@@ -10,10 +10,10 @@
 > `f67a255` / `5f8933c` / `ef70cea`，**未发布、未合并**）；`v2.14.5`（`a0fe549`）/ `v2.14.6`（`3e6abc6`）
 > 已推送到 `origin/feature/runtime-card-loading`；
 > `v2.14.7`（`abcbcec`）/ `v2.14.8`（`633e9d6`）已随文档同步提交 `d73d2ec` 推送到同一分支（未发布、未合并）；
-> `v2.14.9`（`aba873a`）已推送；`v2.15.0`（`78d3381`）已推送（文档同步提交 `2eba9b4`）；`v2.16.0`（代码 `6406d96`，文档同步 `d1fd414`）**已推送并快进合并到 `main`**；`v2.17.0`（`27b8bbd`）/ `v2.18.0`（`1e1c6ac`）/ `v2.19.0`（`d21773c`）**已推送并快进合并到 `main`**；`v2.20.0`（代码 `d8f36ab`，文档 `de64021`）**已推送并快进合并到 `main`**；`v2.21.0`（代码 `0d687e9`，文档 `4911e1b`）**已推送并快进合并到 `main`**，未打 tag、未发布 Release。
+> `v2.14.9`（`aba873a`）已推送；`v2.15.0`（`78d3381`）已推送（文档同步提交 `2eba9b4`）；`v2.16.0`（代码 `6406d96`，文档同步 `d1fd414`）**已推送并快进合并到 `main`**；`v2.17.0`（`27b8bbd`）/ `v2.18.0`（`1e1c6ac`）/ `v2.19.0`（`d21773c`）**已推送并快进合并到 `main`**；`v2.20.0`（代码 `d8f36ab`，文档 `de64021`）**已推送并快进合并到 `main`**；`v2.21.0`（代码 `0d687e9`，文档 `4911e1b`）**已推送并快进合并到 `main`**，未打 tag、未发布 Release；`v2.22.0`（代码为 `73837aa`–`2907be0` 的 12 个提交，文档同步本次提交）**已合并 `main`**，未打 tag、未发布 Release。 `v2.23.0`（本轮 6 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.24.0`（本轮 4 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.25.0`（本轮 2 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.26.0`（本轮 2 个提交，文档同步本次提交）**已完成，未合并 main**，未打 tag、未发布 Release。 `v2.27.0`（本轮按审阅复核顺序修复 + 性能采样，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.28.0`（UX 批次，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.29.0`（性能 + M-1/M-4 + L-13 混合 DPI 实测，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.30.0`（终末地 M1–M6 选项 + M7/M8 调研，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.31.0`（M7 四档动效 + 循环效果 + M8 主题数据 + 边界拖动修复，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.32.0`（ContourLine 等高线移植 + 纹样密度 + 等高线原地变化，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.33.0`（UX 收口：铭牌删除、上下文显隐、等高线性能、状态色预览、系统亚克力圆角、拖拽对齐、中转站留白、文字对齐，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.34.0`（现代 C# 治理 A + 机械语法 B，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.35.0`（终末地 M2–M8：阴影/选中/按钮/进度/铭牌/角括号/切角，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.36.0`（M2–M8 开关化、信息文本卡去页头页脚、媒体对齐对话卡、中转站四视图与搜索对齐、页脚模板、退出软件不弹未保存，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.37.0`（M3 选中条修复、整体显隐动效、卡片左右滑入滑出、设置文案去括号，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.38.0`（M3 收窄与图标下缘条、设置分组重排/折叠、四项现代菜单、描述精简，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.39.0`（Endfield 设置页明暗主题、M3 方向细化、动效档位/粗细、卡片整栏拖动、自然投影，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.40.0`（无边框设置窗、六点抓手拖动跟随、热键按卡片分组、滑块/复选框 Endfield 化、菜单白底黑字复核，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.41.0`（设置窗圆角、10 秒等高线、跟随对齐、菜单明暗、标题栏折叠跟随与让位动画，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.42.0`（菜单文字修复、移除设置窗透明外框、信息文本卡粒子聚字，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.43.0`（滚动条、粒子参数与瞬时凝固、文字颜色、富内容样式关联、仓库清理，未合并 main）**已完成**，未打 tag、未发布 Release。 `v2.43.1`（粒子凝固计时、末排重采样、无惯性运动、启动动画互斥，未合并 main）**已完成**，未打 tag、未发布 Release。
 > `v2.14.1` / `v2.14.2` / `v2.14.4` 的规模用对应提交的 `git show --shortstat`；`v2.14.3` / `v2.14.5` / `v2.14.6`
 > 按当时提交前工作区的 `git diff --shortstat` 计算；`v2.14.7` / `v2.14.8` 用对应提交的 `git show --shortstat`；
-> `v2.14.9` 用提交前工作区的 `git diff --shortstat -- MirrorpondHUD.csproj src`；`v2.15.0` 用 `git show --shortstat 78d3381`；`v2.16.0` 用 `git show --shortstat 6406d96`；`v2.17.0` 用 `git show --shortstat 27b8bbd`；`v2.18.0` 用 `git show --shortstat 1e1c6ac`；`v2.19.0` 用 `git show --shortstat d21773c`；`v2.20.0` 用 `git show --shortstat d8f36ab`；`v2.21.0` 用 `git show --shortstat d6e1af3`（文档同步另计）。
+> `v2.14.9` 用提交前工作区的 `git diff --shortstat -- MirrorpondHUD.csproj src`；`v2.15.0` 用 `git show --shortstat 78d3381`；`v2.16.0` 用 `git show --shortstat 6406d96`；`v2.17.0` 用 `git show --shortstat 27b8bbd`；`v2.18.0` 用 `git show --shortstat 1e1c6ac`；`v2.19.0` 用 `git show --shortstat d21773c`；`v2.20.0` 用 `git show --shortstat d8f36ab`；`v2.21.0` 用 `git show --shortstat 0d687e9`（文档同步另计；评审指出的 `d6e1af3` 是未合并的游离提交，实际合并进 main 的是 `0d687e9`）；`v2.22.0` 用 `git diff --shortstat b366e32..4899f3f`（30 文件，+1116 / −246；版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.23.0` 用 `git diff --shortstat 6da03f0..HEAD`（58 文件，+6304 / −4618；版本号 15 文件 +15 / −15 与版本记录另计）。 `v2.24.0` 用 `git diff --shortstat 96acd1b..HEAD`（55 文件，+1876 / −301；版本号 15 文件 +15 / −15 与版本记录另计）。 `v2.25.0` 用 `git diff --shortstat 29efb91..HEAD`（24 文件，+520 / −153；版本号 15 文件 +15 / −15 与版本记录另计）。 `v2.26.0` 源码改动 14 文件，+165 / −87（版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.27.0` 源码改动 31 文件，+765 / −164（含新增 PerformanceProbe 127 行；版本号与文档同步另计）。 `v2.28.0` 源码改动 18 文件，+509 / −13（版本号与文档同步另计）。 `v2.29.0` 源码改动 19 文件，+864 / −297（含新增 `ScreenGeometry.cs` 194 行；版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.30.0` 源码改动 18 文件，+552 / −41（两套主题与 docs/UI 文档另计；版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.31.0` 源码改动 13 文件，+720 / −57（docs/UI 文档另计；版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.32.0` 源码改动 15 文件，+1,546 / −83（含新增 `src/Ui/Contour/*` 7 个文件；版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.33.0` 源码改动约 34 文件，+1,469 / −330（含新增 `src/Ui/Contour/ContourGeometryBuilder.cs` 323 行；版本号 15 文件 +15 / −15 与文档同步另计）。 `v2.34.0` 约 152 文件，+41,985 / −43,367（绝大多数是 namespace / 缩进重排；含 `.editorconfig` / `Directory.Build.props` / `.gitattributes` 3 个新增治理文件，版本号 15 文件另计）。 `v2.35.0` 41 文件，+1,556 / −506（含 5 个新增 UiKit 原语与 1 篇 M2–M8 实现记录；版本号 15 文件另计）。 `v2.36.0` 47 文件，+1,351 / −291（含 4 个新增源文件 `EndfieldStyleSettings` / `EndfieldVisuals` / `StationDisplayMode` / `SettingsWindow.Endfield`；版本号 15 文件与文档同步另计）。 `v2.37.0` 34 文件，+300 / −113（M3 模板、动效选项、设置文案；版本号 15 文件与文档同步另计）。 `v2.38.0` 34 文件，+851 / −168（含新增 `HudMenuStyle` / `SettingsWindow.Sections` 与 `endfield-motion.md`；版本号 15 文件与文档同步另计）。 `v2.39.0` 31 文件，+475 / −172（设置页明暗主题、M3 下缘条、动效档位/粗细、整栏拖动、自然投影；版本号 15 文件与文档同步另计）。 `v2.40.0` 30 文件，+455 / −112（无边框标题栏、拖动跟随、热键分组、滑块/复选框样式、主题文件粗细字段；版本号 15 文件与文档同步另计）。 `v2.41.0` 34 文件，+728 / −114（圆角外框、菜单明暗、跟随对齐、折叠拖动与让位；版本号 15 文件与文档同步另计；不含用户自己的 `.gitignore` / `AGENTS.md` 改动）。 `v2.42.0` 工作区累计（含未提交 2.41）36 个已跟踪文件，+1134 / −117；另新增 `src/Ui/ParticleTextLayer.cs` 302 行（未跟踪，未计入 `git diff`）。2.42 自身包含菜单标题入集合即修正、去透明外框、文字动效设置与主题字段，未单独拆分 2.41/2.42 的逐文件行数。 `v2.43.0` 全量工作区（含 2.41/2.42 与新增文档）54 文件，+4539 / −150；其中 2.43 新增 `CardTextStyle.cs`、粒子参数、滚动条、富内容关联与三套示例排除。
 
 ## 0. 总览
 
@@ -74,6 +74,33 @@
 | v2.19.0 | 2026-11-01 | `d21773c` | 第四优先浮层与交互：CardModal / CardDialog / CardPopover / CardTooltip / CardContextMenu / CardToast；toast 置顶修复；版本三件套 + 6 插件同步 2.19.0 | 18 文件，+1513 / −16 |
 | v2.20.0 | 2026-11-01 | `d8f36ab` | 移除卡片热插拔 / 热重载（`PluginDevReloader`、`--plugin-dev`、运行时注册表替换）；插件更新统一重启；根指南重写为自包含开发手册 | 24 文件，+32 / −767（文档同步另计） |
 | v2.21.0 | 2026-11-01 | `0d687e9` | 引入 Lucide 1.66.0 开源图标字体（ISC）：2292 个码位常量 / 查询表、`CardIcon`、图标自检、许可证与文档；控件章节详写 | 23 文件，+7169 / −16（文档同步另计） |
+| v2.22.0 | 2026-11-08 | `73837aa`…`2907be0`（12 个提交） | 2026-11 代码审阅 P0/P1：失败可见化（托盘 / 保存 / 启动 / 对话 / 中转站 / 命令行 / 媒体 / 桌面取图 / 指标 / JSON）、Log 重写 + `LogThrottle`、新增 `AGENTS.md` | 30 文件，+1116 / −246（版本号 15 文件另计、文档同步另计） |
+| v2.23.0 | 2026-11-10 | 本轮 6 个提交 | 2026-11 审阅第二批收尾 + 第三批结构性拆分：StationView / OverlayController / SettingsWindow / SelfTest 拆分；原子写共用 + CommandLineMode；剩余日志 / 契约 / 文档 / 风格收尾 | 58 文件，+6304 / −4618（版本号与版本记录另计） |
+| v2.24.0 | 2026-11-10 | 本轮 4 个提交 | Schema 7（玻璃模糊字段合并 / DesktopFeed 更名 / Chat 别名迁移）、GlassRuntimeState 单源、回收站删除、UiKit 控件画廊、外部引用清理 | 55 文件，+1876 / −301（版本号与版本记录另计） |
+| v2.25.0 | 2026-11-10 | 本轮 2 个提交 | 卡片拖动跟随、呼出/消失 160ms 淡入淡出 + 8px、补位/自动对齐 180ms ease-out | 24 文件，+520 / −153（版本号与版本记录另计） |
+| v2.26.0 | 2026-11-10 | 本轮 2 个提交 | 非常驻卡（命令卡）呼出/收起动画 + 布局调度不再打断动画；Reicon 图标换 Lucide（键帽保留） | 14 文件，+165 / −87（版本号与版本记录另计） |
+| v2.27.0 | 2026-11-10 | 本轮修复+采样 | 审阅复核修复：中转站根路径/列表只读、主题名、ConfigStore I/O 三态、保存回滚、复制任务出 UI 线程、ffmpeg 热更新、玻璃边界、唤醒重试、CTS/模板/Chat 签名；新增 `--perf` 基线 | 31 文件，+765 / −164（版本号与版本记录另计） |
+| v2.28.0 | 2026-11-10 | UX 批次 | 未保存提示、托盘/设置区块失败反馈、减少动效、边缘吸附、GIF 预算、卡片复制/拖动排序、命令历史、颜色/热键内联校验 | 18 文件，+509 / −13（版本号与版本记录另计） |
+| v2.29.0 | 2026-11-11 | 性能 + 模块化 + 混合 DPI | TextCanvas 排版缓存、GlassFeed 缓冲复用、`ICardDefaultProvider` 默认卡注册表化、删除 `ICardHostAware`、L-13 物理像素定位 / 4K@300% 实测 | 19 文件，+864 / −297（版本号与版本记录另计） |
+| v2.30.0 | 2026-11-11 | 终末地 M1–M6 | 两套终末地主题、圆角跟随配置、Success/Warning 令牌、等宽读数、CardHeader 铭牌、六种装饰纹样；M7/M8 可行性调研 | 18 文件，+552 / −41（主题与 UI 文档另计） |
+| v2.31.0 | 2026-11-11 | M7/M8 与边界拖动 | 四档动效 + 循环效果（None/Breath/Scanline/Pulse，时长/幅度可调，注明 GPU 代价）、`appearance.motion` 主题数据、跨 DPI 拖动修复、状态色取色器 | 13 文件，+720 / −57（文档另计） |
+| v2.32.0 | 2026-11-11 | 等高线 + 纹样密度 | 按 `samples/ContourLine` 移植地形等高线（级数/均衡/起伏/平滑/最小闭环），删除首/计曲线与注记；新增 `LoopEffect=Contour` 原地形变与纹样密度 | 15 文件，+1,546 / −83（文档另计） |
+| v2.33.0 | 2026-11-11 | UX 收口 + 等高线性能 | 删除卡片铭牌；补齐设置上下文显隐；等高线 30fps + 基础网格缓存 + 后台几何；状态色预览；系统亚克力禁圆角；拖拽以被抓卡为对齐基准并修错位；中转站留白；文字左/中/右修复 + 跟随卡片对齐 | 约 34 文件，+1,469 / −330（版本号与文档另计） |
+| v2.34.0 | 2026-11-11 | 现代 C# 治理 + 机械语法 | 固定 LangVersion 12 / Directory.Build.props / editorconfig / gitattributes；manifest 版本断言；全仓 file-scoped namespace、表达式体、target `new()`、`out var`、`is null`、安全插值；保留 DTO 字段、P/Invoke、catch、XAML 名 | 约 152 文件，+41,985 / −43,367（绝大部分为缩进/namespace 重排） |
+| v2.35.0 | 2026-11-11 | 终末地 M2–M8 | 零偏移阴影；左缘选中条；按钮实心/4px 微圆角；分段进度；编号/面包屑/页脚；角括号；切角角标与主行动 | 41 文件，+1,556 / −506（含 5 个新 UiKit 原语与实现记录） |
+| v2.36.0 | 2026-11-11 | 选项化与卡片收口 | M2–M8 七个独立开关；信息/文本卡去页头页脚；页脚模板；媒体对齐对话卡并放松间距；中转站搜索对齐 + 大/中/小图标/列表四视图；退出软件不弹未保存 | 47 文件，+1,351 / −291（含 4 个新源文件） |
+| v2.37.0 | 2026-11-11 | 选中态与动效 | M3 改为 4px 满高左缘条并覆盖图标网格；整体显隐动效开关；卡片左/右滑入滑出；设置页与插件设置去括号、说明精简 | 34 文件，+300 / −113 |
+| v2.38.0 | 2026-11-11 | M3 方向与设置结构 | 左缘条收窄到 2px；大/中图标改 3px 下缘条；设置组重排并全部可折叠、标题加大；托盘/卡片菜单统一现代样式并裁为四项；描述继续精简 | 34 文件，+851 / −168（含新增动效调研文档） |
+| v2.39.0 | 2026-11-11 | Endfield 设置页 | 设置页暗/亮调色板与标题栏切换；M3 图标下缘条、窄左条；动效档位改为优雅/标准/简短/无；脉冲与扫描线粗细；整条卡片标题栏拖动排序；投影加柔和环境层与 1px 接触阴影 | 31 文件，+475 / −172 |
+| v2.40.0 | 2026-11-11 | 设置窗收口 | 去掉 Windows 标题栏改为自绘融合标题栏；卡片仅六点抓手可拖并带跟随浮层；热键全局一组、卡片按模块分组；滑块/复选框 Endfield 化；主题文件补循环粗细；旧菜单全部套新样式 | 30 文件，+455 / −112 |
+| v2.41.0 | 2026-11-11 | 圆角与交互补完 | 设置窗透明圆角+投影；等高线 1.0x=10 秒；滑入“跟随对齐”；主题预览底色可调；菜单白底黑字/黑底白字；暗色保存按钮黑底黄字；拖动跟随改折叠标题栏并带让位动画 | 34 文件，+728 / −114 |
+| v2.42.0 | 2026-11-12 | 菜单与粒子文字 | 菜单项入集合即修正标题前景；移除设置窗 14px 透明外框；信息文本卡新增粒子聚字动效（骨架触发、350–1800 点、30fps、约 1 秒停） | 36 已跟踪文件，+1134 / −117；另新增 ParticleTextLayer 302 行（含未提交 2.41） |
+| v2.43.0 | 2026-11-12 | 滚动条、粒子参数与富内容样式 | 设置页滚动条 Endfield 化；粒子大小/数量/速度/就近/几何采样可配，默认就近、瞬时凝固；文字颜色默认白；富内容卡补描边/加粗/行高/CLI 对齐；samples 三工程排除 | 54 文件，+4539 / −150（含未提交 2.41/2.42） |
+| v2.43.1 | 2026-11-12 | 粒子凝固与启动动画互斥 | 修正凝固计时（此前永不切回文字）；末排按画布尺寸重采样；粒子改为无惯性指数逼近；粒子启用时跳过启动打字动画并从设置页收起入口；骨架折叠数字/速率单位，消除指标卡周期重播 | 源码 8 文件，+232 / −65（版本号 15 文件与文档同步另计） |
+| v2.43.2 | 2026-11-12 | 粒子持续触发、按键裁切与显隐横移 | 数字刷新也触发粒子；首帧/新增粒子直接落在目标点，不聚拢不散开；粒子目标按半径夹取，修按键卡末排只露上半；右对齐堆叠固定右边缘并在显隐时保留 X；新 logo 黑/白/终末地黄三套 ICO | 源码 7 文件，+198 / −73（版本号 15 文件、文档与 logo 资源另计） |
+| v2.44.0 | 2026-11-12 | 逐字粒子、拖拽限位与设置窗重构 | 按字符差异遮罩：未变文字保持普通，变化字符走粒子；DrawingVisual 精确采样，修复粒子偏移；右侧拖拽按卡片矩形夹取；设置窗改为双栏一体化、悬浮按钮、底部明暗、自绘窗口钮、22px 圆角；ICO 全尺寸统一母版，设置用 256px PNG | 源码 9 文件，+445 / −184（版本号 15 文件、文档与资源另计） |
+| v2.44.1 | 2026-11-12 | 设置窗细节与浅色图标 | 选中导航 hover 不再盖黄；窗口圆钮改用次按钮配色；滚动条内缩圆角；分隔线加长；暗色保存按钮整块黄色黑字；左栏 248→220；顶部 60px 可拖动窗口；去掉窗口外透明边框；黄色/白色 ICO 去除黑填充弧线，新增黑主体+黄涟漪浅色 ICO | 源码 6 文件，+52 / −33（版本号 15 文件、文档与图标资源另计） |
+| v2.44.2 | 2026-11-12 | 品牌图标与设置窗收尾 | 手工 SVG 生成纯黄 / 深黄 PNG+ICO，随明暗切换标题栏与窗口图标；滚动条按方向设最小尺寸，修右侧直角；主按钮文字显式取按钮前景色；关闭 DWM 圆角与非客户区渲染，去掉内层圆角外的系统阴影 | 源码 3 文件（版本号 16 文件、文档与图标资源另计） |
 
 ---
 
@@ -1337,7 +1364,7 @@ M2 时文件夹仍被拒绝；M3 把列表管理补上后，文件夹成为最�
 
 ### 背景
 
-`MirrorpondHUD-2.12.2-review.md` 列出 10 条 P1：配置 null / 损坏恢复 / 原子写 / 明文 Key 备份、聊天卡旧配置回滚、中转站视图生命周期、WaveOut 释放竞态、外部进程阻塞、PDH 并发、API URL 安全。2.13.2 之前只做了上帝类拆分，这些数据与线程安全项都没有动。
+`外部审阅报告（未提交）` 列出 10 条 P1：配置 null / 损坏恢复 / 原子写 / 明文 Key 备份、聊天卡旧配置回滚、中转站视图生命周期、WaveOut 释放竞态、外部进程阻塞、PDH 并发、API URL 安全。2.13.2 之前只做了上帝类拆分，这些数据与线程安全项都没有动。
 
 ### 改动
 
@@ -1412,7 +1439,7 @@ M2 时文件夹仍被拒绝；M3 把列表管理补上后，文件夹成为最�
 
 ### 背景
 
-`MirrorpondHUD-2.13.4-review.md` 指出 8 处“头痛砍头”/半修与多条 P1/P2。本轮修 P1 与“先修”高风险项：中转站孤儿文件与合并截断、热键路由抵消旧绑定、Chat 设置窗旧快照、DPAPI/备份顺序、缺版本号/溢出、Replace 回退备份失败、命令脱敏、解码器切换、媒体 UI Join。
+`外部审阅报告（未提交）` 指出 8 处“头痛砍头”/半修与多条 P1/P2。本轮修 P1 与“先修”高风险项：中转站孤儿文件与合并截断、热键路由抵消旧绑定、Chat 设置窗旧快照、DPAPI/备份顺序、缺版本号/溢出、Replace 回退备份失败、命令脱敏、解码器切换、媒体 UI Join。
 
 ### 改动
 
@@ -1479,14 +1506,14 @@ v2.12.2 的调研文档提出 `plugins/cards/*.dll` 运行时扩展卡片；本�
 
 v2.13.6 的 spike 只做到「重启加载可信本地插件」：插件缺失时 `Kind` 能被保留，但界面仍会回退成默认卡；
 插件 DLL 被宿主锁住，开发时只能反复重启；没有清单校验、没有加载报告，也没有热重载。独立风险复核
-（`%TEMP%\hot-reload-review\report.md`）指出影子复制回退、Kind 校验、设置页引用、ALC 回收证据与发布数据保护等方向。
+（仓库外临时审阅报告，未提交）指出影子复制回退、Kind 校验、设置页引用、ALC 回收证据与发布数据保护等方向。
 本轮把**生产默认路径**补齐（仍是重启生效），并把 `--plugin-dev` 做成只在开发期使用的纯文字卡热重载。
 
 ### 改动
 
 1. **插件影子复制**：加载前把 `<exe>/plugins/cards/<id>/`（或 `%LOCALAPPDATA%\MirrorpondHUD\plugins\cards\<id>`）整目录复制到
    `%LOCALAPPDATA%\MirrorpondHUD\plugin-cache\<id>-<时间戳>-<随机>` 再加载，源目录不再被锁，运行中可覆盖 / 删除 DLL，
-   下次加载用新文件；启动时清理上一轮残留（日志「已清理插件影子缓存 N 个」）。`LocalAppData` 不可用时影子根退到 `%TEMP%`；
+   下次加载用新文件；启动时清理上一轮残留（日志「已清理插件影子缓存 N 个」）。`LocalAppData` 不可用时影子根退到系统临时目录；
    复制失败则回退源目录直接加载（WARN，源 DLL 被锁，热重载可能不可用），坏插件不影响宿主启动。
 2. **缺失插件占位卡**：`CardRegistry.Get` 对未注册且不是旧别名的 `Kind` 返回按原 Kind 渲染的 `UnavailableCardModule`
    （「插件不可用：<kind>」+ 重新安装提示）。占位模块不进入 `Modules`，因此不会出现在「添加卡片」菜单；
@@ -1729,7 +1756,7 @@ v2.13.6 / v2.14.0 的运行时插件走的是方案 A：插件直接引用 `Mirr
 - 旧插件加载：2.13.6 / 2.14.0 编译、引用 `MirrorpondHUD.dll` 的二进制经 `TypeForwardedTo` 加载成功，selftest 通过。
 - 新插件加载：只引用 `MirrorpondHUD.Contracts` 的 `ExampleClockCard` 加载成功
   （日志「已加载卡片插件 Example Clock 0.1.0」，模块数内置 6 + 外部 1）。
-- `--plugin-dev --smoke` 冒烟中示例插件经历热重载 / 模块替换，日志正常（`%TEMP%\contract-hot\mirrorpond.log`）。
+- `--plugin-dev --smoke` 冒烟中示例插件经历热重载 / 模块替换，日志正常（仓库外临时日志，未提交）。
 
 ### 风险
 
@@ -1850,7 +1877,7 @@ v2.13.6 / v2.14.0 的运行时插件走的是方案 A：插件直接引用 `Mirr
 ### 背景
 
 2.14.5 已把共享 WPF 控件拆到 `MirrorpondHUD.UiKit`，插件程序集边界完成并推送（`a0fe549`）。
-按 2.14.5 clean 副本的两份审阅报告（`%TEMP%\review-clean\plugin.md`、`architecture.md`），
+按 2.14.5 clean 副本的两份审阅报告（仓库外临时报告，未提交），
 本轮只做**低风险清理**与一处让错误更早暴露的加载期校验，不动契约结构、不做用户配置迁移：
 
 - 删死代码 / 无调用重载；
@@ -1897,12 +1924,12 @@ v2.13.6 / v2.14.0 的运行时插件走的是方案 A：插件直接引用 `Mirr
 - 引用宿主的测试插件（host-ref）被明确拒绝，日志出现「卡片插件引用了宿主程序集，已拒绝…」；宿主照常启动，不崩溃。
 - 正常示例插件（只引用 `MirrorpondHUD.Contracts`、`apiVersion=2`）加载成功。
 - 2.14.5 clean 审阅的验证保留：干净副本构建 / `--selftest` / `--smoke` / API2 示例加载 / API1 拒绝 /
-  旧 Kind 运行时路径 / legacy schema 迁移，合计 **30/30 PASS**（脚本与日志见 `%TEMP%\review-clean\`）。
+  旧 Kind 运行时路径 / legacy schema 迁移，合计 **30/30 PASS**（脚本与日志在仓库外临时目录（未提交））。
 
 ### 审阅发现与未处理项
 
-2.14.5 clean 副本有两份审阅报告：`%TEMP%\review-clean\plugin.md`（不必要的兼容层与历史遗留）与
-`%TEMP%\review-clean\architecture.md`（契约边界 / 架构）。2.14.6 只采纳低风险项，以下**未处理**，留待后续版本：
+2.14.5 clean 副本有两份审阅报告：仓库外临时审阅报告（未提交）（不必要的兼容层与历史遗留）与
+仓库外临时架构报告（未提交）（契约边界 / 架构）。2.14.6 只采纳低风险项，以下**未处理**，留待后续版本：
 
 - **旧 Kind 别名链（metrics / clock / keys / text）仍是活运行时路径**：老配置每次启动都靠运行时别名渲染，
   直接删会让这些卡片显示「插件不可用」。需要先做 **SchemaVersion=7 迁移**（把旧 Kind 直接写成
@@ -2063,7 +2090,7 @@ v2.13.6 / v2.14.0 的运行时插件走的是方案 A：插件直接引用 `Mirr
 
 ### 背景
 
-2.14.8 的最终复核报告（`%TEMP%\review-clean\final.md`）结论：**55/55 PASS、无 P0**，
+2.14.8 的最终复核报告（仓库外临时复核报告（未提交））结论：**55/55 PASS、无 P0**，
 但列出 P1 × 2（`CardSettings` 契约默认值/注释、README 配置块说明）与 P2 × 11（注释 / 文档 / 测试夹具残留）。
 本轮按“无用户、可修改”继续收尾，只修 P1 两项与部分低风险 P2，不改任何运行行为。
 
@@ -2111,7 +2138,7 @@ v2.13.6 / v2.14.0 的运行时插件走的是方案 A：插件直接引用 `Mirr
 
 ### 审阅现状与剩余项
 
-最终复核报告（`%TEMP%\review-clean\final.md`）确认：无 P0；`ICardLegacyAlias` / `TryResolveAlias` /
+最终复核报告（仓库外临时复核报告（未提交））确认：无 P0；`ICardLegacyAlias` / `TryResolveAlias` /
 `LegacySettings` / `TypeForwardedTo` / `Settings.Default*Content` 等旧兼容路径在 `src` 已 0 处。
 2.14.9 已修 P1-1、P1-2，以及 P2-1（Schema 注释）、P2-2（ConfigStore 注释）、P2-3 的 `Truncate` 部分、
 P2-4（占位文案）、P2-6（ALC 注释 / 旧别名日志）、P2-7（InferPreset 注释）、P2-8 的 SelfTest 夹具部分。
@@ -2471,16 +2498,1398 @@ P2-4（占位文案）、P2-6（ALC 注释 / 旧别名日志）、P2-7（InferPr
 
 ---
 
-## 56. 不在版本里的东西
+## 56. v2.22.0（`73837aa`…`2907be0`，分支 `fix/code-review-p0-p1`，已合并 main）
 
-- 验收脚本、样张与测量脚本（`cmd-e2e.ps1`、`drag-glass.ps1`、`measure-*.py`、`shots/` 等）都在仓库外的 `hud-test/` 里，**没有提交**。
+### 背景
+
+2026-11-02 的代码审阅报告指出全仓存在大量「失败被吞掉 / 静默降级」的路径：配置保存失败、托盘图标添加失败、启动初始化失败、
+插件卸载无验证、主题 9 位色与 7 位色混用、ffmpeg 回退是假实现、桌面取图死源每帧空转、指标采样失败无痕、
+JSON 绑定错误静默置空等。2.22.0 按「失败必须可见」铁律完成 P0 全量与 P1 重点项（含审阅第 6 节「日志中断 / 终端」），
+并把由此确立的工程约束沉淀为根目录 `AGENTS.md`。
+
+### 改动
+
+1. **P0-1 / P0-2（失败必达 UI）**：`TrayIcon.AddFailed` 区分「用户关闭托盘」与「图标添加失败」，后者才弹设置窗兜底；
+   `ConfigStore.LastSaveError` + `OverlayController.ApplySettings` / `SettingsWindow._onApply` 改为返回 `bool`，
+   保存失败原样显示在设置窗状态行，截图模式 stub 同步；`HigherSchema` 只读拒绝保存同样可见。
+2. **P1-1（启动与异常）**：插件加载 / 四种截图模式 / selftest / 配置读取整体进 try，失败 `Log.Error` + 可见提示 + `Shutdown(1)`；
+   UI 线程异常改为白名单（InvalidOperation / COM / Win32 / ObjectDisposed，含内部异常链，5 次封顶），白名单外按
+   「不可信状态」记录 + 提示 + 退出；`OnExit` 记退出码并接回插件弱引用回收验证（幂等）；加载日志带 manifest `author`。
+3. **P1-3（主题）**：`foreground` / `background` 严格 7 位 `#RRGGBB`，9 位写法直接报错并提示改走 `backgroundOpacity`；
+   `accent` / `danger` / 软色仍允许 9 位 `#AARRGGBB`；前景 / 背景回落默认值时记 Warn；自检补 7 项颜色断言，
+   `docs/theme-system.md` 校验描述同步。
+4. **P1-4（AI 对话）**：请求成功 / 用户取消 / 超时 / 失败四类结果分级日志（模式、模型、主机、耗时）；
+   `_cancelRequested` 区分用户取消（Info）与超时（Warn）；删除无消费者的 `ChatSettings.Width` / `AnswerLines`。
+5. **P1-5（中转站 / 命令行）**：复制队列与卡片各失败路径落日志；不可逆删除失败按文件汇总 Warn；
+   移动模式删源失败 Warn；`Dispose` 改走队列释放（P2-10 已修）；命令输出读取超时 / 异常留痕，
+   执行结果分级并附脱敏 stderr；删除 9 个零引用 `*ForTest` 成员。
+6. **P1-6（媒体）**：`-readrate` 不兼容改真回退（`_useRe` 黏住、固定 1× 保音画同步，`SetSpeed` 拒改）；
+   新增 `AudioUnavailable` 事件，状态行如实标注「音频不可用（原因）」；WaveOut 错误码翻译为可读名并写入
+   `LastErrorName`；删除零调用的同步 `Probe` 死 API；视频窗日志顺序修正为先打开成功再记录。
+7. **P1-7（桌面取图）**：`DesktopFrameSource.IsDead` + `EnterDead` 一次性带 HRESULT 的 Warn（staging / Acquire / Map / 预热黑帧四路）；
+   `GlassFeed` 只在真读到帧时刷新闲置计时，死源立即释放并按 30s → 60s → 2min 封顶退避重建；
+   GDI `GetDC` / `BitBlt` 失败经 `LogThrottle` 留痕（`SetLastError` 取错误码）。
+8. **P1-9（日志基础设施）**：`Log` 重写（Debug 级别、指数冷却、降级回退文件、轮转）；
+   新增 `src/Contracts/Core/LogThrottle.cs`（状态转移 + 最小间隔，失败与恢复各记一条）。
+9. **审阅 6 / 6-9（采样与 JSON）**：nvidia-smi 未启动 / 非零退出 / 解析失败、PDH 采集失败全部接 `LogThrottle`；
+   `Json.Bind` 的 List 类型不符与未消化组合留 Warn，不再静默置空。
+10. **文档**：新增 `AGENTS.md`（多程序集边界、失败可见铁律、设置树引用纪律、代次计数 / 有界 Join、自检与提交纪律、
+    已评审推迟的历史包袱）；`docs/theme-system.md`、README 版本区间同步。
+11. **版本**：宿主 / Contracts / UiKit / 6 个插件工程与 manifest 统一 2.22.0；插件 API 仍为 2，契约无破坏性变更。
+
+### 验证
+
+- 干净构建 0 警告 0 错误；
+- `--selftest` 失败项 0（退出码 0），日志确认 6 个插件模块弱引用回收、`App 退出 code=0`；
+- 12 个提交按 P-编号拆分（Contracts 先行），每个中间提交保持可编译。
+
+### 风险 / 未验证
+
+- 2.22.0 当时推迟的结构性项里，StationView / OverlayController / SettingsWindow 拆分与 `StationState.FormatVersion`
+  已在 2.23.0 完成；仍推迟：`GlassRuntimeState` 单一数据源、Acrylic / Glass 双套模糊字段合并、Dwm→DesktopFeed 更名、
+  回收站删除（本批次以加强日志替代）、Chat 模式别名（`polling` / `poll` / `continuous`，有意保留）；
+- `-re` 回退、桌面复制退避、DPAPI Key 往返只在自检与日志层验证，未做长时间真机压测 / 断驱动 / 断网演练；
+- 本批次未逐模式重跑 `--screenshot-*` 无头截图（UI 改动以状态行文案与日志为主，渲染分支未动）。
+
+---
+
+## 57. v2.23.0（本轮 6 个提交，分支 `feature/lucide-icons`，未合并 main）
+
+### 背景
+
+2026-11-02 的代码审阅报告在 v2.22.0 里完成了 P0 与大部分 P1，并把第二批的结构性项写成「按需」。
+本轮继续处理剩余收尾项，并按用户选择完成第三批结构性拆分：把 4.5 万行项目里最长的几个类
+（`StationView` / `OverlayController` / `SettingsWindow` / `SelfTest.RunUnitChecks`）拆成职责文件，
+同时补上 P1-8 死契约文档、§5.2 命名失真与只写字段、§7.2 / §7.3 剩余日志缺口，以及全仓风格收尾。
+
+### 改动
+
+1. **P1-8（契约）**：`ICardHostAware` / `ICardModuleLifetime` 保留为 apiVersion 2 的稳定扩展点，
+   在 Contracts 注释与 `DLL-CARD-PLUGIN-GUIDE.md` 里明确「内置卡不实现、第三方插件可用」，
+   并修掉指南里「模块字段保存 host」与契约自相矛盾的示例；卸载探针仍由 `App.OnExit` 调用（2.22.0 已接回）。
+2. **§5.2（命名 / 只写字段 / 文档）**：`SettingsMigration` 更名 `SettingsLoader`（只读取 + 版本校验，不再迁移）；
+   `StationState.FormatVersion` 变成真实契约（高于当前版本拒绝加载、三重写闸保证不覆盖原文件、状态行可见只读提示）；
+   修正版本记录里 `d6e1af3` → 实际合并的 `0d687e9`，并把仓库文件数从过时的 117 更新为 195。
+   `GlassRuntimeState` 单一数据源、Acrylic / Glass 双套模糊字段合并、Dwm→DesktopFeed 更名在本轮按 AGENTS §10 推迟，2.24.0 已完成。
+3. **§7.2 / §7.3（日志）**：`ProcessIntegrity` 失败保留 Win32 错误码与可读原因；ffmpeg 失败日志补实际 argv 与退出码；
+   `MIRRORPOND_GLASS_TRACE` 统一写主日志，移除临时 trace 文件的第二套输出；
+   `Json.Bind` 无法创建目标类型时不再静默返回 null；`ThemeFile` 导入 / 导出所有失败路径补 Warn；
+   120ms 渲染循环的卡片失败改 `LogThrottle`（每卡状态转移 + 30s 最小间隔）。
+4. **审阅第三批 11（StationView）**：拆出 `StationStore`（items.json 纯逻辑 / P1-6 合并 / FormatVersion）、
+   `StationCopyController`（复制 / 移动队列 / 晚到结果）、`StationFileActions`、`StationSelection`、`StationRow`；
+   `DropStationCard.cs` 从 1877 行降到 357 行，`StationView.cs` 686 行。
+5. **审阅第三批 12（OverlayController / 玻璃）**：`OverlayController` 从 1169 行降到 825 行，拆出
+   `SettingsApplier` / `RenderScheduler`；经核实玻璃代码实际在 `OverlayWindow.xaml.cs`，把底板 / 取图 / 定时器 / 降级
+   整体下沉到 `GlassRuntime`（窗口只留访问器与薄委托），窗口 878 → 666 行；未新建 `GlassRuntimeState` 模型。
+6. **审阅第三批 13（SettingsWindow）**：1921 行 / 88 方法拆成 10 个文件（9 个 partial + `SettingsDeviceCatalog`），
+   每个 <350 行；设备枚举从 UI 线程逻辑里下沉，失败按可见日志处理。
+7. **审阅第三批 14（存储 / 启动模式）**：`ConfigStore` 与 `CardStateStore` 共用 `AtomicFile`（临时文件 → Replace →
+   失败回退 Copy+Move，备份失败中止、原文件不被破坏）；`App.OnStartup` 的截图 / 自检 / 冒烟分支抽 `CommandLineMode`，
+   启动 try、退出码、执行顺序不变。
+8. **审阅第三批 15（SelfTest）**：`RunUnitChecks` 从 880 行降到 35 行，按领域拆成 25 个 <60 行方法与 8 个内部
+   Check 助手；失败计数仍保持「任一领域失败 +1」的原语义；UiKit 四份自检助手经核对只是相似、不合并。
+9. **风格**：去掉 `Native.cs` 的文件 BOM；新增文件统一 UTF-8 无 BOM / CRLF / 4 空格 / 中文注释；保留所有
+   P0/P1/P2 编号注释。未引入 `.editorconfig` / `TreatWarningsAsErrors`（报告长期项，另立批次）。
+10. **版本**：宿主 / Contracts / UiKit / 6 个插件工程与 manifest 统一 2.23.0；插件 API 仍为 2，契约无破坏性变更。
+
+### 验证
+
+- 干净构建 0 警告 0 错误；
+- `--selftest` 连续两次退出码 0、失败项 0（日志确认采样 / 主题 / 配置修复 / 插件自检全通过）；
+- 四种 `--screenshot*` 与 `--smoke 3` 全部退出码 0，无 ERROR / WARN；生成设置 / 卡片 / 控件 / 叠层 PNG 正常；
+- 6 个内置插件仍从 `plugins/cards` 加载，退出时弱引用回收日志正常。
+
+### 风险 / 未验证
+
+- 结构性拆分以「行为不变」为目标，逐方法对照 HEAD；但 SettingsWindow 五页、玻璃拖动补帧、中转站复制 / 取消
+  只做了截图、smoke 与自检，未做长时间人工点击 / 断网 / 断驱动演练；
+- `--smoke 3` 只覆盖启动与短时运行，未做长稳 / 多显示器 / 高 DPI / RDP 重连；
+- 采样自检在并行构建负载下曾出现一次 15 秒内无首帧的瞬态，空闲重跑连续通过；已保留 15 秒上限，未改采样实现；
+- 报告第三批 15 的「示例插件 / 控件画廊」未做（本轮选项只要求四个结构性拆分）；
+- `GlassRuntimeState` 单源、双套模糊字段、Dwm 命名、回收站删除、Chat 历史别名仍按既有决定保留。
+
+---
+
+## 58. v2.24.0（本轮 4 个提交，分支 `feature/lucide-icons`，未合并 main）
+
+### 背景
+
+2.23.0 完成了审阅第三批的结构性拆分，但按 AGENTS.md §10 仍保留了四项「已评审决定推迟」的事项：
+`GlassRuntimeState` 单一数据源、Acrylic / Glass 双套模糊参数、`Dwm` 命名、Chat 历史别名。
+本轮按用户要求把它们全部落地，并补上中转站回收站删除、UiKit 控件画廊示例插件，以及全仓注释 / 文档里
+对仓库外文件的引用清理。
+
+### 改动
+
+1. **Schema 7**：`Settings.CurrentSchemaVersion = 7`；删除 `AcrylicBlur` / `AcrylicFps` / `GlassBlur` / `GlassFps`，
+   合并为 `BlurRadius`（0–60，默认 18）/ `BlurFps`（2–30，默认 10），兼容与桌面取样共用；
+   `SettingsLoader` 增加唯一的 v6→v7 一次性迁移：按旧 `GlassMode` 选对应那组参数、旧 `Dwm` 等值归一 `DesktopFeed`、
+   `Cards[].Extras.chat.Mode` 的 `continuous` / `poll` / `polling` 改写 `Context`；迁移后重新序列化再反序列化，
+   `needsSave=true`、旧键删除；v<6 仍按损坏、v>7 仍只读。
+2. **GlassRuntimeState**：新增 `src/Ui/GlassRuntimeState.cs`（Kind / Reason / LastError / 可用性 + `Describe()`）；
+   `GlassRuntime` 独占当前状态，`SetState` 是唯一状态与日志出口（只在实现 / 原因变化时记一条，降级 Warn、恢复 Info），
+   取代原先「`GlassPolicy.Resolve` 算一次、OverlayWindow 拖动再算一次、设置窗只看下拉框」的三份实现。
+3. **DesktopFeed**：`GlassMode` 的 `Dwm` 更名 `DesktopFeed`，`GlassPolicy.Resolve`、设置窗下拉框、`GlassFeed` 配置、
+   拖动补帧全部走同一模式名；`OverlayWindow` 拖动补帧改读 `GlassRuntime.State.Kind`，不再本地重算。
+4. **设置窗玻璃 UI**：删除 `AcrylicBlur` / `AcrylicFps` 两行，只保留一套 `GlassBlur` / `GlassFps` 控件并绑定
+   `BlurRadius` / `BlurFps`；System 隐藏可调项，Compat / DesktopFeed 显示，`GlassSource` 仅 DesktopFeed 显示；
+   末尾追加运行期「当前实际：…」，降级时用户能看出自己选的实现没生效。
+5. **Chat 别名**：`ChatSettings.NormalizeMode` 只接受 `context`（大小写不敏感）→ `Context`，其余→ `Single`；
+   `continuous` / `poll` / `polling` 只在 v6→v7 迁移里改写，运行期不再兼容。
+6. **回收站删除**：新增 `RecycleBin`（`SHFileOperation` + `FOF_ALLOWUNDO` 等四 flag，`fFlags` 用 ushort、
+   `pFrom` 用双 NUL 的 IntPtr，x64/ARM64 布局正确）；中转站右键「移到回收站」、确认框与状态行同步；
+   失败只报返回码并保留条目，绝不回退 `File.Delete` / `Directory.Delete`。
+7. **UiKit 控件画廊**：新增 `samples/UiKitGallery`（独立类库 + manifest，apiVersion 2，不并入宿主），
+   实际实例化 27 个 UiKit 控件类 / 28 个实例；颜色字号走主题令牌，交互留本地状态；README 给出构建与安装步骤。
+8. **外部引用清理**：移除注释 / 文档里的临时目录产物、仓库外测试脚本、原型绝对路径与外部审阅报告文件名，
+   改写为「仓库外临时产物（未提交）」；两张旧模式截图按 DesktopFeed 更名；示例 / 资源 README 的
+   失效相对链接修正；AGENTS §10 与 README 的 Schema / 术语 / 回收站说明同步。
+9. **版本**：宿主 / Contracts / UiKit / 6 个插件工程与 manifest 统一 2.24.0；插件 API 仍为 2，契约无破坏性变更。
+
+### 验证
+
+- `dotnet build -c Release`：**0 警告 0 错误**；
+- `--selftest`：**退出码 0、失败项 0**；现有 Schema 6 配置实际完成 v6→v7 迁移，日志确认旧键删除、DesktopFeed 与
+  BlurRadius / BlurFps 写入；SelfTest 的 v6 桌面 / 兼容双夹具、Chat 别名迁移断言通过；
+- 三种玻璃实现用 `--smoke 3 --smoke-visible` 实测：System→「系统亚克力」、DesktopFeed→「桌面取样」并走 DXGI、
+  Compat→「兼容取样」8 帧/24px；`GlassRuntimeState` 日志与实际实现一致；
+- 四种 `--screenshot*` 与 `--smoke 3` 全部退出码 0；设置窗在 DesktopFeed 配置下正常打开；
+- `samples/UiKitGallery` 单独 `dotnet build -c Release`：**0 警告 0 错误**，27 个控件类全部显式实例化。
+
+### 风险 / 未验证
+
+- `SHFileOperation` 的 `pFrom` 受 `MAX_PATH` 限制，超长路径会以非 0 返回码失败并留在列表（后续需 `IFileOperation`）；
+  按设计失败不回退永久删除；
+- 回收站不可用（网络盘 / 策略禁用）时行为取决于 Windows Shell，代码保证只报错、不自行永久删除；
+- 画廊只做独立构建验证，未安装到宿主 `plugins/cards` 实跑；`CardIcon` 的 Lucide pack URI 仅按指南验证可编译；
+- 玻璃三模式只做短时 smoke / 截图验证，未做多显示器、高 DPI、RDP 重连、长时间拖动压测；
+- v6→v7 只覆盖 Schema 6；更旧 Schema 仍按损坏备份，这是 2.14.7 起既有策略；
+- DWM 仍出现在「系统亚克力 / 合成器」语境（`WCA_ACCENT_POLICY`、`DwmFlush` 等），这是 API 名称，不是模式名。
+
+---
+
+## 59. v2.25.0（本轮 2 个提交，分支 `feature/lucide-icons`，未合并 main）
+
+### 背景
+
+2.24.0 后卡片仍只有「瞬移」：拖动时只动被拖的那张，松手后整叠跳位；呼出 / 消失直接切换；
+自动对齐只在松手后的重排里瞬跳。本轮按 A 方案（克制专业）补齐拖动跟随、呼出 / 消失、补位与
+自动对齐翻边动画，并保证截图 / 自检仍能稳定出图。
+
+### 改动
+
+1. **拖动跟随**：`OverlayWindow` 新增 `DragStarted` / `Dragging` 事件；`SettingsApplier.BeginCardDrag`
+   取消所有补位动画，`OnCardDragging` 把其余已显示窗口按总位移增量平移；锚点在松手前不动，
+   松手后 `OnCardMoved` 才落盘并动画重排。
+2. **呼出 / 消失**：160ms。窗口从目标位下方 8px 滑回（呼出）或向下方滑出（消失），同时
+   `OverlaySurface.Opacity` 0 ↔ 1；消失等淡出完成才 `Hide`，期间再呼出会作废旧隐藏回调。
+   8px 用窗口位置动画而不是内容 transform —— 窗口尺寸等于卡片尺寸，平移内容会被裁掉。
+3. **补位**：`CardLayoutCoordinator.LayoutAnimated()` 用每窗口 180ms 三次 ease-out；
+   Show/Hide 后其余卡片补位；数据驱动的高度变化 / 启动 / 设置重建保持瞬切。
+4. **自动对齐翻边**：Auto 模式仍在松手后由 `ResolveAlign` 按锚点 + 整叠中心判断屏幕左右半边，
+   翻边随 180ms 补位动画完成，不再瞬跳。
+5. **中断与截图**：每个窗口同一时刻只有一条位置动画，新目标从当前值接上；内容淡入淡出用版本号
+   作废旧回调；`CardMotion.Enabled=false` 作用于截图 / `--selftest`，避免抓到中间帧。
+6. **版本**：宿主 / Contracts / UiKit / 6 个插件工程与 manifest 统一 2.25.0；插件 API 仍为 2。
+
+### 验证
+
+- `dotnet build -c Release`：**0 警告 0 错误**；
+- `--selftest`：**退出码 0、失败项 0**；
+- 四种 `--screenshot*` 全部退出码 0（截图模式关闭动效，出图稳定）；
+- `--smoke 3 --smoke-visible` 多次退出码 0，无动画相关异常；退出时既有的插件弱引用 WARN
+  在 2.24 基线用同一份 settings 也能复现（3/6），与本次动效无关；
+- 代码路径覆盖：拖动增量跟随、松手 `LayoutAnimated`、呼出/消失的 `ShowCard/HideCard(true)`、
+  `CardMotion.Enabled=false` 的截图路径；未做人工拖拽逐帧录屏。
+
+### 风险 / 未验证
+
+- 逐帧移动窗口会触发 `LocationChanged → GlassRuntime.UpdateBackdrop`；180ms 短动画下可用，
+  但兼容取样（PrintWindow）仍是最重路径，未做逐帧预算 / stagger / 主题化参数；
+- 自动对齐翻边只在松手时发生（A 方案选择），不是在拖动中实时翻；
+- 交互卡片（AI 对话 / 命令行）未单独做动画回归，理论路径与普通卡相同；
+- 未做多显示器 / 高 DPI / RDP / 长时拖动压测。
+
+---
+
+## 60. v2.26.0（本轮 2 个提交，分支 `feature/lucide-icons`，未合并 main）
+
+### 背景
+
+2.25.0 虽然给普通卡片加了呼出 / 消失 / 补位动画，但命令卡走的是 `CommandModeController` 里的
+无动画 `ShowCard/HideCard` 重载，用户按 F9 呼出时仍然是瞬切；同时窗口刚 `Show()` 触发的
+`SizeChanged → Schedule → Layout()` 会用 `ApplyPosition(false)` 把位置动画直接吸到目标位，
+160ms 滑入可能被截成 1 帧。图标侧则长期是 Reicon 与 Lucide 混用：Lucide 已用于 `CardIcon`，
+但设置页页签 / 按钮、模块图标、媒体播放状态和硬件占位符仍走 Reicon 图标码位。
+
+本轮把非常驻卡（命令卡、媒体卡）统一到同一条动画路径，修掉布局调度打断动画的问题；
+同时把可替换的 Reicon 图标全部换成 Lucide，只把键帽 PUA 字形留给 Reicon。
+
+### 改动
+
+1. **命令卡动画**：`ICommandModeHost.ShowCard/HideCard` 增加 `animate` 参数；
+   `CommandModeController.Enter/Exit` 传 `true`，命令卡与媒体卡共用 160ms 淡入淡出 + 8px 滑动，
+   出现时下方卡片 180ms 让位、收起后 180ms 补位。键盘焦点 / 面板初始化顺序保持不变。
+2. **布局调度不打断动画**：`OverlayWindow` 新增 `IsPositionMotionActive`；`ApplyPosition(false)`
+   在本窗口已有位置动画且可见时改走动画路径，从当前位置续接新目标。这样窗口刚 `Show()` 的
+   `SizeChanged` 重排不会再让呼出滑入瞬移，补位中的其他卡片也不会被直接吸到终点。
+3. **图标换 Lucide**：`Icons` 的所有码位改为 `LucideIcons` 常量（CPU / GPU / RAM / ROM / 网络 /
+   USB / 音频 / 软件 / 界面），并登记 `IsIconChar`；`TextCanvas` 图标 run 改用
+   `LucideIcons.FontFamily`，键帽仍用 Reicon；设置页 `Theme.xaml` / `SettingsWindow.xaml` 改用
+   `LucideFont`，添加卡片菜单、卡片模块 / 预设图标、媒体播放状态同步；硬件占位符
+   `{cpu_icon}` 等现在输出 Lucide 字形。
+4. **自检**：`CardIconSelfTest` 增加图标字符登记、键帽码位不误判、图标不落进 U+E000–U+E056
+   的断言，防止以后重新按整段 PUA 区间判断。
+5. **版本**：宿主 / Contracts / UiKit / 6 个插件工程与 manifest 统一 2.26.0；插件 API 仍为 2，
+   契约无破坏性变更，Schema 仍为 7。
+
+### 验证
+
+- `dotnet build -c Release`：**0 警告 0 错误**；
+- `--selftest`：**退出码 0、失败项 0**；
+- `--screenshot-settings` / `--screenshot-cards` / `--screenshot` 退出码 0，设置页页签、
+  添加 / 搜索 / 移动 / 删除按钮、卡片模块图标、硬件占位符均显示 Lucide 字形；
+- 用日志里的热键宿主窗口直接投递 `WM_HOTKEY`，逐帧读取各卡片窗口 `GetWindowRect`：
+  命令卡呼出 `top 365 → 357`（8px），下方卡片 `357 → 467`、`467 → 577`；
+  收起命令卡 `357 → 349`，下方卡片反向回到 `467 → 357`、`577 → 467`，
+  轨迹为多帧渐变而不是单帧跳变；
+- `--smoke 3 --smoke-visible` 退出码 0；退出时既有的插件弱引用 WARN 仍是基线行为。
+
+### 风险 / 未验证
+
+- `CopyFromScreen` 抓不到 WPF 分层窗口，动画验收改用窗口位置轨迹；内容透明度动画只验证了
+  代码路径和最终可见性，没有逐帧抓 alpha；
+- 旧配置里如果用户把 Reicon 图标码位直接粘进内容模板（而不是用 `{cpu_icon}` 占位符），
+  升级后会按普通 PUA 字符处理，可能显示方框；默认内容和占位符不受影响；
+- 命令卡是交互卡，呼出 160ms 内窗口在移动且仍可命中；收起路径已禁用内容命中测试；
+- 未做多显示器 / 高 DPI / RDP / 长时拖动压测，也未做逐帧 CPU 预算。
+
+---
+
+## 61. v2.27.0（本轮按审阅复核顺序修复 + 性能采样，分支 `feature/lucide-icons`，未合并 main）
+
+### 背景
+
+2.26.0 的审阅复核确认了数据安全、玻璃边界、ffmpeg 热更新、保存链路与若干交互竞态；
+本轮按“数据安全 → 可见失败 → 交互正确性 → 低风险卫生 → 性能采样”的顺序落地，
+并为 TextCanvas / GlassFeed 优化先建立可复跑的性能基线。
+
+### 改动
+
+1. **B-1 中转站路径越界**：`StationFiles.IsRootPath` 拒绝盘符根 / UNC 共享根；
+   `UniqueTarget` 拒绝绝对路径、非法文件名与越出接收目录的目标；
+   `BuildFilePlan` / `BuildDirectoryPlan` / `CleanupPartial` / Move 删源都加了目录内断言；
+   `StationSettings.Normalize` 把接收目录规范成绝对路径。
+2. **B-7 中转站列表只读**：`ReadState` 区分“文件不存在”与“读失败”，读失败进入只读并显示原因；
+   之后的写盘（含晚到完成项）一律不覆盖 `items.json`。
+3. **L-1 主题名丢失**：`_readingUi` 守卫，`ReadUi` 期间 `ClearThemeName` 直接返回；
+   保存不再把刚套用的 `Style.ThemeName` 清空。
+4. **L-9 ConfigStore I/O 三态**：`TryReadSettings` 把 I/O 失败与内容解析失败分开；
+   I/O 失败按只读默认设置启动，不备份、不写盘，避免瞬时占用被当成损坏后覆盖有效配置。
+5. **L-7 / L-8 保存一致性**：`SaveClick` 捕获 `_onApply` 异常并显示失败；
+   `SettingsApplier.Apply` 在 `SyncCards` 失败时恢复旧设置并重建卡片视图；
+   运行时字段合并补上 `Behavior.AutoStart`，设置窗保存不再回滚托盘开关。
+6. **B-2 复制任务出 UI 线程**：`CardJobQueue.Enqueue` 用 `Task.Run` 包住 `RunAsync`；
+   1MB 复制缓冲提到文件循环外。
+7. **L-4 ffmpeg 热更新**：`FfmpegPlayer.SetMuted` / `SetLoop`，`ApplyVideoSettings` 补 `_player` 分支；
+   静音、速度、循环、自动播放不再“设置成功但不生效”。
+8. **L-2 / L-3 玻璃边界**：DXGI 请求矩形越出主屏输出时不再改写坐标，明确退回 GDI 并记一次 WARN；
+   `DesktopFrameSource.InvalidateDestination` 在共享 DIB 重建 / 释放时作废帧缓存，避免静态桌面黑帧误降级。
+9. **L-5 第二实例唤醒**：冷启动窗口期对 `OpenExisting` 做 30 × 100ms 重试，不再一次 WARN 后静默退出。
+10. **B-3 / B-5 / B-6 / B-13**：命令 CTS 用局部变量收尾；空自定义模板保留到 `Validate`；
+    Chat 切换模式后刷新内容签名，下一次应用设置不重建视图；解码器重新检测的 `async void` 加兜底。
+11. **卫生项**：媒体 `Pause` / 显示 / 释放失败的 `catch` 改为日志；`TextCanvas` 光标定时器在
+    隐藏 / 卸载时停止；`WaveOutPlayer` 缓冲准备全失败返回 false；`CardStateStore.Delete` 与写入共用锁；
+    `CardModule` 的加载方式注释改为 manifest 插件。
+12. **性能采样**：新增 `src/Ui/PerformanceProbe.cs` 与 `--perf N` 模式，统计 TextCanvas 的
+    Measure / OnRender / BuildLine / FormattedText 次数，GlassFeed 的缓冲分配 / LOH / BitmapSource 次数，
+    以及 GC 分配与 Gen0/1/2 增量；基线写入 `docs/performance-baseline.md`。
+13. **版本**：宿主 / Contracts / UiKit / 6 个插件工程与 manifest 统一 2.27.0；插件 API 仍为 2，
+    Schema 仍为 7；新增 `ICardHost.RefreshContentSignature` 为向后兼容的宿主侧接口扩展。
+
+### 验证
+
+- `dotnet build -c Release`：**0 警告 0 错误**；
+- `--selftest`：**退出码 0、失败项 0**；命令行自检新增“空自定义模板必须校验失败”，
+  中转站自检新增“盘符根不得作为条目名”；
+- `--perf 15 --visible`：退出码 0，基线见 `docs/performance-baseline.md`；
+- `--screenshot-settings` / `--screenshot-cards` / `--screenshot` 与 `--smoke 3 --smoke-visible`
+  全部退出码 0，设置窗显示 v2.27.0。
+
+### 风险 / 未验证
+
+- B-1 的根路径条目在 Explorer 正常拖放中通常被系统拦截，主要覆盖手改 `items.json` / 特殊拖放源；
+- L-2 只修了“不读错像素 / 不静默”，真正按输出建 duplication 的多屏支持仍未做；
+- L-9 的 I/O 失败只读启动会让用户暂时看到默认外观，但原文件不会被覆盖；
+- 性能基线是在当前 5 张小卡、DesktopFeed 10fps 下测的；大卡片 / 高 DPI / 多显示器应重新跑
+  `--perf` 后再决定 P-2 的 LOH 优化；
+- 未做多显示器 / 混合 DPI / RDP / 长时复制压测。
+
+---
+
+## 62. v2.28.0（UX 批次，分支 `feature/lucide-icons`，未合并 main）
+
+### 背景
+
+2.27.0 修完数据安全与可见失败后，用户侧仍有一批“容易误操作 / 状态不可见 / 效率低”的问题：
+设置窗关闭会静默丢弃修改，托盘运行期失败只写日志，卡片可被拖到屏幕外，
+大 GIF 会无上限占内存，卡片只能菜单上移下移，命令行没有历史召回，颜色 / 热键错误要到保存才提示。
+本轮按 UX 复核清单实现 2、5、7、8、11、12、14、15。
+
+### 改动
+
+1. **设置窗未保存提示（2）**：`_dirty` + 干净快照，标题显示 `*`；`OnClosing` 提供
+   “保存 / 放弃 / 取消”，`Close` 按钮不再直接 `Hide`；保存成功 / 重新加载会清脏状态。
+2. **运行期失败反馈（5）**：托盘在运行期重新启用失败时弹一次可见提示（不再只写 WARN）；
+   `CardEditor` 的模块设置区块创建失败改为 Danger 色错误占位，不再伪装成“没有设置项”。
+3. **减少动效（7）**：`Behavior.ReduceMotion` + 设置页开关；`CardMotion` 由
+   “用户设置 + 截图抑制”共同决定，截图 / 自检仍强制关闭，正常设置不会把它重新打开。
+4. **边缘吸附（8）**：拖动松手后按目标显示器工作区钳制锚点，至少保留一部分卡片可见，
+   距边缘 16px 内吸附；只影响锚点，不改顺序 / 间距。
+5. **大 GIF 预算（11）**：`GifAnimator` 先按 `宽 × 高 × 4 × 帧数` 估算，超过 64MB 不再
+   逐帧常驻，退回首帧并在媒体卡状态行提示“动图过大，已仅显示首帧”。
+6. **卡片复制与拖动排序（12）**：设置页卡片标题栏新增复制按钮（Id / 名称“副本”重新生成，
+   Extras 一并复制；交互卡拒绝复制）；新增拖动手柄，支持在卡片列表内拖动重排。
+7. **命令历史（14）**：命令行输入框 `↑` / `↓` 召回最近 50 条命令；切换会话保留历史，
+   输入新内容后重置召回位置。
+8. **内联校验（15）**：前景 / 背景 / 描边颜色框和全局热键框即时标红 + ToolTip，
+   不必等到保存才在底部状态行报错。
+9. **版本**：宿主 / Contracts / UiKit / 6 个插件工程与 manifest 统一 2.28.0；Schema 仍为 7，
+   插件 API 仍为 2。
+
+### 验证
+
+- `dotnet build -c Release`：**0 警告 0 错误**；
+- `--selftest`：**退出码 0、失败项 0**；
+- `--screenshot-settings` / `--screenshot-cards` / `--screenshot` 与 `--smoke 3 --smoke-visible`
+  全部退出码 0；设置窗显示 v2.28.0，行为页可见“减少动效”开关，内容页卡片标题栏可见
+  拖动手柄 / 复制按钮。
+
+### 风险 / 未验证
+
+- 设置脏状态快照会调用一次 `ReadUi`，关闭时比普通 `Hide` 多一次读取；卡很多时可能有轻微延迟；
+- 拖动排序是首次实现，只支持列表内重排，不支持跨窗口 / 跨页拖放；
+- 托盘运行期失败提示是模态 MessageBox，若用户频繁切换托盘开关可能重复出现（已做一次性抑制）；
+- GIF 预算按 RGBA 估算，未按实际像素格式精确计算；64MB 是经验阈值；
+- 命令历史只在当前 CommandView 生命周期内保留，删卡 / 重启不持久化。
+
+---
+
+## 63. v2.29.0（性能 + M-1/M-4 + L-13 实测，未合并 main）
+
+### 背景
+
+2.26.0 审阅里剩下的性能项 P-1 / P-2、模块化项 M-1 / M-4 一直排期未做；同时 L-13
+（混合 DPI 下只用主屏缩放定位）标注“需真机实测”。本轮用户接入 4K 屏（副屏 3840×2160@300%，
+主屏 1920×1080@100%），正好构成可复现的混合 DPI 环境：先实测确认问题，再改成物理像素定位。
+
+### 改动
+
+1. **P-1 TextCanvas 排版缓存**：新增 `TextLayout` 缓存，Measure 与 OnRender 共用同一份
+   `BuildLine` 结果；`"Ag"` 行高按实例缓存；字体 / 字号 / 字重 / 图标倍率 / 前景色 / DPI 变化时整表作废。
+   缓存键是文本原文，因此启动动画里“布局文本”和“逐字显示文本”各占一个键，不会互相覆盖。
+2. **P-2 GlassFeed 缓冲复用**：`Target.CaptureBuffer` 按尺寸复用，`Marshal.Copy` / `BoxBlur` /
+   `BitmapSource.Create` 都吃同一块；`ReleaseSurface` 时清空。`PerformanceProbe.GlassBuffer`
+   只在真正分配时计数，`LastFrame` 仍保留为“上一次推送帧”的独立快照。
+3. **M-1 默认卡注册表化**：新增可选能力 `ICardDefaultProvider`（`DefaultOrder` + `CreateDefaults`）；
+   `CardModel.CreateDefaultCards()` 遍历 `CardRegistry.Modules` 收集默认卡，不再写死
+   infotext / command / media。InfoText 提供 3 张、Command / Media 各 1 张；删除宿主
+   `CardDefaults.cs` 与插件 `InfoTextDefaults.cs`，模板只保留在 InfoText 预设表里。
+4. **M-4 删除 `ICardHostAware`**：宿主不再在 `CreateSlot` / `RebindSlot` / `CloseSlot` /
+   `Dispose` 调 `Attach` / `Detach`；插件统一从 `CardRenderContext.Host` 取每卡宿主服务。
+   `ICardHost` 保留，接口说明改为指向 `CardRenderContext.Host`。
+5. **L-13 物理像素定位**：新增 `ScreenGeometry`（`Screen.AllScreens` 顺序 + 物理矩形 +
+   `GetDpiForMonitor` 每屏 DPI）；`OverlayWindow` 的初始定位、拖动、补位 / 显隐动画全部改用
+   `SetWindowPos` 物理坐标，锚点仍存 DIP、按目标屏缩放换算；`DetectMonitor` 用物理中心命中显示器；
+   `CardLayoutCoordinator.ResolveAlign` 与 `SettingsApplier.ClampAnchorToWorkArea` 改用目标屏 DPI。
+   原因：WPF `Window.Left/Top` 在 PerMonitorV2 下会按目标屏 DPI 再乘一次，实测 4K@300% 上
+   `Left=1920` 落到物理 5760（屏外），无法用 DIP 跨屏。
+6. **版本**：宿主 / Contracts / UiKit / 6 个插件工程与 manifest 统一 2.29.0；Schema 仍为 7，
+   插件 API 仍为 2。
+
+### 验证
+
+- `dotnet build -c Release`：**0 警告 0 错误**；
+- `--selftest`：**退出码 0、失败项 0**；新增默认卡断言（5 张、3 张 infotext、command/media 各一、
+  Id 唯一、至少 3 个模块实现 `ICardDefaultProvider`、模板来自 InfoText 预设表）；
+- 同配置 A/B（2.28.0 worktree vs 2.29.0，4 卡，`--perf 15 --visible`）：`BuildLine` 422→204、
+  `FormattedText run` 794→510、每次 Measure+OnRender 的 BuildLine 2.50→0.99；
+  像素缓冲分配 360→7（3.36 MB→0.08 MB）；GC 分配 12.35→9.71 MB；
+- 4K@300%：首卡物理 `(2220,300)`、DPI=288（= 副屏原点 1920 + 100 DIP×3）；模拟拖动 120px 后
+  锚点 `(140,140)`、`显示器=1`（= 120÷3=40 DIP）；`--perf 12 --visible` 下 81 轮取样只分配 9 次，
+  `LOH=4` 全部来自尺寸变化；
+- 全新配置：临时移走 `settings.json` 与 `.bak` 后启动，日志“卡片已创建，数量=5”，
+  F11 热键注册成功（媒体卡在默认配置里），没有“插件不可用”占位卡；
+- `--screenshot-cards` / `--screenshot-settings` / `--screenshot` 全部退出码 0，设置页显示 v2.29.0，
+  卡片图标 / 键帽 / 命令行排版与改动前观感一致。
+
+### 风险 / 未验证
+
+- 删除 `ICardHostAware` 是契约破坏性变更：第三方插件若实现过它，升级到 2.29.0 会加载失败，
+  需要删掉接口与 `Attach` / `Detach`，改用 `context.Host`；内置 6 张卡均未使用，自检全绿。
+- 4K 副屏的桌面玻璃仍回退 GDI：`DesktopFrameSource` 只对主屏输出建 duplication，
+  请求区域超出主输出会记 WARN 并走 GDI。要让副屏也走 GPU 玻璃，需按 `IDXGIOutput1`
+  为每个输出各建实例（本轮未做，L-2 只保证“不读错像素 / 不静默”）。
+- L-13 的真机验证覆盖“主屏 100% + 副屏 300%”的初始定位与拖动；主屏高 DPI + 副屏低 DPI、
+  运行中改缩放、跨屏拖动到一半松手等组合未逐一压测。
+- TextCanvas 缓存上限 12 份，指标卡 8Hz 换文本时约每十几次刷新整表重建一次；
+  真机未观察到掉帧，但极长文本 + 多张指标卡的组合未单独压测。
+- 拖动实测是 `SetCursorPos + mouse_event` 注入，不是人手逐帧拖放；手感 / 鼠标捕获异常
+  仍需一次真人拖动确认。
+
+---
+
+## 64. v2.30.0（终末地 M1–M6 选项 + M7/M8 调研，未合并 main）
+
+### 背景
+
+`docs/UI/endfield.md` 把终末地工业界面拆成 M1–M8 八个阶段。本轮按“作为选项”落地
+M1–M6：默认观感不变，只有选中主题或手动打开开关时生效；M7/M8 只做可行性调研，
+成果在 `docs/UI/endfield-m7-m8-research.md`。
+
+### 改动
+
+1. **M1 两套主题**：新增 `docs/themes/endfield-ink.mptheme`（墨）与
+   `endfield-paper.mptheme`（纸），随 `EmbeddedResource` 内嵌；主题目录至少 5 份。
+2. **M2 圆角跟随**：新增 `CardPalette.Corner(radius, minimum)`，`cornerRadius=0` 时
+   浮层 / 列表 / 输入框 / 进度条不再被 2–8px 的最小值抬回；替换 12 处调用点。
+3. **M3 状态色令牌**：`Style.Success` / `Warning`（空 = 旧派生值），`ThemeTokens` 与
+   `ThemeFile` 支持，`CardStatus` 的 Success / Warning / 进度条改读；设置页两个颜色框。
+4. **M4 等宽读数**：`Style.MonoReadouts`；`TextCanvas` 把 0–9 拆成 `RunKind.Number`
+   并走 `MonoFont`，仍共用正文基线；默认关闭。
+5. **M5 卡片铭牌**：`Style.IndustrialHeader`；`CardHeader.Code` 显示两位编号，徽标
+   转大写并可用 `MonoFont` + `NumeralAlignment.Tabular`；文件中转站按卡片顺序填 `01` 起。
+6. **M6 装饰纹样**：`Style.Decoration` 六档（None / Grid / Scanline / Hatch / Halftone /
+   Contour），`OverlaySurface` 用冻结 `DrawingBrush` 平铺，整层 32% 透明度、不参与命中测试。
+7. **M7/M8 调研**：新增 `docs/UI/endfield-m7-m8-research.md` 与
+   `docs/UI/endfield-implementation.md`；结论是 M7 可先做四档一次性动效，M8 先做
+   主题数据 + 固定目录，不做携带可执行代码的主题插件。
+8. **版本**：宿主 / Contracts / UiKit / 6 个插件工程与 manifest 统一 2.30.0；
+   Schema 仍为 7，插件 API 仍为 2。
+
+### 验证
+
+- `dotnet build -c Release`：**0 警告 0 错误**；
+- `--selftest`：**退出码 0、失败项 0**；新增/更新状态色派生、0 圆角、非法装饰归一化、
+  主题往返字段、非法 decoration 拒绝、内置主题 ≥5 份；
+- `--screenshot-cards` / `--screenshot-settings` / `--screenshot-widgets`：退出码 0；
+  墨版截图确认圆角 0、网格装饰、等宽数字、`03 文件中转站` 铭牌、黄色进度条；
+- 设置页显示 v2.30.0，工业风格组三项开关与状态色输入可见。
+
+### 风险 / 未验证
+
+- M2 只修控件自己的最小圆角；媒体控件的 1.5px 小圆角、视频窗 GDI region 仍按各自设计；
+- M4 只覆盖 TextCanvas 的 0–9，数字中的 `.%/` 与单位仍走正文字体；
+- M5 只在使用 `CardHeader` 的卡片（文件中转站）可见；
+- M6 纹样是静态平铺，4K 下 1px 线随 DPI 缩放，未做逐 DPI 视觉微调；
+- 两套主题的 success / warning 未做完整 WCAG 全组合复算；
+- 动效（M7）与装饰模块化（M8）仅调研，未实现。
+
+---
+
+## 65. v2.31.0（M7 四档动效 + 循环效果 + M8 主题数据 + 边界拖动修复，未合并 main）
+
+### 背景
+
+2.30.0 落地 M1–M6 后暴露了三个问题：装饰纹样在深色卡上几乎看不见；
+卡片拖到 100% / 300% 屏幕交界处会提前结束、位置与尺寸错误；
+M7 / M8 只有调研没有实现。本轮一起收口。
+
+### 改动
+
+1. **M6 装饰可见性与等高线**：装饰层透明度从 15% 调回 **32%**；`Contour` 从“整齐同心圆”
+   改为 96px 波形等高线 + 两个偏心闭合环（平铺接缝连续）；`Grid` / `Scanline` / `Hatch` /
+   `Halftone` 保持低透明度可见。
+2. **M7 四档动效**：`Style.MotionProfile` = `Current` / `Cut` / `Industrial` / `Off`；
+   `CardMotion` 从常量改为档位属性，`Cut` 用线性缓动；`ReduceMotion` 与截图抑制仍然优先。
+3. **M7 循环效果**：`Style.LoopEffect` = `None` / `Breath` / `Scanline` / `Pulse`；
+   `LoopDurationMs` 600–20000、`LoopAmplitude` 0.02–0.8 可调，默认 `None` / 2600 / 0.10。
+   Scanline 只重绘 2px 横线，Pulse 只重绘 1px 描边，Breath 是整卡填充；代价已写进
+   `docs/UI/endfield-m7-m8-implementation.md`。
+4. **状态色取色器**：成功 / 警告色在文本框旁增加“选择…”，复用前景 / 背景的
+   `ColorDialog` 取色路径，取到的仍是 7 位 `#RRGGBB`。
+5. **M8 主题数据**：`.mptheme` 新增 `appearance.motion`（`profile` / `effect` / `loop` /
+   `durationMs` / `amplitude`），与既有 `appearance.industrial` 一起构成主题可表达的
+   动效 / 装饰数据；有界枚举 + 固定目录，不携带可执行代码。
+6. **跨 DPI 拖动**：拖动期间 15ms 轮询物理光标、`GetKeyState` + `GetAsyncKeyState` 双读、
+   松手瞬间按真实光标重算落点、`DpiChanged` 不再把窗口拉回旧锚点；
+   自动对齐 + 右对齐叠层在翻边时改用卡片左边缘作为新锚点。
+7. **M7/M8 文档**：新增 `docs/UI/endfield-m7-m8-implementation.md`，更新调研结论与
+   `endfield.md` 阶段表；M1–M6 记录保留在 `endfield-implementation.md`。
+8. **版本**：宿主 / Contracts / UiKit / 6 个插件工程与 manifest 统一 2.31.0；
+   Schema 仍为 7，插件 API 仍为 2，主题 schema 仍为 1。
+
+### 验证
+
+- `dotnet build -c Release`：**0 警告 0 错误**；
+- `--selftest`：**退出码 0、失败项 0**；新增四档参数、`motion` 主题往返、非法 profile / decoration 拒绝；
+- 墨版 `--screenshot-cards`：32% 波形等高线可见（不是同心圆）、圆角 0、等宽数字、
+  `06 文件中转站` 铭牌；设置页可见循环效果 / 时长 / 幅度与状态色取色按钮；
+- 交界拖动（主屏 100% → 副屏 300%，1600,240 → 2600,360）：
+  落点 x=**2600**、宽度 **742**（247 DIP × 3）、DPI **288**、锚点 **226.67**、显示器 1；
+  修复前为 x=1902、锚点 -6；
+- 用户当前设置未被覆盖（`X=1575 / Monitor=0 / 6 卡`）。
+
+### 风险 / 未验证
+
+- 循环效果是真实 GPU 合成成本，默认关闭；Breath > Scanline > Pulse，幅度和时长可调；
+- 拖动修复依赖 Win32 光标轮询（仅拖动期间 15ms 一次），真人手感 / 极快甩动 / 跨屏中途松手
+  仍建议再确认；鼠标注入测试不能完全代替真人拖放；
+- `Cut` 的线性缓动是近似“切入”，未做逐帧曲线拟合；
+- M8 只做数据目录，不做第三方可执行视觉插件；
+- 装饰纹样仍是静态平铺，未做逐 DPI 线宽微调。
+
+---
+
+## 66. v2.32.0（ContourLine 等高线 + 纹样密度 + 等高线原地变化，未合并 main）
+
+### 背景
+
+2.31.0 的 `Contour` 还是“波形线 + 偏心环”的示意纹样，不像真正的地形图；
+`Grid / Scanline / Hatch / Halftone` 的疏密固定；循环效果只有呼吸 / 扫描线 / 描边脉冲。
+本轮按 `samples/ContourLine` 移植地形等高线，并补密度与原地变化动画。
+
+### 改动
+
+1. **移植 ContourLine 核心算法**：`src/Ui/Contour/` 新增 `NoiseField`、`TerrainField`、
+   `ScalarGrid`、`FieldEqualizer`、`ContourExtractor`、`ContourLevels`、
+   `ContourDecoration`；链路为“地形场 → 网格采样 → marching squares → 串联 → Chaikin → StreamGeometry”。
+2. **保留五项设置**：`ContourLevels`（3–48）、`ContourEvening`（0–1）、
+   `ContourRelief`（0.2–4.0）、`ContourSmooth`（0–6）、`ContourMinLoopArea`（0–5000）。
+3. **删除首曲线 / 计曲线区别**：`ContourLevels` 不再有 `IsIndex`，所有线同色同宽；
+   `ContourExtractor` 不再生成注记 / 示坡线，界面上也没有高程数字和标记。
+4. **等高线原地变化进循环效果**：`LoopEffect` 增加 `Contour`；`TerrainField` 在两套固定地形场
+   之间按 phase 做余弦混合，轮廓原地形变、不整体漂移；每 130ms 重算几何，`ContourSpeed`
+   （0.1–4.0，默认 1.0 ≈ 4 秒一周期）控制速度。选中 Contour 时设置页把“循环时长/呼吸幅度”
+   换成“变化速度”；只有 Breath 才显示呼吸幅度。性能代价：这是唯一会重新分配几何的循环，
+   卡片越大越贵；4K 大卡建议关闭或降低速度。
+5. **其他纹样密度**：`Style.DecorationDensity`（0–2，0.5 = 原间距），作用于
+   Grid / Scanline / Hatch / Halftone；等高线用五项专用参数，不受它影响。
+6. **设置页 / 主题**：纹样密度与等高线参数按选择互斥显示（选等高线隐藏密度、显示五项参数）；
+   `appearance.industrial` 增加对应字段；`appearance.motion.effect` 增加 `Contour` 与 `speed`。
+7. **版本**：宿主 / Contracts / UiKit / 6 个插件工程与 manifest 统一 2.32.0；
+   Schema 仍为 7，插件 API 仍为 2，主题 schema 仍为 1。
+
+### 验证
+
+- `dotnet build -c Release`：**0 警告 0 错误**；
+- `--selftest`：**退出码 0、失败项 0**；新增等高线级数/范围夹取、主题往返（含五项等高线
+  参数与密度）；
+- 墨版 `--screenshot-cards`：16 级等高线呈现真实地形闭合线 / 山谷走向，圆角裁剪正确，
+  没有高程数字与计曲线加粗；
+- `--smoke 7 --smoke-visible`（`Decoration=Contour` + `LoopEffect=Contour`）：退出码 0，
+  无新异常；日志里的 ALC WARN 是既有卸载探针噪音；
+- 设置页可见纹样密度、五项等高线参数、循环效果（含“等高线变化（原地形变）”）；
+  选 Contour 时只显示“变化速度”，选 Breath 时才显示呼吸幅度。
+
+### 风险 / 未验证
+
+- 等高线生成在 UI 线程；卡片小（约 300×80）时很轻，4K 大卡 + Contour 原地变化会明显更贵；
+- 默认 12 级；16 级在信息卡上偏密，属用户可调范围；
+- 地形是示意地形，不对应真实高程；没有注记是刻意的（按本轮要求删除）；
+- 纹样密度只影响非等高线纹样；等高线的疏密由级数 / 均衡决定；
+- 未做逐 DPI 的线宽微调，4K 下细线仍按 WPF 像素对齐。
+
+---
+
+## 67. v2.33.0（UX 收口 + 等高线性能，未合并 main）
+
+### 背景
+
+2.32.0 之后集中处理一批观感与交互遗留：卡片铭牌不再需要；设置页还有多组子选项没有随父选项显隐；
+等高线原地变化每 130ms 在 UI 线程重采样与建几何，卡顿时有发生；状态色只有输入框没有预览；
+系统亚克力的圆角不可控但滑块仍可动；拖动非第一张卡时自动对齐按整叠中心判断，偶尔与落点错位；
+中转站内容贴边；文字“左 / 中 / 右”实际都先按整块居中。
+
+### 改动
+
+1. **删除卡片铭牌**：移除 `CardHeader.Code`、`Style.IndustrialHeader`、主题 `industrial.cardCodes`、
+   设置页“卡片铭牌”选项和中转站编号填充；徽标恢复正文正体，不再强制等宽大写。
+2. **设置项上下文显隐**：毛玻璃关闭时隐藏整套玻璃选项；系统亚克力时圆角行灰掉并说明原因；
+   文字描边关闭时隐藏描边颜色 / 粗细；背景图片为空时隐藏拉伸 / 不透明度；启动动画关闭时隐藏
+   欢迎语 / 速度 / 光标；GPU、磁盘、网卡、键盘、NVIDIA 子项分别跟随对应开关；
+   托盘关闭时禁用“启动后最小化”；减少动效或动效档位 Off 时灰掉循环效果及其参数。
+3. **等高线性能与流畅度**：缓存 A/B 两套固定地形的原始高度网格（尺寸 + Relief 为键），相位帧只做
+   混合 + 拉伸/tanh + 直方图均衡；marching squares / 串联 / Chaikin / StreamGeometry 移到后台线程，
+   冻结后回投 UI；复用线段 List、端点字典、点数组池；SetPhase 轻量且忙时合并；代次校验丢弃旧结果，
+   Unloaded 后不回调，失败保留上一帧并节流日志。动画从 130ms 提到约 30fps，相位按真实经过时间推进。
+4. **状态色预览**：成功 / 警告输入框旁加色块；空值走 `ThemeResolver` 的派生色（成功=强调色，
+   警告=前景 0.9），tooltip 显示实际颜色。
+5. **系统亚克力禁用圆角**：`Acrylic=true && GlassMode=System` 时圆角滑块 / 数值只读灰化，
+   提示“由 DWM 底板决定圆角”；切回兼容 / 桌面取样后恢复。
+6. **拖拽以被抓卡为对齐基准**：松手时先量整叠宽度，按被抓卡中心决定 Auto 的左 / 右；
+   显式左 / 右也统一按“被抓卡落在落点”反算锚点，其余卡片向它对齐。
+7. **修拖动偶发错位**：拖动开始先停残余动画、同步高度、把整叠落到上一轮目标位，再读取物理起点；
+   拖动期间挂起常规布局（尺寸 / 内容变化不会把窗口拉回锚点），松手后再统一补位。
+8. **中转站呼吸感**：`StationView` 新增内衬容器，默认左右 14 / 上下 13，标题下 11、搜索下 8、
+   状态行上 9、状态文字与取消按钮 12；列表高度上限同步扣掉上下内衬，不改变卡片窗口宽度契约。
+9. **文字对齐修复 + 跟随卡片**：`TextCanvas` 整块起点改为跟随 `TextAlignment`（左贴左、居中居中、
+   右贴右），不再无条件居中；`Style.TextAlignment` 新增 `Card`（跟随卡片对齐），由布局协调器把
+   整叠最终左 / 右对齐传给每张卡；主题 `typography.textAlign` 接受 `Card`。
+10. **版本**：宿主 / Contracts / UiKit / 6 个插件工程与 manifest 统一 2.33.0；
+    Schema 仍 7，插件 API 仍 2，主题 schema 仍 1。
+
+### 验证
+
+- `dotnet build -c Release`：**0 警告 0 错误**；
+- `--selftest`：**退出码 0、失败项 0**；
+- `--screenshot-cards`（Contour 16 级 / 12 级）等高线真实地形可见，无铭牌；截图路径新增等待后台首帧；
+- 右对齐 + 固定宽度 460 的截图确认文字贴右，不再整块居中；
+- 设置页截图确认：系统亚克力圆角灰化 + 提示；描边 / 背景图 / 启动动画 / 数据源子项按父选项显隐；
+  状态色色块可见；循环效果选 Contour 时只显示“变化速度”；
+- `--smoke 6 --smoke-visible`（6 卡 + `Decoration=Contour` + `LoopEffect=Contour`）：退出码 0，
+  无等高线异常；同一配置 `LoopEffect=None` 的 4 秒 CPU 基线约 3.0s，Contour 约 3.4s（含启动）；
+- 实测等高线生成（Release，单线程 Build 平均）：420×260 约 2.6–3.1ms（旧约 4.0ms），
+  1280×720 约 10–11ms（旧约 18–19ms），4K 约 12–15ms（旧约 23–25ms）；UI 线程每帧 <0.1ms；
+- 用户 `settings.json` / `.bak` 在所有临时截图 / smoke 后按字节备份恢复。
+
+### 风险 / 未验证
+
+- 等高线首帧 / 尺寸变化后有几毫秒到 ~20ms（4K）仍画上一帧或空几何，后台完成后自动刷新；
+- 几何生成虽已下后台，4K 大卡 30fps 仍有持续 CPU 成本；多点卡片同时动画建议降低速度或关闭；
+- 点数组池上限 512，4K 下部分数组仍每帧交给 GC；StreamGeometry 每帧新建属 WPF 固有成本；
+- 拖拽对齐修正是按代码路径与截图 / smoke 验证，未做真人拖放手感测试；跨 DPI 极快甩动仍建议实机复核；
+- 中转站留白按默认 Padding 14 设计，极小 Padding 仍保留 14/12 下限，属于观感取舍。
+
+---
+
+## 68. v2.34.0（现代 C# 治理 A + 机械语法 B，未合并 main）
+
+### 背景
+
+2.33.0 的现代化评估结论：全量 Nullable / record / 属性化 DTO 会撞 JSON 反射、P/Invoke 布局和
+插件 ABI；建议先做治理（A），再做不改变成员形状的机械语法（B）。本轮按用户确认执行 A+B，
+并同步把 `AGENTS.md` 的风格条款改为“现代语法默认、契约/互操作红线”。
+
+### 改动
+
+1. **治理 A**：
+   - 新增 `Directory.Build.props`，统一 `TargetFramework` / `LangVersion=12.0` / `Nullable=disable` /
+     `ImplicitUsings=disable` / 输出路径 / 符号 / 文档文件；11 个跟踪 csproj 的重复属性收敛；
+   - 新增 `.editorconfig`（UTF-8、CRLF、4 空格、只开现代化格式诊断）与 `.gitattributes`
+     （索引 LF、工作树按扩展名 CRLF，防止整文件翻转换行）；
+   - `SelfTest` 新增 6 个内置插件 manifest `version == 宿主 Version` 断言；
+   - `AGENTS.md` §4 改为现代 C# 默认，新增 §4.1 红线（DTO 字段、P/Invoke、XAML 名、catch、
+     插件 ABI）。
+2. **机械语法 B**：
+   - 全仓 `src/**` 与两个跟踪示例工程使用 file-scoped namespace；
+   - `get { return ...; }` / 单表达式方法改为表达式体；
+   - 目标类型 `new()`、`out var`、`is null` / `is not null`；
+   - 安全字符串拼接改为插值（跳过含换行、花括号、常量上下文、已有插值等高风险形态）；
+   - `dotnet format` + 临时 Roslyn 重写器均只改语法，不改成员形状、字段顺序、catch 体和 XAML 事件名。
+3. **版本**：宿主 / Contracts / UiKit / 6 个插件工程与 manifest 统一 2.34.0；
+   Schema 仍 7，插件 API 仍 2，主题 schema 仍 1。
+
+### 验证
+
+- `dotnet build -c Release`：**0 警告 0 错误**；
+- `--selftest`：**退出码 0、失败项 0**；新增 manifest 版本断言通过；
+- `--screenshot-cards` / `--screenshot-settings` / `--screenshot-widgets`：退出码 0，卡片/设置/共享控件渲染正常；
+- `--smoke 7 --smoke-visible`：退出码 0，6 个内置插件全部加载；
+- 静态核对：`Settings` 等 DTO 仍是 public field；`StructLayout` / `FieldOffset` / `DllImport`
+  仅缩进变化；剩余 `== null` 2 处均在注释中，剩余 36 处拼接为多行/XAML 花括号等保守跳过项；
+- 本轮测试没有改写 `settings.json`（文件时间戳保持在测试前）。
+
+### 风险 / 未验证
+
+- 这是 **4 万行级别的重排 diff**，git blame / bisect 会断层；已单独提交并写入 `.git-blame-ignore-revs`，便于整体 revert；
+- 没有开启 Nullable / ImplicitUsings / record / 分析器（报告判定为当前 No-Go）；
+- 没有做 ARM64 实机验证；P/Invoke 字段布局虽未改，仍建议发布前在 ARM64 跑一次冒烟/截图；
+- 字符串插值只覆盖安全子集；多行消息、XAML 模板、含花括号的常量拼接保持原样；
+- 插件 API 版本保持 2；DTO 字段与公共成员形状未变，已编译插件理论上无需重编译，但本轮没有外部插件实机回归。
+
+### 2.34.0 复核修复（2026-11-11）
+
+- **P1**：`SelfTest` 的 manifest 版本断言只看 `builtin.*`，不再把用户插件算进去；
+  新增临时目录正反例（用户插件版本不一致被忽略、builtin 错版本仍失败）。
+- **P2**：`dotnet format style/whitespace --verify-no-changes` 均为 0；统一 18 个文件的行尾/空白，
+  修 `TrayIcon` 的 IDE0090；`out var` 实际转换 172 处（`Enum.TryParse` 的泛型推断点保留显式类型）。
+- **P3**：新增 `.git-blame-ignore-revs` 并写入 B 提交 `959af6e`；`LucideIcons.cs` 标记
+  `generated_code`；插件指南示例改现代语法；`samples/ContourLine` 去掉显式 LangVersion；
+  版本记录不再依赖未入库的评估文件路径。
+- 复核后：构建 0/0、自检 0、format 两项 verify 0。
+
+---
+
+## 69. v2.35.0（终末地 M2–M8，未合并 main）
+
+### 背景
+
+2.34.0 之后，`docs/UI/endfield.md` 结合本地规范镜像 `samples/EndfieldDesign`
+（`endfield-ui/design` 40 页 + Storybook）重新拆解了终末地的工业语言。新 M2–M8
+不再沿用 2.30 的“圆角/状态色/等宽/铭牌/纹样”旧编号，而是：
+零偏移阴影、左缘选中条、按钮实心化、分段进度、编号/面包屑/页脚、角括号、切角。
+
+### 改动
+
+1. **M2 零偏移阴影**：`OverlaySurface` 的 `DropShadowEffect` 改为 `ShadowDepth=0`、
+   `BlurRadius=26`、`Opacity=0.28`；阴影变成四周均匀的环境光，不再有“从上打光”的方向。
+2. **M3 选中态**：`CardList` / `CardTable` / `CardTree` / `CardTimeline` 的行模板统一为
+   左缘 3px 强调条 + `Accent` 24% 底；选中条只在 `IsSelected` 时出现。
+3. **M4/M8 按钮**：`CardButton` 改为自绘底形；主行动实心 `Accent` + 对比字色 + 右上 10px 切角，
+   次行动深色块，危险行动软红块；全部 4px 微圆角、不再围整圈 1px 描边。焦点环画在形状外。
+4. **M5 分段进度**：新增 `CardSegmentBar`，`CardStatus` 用 28 段直角块替代 3px 半圆进度条。
+5. **M6 铭牌/页脚**：新增 `CardMeta` + `CardFooter`；`CardHeader` 支持 `// 03 / ` 面包屑；
+   纯文字卡由 `OverlaySurface` 画编号/页脚，CLI、媒体、中转站由各自视图画；页脚只写真实版本与显示器序号。
+6. **M7 角括号**：新增 `CornerBrackets`（2px / 13px / 外扩 4px，不占命中区域），
+   用于媒体画面与 `CardStatus` 错误/警告状态，保持“一屏 2–3 处”的预算。
+7. **M8 切角**：新增 `CutCornerBorder`（45°、6/10/16 三档、只切一个角、子内容不被裁），
+   用于 `CardHeader` 角标（6px）与主行动按钮（10px，自绘）。
+8. **版本**：宿主 / Contracts / UiKit / 6 个插件工程与 manifest 统一 2.35.0；
+   Schema 仍 7，插件 API 仍 2，主题 schema 仍 1。
+
+### 验证
+
+- `dotnet build -c Release`：**0 警告 0 错误**；
+- `--selftest`：**退出码 0、失败项 0**（共享控件 / 数据控件 / 卡片注册表全部通过）；
+- `--screenshot-cards`：纯文字卡显示 `// 01 / 标题` 与 `v2.35.0 · MON 01`；
+  CLI / 中转站显示编号、页脚、选中条、分段进度、切角角标；
+- `--screenshot-widgets`：共享控件截图覆盖角标、选中条、分段进度、角括号；
+- `--smoke 7 --smoke-visible`：退出码 0，6 个内置插件加载正常。
+
+### 风险 / 未验证
+
+- 切角按钮的**点击区域仍是矩形**（规范要求），焦点环在形状外侧；4K 下切角抗锯齿未逐屏目视；
+- 角括号只落在媒体画面与状态错误/警告两处；列表/树/表使用 M3 左缘条，避免同一选中态叠两种记号；
+- 纯文字卡的编号/页脚由宿主渲染层画，富内容卡由各自视图画，避免重复叠字；
+- “聊天行”当前没有可选中模型，M3 的选中条先覆盖列表 / 表格 / 树 / 时间线；
+- 未做 ARM64 实机与外部插件二进制回归。
+
+---
+
+## 70. v2.36.0（M2–M8 选项化与卡片收口，未合并 main）
+
+### 背景
+
+2.35.0 把终末地 M2–M8 直接写成默认视觉语言，没有退路；同时上一轮留下几处实际使用问题：
+信息 / 文本卡被套上了页头页脚、媒体卡和对话卡骨架不一致且内部偏挤、中转站搜索占位符与输入文字错位、
+中转站只有一种列表、页脚内容写死、退出整个软件时还会弹出设置窗的未保存提示。
+
+### 改动
+
+1. **M2–M8 独立开关**：新增 [`EndfieldStyleSettings`](../src/Contracts/Core/EndfieldStyleSettings.cs)
+   （`Style.Endfield`），七个布尔 + 页脚模板；默认全开 = 2.35.0 观感。新增
+   [`EndfieldVisuals`](../src/UiKit/EndfieldVisuals.cs) 作为唯一读取入口，旧配置缺字段时回落到全开。
+2. **M2 / M3 / M4 / M5 / M7 / M8 回落分支**：阴影回到 `Depth=4 / Opacity=0.55`；列表 / 表格 / 树 /
+   时间线回到 16% 强调底且不空出竖条；按钮回到 2.34 的细描边模板；进度回到 3px 半圆端头；
+   角括号关闭；切角关闭后按钮与角标回到圆角矩形。
+3. **M6 排除信息 / 文本卡**：`CardMeta.Enabled` 对 `infotext` 始终返回 false；`CardFooter` 两段都为空时
+   整块折叠，避免富内容卡底部留下空白条。
+4. **页脚模板**：`EndfieldStyleSettings.FooterText` 支持 `{version}` / `{monitor}` / `{code}` / `{name}`；
+   空模板走 `v{version} · MON {monitor}`。设置页「外观 → 终末地视觉」提供输入框，关闭 M6 时该行收起。
+5. **媒体卡对齐对话卡**：`CardMediaView` 改为 `CardHeader` + 分隔线 + 画面 + `CardStatus` +
+   `CardFooter`；播放时间 / 倍速 / 音频备注改走底部状态行，进度复用分段条（M5 关闭时自动回旧条）；
+   标题、画面、状态、页脚之间统一增大间距；正常画面不再常驻四角括号，只保留加载失败 / 空状态。
+6. **中转站搜索对齐**：`CardInput` 占位符去掉额外的 top margin，并与输入框同字号、同 8px + 1px 基线；
+   空 / 非空切换时不再上下跳。
+7. **中转站四视图**：`StationSettings.View` 支持 `LargeIcon` / `MediumIcon` / `SmallIcon` / `List`；
+   `StationDisplayMode` 集中尺寸与归一化，`StationRow` 生成网格块或单行，`CardList.SetViewMode`
+   切换 WrapPanel / 虚拟化列表；编辑器加「显示方式」下拉框。
+8. **退出软件不弹未保存**：`OverlayController.Exit` 先调用 `SettingsWindow.CloseForShutdown()`
+   无提示关闭设置窗，再 `Application.Shutdown()`；用户单独关闭设置窗仍保留保存 / 放弃 / 取消提示。
+9. **截图验收**：新增 `--screenshot-station` 四视图样张；`CaptureCards` 支持
+   `MIRRORPOND_ENDFIELD_OFF=1` 验证全关分支；中转站截图样张不写 `items.json`。
+10. **版本**：宿主 / Contracts / UiKit / 6 个插件工程与 manifest 统一 2.36.0；
+    Schema 仍 7，插件 API 仍 2，主题 schema 仍 1。
+
+### 验证
+
+- `dotnet build -c Release`：**0 警告 0 错误**；
+- `--selftest`：**退出码 0、失败项 0**（新增 M2–M8 开关 / 页脚模板 / 按钮旧模板 / 进度旧分支 /
+  中转站视图归一化断言）；
+- `--screenshot-settings`：外观页七个开关、页脚输入框、M6 关闭时收起均可见；
+- `--screenshot-cards`：信息 / 文本卡无页头页脚；CLI / 中转站 / 媒体显示 `v2.36.0 · MON 01`；
+  媒体状态行显示播放状态与时间；
+- `--screenshot-cards` + `MIRRORPOND_ENDFIELD_OFF=1`：旧按钮 / 旧进度 / 无页脚，卡片底部无空条；
+- `--screenshot-station`：大图标 / 中图标 / 小图标 / 列表四种排布均出图；
+- `dotnet format style/whitespace --verify-no-changes`：0 / 0。
+
+### 风险 / 未验证
+
+- 中转站大 / 中图标用 `WrapPanel`，不再虚拟化；`MaxEntries` 上限 500，超长列表建议用列表 / 小图标；
+- 媒体卡正常播放时不再显示四角角括号，只有异常 / 空状态显示；这是和对话卡统一后的取舍；
+- 切角按钮点击区域仍是矩形，4K 抗锯齿未逐屏目视；
+- 未做 ARM64 实机与外部插件二进制回归。
+
+---
+
+## 71. v2.37.0（选中态、整体动效与设置文案，未合并 main）
+
+### 背景
+
+2.36.0 的 M3 选中条只在普通列表 / 表格 / 树 / 时间线里出现，图标网格刻意排除了左缘条，
+而且条高只有 18px；用户实际选中大 / 中图标时只看到淡色底，反馈“未见 M3 选中态”。
+同时 `endfield-motion.md` 明确了整体入场 / 出场与左右位移的语义，而宿主只有单卡呼出 / 收起的
+160ms 上下位移，没有“显示 / 隐藏全部”的整体动效，也没有左右方向选项。
+
+### 改动
+
+1. **M3 修复**：`CardList` 的选中条改为 **4px 满高**，并取消“图标网格不画条”的例外；
+   内容左侧缩进 6px，保证条不被内容压住。表格 / 树 / 时间线同步改为 4px 满高。
+   选中底色仍保留，状态不只靠动效表达。
+2. **整体显隐动效**：`BehaviorSettings.OverallMotion`（默认开）控制“显示 / 隐藏全部”。
+   `OverlayController.ToggleVisibility` 在该项开启时给每张卡片走现有 `AnimateShowMotion` /
+   `AnimateHideMotion`；关闭后瞬时切换。启动、设置重建、截图仍走瞬切。
+3. **左右滑入滑出**：`BehaviorSettings.CardSlide`（None / Left / Right，默认 None）。
+   `CardMotion.SlideDirection` 传给 `OverlayWindow`，显示起点与隐藏终点从 Y 轴改为 X 轴；
+   None 时保留原来的上下 8px / 2px 位移。左右距离按当前屏幕 X 轴缩放换算。
+4. **与减少动效联动**：`CardMotion.OverallMotion` 仍受 `ReduceMotion` 与 `Off` 档一票否决；
+   设置页在这两种情况下把整体动效开关与滑入方向置灰。
+5. **设置文案**：`SettingsWindow.xaml` 的标签 / 下拉项 / 区块标题去掉括号，解释移到短提示或
+   ToolTip；“启动动画”改为“动效”，新增整体动效复选框、卡片滑入方向下拉框；
+   命令行 / 聊天 / 中转站 / 媒体的可见设置文案同步精简。
+6. **版本**：宿主 / Contracts / UiKit / 6 个插件工程与 manifest 统一 2.37.0；
+   Schema 仍 7，插件 API 仍 2，主题 schema 仍 1。
+
+### 验证
+
+- `dotnet build -c Release`：**0 警告 0 错误**；
+- `--selftest`：**退出码 0、失败项 0**（新增左右方向归一化断言，M3 模板经树 / 时间线渲染）；
+- `--screenshot-station`：大 / 中 / 小图标 / 列表的选中行都能看到 4px 左缘条；
+- `--screenshot-settings`：行为页出现“整体动效”与“卡片滑入方向”，标签无括号；
+- `dotnet format style/whitespace --verify-no-changes`：0 / 0。
+
+### 风险 / 未验证
+
+- 左右滑动是物理窗口位移，跨屏拖动 / 混合 DPI 下只按卡片所在屏的 X 缩放换算；
+  4K 下逐屏目视尚未覆盖；
+- 整体隐藏时逐张卡调用 `LayoutAnimated`，卡片很多时会有重复布局；当前内置卡片数量下未出现可感卡顿；
+- 未做 ARM64 实机与外部插件二进制回归。
+
+---
+
+## 72. v2.38.0（M3 方向与设置结构，未合并 main）
+
+### 背景
+
+2.37.0 把 M3 做成 4px 满高左缘条，方向仍是“更粗”；用户实际要的是更窄，并且在大图标 / 中图标网格里竖条会切断图标列。
+设置页同时暴露出分组层级问题：动效在行为页、刷新在行为页、等宽数字在装饰页，且所有分组不能折叠；
+托盘与卡片右键菜单也仍是旧的系统样式，项目太多。
+
+### 改动
+
+1. **M3 收窄与方向**：列表 / 表格 / 树 / 时间线左缘条收窄到 **2px**；
+   大图标 / 中图标改为 **3px 下缘条**，不再画左侧竖条；选中底色保留。
+   `CardList` 模板同时保留左条与下条，按 `tiles` 选择触发哪一个。
+2. **设置分组重排**：
+   - 行为页“动效”整组移到外观页；动效档位、循环效果也归入该组；
+   - 行为页“刷新 / 采样间隔”移到数据源页顶部；
+   - 外观页“读数使用等宽数字”移到“文字”组；
+   - “工业风格”改名“装饰”，只保留状态色、纹样与等高线。
+3. **可折叠分组**：新增 `SettingsSection` 样式（Expander，15px 标题 + 右侧折角）；
+   窗口初始化时由 `SettingsWindow.Sections.cs` 把现有 `SectionTitle` 和后续控件自动包组。
+   共生成 21 个分组，点击标题即可折叠；新增分组仍按原来的 `SectionTitle` 写法即可。
+4. **现代右键菜单**：新增 `HudContextMenu` / `HudMenuItem` 暗色样式（圆角、阴影、悬停高亮、
+   右侧热键文字），托盘与卡片共用。两个菜单都只保留四项：
+   `隐藏叠层`、`打开设置`、`解锁`、`退出`；
+   托盘在叠层隐藏时该入口显示“显示叠层”，锁定时“解锁”/未锁定时“锁定”仍复用同一项。
+5. **设置描述**：继续压缩 CLI、循环效果、热键、玻璃帧率等长说明；可见标签保持无括号。
+6. **版本**：宿主 / Contracts / UiKit / 6 个插件工程与 manifest 统一 2.38.0；
+   Schema 仍 7，插件 API 仍 2，主题 schema 仍 1。
+
+### 验证
+
+- `dotnet build -c Release`：**0 警告 0 错误**；
+- `--selftest`：**退出码 0、失败项 0**（新增右键菜单样式与四项断言、M3 渲染）；
+- `--screenshot-settings`：外观页显示“装饰 / 动效”，数据源页顶部显示“刷新”，行为页只剩窗口/启动/文件；
+  分组标题带折叠折角，21 个分组生成成功；
+- `--screenshot-station`：大/中图标为下缘条，小图标/列表为 2px 左缘条；
+- `--smoke 4 --smoke-visible`：托盘、卡片菜单和窗口正常创建；
+- `dotnet format style/whitespace --verify-no-changes`：0 / 0。
+
+### 风险 / 未验证
+
+- 折叠组不持久化展开状态，重开设置窗恢复全部展开；
+- 右键菜单样式为暗色，浅色任务栏上对比度已按暗底设计，未逐主题目视；
+- 托盘/卡片菜单只保留四项，快捷命令行与开机自启入口移除，相关功能仍可在设置页使用；
+- 未做 ARM64 实机与外部插件二进制回归。
+
+---
+
+## 73. v2.39.0（Endfield 设置页与 M3 细化，未合并 main）
+
+### 背景
+
+设置页仍是浅色 Windows 表单；M3 方向、动效档位表述、循环线宽、卡片排序入口和投影都还差一版收口。
+本轮按 `samples/EndfieldDesign` 把设置页改成暗色工业底 + 黄色强调 + `//` 分组标题，并补浅色切换；
+M3 在大/中图标里改为下缘条；动效档位按“优雅 / 标准 / 简短 / 无”重排。
+
+### 改动
+
+1. **设置页明暗主题**：`Theme.xaml` 调色板改为 Endfield 暗色基线；新增 `SettingsTheme`
+   在运行时替换 `DynamicResource` 画刷。标题栏右侧按钮切换暗/亮，`Behavior.SettingsTheme`
+   随设置持久化。卡片叠层主题不受影响。
+2. **M3 方向细化**：列表 / 表格 / 树 / 时间线左缘条 2px；大图标 / 中图标改为 3px 下缘条；
+   折叠组、设置分组和右键菜单使用同一套暗色/浅色语义。
+3. **动效档位**：下拉顺序与文案改为 **优雅 → 标准 → 简短 → 无**，
+   内部仍映射 `Current / Industrial / Cut / Off`，兼容旧配置。
+4. **循环粗细**：新增 `Style.LoopPulseThickness`（1–8px）与 `Style.LoopScanlineThickness`
+   （1–10px）；设置页按当前循环效果上下文显示，`OverlaySurface` 直接使用。
+5. **卡片整栏拖动**：设置页卡片标题栏整条可拖，按钮 / 输入框等交互控件不抢拖拽；
+   原地单击仍然展开/折叠。保留拖到其他卡片上排序的行为。
+6. **投影自然化**：M2 环境阴影改为 32px 模糊、1px 接触偏移、24% 不透明度，
+   外扩 14px 留白；旧投影分支保持不变。
+7. **右键菜单**：改为白底黑字、浅色细边框与浅灰 hover；仍只保留四个入口。
+8. **版本**：宿主 / Contracts / UiKit / 6 个插件工程与 manifest 统一 2.39.0；
+   Schema 仍 7，插件 API 仍 2，主题 schema 仍 1。
+
+### 验证
+
+- `dotnet build -c Release`：**0 警告 0 错误**；
+- `--selftest`：**退出码 0、失败项 0**（新增主题归一化、动效别名、循环粗细夹紧、菜单四项）；
+- `--screenshot-settings`：默认暗色；`MIRRORPOND_SETTINGS_LIGHT=1` 浅色；两套截图均生成；
+- `--screenshot-station`：大/中图标下缘条、小图标/列表 2px 左缘条；
+- `--smoke 3 --smoke-visible`：托盘与卡片菜单正常创建；
+- `dotnet format style/whitespace --verify-no-changes`：0 / 0。
+
+### 风险 / 未验证
+
+- 明暗主题通过 DynamicResource 切换，若未来新增颜色忘记使用资源键会保留旧色；
+- 菜单已固定白底黑字，浅色任务栏 / 深色任务栏都不随系统变化；
+- 折叠组展开状态不持久化，重开设置窗恢复全部展开；
+- 未做 ARM64 实机与外部插件二进制回归。
+
+---
+
+## 74. v2.40.0（设置窗收口，未合并 main）
+
+### 背景
+
+2.39 已经让设置页有暗/亮两套 Endfield 调色板，但仍保留 Windows 普通标题栏；卡片标题栏整条可拖，
+用户希望只让左侧六点抓手拖动，并且拖动时看到卡片跟随；热键卡片组还是平铺标题；
+滑块与复选框仍是系统默认模板；旧“上移 / 下移”菜单也没套新样式。
+
+### 改动
+
+1. **无边框设置窗**：`WindowStyle=None` + `WindowChrome`，去掉系统标题栏；
+   顶部自绘栏负责拖动、双击最大化 / 还原、最小化、关闭，并与 Endfield 头部视觉融合。
+2. **卡片拖动**：只有左侧六点图标启动拖拽，标题栏空白仍点击展开 / 折叠；
+   新增 `CardDragAdorner`，拖动时用当前卡片的 VisualBrush 半透明跟随鼠标，
+   到目标卡片上松手后由 `CardListDrop` 重排。
+3. **热键分组**：全局热键保持一个折叠组；卡片模块的热键从全局组里提出来，
+   按 `ICardHotkeySource` 模块分别生成“媒体卡片 / AI 对话卡片”等折叠组。
+4. **滑块 / 复选框**：新增 Endfield 风格模板；滑块为 4px 轨道 + 黄色方头，
+   复选框为 15px 方框 + 黄色选中底/勾，颜色全部走 DynamicResource，暗/亮主题同步。
+5. **旧菜单清理**：添加卡片、上移/下移、托盘、卡片右键菜单全部套 `HudMenuStyle`；
+   菜单固定白底黑字、浅色边框和浅灰 hover。
+6. **暗色按钮文字**：主行动按钮 Foreground 改走 `AccentText`，暗色主题下“保存并应用”为暗字。
+7. **主题文件**：`ThemeMotion` 增加 `pulseThickness` / `scanlineThickness`，
+   导出/解析/范围校验与 `StyleSettings` 双向同步。
+8. **版本**：宿主 / Contracts / UiKit / 6 个插件工程与 manifest 统一 2.40.0。
+
+### 验证
+
+- `dotnet build -c Release`：**0 警告 0 错误**；
+- `--selftest`：**退出码 0、失败项 0**；
+- `--screenshot-settings`：暗/亮两套、无边框标题栏、滑块/复选框、热键分组均出图；
+- `--screenshot-station`：M3 下缘条/左缘条保持；
+- `--smoke 3 --smoke-visible`：托盘/卡片菜单与无边框窗口正常创建；
+- `dotnet format style/whitespace --verify-no-changes`：0 / 0。
+
+### 风险 / 未验证
+
+- 拖动跟随层依赖 `AdornerLayer`，若宿主窗口模板未来去掉 `AdornerDecorator`，需要补回；
+- 无边框窗口最大化后的任务栏边界按 WindowChrome 默认行为处理，未在混合 DPI/多屏逐项目视；
+- 旧菜单已统一，但 MessageBox 仍由系统绘制；
+- 未做 ARM64 实机与外部插件二进制回归。
+
+---
+
+## 75. v2.41.0（设置窗圆角与交互补完，未合并 main）
+
+### 背景
+
+2.40.0 已去掉系统标题栏，但还有几处体验断点：暗色“保存并应用”仍是亮黄底；右键菜单文字被全局
+`TextBlock` 样式染成白色，叠在白底菜单上；卡片拖动跟随层是展开态整卡，且没有让位反馈；
+等高线 1.0x 仍是 4 秒一个周期；主题预览衬底固定；滑入方向不能跟随整叠对齐；
+设置窗四角仍是直角；滑块、菜单与卡片圆角还没有完全对齐 EndfieldDesign 的“工业编辑风”。
+
+### 改动
+
+1. **等高线周期**：相位推进基准 `ContourBasePeriodMs = 10000`，1.0x = 10 秒 / 周期，
+   2.0x = 5 秒、0.5x = 20 秒；`StyleSettings.ContourPeriodSeconds` 与自检共用同一公式，
+   设置页提示改为“1.0 = 10 秒一个形变周期”。
+2. **设置窗圆角**：`AllowsTransparency=True` + 独立 `WindowShadow` 阴影层 + 12px `WindowFrame`，
+   内容层按 11px 几何裁切；最大化时自动收掉 14px 外边距、阴影与圆角。另调用
+   `DWMWA_WINDOW_CORNER_PREFERENCE` 作为 Windows 11 系统级兜底。
+3. **对照 EndfieldDesign**：窗顶加 2px 信号条；设置卡圆角从 10px 收到 8px；菜单圆角 4px、
+   高亮项左侧加 3px 信号黄竖条；版本号改等宽字体；滑块改为 16×20px 方头 + 中央墨色刻线。
+4. **主题预览底色**：`Behavior.SettingsPreviewBg`（默认 `#0B1020`）持久化；
+   「外观 → 主题」新增色值输入、取色与重置，非法值在 `Settings.Normalize` 回落并记日志。
+5. **滑入跟随对齐**：`Settings.NormalizeCardSlide` 新增 `Follow`；设置页下拉新增「跟随对齐」；
+   `OverlayWindow.ResolveSlideDirection` 取 `OverlaySurface.ResolvedCardAlignment`，
+   呼出与消失都按整叠最终左 / 右方向滑动。
+6. **菜单明暗**：`HudMenuStyle.Apply(menu, dark)` 把白底黑字 / 黑底白字写进菜单自己的资源字典，
+   不污染 Application；`HudContextMenu` 模板在 Popup 内加局部 `TextBlock` 样式，
+   修复全局白色文字造成的“白底白字”。
+7. **暗色主按钮**：新增 `PrimaryBg / PrimaryText / PrimaryBorder / PrimaryHover / PrimaryPressed`；
+   暗色为黑底信号黄字 + 黄边，亮色仍是黄底黑字。滑块轨道新增 `SliderTrack` 令牌。
+8. **卡片拖动**：跟随层改为标题栏位图快照（折叠态）；源卡 110ms 淡出 + 140ms 收成标题栏；
+   目标区其它卡片按 `CardMotion.LayoutDurationMs` 平移让位；`DragLeave` / 取消统一复位；
+   `CardListDrop` 用插入下标而不是松手时命中的卡片，避免让位后目标漂移。
+9. **版本**：宿主 / Contracts / UiKit / 6 个插件工程与 6 个 manifest 统一 2.41.0。
+
+### 验证
+
+- `dotnet build -c Release`：**0 警告 0 错误**；
+- `--selftest`：**退出码 0**（含 10 秒周期、`Follow`、预览底色回落、菜单明暗对比断言）；
+- `--screenshot-settings` 暗 / 亮两套：圆角、投影、信号条、深底保存按钮、滑块刻线均出图；
+- `dotnet format style --verify-no-changes`：**0**；
+- `dotnet format whitespace --verify-no-changes`：**0**；
+- `--smoke 3 --smoke-visible`：**退出码 0**；
+- 拖动跟随 / 让位属于真实鼠标交互路径，未做真人拖拽录屏；代码路径已编译、自检覆盖归一化与菜单，
+  但 DragOver 的插入下标与平移动画仍需一次手动拖拽确认。
+
+### 风险 / 未验证
+
+- `AllowsTransparency=True` + `WindowChrome` 在最大化 / 混合 DPI / 多屏下的边界未逐项实测；
+  圆角由透明窗 + 内层 12px 边框与几何裁切保证，DWM 圆角只是 Windows 11 的额外兜底。
+- 拖动时源卡会临时收成标题栏，松手后按原展开状态重建；若用户希望拖动后保持折叠，需要再改。
+- 菜单明暗只覆盖设置窗自己的“添加卡片 / 上移下移”菜单；TextBox 系统剪贴板菜单仍由 Windows 绘制。
+- 未做 ARM64 实机与外部插件二进制回归。
+
+---
+
+## 76. v2.42.0（菜单修复、去透明外框与粒子聚字，未合并 main）
+
+### 背景
+
+2.41.0 的菜单虽然写了局部 `TextBlock` 样式，但实际 Popup 里由 `ContentPresenter` 生成的文字仍被全局
+`TextBlock` 样式染成浅色，用户截图仍是“白底浅字”；设置窗为了阴影保留了 14px 透明外边距，
+看起来像一圈多余的空框；`samples/ParticleToText` 的粒子聚字效果还没有进入应用。
+
+### 改动
+
+1. **菜单文字修复**：`HudMenuStyle` 在菜单项加入 `ItemCollection` 时，就把字符串标题换成
+   带本地 `MenuText` 的 `TextBlock`，并递归处理自定义标题树；`Opened` / `LayoutUpdated`
+   再遍历一次 Popup 视觉树兜底。快捷键的 `MenuMuted`、图标的 `Accent` 等显式颜色保留，
+   白底黑字 / 黑底白字不再依赖模板资源作用域。
+2. **移除透明外框**：删除 `WindowShadow` 和 14px 外边距 / 阴影层，`WindowFrame` 直接铺满窗口；
+   圆角保留 12px，由透明窗 + 内层几何裁切实现。最大化时圆角归零、裁切取消。
+3. **粒子聚字**：新增 `src/Ui/ParticleTextLayer.cs`，把 `TextCanvas` 快照采样成点集，
+   粒子从文字外侧收拢，收敛后淡回真实文字并停表。只挂在 `OverlaySurface` 的文字层上。
+4. **触发条件**：`Style.TextEffect = None / Particle`，设置项在「外观 → 动效 → 文字动效」；
+   只对 `infotext` 卡生效。用“文字骨架”（数字归一成 `#`）判断是否重播：指标 / 时钟数字刷新不重播，
+   预设、星期、按键名等真实文字变化才播放；启动打字动画（光标逐字）不播放。
+5. **性能**：粒子数按文字面积夹在 350–1800，采样步长按面积自适应 1–3px，30fps，
+   约 1.05 秒后淡出并停表；减少动效 / 截图 / Off 档一律不启动。实测系统信息卡 390 点、
+   采样约 2ms；小卡受实际笔画像素限制保持 60–103 点。
+6. **主题文件**：`appearance.motion.textEffect` 读写与校验同步；旧主题缺该字段保持 `None`。
+7. **版本**：宿主 / Contracts / UiKit / 6 个插件工程与 6 个 manifest 统一 2.42.0。
+
+### 验证
+
+- `dotnet build -c Release`：**0 警告 0 错误**；
+- `--selftest`：**退出码 0**（新增文字动效归一化与骨架断言）；
+- `dotnet format style/whitespace --verify-no-changes`：**0 / 0**；
+- `--screenshot-settings` 暗 / 亮：确认 14px 透明外框已移除、圆角仍在、粒子选项出现在动效组；
+- 临时把 `TextEffect` 设为 `Particle` 跑 `--smoke 4 --smoke-visible`：日志出现
+  `粒子文字启动：390 点 / 195×40 DIP / 采样 2.0 ms`，退出码 0；跑完已恢复原设置；
+- 菜单文字修复由自检直接验证：字符串标题加入集合后已是带本地前景色的 `TextBlock`，
+  自定义 StackPanel 标题里的普通文字也已写入本地前景色、图标保留金色；未单独做菜单录屏。
+
+### 风险 / 未验证
+
+- 粒子层是 UI 线程 30fps 的短片（约 1 秒），未在 4K/高 DPI 多屏逐项录屏；点数与采样步长已按面积限制。
+- `Particle` 只在文字骨架变化时播放，因此时钟 / 指标的数字刷新不会看到粒子；这是性能取舍。
+- 菜单修复先用集合回调改写标题，再用 `Opened` / `LayoutUpdated` 兜底；若某个菜单在打开后才动态
+  加视觉子元素且绕过 `ItemCollection`，仍可能漏一次，需要再补遍历。
+- 未做 ARM64 实机与外部插件二进制回归。
+
+---
+
+## 77. v2.43.0（滚动条、粒子参数与富内容样式，未合并 main）
+
+### 背景
+
+设置页右侧滚动条仍是 Windows 原版；粒子聚字只有固定参数、默认随机配对，文字变化时整句重新散开，
+而且收敛后还要等约 1 秒才切成清晰文字；文字没有独立颜色设置；富内容卡的文字没有跟随描边、加粗、行高；
+工作区还有三套示例工程和若干文档既没提交也没排除。
+
+### 改动
+
+1. **设置页滚动条**：`Theme.xaml` 增加全局 `ScrollBar` 模板（竖直 / 水平 8px、圆角滑块、
+   悬停/拖动变亮），新增 `Scrollbar` / `ScrollbarHot` 明暗令牌；不显示系统箭头。
+2. **粒子颜色与文字颜色**：`Style.Foreground` 默认改为 `#FFFFFF`，设置页从「背景 → 前景色」
+   移到「文字 → 文字颜色」；粒子颜色改为跟随该颜色，不再固定用强调色。
+3. **粒子参数**：新增 `TextParticleSize`（0.8–4px）、`TextParticleCount`（200–3000）、
+   `TextParticleSpeed`（0.2–4×）、`TextParticleNearest`（默认开）、`TextParticleGeometry`
+   （轮廓采样）；全部在「文字动效 = 粒子聚字」时才显示，受减少动效 / Off 档禁用。
+4. **就近分配与持久粒子池**：`ParticleTextLayer` 跨播放保留粒子位置；默认按 x 排序做近似最近邻配对，
+   只改一个字符时大部分粒子留在原笔画附近；新增粒子从旧质点附近起步，不整句重新散开。
+5. **瞬时凝固**：去掉 1.05 秒粒子等待和 170ms 淡出；速度决定收敛时间（约 0.7 秒 / 倍速，夹在
+   160–2800ms），到点直接切回清晰文字并停表。
+6. **几何采样**：开启后先取字形 alpha 边界点，再在不足目标数时补填充点；对图标 / 键帽混排也有效。
+7. **富内容样式关联**：新增 `CardTextStyle`，给 CLI / 对话 / 媒体 / 中转站补：
+   描边（0 偏移柔和阴影）、加粗、行高；CLI 正文补 `TextAlignment`；`CardHeader` 标题跟 `Bold`；
+   中转站重建列表后重新套用，CLI 新记录在 `AddText` 时套用；宿主 `EnsureContent`
+   在首次创建富内容后也补一次，首帧即生效。
+8. **有意不覆盖**：CLI 等宽终端字体、`MonoReadouts`、图标倍率、富内容的结构性布局对齐不强行套正文设置；
+   这些在富内容里由各自控件承担语义。
+9. **仓库清理**：`.gitignore` 排除 `samples/ParticleToText/`、`samples/EndfieldDesign/`、
+   `samples/ContourLine/`；补齐并提交 `docs/UI/endfield-aic.md`、`endfield-old.md`、`liquid_glass.md`、
+   `docs/lyrics-research.md`、`docs/superpowers/`；修复 `.gitignore` 内的损坏注释。
+10. **版本**：宿主 / Contracts / UiKit / 6 个插件工程与 6 个 manifest 统一 2.43.0。
+
+### 验证
+
+- `dotnet build -c Release`：**0 警告 0 错误**；
+- `--selftest`：**退出码 0**（新增富内容描边/加粗/行高加撤断言、粒子字段归一化）；
+- `dotnet format style/whitespace --verify-no-changes`：**0 / 0**；
+- `--smoke 3 --smoke-visible`：**0**；临时 `TextEffect=Particle` 时日志出现
+  `粒子文字启动：626 点 / 195×40 DIP / 填充采样 / 就近配对 / 采样 4.4 ms`；
+- 设置页暗色滚动条像素采样为 `#3A4145`，不是系统样式；粒子参数面板在选中粒子时展开；
+- 未做富内容描边/粒子动画的逐帧录屏；行为由自检和真实冒烟日志覆盖。
+
+### 风险 / 未验证
+
+- 几何采样是**光栅轮廓采样**，不是矢量字形轮廓；对混排图标/键帽更稳，但笔画边缘会比矢量采样略糙。
+- 富内容描边用 0 偏移 DropShadow 近似，极细笔画或高 DPI 下可能偏柔。
+- 粒子持久位置只存在当前卡片实例内；重建卡片后从外侧重新聚拢一次。
+- 未做 ARM64 实机与外部插件二进制回归。
+
+---
+
+## 78. v2.43.1（粒子凝固与启动动画互斥，未合并 main）
+
+### 背景
+
+2.43.0 的瞬时凝固有一个计时错误：粒子层每帧 `_clock.Restart()` 后又用它的经过时间判断是否到点，
+凝固条件永远不成立，粒子层会一直盖住画布；表现为开启粒子后时钟秒数停在旧值、末排只显示一半。
+另外粒子仍用弹簧速度项，文字变化时有惯性；启动打字动画与粒子只在 `cursor` 分支上“错开”，并没有真正互斥。
+
+### 改动
+
+1. **凝固计时**：新增独立的 `_settleElapsedMs` 累加本帧时长，不再依赖每帧重启的 stopwatch；
+   收敛时间改为 `220 / 速度`，夹在 80–1000ms；到点切回 `TextCanvas` 并停表。
+2. **无惯性**：去掉速度 / 刚度 / 阻尼数组，粒子位置按 `1 - exp(-24 × 速度 × dt)` 指数逼近目标，
+   不冲过头；距离小于 0.6px 直接吸附。文字变化时保留粒子位置并重新配对，不会整句甩开。
+3. **末排重采样**：首次布局未完成就采样会漏掉最后一行；画布 `SizeChanged` 后按新尺寸重新采样，
+   采样位图宽高各多取 1px，避免末排字落在位图边缘外。粒子层不再额外 `ClipToBounds`。
+4. **打字动画互斥**：`CardMotion.ParticleTextEnabled` 统一判断；粒子启用时 `OverlayIntro.Begin`
+   整段跳过启动打字动画，`cursor` 逐字刷新也会停掉粒子。设置页在粒子**实际生效**时收起
+   「启动时播放打字动画」和欢迎语 / 速度参数，切回“无”或减少动效关闭粒子后恢复。
+5. **骨架归一化**：数字串（含小数 / 千分位）折叠成单个 `#`，速率单位 `B/s` / `KB/s` / `MB/s` / `GB/s`
+   归一到 `/s`；指标卡不再因数值位数或空闲网络单位抖动反复重播，时钟秒数刷新也不会触发粒子。
+6. **去掉 1.2 秒重播节流**：文字骨架变化立即重新配对；粒子池跨播放保留，连续变化只换目标。
+7. **版本**：宿主 / Contracts / UiKit / 6 个插件工程与 6 个 manifest 统一 2.43.1。
+
+### 验证
+
+- `dotnet build -c Release`：**0 警告 0 错误**；
+- `--selftest`：**退出码 0**；
+- 真实 `--smoke 14 --smoke-visible`：临时诊断日志显示 `粒子文字凝固：234 ms / 383 点`，
+  三张启动卡在约 234ms 后切回清晰文字；打开粒子时日志明确记录
+  `粒子聚字已启用，跳过启动打字动画`；
+- 第 11 秒与第 13 秒的桌面抓图时钟分别为 `10:55:54`、`10:55:56`，秒数正常推进；
+  时钟卡末行 `星期四 1:32` 完整显示；
+- 设置页截图确认选中粒子后「启动时播放打字动画」与欢迎语参数收起，粒子参数面板展开；
+  减少动效开启时粒子不生效，打字动画入口恢复，二者判断一致；
+- 15 秒粒子 smoke 中，真实内容只各播放一次，不再出现指标卡每约 625ms 重播；
+  自检新增断言覆盖位数变化、秒数刷新、速率单位切换都不改变骨架。
+
+### 风险 / 未验证
+
+- 相邻粒子目标仍按 x 排序近似配对，不是全局欧氏最近邻；极端密集字形下可能有个别错配。
+- 指标卡的网络速率跨单位 / 位数变化时骨架仍会变化，可能触发一次粒子重播；这是文字宽度真实变化，
+  不属于秒数刷新。
+- 未做 ARM64 实机与外部插件二进制回归。
+
+---
+
+## 79. v2.43.2（粒子持续触发、按键裁切与显隐横移，未合并 main）
+
+### 背景
+
+2.43.1 的粒子只在“文字骨架”变化时触发，而骨架把数字与速率单位都归一，导致性能卡和时钟首帧后一直是普通文字；
+按键卡的键帽墨迹接近画布底边，粒子目标中心落在图层外，末排粒子只露出上半格；
+粒子首次出现仍从外圈起步、新增粒子从质心附近出现，与“直接前往目标点”的预期不符；
+右侧整叠在整体显隐时会按最新卡片宽度重算 X，即使用户选择“无 / 左侧 / 右侧”，也能看到整排向右移动。
+
+### 改动
+
+1. **持续触发**：`MaybePlayParticle` 不再按 `TextSkeleton` 过滤，任何真实文字变化都会排队播放；
+   指标卡 120ms 刷新一次，按卡片 800ms 限频，时钟（1000ms）与按键卡不限频。
+   修正旧动画结束清 `_version/_pending` 会取消刚排入的新播放的竞态。
+2. **不聚拢、不散开**：首帧与新增粒子在 `ApplyTargets` 中直接落在目标点；
+   已有粒子保留上次位置，文字变化时只改目标，按指数逼近直线前往，不冲过头。
+3. **按键末排**：`ClampTarget` 按粒子半径把目标中心夹在图层内；
+   键帽画布高 20、粒子 maxY 从 20.5 夹到 18.9，末排方块不再被窗口裁掉一半。
+4. **显隐横移**：右对齐改为固定右边缘；显隐动画期间保留每张卡已有的 X，只重算 Y；
+   锚点 / 对齐 / 卡片数量变化才重新取右边缘，拖动结束以被抓卡片右边缘为新锚点。
+   日志验证隐藏与再次显示的目标 X 完全一致（1191→1191、1306→1306、954→954）。
+   同时修正“无”方向退场时 Y 写成负值、与呼出同向上缩的问题，退场改为向下。
+5. **新 logo**：从 `assets/MirrorpondHUDLogo.svg` 生成黑 / 白 / 终末地黄三套 ICO，
+   16/20px 用“前卡片 + 两条文字线”简化字形，24/32px 加一道涟漪，40px 起用完整母版；
+   暗色设置标题栏用黄色，浅色用黑色，托盘按任务栏明暗用黑 / 白。
+6. **版本**：宿主 / Contracts / UiKit / 6 个插件工程与 6 个 manifest 统一 2.43.2。
+
+### 验证
+
+- `dotnet build -c Release`：**0 警告 0 错误**；`--selftest`：**退出码 0**；
+- 16 秒粒子 smoke：时钟卡约每秒重播、指标卡约 0.8 秒重播，不再只有首帧；
+  按键卡 107×20 / 295 点，目标最大 y=19.5（粒子大小 1.0），未越过 20 高图层；
+- 显隐诊断日志：设置 `Left`、`dx=-2`，隐藏与显示目标 X 一致，整叠不再重排横移；
+- 设置页截图：暗色标题栏黄色 logo、浅色黑色 logo 均正常；ICO 含 16–256 共 9 帧。
+
+### 风险 / 未验证
+
+- 指标卡每约 0.8 秒隐藏文字 220ms 做粒子收敛；若觉得频繁，可后续把限频做成设置项。
+- 右对齐在显隐期间保留 X，内容宽度变化时卡片向左长；下一次非动画布局才会重新对齐右边缘。
+- 粒子配对仍是按 x 排序的近似最近邻；首帧直接落在目标点，不再有从外圈聚拢的入场动画。
+- 未做 ARM64 实机与外部插件二进制回归。
+
+---
+
+## 80. v2.44.0（逐字粒子、拖拽限位与设置窗重构，未合并 main）
+
+### 背景
+
+2.43.2 仍然把整块文字交给粒子层：未变化字符也会被遮住，粒子态与普通文字有内外边距差，视觉割裂；
+一个变化数字会采到整行 200 个目标；右侧拖拽把“整叠左锚点”当成卡片左边缘，宽卡靠近屏幕右边会被拉回中部；
+设置窗仍是顶部标题栏 + Tab 页 + 底栏结构，和参考稿的双栏一体化不一致；ICO 各尺寸用了不同笔画简化版，
+小尺寸与最大尺寸外观不同。
+
+### 改动
+
+1. **逐字粒子**：`OverlaySurface.ChangedIndices` 等长逐字比较、增删用公共前后缀；只把变化字符
+   放进 `TextCanvas.SetHiddenChars`，未变字符继续正常绘制。粒子目标只采变化字符。
+2. **精确采样**：`TextCanvas.DrawForParticles` 直接把“只含变化字符”的内容画进 `DrawingVisual`，
+   再由 `RenderTargetBitmap` 采集；不再依赖可视树缓存，也不会再带上画布 Margin。
+   时钟只改秒末位时，目标数从固定 200 降到 37–51 点。
+3. **直接位移**：首帧粒子池直接落在目标点，不遮文字；之后旧粒子保留位置、直接前往新目标。
+   首帧不播可见动画，下一次变化才开始位移；指标卡仍按 800ms 限频。
+4. **拖拽限位**：`ClampAnchorToWorkArea` 改为按被抓卡片的实际矩形夹取，再回写整叠锚点；
+   右对齐宽卡拖到屏幕右边时保留至少 80px 可见，不再被锚点夹回中部。
+5. **设置窗重构**：去掉顶部标题栏与底栏色带，改为左品牌/导航/明暗、右内容/悬浮操作的双栏；
+   分隔线上下留白；窗口圆角 12→22；最小化 / 退出改为自绘灰色圆钮；明暗切换移到底部，
+   图标随模式在月亮 / 太阳间切换；保存 / 关闭 / 恢复默认浮在内容右下。
+6. **图标**：三套 ICO 的所有尺寸统一使用完整母版，不再按尺寸换简化笔画；设置标题栏用 256px PNG
+   （暗色黄、浅色黑），托盘仍按任务栏明暗用黑 / 白。
+7. **版本**：宿主 / Contracts / UiKit / 6 个插件工程与 6 个 manifest 统一 2.44.0。
+
+### 验证
+
+- `dotnet build -c Release`：**0 警告 0 错误**；`--selftest`：**退出码 0**；
+- 粒子日志：时钟单数字变化 37–51 点、指标多数字变化约 900 点；连续帧确认未变文字正常、
+  变化数字由粒子替代且位置与普通文字重合；
+- 显隐 X 保持与拖拽日志：设置 `Left`、`dx=-2`；真实鼠标拖拽可跨到右侧显示器并记录新锚点；
+- 设置页暗 / 亮截图：双栏、黄色选中块、底部月亮/太阳、悬浮按钮、22px 圆角均正常；
+- ICO 三套均含 16–256 共 9 帧，外观与最大尺寸一致；设置标题栏使用 256px PNG。
+- 独立审阅复核：遮罩所有权、pending 保护、早退恢复、CRLF 归一、右边缘补齐均通过；
+  审阅指出的“拆分 run 基线重复叠加”已修（改为传行顶坐标），并重新跑构建 / 自检。
+
+### 风险 / 未验证
+
+- 逐字遮罩按 run 拆分绘制，复杂连字/字距在极少数中英混排下可能有一像素内差异。
+- 指标卡多个数字同时变化时仍接近整行粒子；这是内容确实变化的预期。
+- 右对齐显隐期间保留 X，内容宽度变化时卡片向左长；下一次非动画布局才重新对齐右边缘。
+- 粒子配对仍是按 x 排序近似最近邻，不是全局欧氏最近邻；未做 ARM64 实机回归。
+
+---
+
+## 81. v2.44.1（设置窗细节与浅色图标，未合并 main）
+
+### 背景
+
+2.44.0 的双栏设置窗还有一批视觉/交互问题：选中导航项被 hover 灰覆盖；窗口圆钮仍是灰色而不是“恢复默认”的次按钮配色；
+右侧滚动条贴边、端角不满圆；分隔线偏短；暗色“保存并应用”是黑底黄字；左栏偏宽；
+窗口顶部不能可靠拖动；四角有透明边框感。黄色 ICO 还有一条黑色填充弧线，浅色模式缺少专属彩色图标。
+
+### 改动
+
+1. **导航 hover**：选中项增加 `IsMouseOver + IsSelected` 多条件触发器，保持黄色填充并把 Bg 强制透明；
+   hover 仅提高填充透明度，不再出现浅灰覆盖。
+2. **窗口按钮**：最小化 / 退出圆钮改用 `CardBg` + `BorderSoft` + `TextPrimary`，与“恢复默认”同款；
+   悬停 / 按下用通用 HoverBg / PressedBg。
+3. **滚动条**：宽/高 8→10，滑块圆角 4→5、内缩 2px；右栏 `Tabs` 再留 12px，滚动条不再直接贴窗口边。
+   2.44.2 又补修了 `MinWidth=24` 把竖向滑块横向撑宽、右半边被裁成直角的问题。
+4. **分隔线**：上下留白 92→64，线更长；左栏宽度 248→220，分隔线同步到 220。
+5. **保存按钮**：暗色主题 `PrimaryBg` 改为终末地黄、`PrimaryText` 改黑、悬停/按下用亮/暗黄；
+   按钮整块黄色、文字黑色。
+6. **窗口拖动 / 圆角**：`WindowChrome.CaptionHeight=60`，顶部整条可拖动；两个圆钮标记
+   `IsHitTestVisibleInChrome=True` 保持可点击；`WindowChrome.CornerRadius=22`，去掉 `WindowFrame` 1px 边框，
+   消除四角外的透明边框感。
+7. **图标**：黄色弧线变黑是浏览器把开放路径按默认黑色填充导致；渲染时加 `path{fill:transparent!important}`，
+   重新生成黑 / 白 / 黄三套 ICO（所有尺寸同一母版）；新增“黑色主体 + 黄色涟漪”的浅色模式
+   [MirrorpondHUDLogoDeepYellow.ico](assets/MirrorpondHUDLogoDeepYellow.ico) / PNG，浅色设置标题栏使用它。
+8. **多显示器拖拽**：`ClampAnchorToWorkArea` 之前读 `slot.Dialog.Overlay.X/Y`，拖动中它仍是旧锚点；
+   多屏时旧坐标属于另一块屏，导致夹取算错、卡片回弹。现在由 `OnCardMoved` 把按目标屏
+   `WorkLeft/WorkTop` 反算出的真实落点传入，再按卡片矩形夹取。
+9. **版本**：宿主 / Contracts / UiKit / 6 个插件工程与 6 个 manifest 统一 2.44.1。
+
+### 验证
+
+- `dotnet build -c Release`：**0 警告 0 错误**；`--selftest`：**0**；格式/空白门禁 **0/0**；
+- 暗 / 浅设置截图：选中导航保持黄色、圆钮与次按钮同色、保存按钮整块黄色黑字、滚动条内缩圆角、
+  分隔线加长、左栏收窄、四角无边框光晕；
+- 图标像素检查：`logo-yellow.png` 不再含不透明黑色像素；浅色图标为黑主体 + 黄涟漪；
+- 顶部 60px 由 WindowChrome 作为 caption，圆钮单独标记可点击。
+
+### 风险 / 未验证
+
+- Windows 10 上 `WindowChrome.CornerRadius` 可能被忽略，透明圆角仍由 WPF 自身裁剪；未做 Win10 实机。
+- 顶部 60px caption 会占用右栏内容最上方约 8px，不影响现有首行控件。
+- 未做 ARM64 实机回归。
+
+---
+
+## 82. v2.44.2（品牌图标与设置窗收尾，未合并 main）
+
+### 背景
+
+2.44.1 之后仍有四个可见问题：手工修正颜色的 SVG 没有被应用，设置页仍读旧 PNG；
+竖向滚动条右侧两角是直角；暗色“保存并应用”文字仍是浅色；窗口内层 22px 圆角外还有一圈
+半径不同的系统阴影，中间夹着透明缝隙。
+
+### 改动
+
+1. **品牌图标**：`MirrorpondHUDLogoYellow.svg` / `MirrorpondHUDLogoDeepYellow.svg` 是内嵌 PNG 的
+   Affinity 导出。新增 `tools/make_brand_icons.py`，直接提取内嵌 PNG，居中成正方形后生成
+   256px PNG 与 16/20/24/32/40/48/64/128/256 九档 ICO；不再经过会重新带回画板留白的 SVG 渲染。
+   暗色标题栏 / 窗口图标用纯黄 `#F2E900`，亮色用深黄 `#B7A400`；`ApplicationIcon` 改为纯黄版。
+2. **滚动条**：竖向滑块之前同时带 `MinWidth=24 MinHeight=24`，`MinWidth` 把 10px 宽的轨道
+   撑到 24px，右半边被 ScrollBar 裁掉，圆角只剩左侧。改为方向触发器：纵向只设 `MinHeight`，
+   横向只设 `MinWidth`；四角都保留 5px 圆角。
+3. **主按钮文字**：隐式 `TextBlock` 样式把前景色固定成 `TextPrimary`，`ContentPresenter` 为字符串
+   生成的 TextBlock 也吃这条样式，所以 `PrimaryButton.Foreground` 没生效。模板改为显式 TextBlock，
+   直接 `TemplateBinding Foreground`；暗色按钮现在整块黄、文字 `#111111`。
+4. **窗口外圈**：透明分层窗口的圆角由内层 Border + `FrameContent.Clip` 负责；DWM 又按自己的半径
+   画系统圆角/阴影，两层半径不同就露出第二圈。`OnSourceInitialized` 现在把
+   `DWMWA_WINDOW_CORNER_PREFERENCE` 设为 `DONOTROUND`，并把 `DWMWA_NCRENDERING_POLICY` 设为
+   `DWMNCRP_DISABLED`；系统非客户区边框和阴影不再绘制，`WindowChrome` 仍负责拖动 / 缩放命中。
+5. **资源清理**：删除被替代的 `logo-yellow.png`、`logo-lightmode.png`、`logo-lightmode.ico`、
+   `logo-endfield.ico`；新增三张 SVG（黑版由旧文件更名）+ 两张 PNG + 两个 ICO。
+6. **版本**：宿主 / Contracts / UiKit / 6 个插件工程与 6 个 manifest 统一 2.44.2。
+
+### 验证
+
+- `dotnet build -c Release`：**0 警告 0 错误**；`--selftest`：**0**；格式 / 空白门禁 **0 / 0**。
+- 暗 / 浅 `--screenshot-settings`：滚动条四角均为圆角；暗色保存按钮文字为黑色；两张新 Logo
+  颜色分别为 `#F2E900` 与 `#B7A400`，无黑色残线。
+- 实际窗口 DWM 查询：`DWMWA_NCRENDERING_ENABLED=0`，`DWMWA_EXTENDED_FRAME_BOUNDS` 与
+  `GetWindowRect` 四边差均为 0，说明系统阴影/非客户区边框已关闭。
+- ICO 帧检查：两个 ICO 均含 9 档尺寸，PNG 的透明边界为 `(0, 9, 256, 247)`。
+
+### 风险 / 未验证
+
+- 设置窗是 WPF 分层窗口，GDI `CopyFromScreen` 抓不到它的内容；阴影消失是用 DWM 属性验证的，
+  没有拿到桌面合成后的像素截图。
+- 关闭 DWM 非客户区渲染后，窗口缩放仍依赖 `WindowChrome` 的 `WM_NCHITTEST`；未做 Win10 实机回归。
+- 新 ICO 由 735×671 的位图母版缩放，16px 档仍是位图缩放而非手工像素对齐；与原三套图标保持同一策略。
+
+---
+
+## 83. 不在版本里的东西
+
+- 验收脚本、样张与测量脚本都在仓库外维护，**没有提交**。
 - 发布：`main` 与标签已推送到 [github.com/CRITTIof/MirrorpondHUD](https://github.com/CRITTIof/MirrorpondHUD)；
   [v2.9.2 Release](https://github.com/CRITTIof/MirrorpondHUD/releases/tag/v2.9.2) 只有两个附件
   （`MirrorpondHUD-x64-requires-dotnet.exe`、`MirrorpondHUD-arm64-requires-dotnet.exe`，均需 .NET 8 桌面运行时，已自签名）；
   更早的 Release 正文与附件保留原样，v2.4.0 的 Release 已删除（tag `v2.4.0` 保留，历史仍可检出）。
-- 仓库追踪的文件共 117 个，`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
+- 仓库追踪的文件共 228 个（v2.21.0 时 174 个；2.23.0 结构性拆分 +20，2.24.0 +7，2.25.0 新增 CardMotion +1，2.27.0 新增 PerformanceProbe / 性能基线 +2，2.29.0 新增 ScreenGeometry +1、删除 CardDefaults / InfoTextDefaults −2，2.30.0 新增两套终末地主题 +2、docs/UI 三篇 +3，2.31.0 新增 M7/M8 实现记录 +1，2.32.0 新增等高线核心 +7，2.33.0 新增等高线几何构建器 +1，2.34.0 新增构建治理三件 +3，2.35.0 新增 M2–M8 实现记录 +1，2.36.0 新增 `EndfieldStyleSettings` / `EndfieldVisuals` / `StationDisplayMode` / `SettingsWindow.Endfield` +4），`bin/` `obj/` `publish/` `certs/`、`settings.json` / 日志、探针与一次性 PoC 工程都在 `.gitignore` 里，没有被追踪。
 
-## 57. 已知代价（跨版本）
+## 84. 已知代价（跨版本）
 
 - 桌面亚克力为了不拍到自己，会把卡片排除在截屏之外 —— 这个模式下截图 / 录屏里**看不到卡片**，观感只能靠肉眼与离屏渲染验证。
 - 兼容实现每帧对身后窗口做 `PrintWindow`，拖动时最多 ~21 帧/秒；要更高只能走桌面亚克力（DXGI）。

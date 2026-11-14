@@ -1,0 +1,9 @@
+{
+  "id": "sample.uikitgallery",
+  "name": "UiKit 控件画廊",
+  "version": "0.1.0",
+  "apiVersion": 2,
+  "entryType": "UiKitGallery.GalleryCard",
+  "assembly": "UiKitGallery.dll",
+  "author": "sample"
+}

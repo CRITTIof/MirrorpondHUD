@@ -1,183 +1,226 @@
 using System;
 using System.Collections.Generic;
 using MirrorpondHUD.Core;
+using MirrorpondHUD.Ui;
 
-namespace MirrorpondHUD.Cards
+namespace MirrorpondHUD.Cards;
+
+/// <summary>卡片列表的创建、补全与校验（放在模块层，配置文件本身只存数据）。</summary>
+public static class CardModel
 {
-    /// <summary>卡片列表的创建、补全与校验（放在模块层，配置文件本身只存数据）。</summary>
-    public static class CardModel
+    /// <summary>
+    /// 补全卡片列表：空列表生成默认卡片，未知 Kind 归一到已注册模块，
+    /// 补 Id / 名称、清掉不适用的字段、夹紧间距。
+    /// </summary>
+    public static void Normalize(Settings settings)
     {
-        /// <summary>
-        /// 补全卡片列表：空列表生成默认卡片，未知 Kind 归一到已注册模块，
-        /// 补 Id / 名称、清掉不适用的字段、夹紧间距。
-        /// </summary>
-        public static void Normalize(Settings settings)
+        if (settings is null) return;
+
+        // G-14：显示器持久身份改为设备名（Screen.AllScreens 的序号会随热插拔 / 驱动重排变化）。
+        // 这里是 Load / Save 都会经过的宿主归一化点：旧配置的序号在这里一次性迁移成设备名，
+        // 保存时也顺带把序号刷成当前枚举值；找不到设备则 Warn 并回退主屏，不静默钳制。
+        ScreenGeometry.Resolve(settings.Overlay);
+
+        if (settings.Cards is null) settings.Cards = new List<CardSettings>();
+        if (settings.Cards.Count == 0) settings.Cards = CreateDefaultCards();
+
+        var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        for (int i = 0; i < settings.Cards.Count; i++)
         {
-            if (settings == null) return;
-
-            if (settings.Cards == null) settings.Cards = new List<CardSettings>();
-            if (settings.Cards.Count == 0) settings.Cards = CreateDefaultCards();
-
-            var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-            for (int i = 0; i < settings.Cards.Count; i++)
+            CardSettings card = settings.Cards[i];
+            if (card is null)
             {
-                CardSettings card = settings.Cards[i];
-                if (card == null)
-                {
-                    settings.Cards.RemoveAt(i);
-                    i--;
-                    continue;
-                }
+                settings.Cards.RemoveAt(i);
+                i--;
+                continue;
+            }
 
-                card.Kind = CardRegistry.ResolveKind(card.Kind);
-                ICardModule module;
-                bool known = CardRegistry.TryGet(card.Kind, out module);
+            card.Kind = CardRegistry.ResolveKind(card.Kind);
+            bool known = CardRegistry.TryGet(card.Kind, out var module);
 
-                if (string.IsNullOrWhiteSpace(card.Id) || ids.Contains(card.Id))
-                    card.Id = NewId();
-                ids.Add(card.Id);
+            if (string.IsNullOrWhiteSpace(card.Id) || ids.Contains(card.Id))
+                card.Id = NewId();
+            ids.Add(card.Id);
 
-                if (!known)
-                {
-                    // 插件被卸载 / 加载失败：保留原 Kind 与 Extras，绝不能静默改成默认卡。
-                    // 名称、内容、间距仍做安全夹紧；等插件重新出现时原配置自动恢复。
-                    card.Kind = (card.Kind ?? "").Trim();
-                    if (string.IsNullOrWhiteSpace(card.Name)) card.Name = card.Kind;
-                    card.Content = card.Content ?? "";
-                    card.Hotkey = (card.Hotkey ?? "").Trim();
-                    card.Spacing = Math.Round(Settings.Clamp(card.Spacing, 0, 300));
-                    if (card.Extras == null)
-                        card.Extras = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
-                    Log.Warn("卡片 Kind 未注册（插件缺失？），保留原配置: " + card.Kind);
-                    continue;
-                }
-
-                card.Name = string.IsNullOrWhiteSpace(card.Name) ? module.DisplayName : card.Name.Trim();
+            if (!known)
+            {
+                // 插件被卸载 / 加载失败：保留原 Kind 与 Extras，绝不能静默改成默认卡。
+                // 名称、内容、间距仍做安全夹紧；等插件重新出现时原配置自动恢复。
+                card.Kind = (card.Kind ?? "").Trim();
+                if (string.IsNullOrWhiteSpace(card.Name)) card.Name = card.Kind;
                 card.Content = card.Content ?? "";
-                if (!module.SupportsContent) card.Content = "";
-
                 card.Hotkey = (card.Hotkey ?? "").Trim();
-                if (module.IsInteractive) card.Resident = false;
-
                 card.Spacing = Math.Round(Settings.Clamp(card.Spacing, 0, 300));
-
-                // 卡片自己的设置（命令行工具 / 目录 / 超时……）由模块自己补默认值与夹紧，
-                // 宿主不再认识 CommandSettings 这种具体类型。
-                if (card.Extras == null)
+                if (card.Extras is null)
                     card.Extras = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
-
-                var settingsModule = module as ICardSettingsModule;
-                if (settingsModule != null) settingsModule.InitializeCard(card);
+                Log.Warn($"卡片 Kind 未注册（插件缺失？），保留原配置: {card.Kind}");
+                continue;
             }
 
-            if (settings.Cards.Count == 0) settings.Cards = CreateDefaultCards();
+            card.Name = string.IsNullOrWhiteSpace(card.Name) ? module.DisplayName : card.Name.Trim();
+            card.Content = card.Content ?? "";
+            if (!module.SupportsContent) card.Content = "";
 
-            int interactive = CountInteractive(settings.Cards);
-            if (interactive > 1)
-                Log.Warn("有 " + interactive + " 张交互卡片（键盘独占），F9 / 托盘 / 卡片菜单只会打开第一张");
-        }
-
-        /// <summary>
-        /// 数一数「键盘独占」的交互卡片（命令行；将来的画板 / 中转站若声明 IsInteractive 也算）。
-        /// 宿主目前只认第一张——设置页据此拦住第二张。
-        /// </summary>
-        public static int CountInteractive(IEnumerable<CardSettings> cards)
-        {
-            int count = 0;
-            if (cards == null) return 0;
-
-            foreach (CardSettings card in cards)
-            {
-                if (card == null) continue;
-                ICardModule module;
-                if (CardRegistry.TryGet(card.Kind, out module) && module != null && module.IsInteractive) count++;
-            }
-            return count;
-        }
-
-        /// <summary>全新配置的默认卡片：系统信息、时钟、按键（常驻）+ 命令行（F9）、媒体（F11）。</summary>
-        public static List<CardSettings> CreateDefaultCards()
-        {
-            return new List<CardSettings>
-            {
-                new CardSettings
-                {
-                    Id = NewId(), Kind = "infotext", Preset = "metrics",
-                    Name = "信息与文本 · 系统信息",
-                    Resident = true, Spacing = 0, Content = CardDefaults.MetricsContent
-                },
-                new CardSettings
-                {
-                    Id = NewId(), Kind = "infotext", Preset = "clock",
-                    Name = "信息与文本 · 时钟",
-                    Resident = true, Spacing = 12, Content = CardDefaults.ClockContent
-                },
-                new CardSettings
-                {
-                    Id = NewId(), Kind = "infotext", Preset = "keys",
-                    Name = "信息与文本 · 按键",
-                    Resident = true, Spacing = 12, Content = CardDefaults.KeysContent
-                },
-                new CardSettings
-                {
-                    Id = NewId(), Kind = "command", Name = CardRegistry.Get("command").DisplayName,
-                    Resident = false, Spacing = 12, Hotkey = "F9", Content = ""
-                },
-                new CardSettings
-                {
-                    Id = NewId(), Kind = "media", Name = CardRegistry.Get("media").DisplayName,
-                    Resident = false, Spacing = 12, Hotkey = "F11", Content = ""
-                }
-            };
-        }
-
-        /// <summary>按模块元数据新建一张卡片（设置页「添加卡片」用）。</summary>
-        public static CardSettings Create(ICardModule module, IList<CardSettings> existing)
-        {
-            if (module == null) return null;
-
-            var card = new CardSettings
-            {
-                Id = NewId(),
-                Kind = module.Kind,
-                Name = UniqueName(module.DisplayName, existing),
-                Resident = module.IsInteractive ? false : module.DefaultResident,
-                Hotkey = module.DefaultHotkey,
-                Spacing = existing == null || existing.Count == 0 ? 0 : 12,
-                Content = ""
-            };
-
+            card.Hotkey = (card.Hotkey ?? "").Trim();
             if (module.IsInteractive) card.Resident = false;
 
+            card.Spacing = Math.Round(Settings.Clamp(card.Spacing, 0, 300));
+
+            // 卡片自己的设置（命令行工具 / 目录 / 超时……）由模块自己补默认值与夹紧，
+            // 宿主不再认识 CommandSettings 这种具体类型。
+            if (card.Extras is null)
+                card.Extras = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+
             var settingsModule = module as ICardSettingsModule;
-            if (settingsModule != null) settingsModule.InitializeCard(card);
-
-            return card;
+            if (settingsModule is not null) settingsModule.InitializeCard(card);
         }
 
-        /// <summary>同名卡片允许存在，这里只给新卡片加一个可读的后缀。</summary>
-        public static string UniqueName(string baseName, IList<CardSettings> existing)
-        {
-            if (string.IsNullOrWhiteSpace(baseName)) baseName = "卡片";
-            if (existing == null || existing.Count == 0) return baseName;
+        if (settings.Cards.Count == 0) settings.Cards = CreateDefaultCards();
 
-            var used = new HashSet<string>(StringComparer.CurrentCultureIgnoreCase);
-            foreach (CardSettings card in existing)
-                if (card != null) used.Add(card.Name ?? "");
-
-            if (!used.Contains(baseName)) return baseName;
-            for (int i = 2; i < 1000; i++)
-            {
-                string candidate = baseName + " " + i;
-                if (!used.Contains(candidate)) return candidate;
-            }
-            return baseName;
-        }
-
-        public static string NewId()
-        {
-            return Guid.NewGuid().ToString("N");
-        }
+        int interactive = CountInteractive(settings.Cards);
+        if (interactive > 1)
+            Log.Warn($"有 {interactive} 张交互卡片（键盘独占），F9 / 托盘 / 卡片菜单只会打开第一张");
     }
+
+    /// <summary>
+    /// 数一数「键盘独占」的交互卡片（命令行；将来的画板 / 中转站若声明 IsInteractive 也算）。
+    /// 宿主目前只认第一张——设置页据此拦住第二张。
+    /// </summary>
+    public static int CountInteractive(IEnumerable<CardSettings> cards)
+    {
+        int count = 0;
+        if (cards is null) return 0;
+
+        foreach (CardSettings card in cards)
+        {
+            if (card is null) continue;
+            if (CardRegistry.TryGet(card.Kind, out var module) && module is not null && module.IsInteractive) count++;
+        }
+        return count;
+    }
+
+    /// <summary>
+    /// 全新配置的默认卡片：由各模块通过 <see cref="ICardDefaultProvider"/> 自己提供，
+    /// 宿主只按 <see cref="ICardDefaultProvider.DefaultOrder"/> 排序并补齐 Id / Extras / 归一化。
+    ///
+    /// M-1：以前这里写死 infotext / command / media 与三份模板，插件缺失时会落一张
+    /// 「插件不可用」占位卡；现在没有模块提供默认卡就返回空列表，绝不伪造卡片。
+    /// </summary>
+    public static List<CardSettings> CreateDefaultCards()
+    {
+        var providers = new List<ICardDefaultProvider>();
+        foreach (ICardModule module in CardRegistry.Modules)
+        {
+            var provider = module as ICardDefaultProvider;
+            if (provider is not null) providers.Add(provider);
+        }
+        providers.Sort((a, b) => a.DefaultOrder.CompareTo(b.DefaultOrder));
+
+        var cards = new List<CardSettings>();
+        var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (ICardDefaultProvider provider in providers)
+        {
+            IList<CardSettings> provided;
+            try
+            {
+                provided = provider.CreateDefaults();
+            }
+            catch (Exception ex)
+            {
+                Log.Warn($"模块提供默认卡失败，已跳过: {ex.Message}");
+                continue;
+            }
+            if (provided is null) continue;
+
+            foreach (CardSettings card in provided)
+            {
+                CardSettings normalized = NormalizeDefaultCard(card, ids);
+                if (normalized is not null) cards.Add(normalized);
+            }
+        }
+
+        if (cards.Count == 0)
+            Log.Warn("没有任何卡片模块提供默认卡（插件可能全部加载失败），本次配置将是空卡片列表");
+
+        return cards;
+    }
+
+    /// <summary>把模块给的默认卡补成可直接落盘的形状；Kind 未注册 / 卡片为空则丢弃。</summary>
+    static CardSettings NormalizeDefaultCard(CardSettings card, HashSet<string> ids)
+    {
+        if (card is null) return null;
+
+        if (!CardRegistry.TryGet(card.Kind, out var module) || module is null)
+        {
+            Log.Warn($"默认卡的 Kind 未注册，已跳过: {(card.Kind ?? "")}");
+            return null;
+        }
+
+        card.Kind = module.Kind;
+        if (string.IsNullOrWhiteSpace(card.Id) || ids.Contains(card.Id))
+            card.Id = NewId();
+        ids.Add(card.Id);
+
+        card.Name = string.IsNullOrWhiteSpace(card.Name) ? module.DisplayName : card.Name.Trim();
+        card.Content = card.Content ?? "";
+        if (!module.SupportsContent) card.Content = "";
+        card.Hotkey = (card.Hotkey ?? "").Trim();
+        if (module.IsInteractive) card.Resident = false;
+        card.Spacing = Math.Round(Settings.Clamp(card.Spacing, 0, 300));
+
+        if (card.Extras is null)
+            card.Extras = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+
+        var settingsModule = module as ICardSettingsModule;
+        if (settingsModule is not null) settingsModule.InitializeCard(card);
+
+        return card;
+    }
+
+    /// <summary>按模块元数据新建一张卡片（设置页「添加卡片」用）。</summary>
+    public static CardSettings Create(ICardModule module, IList<CardSettings> existing)
+    {
+        if (module is null) return null;
+
+        var card = new CardSettings
+        {
+            Id = NewId(),
+            Kind = module.Kind,
+            Name = UniqueName(module.DisplayName, existing),
+            Resident = module.IsInteractive ? false : module.DefaultResident,
+            Hotkey = module.DefaultHotkey,
+            Spacing = existing is null || existing.Count == 0 ? 0 : 12,
+            Content = ""
+        };
+
+        if (module.IsInteractive) card.Resident = false;
+
+        var settingsModule = module as ICardSettingsModule;
+        if (settingsModule is not null) settingsModule.InitializeCard(card);
+
+        return card;
+    }
+
+    /// <summary>同名卡片允许存在，这里只给新卡片加一个可读的后缀。</summary>
+    public static string UniqueName(string baseName, IList<CardSettings> existing)
+    {
+        if (string.IsNullOrWhiteSpace(baseName)) baseName = "卡片";
+        if (existing is null || existing.Count == 0) return baseName;
+
+        var used = new HashSet<string>(StringComparer.CurrentCultureIgnoreCase);
+        foreach (CardSettings card in existing)
+            if (card is not null) used.Add(card.Name ?? "");
+
+        if (!used.Contains(baseName)) return baseName;
+        for (int i = 2; i < 1000; i++)
+        {
+            string candidate = $"{baseName} {i}";
+            if (!used.Contains(candidate)) return candidate;
+        }
+        return baseName;
+    }
+
+    public static string NewId() => Guid.NewGuid().ToString("N");
 }

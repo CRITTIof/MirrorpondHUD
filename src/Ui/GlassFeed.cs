@@ -8,941 +8,1265 @@ using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using MirrorpondHUD.Core;
 
-namespace MirrorpondHUD.Ui
+namespace MirrorpondHUD.Ui;
+
+/// <summary>
+/// 「桌面亚克力」的取样循环：从屏幕抓卡片下面那块画面 → 缩小模糊 → **画进卡片自己的内容层**。
+///
+/// 为什么不再用一块独立的底板窗口：2.4.2 及以前是在卡片下面放一个 HWND，自己 GDI 贴模糊图。
+/// 那块窗口和卡片是**两个**被 DWM 分别合成的窗口，形状对不齐就会露馅 ——
+/// 卡片圆角 10 px、底板的圆角由 DWM 决定，于是卡片圆角外面会多出一圈「更大的透明圆角」；
+/// 两者差 1–2 px 时，卡片顶边还会周期性露出一条底板（下半截是卡片、上半截是底板，
+/// 看起来就是「顶部突然变深」）。改成画进卡片内部以后，圆角由卡片自己的
+/// <c>Border.CornerRadius</c> 裁剪、和卡片背景/文字在同一次合成里，这两类问题在结构上就不可能发生。
+///
+/// 取图仍然优先 DXGI 桌面复制（见 <see cref="DesktopFrameSource"/>，一轮 0.1–1.5 ms），
+/// 不可用时退回 GDI <c>BitBlt</c>（一轮约 18 ms）。卡片必须保持
+/// <c>WDA_EXCLUDEFROMCAPTURE</c>，否则取样会把自己拍进去形成拖影。
+/// </summary>
+internal static class GlassFeed
 {
-    /// <summary>
-    /// 「桌面亚克力」的取样循环：从屏幕抓卡片下面那块画面 → 缩小模糊 → **画进卡片自己的内容层**。
-    ///
-    /// 为什么不再用一块独立的底板窗口：2.4.2 及以前是在卡片下面放一个 HWND，自己 GDI 贴模糊图。
-    /// 那块窗口和卡片是**两个**被 DWM 分别合成的窗口，形状对不齐就会露馅 ——
-    /// 卡片圆角 10 px、底板的圆角由 DWM 决定，于是卡片圆角外面会多出一圈「更大的透明圆角」；
-    /// 两者差 1–2 px 时，卡片顶边还会周期性露出一条底板（下半截是卡片、上半截是底板，
-    /// 看起来就是「顶部突然变深」）。改成画进卡片内部以后，圆角由卡片自己的
-    /// <c>Border.CornerRadius</c> 裁剪、和卡片背景/文字在同一次合成里，这两类问题在结构上就不可能发生。
-    ///
-    /// 取图仍然优先 DXGI 桌面复制（见 <see cref="DesktopFrameSource"/>，一轮 0.1–1.5 ms），
-    /// 不可用时退回 GDI <c>BitBlt</c>（一轮约 18 ms）。卡片必须保持
-    /// <c>WDA_EXCLUDEFROMCAPTURE</c>，否则取样会把自己拍进去形成拖影。
-    /// </summary>
-    internal static class GlassFeed
+    const uint WdaNone = 0;
+    const uint WdaExcludeFromCapture = 0x11;
+
+    const uint Srccopy = 0x00CC0020;
+    const int Halftone = 4;
+
+    const int GwOwner = 4;
+
+    /// <summary>取样后缩到 1/2，模糊半径按缩略图算，单帧成本才压得住。</summary>
+    const int Downscale = 2;
+
+    /// <summary>投影开启时卡片四周预留的透明边（与 OverlaySurface 的 Margin 一致）。</summary>
+    // G-16：与 OverlaySurface 的 ambient 投影留白保持一致（默认 14 DIP）。
+    // 采样区域按这个值向内缩，否则玻璃会把卡片外圈的投影也拍进来，出现灰边/错位。
+    public const double ShadowInset = 14.0;
+
+    sealed class Target
     {
-        const uint WdaNone = 0;
-        const uint WdaExcludeFromCapture = 0x11;
+        public OverlayWindow Window;
+        public OverlaySurface Surface;
+        public Action<string> OnUnavailable;
 
-        const uint Srccopy = 0x00CC0020;
-        const int Halftone = 4;
+        public IntPtr MemoryDc;
+        public IntPtr Dib;
+        public IntPtr Bits;
+        public IntPtr Previous;
+        public int Width;
+        public int Height;
 
-        const int GwOwner = 4;
-
-        /// <summary>取样后缩到 1/2，模糊半径按缩略图算，单帧成本才压得住。</summary>
-        const int Downscale = 2;
-
-        /// <summary>投影开启时卡片四周预留的透明边（与 OverlaySurface 的 Margin 一致）。</summary>
-        public const double ShadowInset = 10.0;
-
-        sealed class Target
-        {
-            public OverlayWindow Window;
-            public OverlaySurface Surface;
-            public Action<string> OnUnavailable;
-
-            public IntPtr MemoryDc;
-            public IntPtr Dib;
-            public IntPtr Bits;
-            public IntPtr Previous;
-            public int Width;
-            public int Height;
-
-            public byte[] LastFrame;
-            public int LastWidth;
-            public int LastHeight;
-        }
-
-        static readonly List<Target> Live = new List<Target>();
-
-        static DispatcherTimer _pump;
-        static int _fps = 10;
-        static int _blurRadius = 9;      // 半分辨率上的半径
-        static int _blurPixels = 18;     // 设置里的值（全分辨率像素）
-        static string _source = "Auto";
-        static bool _shadow;
-
-        /// <summary>整叠卡片区域的屏幕快照（1:1）。每轮只从屏幕上读一次，各卡片再从这张图里取自己那一块。</summary>
-        static IntPtr _sharedDc;
-        static IntPtr _sharedDib;
-        static IntPtr _sharedBits;
-        static IntPtr _sharedPrevious;
-        static int _sharedWidth;
-        static int _sharedHeight;
-
-        static DesktopFrameSource _frameSource;
-        static bool _frameSourceTried;
-        static DateTime _frameSourceIdle = DateTime.MinValue;
-
-        /// <summary>整叠卡片连续「全黑」的轮数。只有整轮所有能取到画面的卡片都黑才计一轮，见 <see cref="CaptureAll"/>。</summary>
-        static int _blankRounds;
-
-        /// <summary>至少有一张卡拿到非黑画面的轮数。桌面亚克力失败后靠它判断屏幕取样是否已经恢复。</summary>
-        static long _healthyRounds;
-
-        static int _gdiWarnedFps;
-        static int _gdiRounds;
-        static bool _pushed;
-
-        /// <summary>只增不减：给「失败后还要不要重试桌面亚克力」做环境恢复判断。</summary>
-        public static long HealthyRounds { get { return _healthyRounds; } }
-
-        // ==================== 挂接 / 参数 ====================
-
-        public static void Attach(OverlayWindow window, Action<string> onUnavailable)
-        {
-            if (window == null) return;
-
-            lock (Live)
-            {
-                foreach (Target existing in Live)
-                {
-                    if (existing.Window != window) continue;
-                    existing.Surface = window.Surface;
-                    existing.OnUnavailable = onUnavailable;
-                    return;                 // 已经在跑，别再触发一次取样
-                }
-
-                Live.Add(new Target
-                {
-                    Window = window,
-                    Surface = window.Surface,
-                    OnUnavailable = onUnavailable
-                });
-            }
-
-            EnsurePump();
-        }
-
-        public static void Detach(OverlayWindow window)
-        {
-            if (window == null) return;
-
-            lock (Live)
-            {
-                for (int i = Live.Count - 1; i >= 0; i--)
-                {
-                    if (Live[i].Window != window) continue;
-                    ReleaseSurface(Live[i]);
-                    Live.RemoveAt(i);
-                }
-
-                if (Live.Count == 0)
-                {
-                    if (_pump != null) _pump.Stop();
-                    ReleaseSharedSurface();
-                }
-            }
-
-            try { window.Surface.ClearGlass(); } catch { }
-        }
-
-        /// <summary>同步设置：取图方式、模糊强度、刷新帧率、是否留投影边。</summary>
-        public static void Configure(string source, int blurPixels, int fps, bool shadow)
-        {
-            string mode = Settings.NormalizeGlassSource(source);
-            int radius = Math.Max(1, (int)Math.Round(Math.Max(0, blurPixels) / (double)Downscale));
-            int frameRate = Math.Max(2, Math.Min(30, fps));
-
-            bool sourceChanged = !string.Equals(mode, _source, StringComparison.Ordinal);
-            bool lookChanged = radius != _blurRadius || shadow != _shadow;
-
-            _source = mode;
-            _blurPixels = Math.Max(0, blurPixels);
-            _blurRadius = radius;
-            _fps = frameRate;
-            _shadow = shadow;
-
-            if (sourceChanged) ReleaseFrameSource();
-
-            if (lookChanged)
-            {
-                // 模糊半径变了但背景没变时，「和上一帧一样就不更新」会把新半径挡在门外，这里先清掉缓存。
-                lock (Live)
-                {
-                    foreach (Target target in Live) target.LastFrame = null;
-                }
-            }
-
-            if (_pump != null) _pump.Interval = Interval();
-        }
-
-        static TimeSpan Interval()
-        {
-            return TimeSpan.FromMilliseconds(1000.0 / Math.Max(2, Math.Min(30, _fps)));
-        }
-
-        static DateTime _lastRequest = DateTime.MinValue;
+        public byte[] LastFrame;
+        public int LastWidth;
+        public int LastHeight;
 
         /// <summary>
-        /// 马上补一帧（拖动、切窗口这类位置快速变化的场合用），帧率上限按取图后端算：
-        /// GPU 桌面复制一轮 1~2 ms，可以按屏幕刷新率补；GDI 读屏一轮 18 ms，补太快会拖慢拖动本身。
+        /// G-17：复用位图（尺寸变化才重建）。
+        /// 旧实现每帧 <c>BitmapSource.Create</c>：分配一块原生像素缓冲、再整块拷入一次，
+        /// 与 <see cref="CaptureBuffer"/> 的复用叠加后仍有每帧一份大对象。
+        /// WriteableBitmap 只能在创建它的线程上写、且不可 Freeze —— 本类的写路径全在 UI 线程
+        /// （DispatcherTimer / RequestFrame / 拖动补帧），消费者 OverlaySurface 也不能冻结它。
         /// </summary>
-        public static bool RequestFrame(bool force)
-        {
-            lock (Live)
-            {
-                if (Live.Count == 0) return false;
-            }
-
-            DateTime now = DateTime.UtcNow;
-            double minGapMs = _frameSource != null ? 16.0 : 55.0;
-            if (!force && (now - _lastRequest).TotalMilliseconds < minGapMs) return false;
-
-            _lastRequest = now;
-            CaptureAll();
-            return true;
-        }
+        public WriteableBitmap Bitmap;
 
         /// <summary>
-        /// 桌面亚克力能不能用。
-        /// 以前这里还要检查 DWM 桌面亚克力材质（Windows 11 22H2+ / 系统透明效果），
-        /// 现在模糊图是画进卡片自己的内容层的，只要求能把卡片排除在截屏之外 ——
-        /// 唯一的硬限制是远程桌面（那边经常取不到画面，没必要先跑起来再退）。
+        /// P-2：这张卡复用的取样缓冲，只有尺寸变化才重分配。
+        /// 以前每帧 new byte[w * h * 4]：600x400 的卡缩到 1/2 后是 240KB，
+        /// 已经超过 85KB 的 LOH 门槛，每卡每帧一块大对象。
         /// </summary>
-        public static bool IsAvailable(out string reason)
+        public byte[] CaptureBuffer;
+    }
+
+    static readonly List<Target> Live = new();
+
+    static DispatcherTimer _pump;
+    static int _fps = 10;
+    static int _blurRadius = 9;      // 半分辨率上的半径
+    static int _blurPixels = 18;     // 设置里的值（全分辨率像素）
+    static string _source = "Auto";
+    static bool _shadow;
+
+    /// <summary>整叠卡片区域的屏幕快照（1:1）。每轮只从屏幕上读一次，各卡片再从这张图里取自己那一块。</summary>
+    static IntPtr _sharedDc;
+    static IntPtr _sharedDib;
+    static IntPtr _sharedBits;
+    static IntPtr _sharedPrevious;
+    static int _sharedWidth;
+    static int _sharedHeight;
+
+    static DesktopFrameSource _frameSource;
+    // 失败后按时间退避重试，而不是“一次失败终身放弃”：改设置也不该只能靠重启救回来。
+    static DateTime _frameSourceNextTry = DateTime.MinValue;
+    static DateTime _frameSourceIdle = DateTime.MinValue;
+
+    // P1-7：桌面复制源被判死后，按 30s → 60s → 2min 封顶退避重建；退避期内一律走 GDI，
+    // 不再每帧空转（创建 D3D 设备 / 桌面复制对象一次要几十 ms，每秒做会很糟）。
+    static DateTime _frameSourceDeadUntil = DateTime.MinValue;
+
+    // P1-7：GDI 读屏自身的失败（GetDC / BitBlt）以前完全静默；现在落日志，
+    // 但每秒多轮的循环经节流器（状态转移 + 60s 最小间隔）控制，不刷屏。
+    static readonly LogThrottle _gdiFailure = new("玻璃取图 GDI 读屏", 60000);
+
+    /// <summary>整叠卡片连续「全黑」的轮数。只有整轮所有能取到画面的卡片都黑才计一轮，见 <see cref="CaptureAll"/>。</summary>
+    static int _blankRounds;
+
+    /// <summary>至少有一张卡拿到非黑画面的轮数。桌面亚克力失败后靠它判断屏幕取样是否已经恢复。</summary>
+    static long _healthyRounds;
+
+    static int _gdiWarnedFps;
+    static int _gdiRounds;
+    static bool _pushed;
+
+    /// <summary>
+    /// 上一轮实际是不是走 DXGI 桌面复制读到的帧（G-10）。拖动补帧的最小间隔按它算：
+    /// 以前只看 <c>_frameSource is not null</c>，副屏 / 越界时源还在、每轮实际是 18ms 的 GDI，
+    /// 却仍按 16ms 允许补帧，等于把 UI 线程占掉一半。
+    /// </summary>
+    static bool _lastRoundUsedDup;
+
+    /// <summary>上一次记录过的「设备重建失败 / 不用桌面复制」原因，用来只记状态变化（G-10）。</summary>
+    static string _frameSourceReason = "";
+
+    /// <summary>D3D 设备 / 桌面复制对象重建失败：状态迁移 + 60 秒补记，避免副屏或驱动异常时刷屏。</summary>
+    static LogThrottle _frameSourceFailure = new("玻璃取图设备重建", 60000);
+
+    /// <summary>共享取样位图（DIB）创建失败：以前静默返回，表现为玻璃停在旧帧且日志为空。</summary>
+    static readonly LogThrottle _surfaceFailure = new("玻璃取图共享位图", 60000);
+
+    // G-11：熔断只在「采集层失败」时触发，并带恢复滞回——连续 30 轮（10fps 约 3 秒）
+    // 采集正常才重新武装，避免锁屏 / 越界边缘在 3s→15s 冷却之间反复降级。
+    static bool _fuseTripped;
+    static long _fuseTripHealthyRounds;
+    const int FuseClearRounds = 30;
+
+    /// <summary>只增不减：给「失败后还要不要重试桌面亚克力」做环境恢复判断。</summary>
+    public static long HealthyRounds => _healthyRounds;
+
+    // ==================== 挂接 / 参数 ====================
+
+    public static void Attach(OverlayWindow window, Action<string> onUnavailable)
+    {
+        if (window is null) return;
+
+        lock (Live)
         {
-            if (IsRemoteSession())
+            foreach (Target existing in Live)
             {
-                reason = "远程桌面会话";
-                return false;
+                if (existing.Window != window) continue;
+                existing.Surface = window.Surface;
+                existing.OnUnavailable = onUnavailable;
+                return;                 // 已经在跑，别再触发一次取样
             }
 
-            reason = "";
-            return true;
+            Live.Add(new Target
+            {
+                Window = window,
+                Surface = window.Surface,
+                OnUnavailable = onUnavailable
+            });
         }
 
-        const int SmRemoteSession = 0x1000;
+        EnsurePump();
+    }
 
-        static bool IsRemoteSession()
+    public static void Detach(OverlayWindow window)
+    {
+        if (window is null) return;
+
+        bool empty;
+        lock (Live)
         {
-            try { return GetSystemMetrics(SmRemoteSession) != 0; }
-            catch { return false; }
-        }
-
-        static void EnsurePump()
-        {
-            if (_pump == null)
+            for (int i = Live.Count - 1; i >= 0; i--)
             {
-                _pump = new DispatcherTimer(DispatcherPriority.Background) { Interval = Interval() };
-                _pump.Tick += (s, e) => CaptureAll();
+                if (Live[i].Window != window) continue;
+                ReleaseSurface(Live[i]);
+                Live.RemoveAt(i);
             }
 
-            if (!_pump.IsEnabled) _pump.Start();
-            CaptureAll();
-        }
-
-        // ==================== 排除截屏 ====================
-
-        /// <summary>
-        /// 卡片窗口要排除在截屏之外：否则取样会把自己（以及上一帧）拍进去，形成拖影。
-        /// 卡片名下的其它顶层窗口（owner 是卡片的视频窗）一起排除。
-        /// </summary>
-        public static void ExcludeFromCapture(Window card, bool exclude)
-        {
-            if (card == null) return;
-
-            IntPtr hwnd;
-            try { hwnd = new WindowInteropHelper(card).Handle; }
-            catch { return; }
-            if (hwnd == IntPtr.Zero) return;
-
-            try { SetWindowDisplayAffinity(hwnd, exclude ? WdaExcludeFromCapture : WdaNone); }
-            catch (Exception ex) { Log.Warn("设置截屏排除失败: " + ex.Message); }
-
-            ExcludeOwnedWindows(hwnd, exclude);
-        }
-
-        static void ExcludeOwnedWindows(IntPtr owner, bool exclude)
-        {
-            var owned = new List<IntPtr>();
-
-            try
+            empty = Live.Count == 0;
+            if (empty)
             {
-                EnumWindows((hwnd, param) =>
-                {
-                    if (GetWindow(hwnd, GwOwner) == owner) owned.Add(hwnd);
-                    return true;
-                }, IntPtr.Zero);
-            }
-            catch (Exception ex)
-            {
-                Log.Warn("枚举卡片子窗口失败: " + ex.Message);
-                return;
-            }
-
-            foreach (IntPtr hwnd in owned)
-            {
-                try { SetWindowDisplayAffinity(hwnd, exclude ? WdaExcludeFromCapture : WdaNone); }
-                catch { }
-            }
-        }
-
-        // ==================== 一轮取样 ====================
-
-        static void CaptureAll()
-        {
-            Target[] snapshot;
-            lock (Live)
-            {
-                if (Live.Count == 0) return;
-                snapshot = Live.ToArray();
-            }
-
-            int left = int.MaxValue, top = int.MaxValue, right = int.MinValue, bottom = int.MinValue;
-            int count = 0;
-
-            foreach (Target target in snapshot)
-            {
-                int l, t, w, h;
-                if (!TryGetScreenRect(target.Window, out l, out t, out w, out h)) continue;
-
-                count++;
-                if (l < left) left = l;
-                if (t < top) top = t;
-                if (l + w > right) right = l + w;
-                if (t + h > bottom) bottom = t + h;
-            }
-
-            if (count == 0)
-            {
+                if (_pump is not null) _pump.Stop();
+                ReleaseSharedSurface();
+                // G-9 / G-11：最后一张卡卸下时把熔断与「已推送」状态一起复位，
+                // 下次重新挂接不能沿用上一次环境的失败结论。
                 _blankRounds = 0;
-                return;
+                _fuseTripped = false;
+                _fuseTripHealthyRounds = 0;
+                _lastRoundUsedDup = false;
+                _pushed = false;
             }
+        }
 
-            int width = right - left;
-            int height = bottom - top;
-            if (width < 4 || height < 4) return;
+        // G-9：最后一张卡卸下时连 DXGI 源一起释放，否则 D3D 设备与桌面复制对象
+        // 会一直活着（GPU 常醒）。ReleaseFrameSource 内部自带空值判断。
+        if (empty) ReleaseFrameSource();
 
-            // 共享图按 128 px 取整，免得开场动画每长一行字就重建一次 DIB（实际只用到左上角 width × height）。
-            if (!EnsureSharedSurface(RoundUp(width), RoundUp(height))) return;
+        // 释放路径：窗口可能已经关闭 / 内容层已释放，清玻璃失败交给 SafeRelease 记录（X-9）。
+        SafeRelease.Run(window.Surface.ClearGlass, "玻璃层清理");
+    }
 
-            IntPtr screen = GetDC(IntPtr.Zero);
-            System.Diagnostics.Stopwatch clock = DiagnoseRaw ? System.Diagnostics.Stopwatch.StartNew() : null;
-            bool fromDuplication = false;
+    /// <summary>同步设置：取图方式、模糊强度、刷新帧率、是否留投影边。</summary>
+    public static void Configure(string source, int blurPixels, int fps, bool shadow)
+    {
+        string mode = Settings.NormalizeGlassSource(source);
+        int radius = Math.Max(1, (int)Math.Round(Math.Max(0, blurPixels) / (double)Downscale));
+        int frameRate = Math.Max(2, Math.Min(30, fps));
 
-            try
-            {
-                DesktopFrameSource source = EnsureFrameSource();
-                if (source != null)
-                {
-                    _frameSourceIdle = DateTime.UtcNow;
-                    fromDuplication = source.TryReadInto(_sharedBits, _sharedWidth * 4, left, top, width, height);
-                }
+        bool sourceChanged = !string.Equals(mode, _source, StringComparison.Ordinal);
+        bool lookChanged = radius != _blurRadius || shadow != _shadow;
 
-                if (!fromDuplication)
-                {
-                    BitBlt(_sharedDc, 0, 0, width, height, screen, left, top, Srccopy);
-                }
-            }
-            finally
-            {
-                ReleaseDC(IntPtr.Zero, screen);
-            }
+        _source = mode;
+        // 改设置后立即允许重新尝试，不必重启进程（G-2）。
+        _frameSourceNextTry = DateTime.MinValue;
+        _blurPixels = Math.Max(0, blurPixels);
+        _blurRadius = radius;
+        _fps = frameRate;
+        _shadow = shadow;
 
-            if (clock != null)
-            {
-                clock.Stop();
-                TraceBands(clock.Elapsed.TotalMilliseconds, width, height, fromDuplication);
-            }
-
-            // GDI 读屏一轮要占 UI 线程 18 ms，帧率再高就会明显拖慢交互 —— 提醒一次。
-            // 只在「确实拿不到桌面复制」时提醒：第一帧走 GDI 是正常的（复制对象还在预热）。
-            if (fromDuplication)
-            {
-                _gdiRounds = 0;
-            }
-            else if (_frameSource == null && _fps > 6 && _gdiWarnedFps != _fps && ++_gdiRounds > 5)
-            {
-                _gdiWarnedFps = _fps;
-                Log.Info("GDI 读屏每轮约 18 ms，刷新 " + _fps + " 帧/秒会占用较多 UI 线程时间；"
-                         + "取图方式换成「GPU 加速」可以降到 1 ms/轮");
-            }
-
-            int rendered = 0;
-            int black = 0;
-            foreach (Target target in snapshot) Render(target, left, top, ref rendered, ref black);
-
-            // 保险丝：只有「这一轮所有能取到画面的卡片全是黑的」才计一轮，连续 3 轮才判定读不到屏幕。
-            // 以前每张卡各自累加一个全局计数器：一轮里连续三张移出屏幕的卡片就能误判成
-            // 「连续 3 帧全黑」，把第 3 张卡单独弹回系统亚克力（迭代顺序决定哪张倒霉）。
-            if (rendered == 0)
-            {
-                _blankRounds = 0;
-                return;
-            }
-
-            if (black < rendered)
-            {
-                _blankRounds = 0;
-                _healthyRounds++;
-                return;
-            }
-
-            if (++_blankRounds < 3) return;
+        if (sourceChanged)
+        {
+            ReleaseFrameSource();
+            // 取图方式被用户改了：旧退避计划随旧源一起作废，新方式立刻尝试。
+            _frameSourceDeadUntil = DateTime.MinValue;
+            // 用户显式换了后端，上一次环境的失败结论不再适用：重建失败日志与熔断都重新计。
+            _frameSourceReason = "";
+            _frameSourceFailure = new LogThrottle("玻璃取图设备重建", 60000);
+            _fuseTripped = false;
             _blankRounds = 0;
-            ReportUnavailable(snapshot,
-                "整叠卡片连续 3 轮取样全黑：当前环境读不到屏幕内容（截屏被拦截 / 锁屏 / 屏幕关闭）");
         }
 
-        /// <summary>
-        /// 整叠卡片都读不到画面：这是环境问题，不是某一张卡的问题，
-        /// 所以让所有窗口一起退到系统亚克力（或兼容实现），不能只让迭代顺序里的第 N 张卡单独掉级。
-        /// </summary>
-        static void ReportUnavailable(Target[] snapshot, string reason)
+        if (lookChanged)
         {
-            foreach (Target target in snapshot)
+            // 模糊半径变了但背景没变时，「和上一帧一样就不更新」会把新半径挡在门外，这里先清掉缓存。
+            lock (Live)
             {
-                Action<string> handler = target.OnUnavailable;
-                if (handler == null) continue;
-
-                try { handler(reason); }
-                catch (Exception ex) { Log.Warn("取样失败回调出错: " + ex.Message); }
+                foreach (Target target in Live) ResetFrameCache(target);
             }
         }
 
-        static bool TryGetScreenRect(OverlayWindow card, out int left, out int top, out int width, out int height)
+        if (_pump is not null)
         {
-            left = top = 0;
-            width = height = 0;
+            _pump.Interval = Interval();
+            // G-19：隐藏期间 Configure 仍会被可见性变化触发；这里只在确实有可见卡片时恢复泵。
+            WakePump();
+        }
+    }
 
-            if (card == null) return false;
-            try
-            {
-                if (!card.IsVisible || card.WindowState == WindowState.Minimized) return false;
-            }
-            catch { return false; }
+    static TimeSpan Interval() => TimeSpan.FromMilliseconds(1000.0 / Math.Max(2, Math.Min(30, _fps)));
 
-            double inset = _shadow ? ShadowInset : 0.0;
-            double w = card.ActualWidth - inset * 2.0;
-            double h = card.ActualHeight - inset * 2.0;
-            if (w < 4.0 || h < 4.0) return false;
+    static DateTime _lastRequest = DateTime.MinValue;
 
-            Point origin;
-            DpiScale dpi;
-            try
-            {
-                origin = card.PointToScreen(new Point(inset, inset));
-                dpi = VisualTreeHelper.GetDpi(card);
-            }
-            catch { return false; }
-
-            double scaleX = dpi.DpiScaleX > 0 ? dpi.DpiScaleX : 1.0;
-            double scaleY = dpi.DpiScaleY > 0 ? dpi.DpiScaleY : 1.0;
-
-            left = (int)Math.Round(origin.X);
-            top = (int)Math.Round(origin.Y);
-            width = (int)Math.Round(w * scaleX);
-            height = (int)Math.Round(h * scaleY);
-            if (width < 4 || height < 4) return false;
-
-            // 卡片完全在屏幕内才取样。拖到屏幕外时那里没有任何像素：负的源坐标会让 GDI
-            // 只填一部分取样图（或者干脆不填），屏幕外那张卡就读到全零 —— 这正是
-            // 「拖动时单张卡突然退回系统亚克力」的触发源。跳过以后玻璃停在最后一帧，
-            // 卡片回到屏幕内立刻恢复，也不再喂给全黑保险丝。
-            return IsFullyOnScreen(left, top, width, height);
+    /// <summary>
+    /// 马上补一帧（拖动、切窗口这类位置快速变化的场合用），帧率上限按取图后端算：
+    /// GPU 桌面复制一轮 1~2 ms，可以按屏幕刷新率补；GDI 读屏一轮 18 ms，补太快会拖慢拖动本身。
+    /// </summary>
+    public static bool RequestFrame(bool force)
+    {
+        lock (Live)
+        {
+            if (Live.Count == 0) return false;
         }
 
-        const int SmXVirtualScreen = 76;
-        const int SmYVirtualScreen = 77;
-        const int SmCxVirtualScreen = 78;
-        const int SmCyVirtualScreen = 79;
+        // G-19：可见性恢复后第一次补帧也要把泵叫醒（隐藏期间它被暂停了）。
+        WakePump();
 
-        static bool IsFullyOnScreen(int left, int top, int width, int height)
+        DateTime now = DateTime.UtcNow;
+        // G-10：按「上一轮实际走了哪条后端」算间隔。源对象在但区域越界时，真实成本仍是
+        // GDI 的约 18ms；以前这里只看 _frameSource 是否为 null，会把拖动补帧开到 16ms。
+        double minGapMs = _lastRoundUsedDup ? 16.0 : 55.0;
+        if (!force && (now - _lastRequest).TotalMilliseconds < minGapMs) return false;
+
+        _lastRequest = now;
+        CaptureAll();
+        return true;
+    }
+
+    /// <summary>
+    /// 桌面亚克力能不能用。
+    /// 以前这里还要检查 DWM 桌面亚克力材质（Windows 11 22H2+ / 系统透明效果），
+    /// 现在模糊图是画进卡片自己的内容层的，只要求能把卡片排除在截屏之外 ——
+    /// 唯一的硬限制是远程桌面（那边经常取不到画面，没必要先跑起来再退）。
+    /// </summary>
+    public static bool IsAvailable(out string reason)
+    {
+        if (IsRemoteSession())
         {
-            int x = GetSystemMetrics(SmXVirtualScreen);
-            int y = GetSystemMetrics(SmYVirtualScreen);
-            int w = GetSystemMetrics(SmCxVirtualScreen);
-            int h = GetSystemMetrics(SmCyVirtualScreen);
-            if (w <= 0 || h <= 0) return true;      // 取不到虚拟屏尺寸时不拦
-
-            return left >= x && top >= y && left + width <= x + w && top + height <= y + h;
+            reason = "远程桌面会话";
+            return false;
         }
 
-        /// <summary>从共享的屏幕图里取自己这一块，缩小 + 模糊，然后交给卡片画出来。</summary>
-        static void Render(Target target, int originLeft, int originTop, ref int rendered, ref int black)
+        reason = "";
+        return true;
+    }
+
+    const int SmRemoteSession = 0x1000;
+
+    static bool IsRemoteSession()
+    {
+        try
         {
-            int left, top, width, height;
-            if (!TryGetScreenRect(target.Window, out left, out top, out width, out height)) return;
+            return GetSystemMetrics(SmRemoteSession) != 0;
+        }
+        catch (Exception ex)
+        {
+            // 取不到系统指标时按「非远程」继续：真正的采集失败会由 _gdiFailure / 采集层兜住，
+            // 这里再报一次只会重复，留 Debug 线索即可。
+            Log.Debug($"读取远程会话标志失败，按非远程处理: {ex.Message}");
+            return false;
+        }
+    }
 
-            int w = Math.Max(2, width / Downscale);
-            int h = Math.Max(2, height / Downscale);
+    static void EnsurePump()
+    {
+        if (_pump is null)
+        {
+            _pump = new DispatcherTimer(DispatcherPriority.Background) { Interval = Interval() };
+            _pump.Tick += (s, e) => CaptureAll();
+        }
 
-            if (!EnsureSurface(target, w, h)) return;
+        if (!_pump.IsEnabled) _pump.Start();
+        CaptureAll();
+    }
 
-            SetStretchBltMode(target.MemoryDc, Halftone);
-            if (!StretchBlt(target.MemoryDc, 0, 0, w, h, _sharedDc, left - originLeft, top - originTop,
-                            width, height, Srccopy))
-                return;     // 这一轮没取到就跳过，别把上一次的残留当成取样结果
+    /// <summary>
+    /// G-19：没有任何可见卡片时暂停取样泵。旧实现隐藏后仍按设定帧率 tick，
+    /// 每轮对每张卡做一次 IsVisible / 窗口状态检查再空转 —— 叠层收起后纯浪费。
+    /// </summary>
+    static void PausePump(string reason)
+    {
+        if (_pump is null || !_pump.IsEnabled) return;
 
-            var buffer = new byte[w * h * 4];
-            Marshal.Copy(target.Bits, buffer, 0, buffer.Length);
+        _pump.Stop();
+        Log.Debug($"玻璃取样泵已暂停：{reason}（卡片重新可见时自动恢复）");
+    }
 
-            GlassCapture.BoxBlur(buffer, w, h, _blurRadius, true);
-            GlassCapture.BoxBlur(buffer, w, h, _blurRadius, false);
+    /// <summary>G-19：有卡片重新可见时恢复取样泵；不可见状态下被唤醒则保持暂停。</summary>
+    static void WakePump()
+    {
+        if (_pump is null || _pump.IsEnabled) return;
+        if (!AnyVisibleTarget()) return;
 
-            if (Diagnose) LogSample(buffer, w, h);
+        _pump.Start();
+        Log.Debug("玻璃取样泵已恢复");
+    }
 
-            rendered++;
-            if (IsBlackFrame(buffer, w, h)) black++;
+    /// <summary>至少有一张卡片在屏上可见（最小化不算）。</summary>
+    static bool AnyVisibleTarget()
+    {
+        lock (Live)
+        {
+            foreach (Target target in Live)
+            {
+                if (target.Window is null) continue;
+                if (target.Window.IsVisible && target.Window.WindowState != WindowState.Minimized) return true;
+            }
+        }
+        return false;
+    }
 
-            // 和上一次真正画出去的那一帧几乎一样就不动 WPF：静置时背景没变，重画只是白费。
-            if (SameAsLastFrame(target, buffer, w, h)) return;
+    // ==================== 排除截屏 ====================
 
-            // Bgr32 = 忽略 alpha：从屏幕 DC 拷出来的数据 alpha 全是 0，用 Bgra32 建图会整块透明
-            BitmapSource image = BitmapSource.Create(w, h, 96, 96, PixelFormats.Bgr32, null, buffer, w * 4);
-            image.Freeze();
+    /// <summary>
+    /// 卡片窗口要排除在截屏之外：否则取样会把自己（以及上一帧）拍进去，形成拖影。
+    /// 卡片名下的其它顶层窗口（owner 是卡片的视频窗）一起排除。
+    /// </summary>
+    public static void ExcludeFromCapture(Window card, bool exclude)
+    {
+        if (card is null) return;
 
+        IntPtr hwnd;
+        try
+        {
+            hwnd = new WindowInteropHelper(card).Handle;
+        }
+        catch (Exception ex)
+        {
+            // 窗口还没建好 / 正在关闭：这一轮没有句柄可排除，下一次 Apply 会重新走这里。
+            Log.Debug($"读取卡片窗口句柄失败（跳过截屏排除）: {ex.Message}");
+            return;
+        }
+        if (hwnd == IntPtr.Zero) return;
+
+        try
+        {
+            // WDA_EXCLUDEFROMCAPTURE 需要 Win10 2004+，旧系统/拦截类软件会返回 FALSE。
+            // 这里必须看返回值：失败后桌面取样会拍到卡片自身，形成拖影且没有其它线索。
+            if (SetWindowDisplayAffinity(hwnd, exclude ? WdaExcludeFromCapture : WdaNone) == 0)
+            {
+                int err = Marshal.GetLastWin32Error();
+                Log.Warn($"设置截屏排除失败（hwnd={hwnd} err={err}）；桌面取样可能拍到自身并产生拖影");
+            }
+        }
+        catch (Exception ex) { Log.Warn($"设置截屏排除失败: {ex.Message}"); }
+
+        ExcludeOwnedWindows(hwnd, exclude);
+    }
+
+    static void ExcludeOwnedWindows(IntPtr owner, bool exclude)
+    {
+        var owned = new List<IntPtr>();
+
+        try
+        {
+            EnumWindows((hwnd, param) =>
+            {
+                if (GetWindow(hwnd, GwOwner) == owner) owned.Add(hwnd);
+                return true;
+            }, IntPtr.Zero);
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"枚举卡片子窗口失败: {ex.Message}");
+            return;
+        }
+
+        int failed = 0;
+        foreach (IntPtr hwnd in owned)
+        {
             try
             {
-                target.Surface.SetGlass(image);
-                if (!_pushed)
+                if (SetWindowDisplayAffinity(hwnd, exclude ? WdaExcludeFromCapture : WdaNone) == 0)
+                    failed++;
+            }
+            catch (Exception ex) { Log.Warn($"设置子窗口截屏排除失败({hwnd}): {ex.Message}"); }
+        }
+        if (failed > 0)
+            Log.Warn($"{failed} 个卡片子窗口未能排除出截屏，桌面取样可能出现残影");
+    }
+
+    // ==================== 一轮取样 ====================
+
+    static void CaptureAll()
+    {
+        Target[] snapshot;
+        lock (Live)
+        {
+            if (Live.Count == 0) return;
+            snapshot = Live.ToArray();
+        }
+
+        int left = int.MaxValue, top = int.MaxValue, right = int.MinValue, bottom = int.MinValue;
+        int count = 0;
+
+        foreach (Target target in snapshot)
+        {
+            if (!TryGetScreenRect(target.Window, out var l, out var t, out var w, out var h)) continue;
+
+            count++;
+            if (l < left) left = l;
+            if (t < top) top = t;
+            if (l + w > right) right = l + w;
+            if (t + h > bottom) bottom = t + h;
+        }
+
+        if (count == 0)
+        {
+            _blankRounds = 0;
+            // G-19：只有「确实没有可见卡片」才停泵。count == 0 也可能只是窗口刚创建、
+            // 尺寸还没就绪，或卡片被拖到屏幕外 —— 那些情况仍然需要按帧继续取样。
+            if (!AnyVisibleTarget()) PausePump("全部卡片不可见（收起 / 最小化）");
+            return;
+        }
+
+        int width = right - left;
+        int height = bottom - top;
+        if (width < 4 || height < 4) return;
+        PerformanceProbe.GlassFrame();
+
+        // 共享图按 128 px 取整，免得开场动画每长一行字就重建一次 DIB（实际只用到左上角 width × height）。
+        if (!EnsureSharedSurface(RoundUp(width), RoundUp(height)))
+        {
+            // 位图都建不出来这一轮什么都画不了；以前完全静默，表现为玻璃冻在旧帧。
+            _surfaceFailure.Failure($"创建共享取样位图失败（{width}x{height}）");
+            return;
+        }
+        _surfaceFailure.Success();
+
+        IntPtr screen = GetDC(IntPtr.Zero);
+        if (screen == IntPtr.Zero)
+        {
+            // P1-7：GetDC 失败这一轮什么都做不了（连 GDI 位图都画不了），
+            // 节流器保证这类持续性失败不会每秒刷一条日志。
+            _gdiFailure.Failure("GetDC(IntPtr.Zero) 返回 null");
+            // G-11：拿不到屏幕 DC 是明确的采集失败证据，按与 BitBlt 失败相同的 3 轮熔断。
+            MaybeTripFuse(snapshot, "整叠卡片连续 3 轮拿不到屏幕 DC（GetDC 失败）");
+            return;
+        }
+
+        System.Diagnostics.Stopwatch clock = DiagnoseRaw ? System.Diagnostics.Stopwatch.StartNew() : null;
+        bool fromDuplication = false;
+        // G-11：这一轮「采集层」是不是真的失败（只有它能证明读不到屏幕）。
+        // 全黑像素不是证据——全屏黑视频 / 深色壁纸都是合法画面。
+        bool captureFailed = false;
+
+        try
+        {
+            DesktopFrameSource source = EnsureFrameSource();
+            if (source is not null)
+            {
+                bool ok = source.TryReadInto(_sharedBits, _sharedWidth * 4, left, top, width, height);
+                fromDuplication = ok;
+                // P1-7：只有真的读到帧才能刷新闲置计时——以前拿完源就刷新，
+                // 死源会因为永不到 5 秒闲置而一直占着（也不会被释放）。
+                if (ok) _frameSourceIdle = DateTime.UtcNow;
+
+                if (!ok && source.IsDead)
                 {
-                    _pushed = true;
-                    Log.Info("玻璃画面已画进卡片：" + w + "x" + h + "（模糊半径 " + _blurRadius
-                             + "px，取图后端 " + (_frameSource != null ? "DXGI 桌面复制" : "GDI 读屏") + "）");
+                    // P1-7：源已经被判死 → 立刻释放，并按 30s → 60s → 2min 封顶退避重试。
+                    DateTime now = DateTime.UtcNow;
+                    DateTime baseUntil = _frameSourceDeadUntil > now ? _frameSourceDeadUntil : now;
+                    double backoffMs = Math.Min((baseUntil - now).TotalMilliseconds * 2, 120000);
+                    if (backoffMs < 30000) backoffMs = 30000;
+                    ReleaseFrameSource();
+                    _frameSourceDeadUntil = now.AddMilliseconds(backoffMs);
+                    Log.Info($"桌面复制源已判死并释放，{Math.Round(backoffMs / 1000)} 秒后重试重建；期间回退 GDI 读屏");
+                }
+                else if (!ok && !source.Covers(left, top, width, height))
+                {
+                    // G-10：越界不是源故障。DXGI 只覆盖主屏输出，卡片在副屏 / 负坐标时每轮都会
+                    // 走到这里；以前不刷新闲置计时 → 5 秒后释放、下一轮重建 D3D 设备并再刷日志。
+                    // 这里保鲜闲置计时，让同一个健康源继续复用（副屏内容照常走 GDI）。
+                    _frameSourceIdle = DateTime.UtcNow;
                 }
             }
-            catch (Exception ex) { Log.Warn("设置卡片玻璃失败: " + ex.Message); }
 
-            TraceFrame(buffer, w, h);
+            if (!fromDuplication)
+            {
+                if (BitBlt(_sharedDc, 0, 0, width, height, screen, left, top, Srccopy))
+                {
+                    _gdiFailure.Success();
+                }
+                else
+                {
+                    // P1-7：BitBlt 失败以前完全静默 —— 卡片会一直显示上一轮的旧图。
+                    captureFailed = true;
+                    _gdiFailure.Failure($"BitBlt 失败（GetLastError={Marshal.GetLastWin32Error()}）");
+                }
+            }
+        }
+        finally
+        {
+            ReleaseDC(IntPtr.Zero, screen);
         }
 
-        static bool EnsureSurface(Target target, int w, int h)
-        {
-            if (target.MemoryDc != IntPtr.Zero && target.Width == w && target.Height == h) return true;
+        if (fromDuplication) _gdiFailure.Success();
+        // 拖动补帧的间隔按“这一轮实际用了哪条后端”决定（G-10）。
+        _lastRoundUsedDup = fromDuplication;
 
+        if (clock is not null)
+        {
+            clock.Stop();
+            TraceBands(clock.Elapsed.TotalMilliseconds, width, height, fromDuplication);
+        }
+
+        // GDI 读屏一轮要占 UI 线程 18 ms，帧率再高就会明显拖慢交互 —— 提醒一次。
+        // 只在「确实拿不到桌面复制」时提醒：第一帧走 GDI 是正常的（复制对象还在预热）。
+        if (fromDuplication)
+        {
+            _gdiRounds = 0;
+        }
+        else if (_frameSource is null && _fps > 6 && _gdiWarnedFps != _fps && ++_gdiRounds > 5)
+        {
+            _gdiWarnedFps = _fps;
+            Log.Info($"GDI 读屏每轮约 18 ms，刷新 {_fps} 帧/秒会占用较多 UI 线程时间；取图方式换成「GPU 加速」可以降到 1 ms/轮");
+        }
+
+        int rendered = 0;
+        int black = 0;
+        foreach (Target target in snapshot) Render(target, left, top, ref rendered, ref black);
+
+        // G-11：保险丝判据从「平均亮度 ≤ 2」改成「采集层失败」。
+        // 全黑内容是合法画面（全屏黑视频 / 深色壁纸 / 应用黑屏过场），以前 3 轮（默认 10fps
+        // 约 300ms）就判定读不到屏幕，整叠降级后进入 3s→15s 振荡。
+        // 真正能证明读不到屏幕的只有：GetDC 失败、BitBlt 失败、DXGI 读帧失败且 GDI 也失败。
+        if (rendered == 0)
+        {
+            _blankRounds = 0;
+            return;
+        }
+
+        if (!captureFailed)
+        {
+            _blankRounds = 0;
+            _healthyRounds++;
+            // 恢复滞回：熔断过一次后，要连续 30 轮（约 3 秒）采集正常才重新武装，
+            // 否则「刚恢复又失败」会立刻再降级，用户看到玻璃反复跳。
+            if (_fuseTripped && _healthyRounds - _fuseTripHealthyRounds >= FuseClearRounds)
+                _fuseTripped = false;
+            return;
+        }
+
+        // 已经降级过：等恢复滞回，不重复触发 ReportUnavailable（日志也只在状态迁移时记）。
+        MaybeTripFuse(snapshot, black >= rendered
+            ? "整叠卡片连续 3 轮读不到屏幕（采集 API 持续失败，画面同时全黑）：截屏被拦截 / 锁屏 / 屏幕关闭"
+            : "整叠卡片连续 3 轮读不到屏幕（采集 API 持续失败）：保留上一帧并等待恢复");
+    }
+
+    /// <summary>
+    /// G-11：采集层确认失败时累计熔断（3 轮），已熔断则等待 <see cref="FuseClearRounds"/> 轮
+    /// 正常采集后再武装。只允许在「采集 API 报错 / 拿不到屏幕」时调用，像素全黑不在此列。
+    /// </summary>
+    static void MaybeTripFuse(Target[] snapshot, string reason)
+    {
+        if (_fuseTripped) return;
+        if (++_blankRounds < 3) return;
+
+        _blankRounds = 0;
+        _fuseTripped = true;
+        _fuseTripHealthyRounds = _healthyRounds;
+        ReportUnavailable(snapshot, reason);
+    }
+
+    /// <summary>
+    /// 整叠卡片都读不到画面：这是环境问题，不是某一张卡的问题，
+    /// 所以让所有窗口一起退到系统亚克力（或兼容实现），不能只让迭代顺序里的第 N 张卡单独掉级。
+    /// </summary>
+    static void ReportUnavailable(Target[] snapshot, string reason)
+    {
+        foreach (Target target in snapshot)
+        {
+            Action<string> handler = target.OnUnavailable;
+            if (handler is null) continue;
+
+            try { handler(reason); }
+            catch (Exception ex) { Log.Warn($"取样失败回调出错: {ex.Message}"); }
+        }
+    }
+
+    static bool TryGetScreenRect(OverlayWindow card, out int left, out int top, out int width, out int height)
+    {
+        left = top = 0;
+        width = height = 0;
+
+        if (card is null) return false;
+        try
+        {
+            if (!card.IsVisible || card.WindowState == WindowState.Minimized) return false;
+        }
+        catch (Exception ex)
+        {
+            // 卡片窗口正在释放：这一轮没有可取样区域，跳过即可（下一轮会自然恢复）。
+            Log.Debug($"读取卡片可见性失败（本轮跳过取样）: {ex.Message}");
+            return false;
+        }
+
+        double inset = _shadow ? ShadowInset : 0.0;
+        double w = card.ActualWidth - inset * 2.0;
+        double h = card.ActualHeight - inset * 2.0;
+        if (w < 4.0 || h < 4.0) return false;
+
+        Point origin;
+        DpiScale dpi;
+        try
+        {
+            origin = card.PointToScreen(new Point(inset, inset));
+            dpi = VisualTreeHelper.GetDpi(card);
+        }
+        catch (Exception ex)
+        {
+            // 布局 / 合成源尚未就绪（窗口刚创建或正在跨屏重建）：这一帧取不到位置，
+            // 下一帧再试；每帧都会发生时才值得关注，因此保持 Debug。
+            Log.Debug($"计算卡片屏幕区域失败（本轮跳过取样）: {ex.Message}");
+            return false;
+        }
+
+        double scaleX = dpi.DpiScaleX > 0 ? dpi.DpiScaleX : 1.0;
+        double scaleY = dpi.DpiScaleY > 0 ? dpi.DpiScaleY : 1.0;
+
+        left = (int)Math.Round(origin.X);
+        top = (int)Math.Round(origin.Y);
+        width = (int)Math.Round(w * scaleX);
+        height = (int)Math.Round(h * scaleY);
+        if (width < 4 || height < 4) return false;
+
+        // 卡片完全在屏幕内才取样。拖到屏幕外时那里没有任何像素：负的源坐标会让 GDI
+        // 只填一部分取样图（或者干脆不填），屏幕外那张卡就读到全零 —— 这正是
+        // 「拖动时单张卡突然退回系统亚克力」的触发源。跳过以后玻璃停在最后一帧，
+        // 卡片回到屏幕内立刻恢复，也不再喂给全黑保险丝。
+        return IsFullyOnScreen(left, top, width, height);
+    }
+
+    const int SmXVirtualScreen = 76;
+    const int SmYVirtualScreen = 77;
+    const int SmCxVirtualScreen = 78;
+    const int SmCyVirtualScreen = 79;
+
+    static bool IsFullyOnScreen(int left, int top, int width, int height)
+    {
+        int x = GetSystemMetrics(SmXVirtualScreen);
+        int y = GetSystemMetrics(SmYVirtualScreen);
+        int w = GetSystemMetrics(SmCxVirtualScreen);
+        int h = GetSystemMetrics(SmCyVirtualScreen);
+        if (w <= 0 || h <= 0) return true;      // 取不到虚拟屏尺寸时不拦
+
+        return left >= x && top >= y && left + width <= x + w && top + height <= y + h;
+    }
+
+    /// <summary>从共享的屏幕图里取自己这一块，缩小 + 模糊，然后交给卡片画出来。</summary>
+    static void Render(Target target, int originLeft, int originTop, ref int rendered, ref int black)
+    {
+        if (!TryGetScreenRect(target.Window, out var left, out var top, out var width, out var height)) return;
+
+        int w = Math.Max(2, width / Downscale);
+        int h = Math.Max(2, height / Downscale);
+
+        if (!EnsureSurface(target, w, h)) return;
+
+        SetStretchBltMode(target.MemoryDc, Halftone);
+        if (!StretchBlt(target.MemoryDc, 0, 0, w, h, _sharedDc, left - originLeft, top - originTop,
+                        width, height, Srccopy))
+            return;     // 这一轮没取到就跳过，别把上一次的残留当成取样结果
+
+        byte[] buffer = EnsureCaptureBuffer(target, w, h);
+        Marshal.Copy(target.Bits, buffer, 0, buffer.Length);
+
+        GlassCapture.BoxBlur(buffer, w, h, _blurRadius, true);
+        GlassCapture.BoxBlur(buffer, w, h, _blurRadius, false);
+
+        if (Diagnose) LogSample(buffer, w, h);
+
+        rendered++;
+        if (IsBlackFrame(buffer, w, h)) black++;
+
+        // 和上一次真正画出去的那一帧几乎一样就不动 WPF：静置时背景没变，重画只是白费。
+        if (SameAsLastFrame(target, buffer, w, h)) return;
+
+        // Bgr32 = 忽略 alpha：从屏幕 DC 拷出来的数据 alpha 全是 0，用 Bgra32 建图会整块透明。
+        //
+        // G-17：复用同一块 WriteableBitmap，只把新像素写进它的原生缓冲；
+        // 尺寸变化（卡片缩放 / DPI 变化）时 EnsureBitmap 才重建。
+        // 推送成功后才记录「上一帧」：SetGlass 失败时下一轮必须重推，否则画面会停在旧帧。
+        WriteableBitmap bitmap = EnsureBitmap(target, w, h);
+        bitmap.WritePixels(new Int32Rect(0, 0, w, h), buffer, w * 4, 0);
+
+        try
+        {
+            target.Surface.SetGlass(bitmap);
+            if (!_pushed)
+            {
+                _pushed = true;
+                Log.Info($"玻璃画面已画进卡片：{w}x{h}（模糊半径 {_blurRadius}px，取图后端 {(_frameSource is not null ? "DXGI 桌面复制" : "GDI 读屏")}）");
+            }
+
+            KeepFrame(target, buffer, w, h);
+        }
+        catch (Exception ex) { Log.Warn($"设置卡片玻璃失败: {ex.Message}"); }
+
+        TraceFrame(buffer, w, h);
+    }
+
+    /// <summary>
+    /// G-17：取这张卡复用的位图。尺寸没变就原样返回，每帧只有一次 WritePixels；
+    /// 尺寸变了才重建（旧位图随引用替换交给 GC，由卡片内容层自行释放旧画刷引用）。
+    /// WPF 的 WriteableBitmap 有线程归属：本方法只能在 UI 线程调用（Render 的唯一调用路径）。
+    /// </summary>
+    static WriteableBitmap EnsureBitmap(Target target, int w, int h)
+    {
+        WriteableBitmap bitmap = target.Bitmap;
+        if (bitmap is not null && bitmap.PixelWidth == w && bitmap.PixelHeight == h) return bitmap;
+
+        bitmap = new WriteableBitmap(w, h, 96, 96, PixelFormats.Bgr32, null);
+        target.Bitmap = bitmap;
+        // --perf 的 GlassBitmap 只在真的分配位图时 +1：尺寸稳定后这条计数应变成常数。
+        PerformanceProbe.GlassBitmap();
+        return bitmap;
+    }
+
+    /// <summary>
+    /// 取这张卡复用的取样缓冲，只有需要的字节数真的变了才分配。
+    /// P-2 之前这里每帧每卡 <c>new byte[w * h * 4]</c>：600x400 的卡缩到一半是 240KB，
+    /// 超过 LOH 的 85KB 门槛，10fps × 5 张约 12MB/s；而这块缓冲的内容每帧都会被
+    /// Marshal.Copy 整块覆写，生命周期完全一样，没有理由反复分配。
+    /// PerformanceProbe.GlassBuffer 只在**真的分配**时调用 —— 它统计的是「像素缓冲分配」，
+    /// 尺寸稳定后这条计数应变成常数，正好用 --perf 验收复用是否生效。
+    /// 缓冲按 Target 独立持有，且只在 UI 线程（DispatcherTimer / RequestFrame）读写，不加锁。
+    /// （宽高互换但字节数相同时继续复用是安全的：所有消费者都显式传 w / h。）
+    /// </summary>
+    static byte[] EnsureCaptureBuffer(Target target, int w, int h)
+    {
+        int bytes = w * h * 4;
+        if (target.CaptureBuffer is not null && target.CaptureBuffer.Length == bytes) return target.CaptureBuffer;
+
+        target.CaptureBuffer = new byte[bytes];
+        PerformanceProbe.GlassBuffer(bytes);
+        return target.CaptureBuffer;
+    }
+
+    static bool EnsureSurface(Target target, int w, int h)
+    {
+        if (target.MemoryDc != IntPtr.Zero && target.Width == w && target.Height == h) return true;
+
+        ReleaseSurface(target);
+
+        var bmi = new BitmapInfo
+        {
+            Size = Marshal.SizeOf(typeof(BitmapInfo)),
+            Width = w,
+            Height = -h,          // 负数 = 自上而下
+            Planes = 1,
+            BitCount = 32,
+            Compression = 0       // BI_RGB
+        };
+
+        IntPtr screen = GetDC(IntPtr.Zero);
+        try
+        {
+            target.MemoryDc = CreateCompatibleDC(screen);
+            target.Dib = CreateDIBSection(screen, ref bmi, 0, out target.Bits, IntPtr.Zero, 0);
+        }
+        finally
+        {
+            ReleaseDC(IntPtr.Zero, screen);
+        }
+
+        if (target.MemoryDc == IntPtr.Zero || target.Dib == IntPtr.Zero || target.Bits == IntPtr.Zero)
+        {
             ReleaseSurface(target);
-
-            var bmi = new BitmapInfo
-            {
-                Size = Marshal.SizeOf(typeof(BitmapInfo)),
-                Width = w,
-                Height = -h,          // 负数 = 自上而下
-                Planes = 1,
-                BitCount = 32,
-                Compression = 0       // BI_RGB
-            };
-
-            IntPtr screen = GetDC(IntPtr.Zero);
-            try
-            {
-                target.MemoryDc = CreateCompatibleDC(screen);
-                target.Dib = CreateDIBSection(screen, ref bmi, 0, out target.Bits, IntPtr.Zero, 0);
-            }
-            finally
-            {
-                ReleaseDC(IntPtr.Zero, screen);
-            }
-
-            if (target.MemoryDc == IntPtr.Zero || target.Dib == IntPtr.Zero || target.Bits == IntPtr.Zero)
-            {
-                ReleaseSurface(target);
-                return false;
-            }
-
-            // 必须把 DIB 选进内存 DC：否则 StretchBlt 画在 DC 默认的 1×1 单色位图上，取样永远是全黑。
-            target.Previous = SelectObject(target.MemoryDc, target.Dib);
-            if (target.Previous == IntPtr.Zero || target.Previous == new IntPtr(-1))
-            {
-                ReleaseSurface(target);
-                return false;
-            }
-
-            target.Width = w;
-            target.Height = h;
-            target.LastFrame = null;
-            return true;
+            return false;
         }
 
-        static void ReleaseSurface(Target target)
+        // 必须把 DIB 选进内存 DC：否则 StretchBlt 画在 DC 默认的 1×1 单色位图上，取样永远是全黑。
+        target.Previous = SelectObject(target.MemoryDc, target.Dib);
+        if (target.Previous == IntPtr.Zero || target.Previous == new IntPtr(-1))
         {
-            if (target == null) return;
-
-            if (target.Previous != IntPtr.Zero && target.MemoryDc != IntPtr.Zero)
-            {
-                SelectObject(target.MemoryDc, target.Previous);
-                target.Previous = IntPtr.Zero;
-            }
-
-            if (target.Dib != IntPtr.Zero) { DeleteObject(target.Dib); target.Dib = IntPtr.Zero; }
-            if (target.MemoryDc != IntPtr.Zero) { DeleteDC(target.MemoryDc); target.MemoryDc = IntPtr.Zero; }
-            target.Bits = IntPtr.Zero;
-            target.Width = 0;
-            target.Height = 0;
-            target.LastFrame = null;
+            ReleaseSurface(target);
+            return false;
         }
 
-        static bool SameAsLastFrame(Target target, byte[] buffer, int w, int h)
+        target.Width = w;
+        target.Height = h;
+        // G-17：取样面尺寸变了，位图与可轮换缓冲一起作废（Render 会按新尺寸重建）。
+        target.Bitmap = null;
+        ResetFrameCache(target);
+        return true;
+    }
+
+    static void ReleaseSurface(Target target)
+    {
+        if (target is null) return;
+
+        if (target.Previous != IntPtr.Zero && target.MemoryDc != IntPtr.Zero)
         {
-            if (target.LastFrame == null || target.LastWidth != w || target.LastHeight != h)
-            {
-                KeepFrame(target, buffer, w, h);
-                return false;
-            }
-
-            // 隔 4 个像素看一次。和「上一次真正画出去的帧」比，慢漂移会累积到超过阈值，不会永远跳过。
-            for (int i = 0; i + 3 < buffer.Length; i += 16)
-            {
-                int db = buffer[i] - target.LastFrame[i];
-                if (db < -SkipTolerance || db > SkipTolerance) { KeepFrame(target, buffer, w, h); return false; }
-                int dg = buffer[i + 1] - target.LastFrame[i + 1];
-                if (dg < -SkipTolerance || dg > SkipTolerance) { KeepFrame(target, buffer, w, h); return false; }
-                int dr = buffer[i + 2] - target.LastFrame[i + 2];
-                if (dr < -SkipTolerance || dr > SkipTolerance) { KeepFrame(target, buffer, w, h); return false; }
-            }
-
-            return true;
+            SelectObject(target.MemoryDc, target.Previous);
+            target.Previous = IntPtr.Zero;
         }
 
-        /// <summary>模糊图上差 2 以内看不出来 —— 低于这个就当作「没变」。</summary>
-        const int SkipTolerance = 2;
-
-        static void KeepFrame(Target target, byte[] buffer, int w, int h)
+        // G-18：DeleteObject / DeleteDC 失败不抛异常，但会泄漏 GDI 句柄；
+        // 只在尺寸变化 / 卡片移除时执行，直接 Warn 不会刷屏。
+        if (target.Dib != IntPtr.Zero)
         {
-            if (target.LastFrame == null || target.LastFrame.Length != buffer.Length)
-                target.LastFrame = new byte[buffer.Length];
-
-            Buffer.BlockCopy(buffer, 0, target.LastFrame, 0, buffer.Length);
-            target.LastWidth = w;
-            target.LastHeight = h;
+            if (!DeleteObject(target.Dib)) Log.Warn($"释放取样 DIB 失败 err={Marshal.GetLastWin32Error()}");
+            target.Dib = IntPtr.Zero;
         }
 
-        static int RoundUp(int value)
+        if (target.MemoryDc != IntPtr.Zero)
         {
-            return ((value + 127) / 128) * 128;
+            if (!DeleteDC(target.MemoryDc)) Log.Warn($"释放取样 DC 失败 err={Marshal.GetLastWin32Error()}");
+            target.MemoryDc = IntPtr.Zero;
         }
 
-        // ==================== 取图后端 ====================
+        target.Bits = IntPtr.Zero;
+        target.Width = 0;
+        target.Height = 0;
 
-        static DesktopFrameSource EnsureFrameSource()
+        // G-17：位图与两块缓冲跟着取样面一起丢掉，卡片移除 / 改尺寸后不把 LOH 对象扛到进程结束。
+        target.Bitmap = null;
+        ResetFrameCache(target);
+    }
+
+    static bool SameAsLastFrame(Target target, byte[] buffer, int w, int h)
+    {
+        // 尺寸 / 长度变了：必然要推一帧。推送成功后由 KeepFrame 重新记账。
+        if (target.LastFrame is null || target.LastWidth != w || target.LastHeight != h
+            || target.LastFrame.Length != buffer.Length)
+            return false;
+
+        // 隔 4 个像素看一次。和「上一次真正画出去的帧」比，慢漂移会累积到超过阈值，不会永远跳过。
+        for (int i = 0; i + 3 < buffer.Length; i += 16)
         {
-            // 卡片增删会让目标短暂全部消失再出现，别因此反复创建 D3D 设备 / 桌面复制；
-            // 真正长时间不用（5 秒）才释放，别让 GPU 一直醒着。
-            if (_frameSource != null && (DateTime.UtcNow - _frameSourceIdle).TotalSeconds > 5)
-            {
-                ReleaseFrameSource();
-            }
+            int db = buffer[i] - target.LastFrame[i];
+            if (db < -SkipTolerance || db > SkipTolerance) return false;
+            int dg = buffer[i + 1] - target.LastFrame[i + 1];
+            if (dg < -SkipTolerance || dg > SkipTolerance) return false;
+            int dr = buffer[i + 2] - target.LastFrame[i + 2];
+            if (dr < -SkipTolerance || dr > SkipTolerance) return false;
+        }
 
-            if (_frameSource != null || _frameSourceTried) return _frameSource;
-            _frameSourceTried = true;
+        return true;
+    }
 
-            DesktopFrameSource source;
-            string reason;
-            if (DesktopFrameSource.TryCreate(_source, out source, out reason))
+    /// <summary>模糊图上差 2 以内看不出来 —— 低于这个就当作「没变」。</summary>
+    const int SkipTolerance = 2;
+
+    /// <summary>
+    /// G-17：不再整块 <c>Buffer.BlockCopy</c>。把刚推送出去的数组转成「上一帧」，
+    /// 旧的上一次帧交回 <see cref="Target.CaptureBuffer"/> 供下一帧覆写 —— 两块缓冲轮换，
+    /// 每帧省掉一次 w×h×4 的拷贝（300×200 的卡约 240 KB/帧）。
+    /// 必须保证 LastFrame 与 CaptureBuffer 永远是两个不同实例：否则下一帧 Marshal.Copy
+    /// 会直接改掉比较基准，「和上一帧一样就跳过」的判定就失效了。
+    /// </summary>
+    static void KeepFrame(Target target, byte[] buffer, int w, int h)
+    {
+        byte[] previous = target.LastFrame;
+        target.CaptureBuffer = previous is not null
+                               && previous.Length == buffer.Length
+                               && !ReferenceEquals(previous, buffer)
+            ? previous
+            : null;   // 没有可轮换的旧帧：下一次 EnsureCaptureBuffer 重新分配
+
+        target.LastFrame = buffer;
+        target.LastWidth = w;
+        target.LastHeight = h;
+    }
+
+    /// <summary>丢掉「上一帧」基准与可轮换缓冲：外观变化 / 尺寸变化后必须重推一帧。</summary>
+    static void ResetFrameCache(Target target)
+    {
+        target.LastFrame = null;
+        target.LastWidth = 0;
+        target.LastHeight = 0;
+        target.CaptureBuffer = null;
+    }
+
+    static int RoundUp(int value) => ((value + 127) / 128) * 128;
+
+    // ==================== 取图后端 ====================
+
+    static DesktopFrameSource EnsureFrameSource()
+    {
+        // 卡片增删会让目标短暂全部消失再出现，别因此反复创建 D3D 设备 / 桌面复制；
+        // 真正长时间不用（5 秒）才释放，别让 GPU 一直醒着。
+        if (_frameSource is not null && (DateTime.UtcNow - _frameSourceIdle).TotalSeconds > 5)
+        {
+            ReleaseFrameSource();
+        }
+
+        // P1-7：上一轮源被判死 → 退避期内一律走 GDI，不碰重建（重建一次要几十 ms）。
+        if (_frameSource is null && DateTime.UtcNow < _frameSourceDeadUntil) return null;
+
+        if (_frameSource is not null) return _frameSource;
+
+        // 创建失败后按时间退避重试（避免每帧重建 D3D 设备），但不会永久钉死。
+        // 旧实现用 bool _frameSourceTried，失败一次后 ReleaseFrameSource 又因早退
+        // 永远复位不了，只能重启进程。
+        if (DateTime.UtcNow < _frameSourceNextTry) return null;
+        _frameSourceNextTry = DateTime.UtcNow.AddSeconds(30);
+
+        if (DesktopFrameSource.TryCreate(_source, out var source, out var reason))
+        {
+            _frameSource = source;
+            _frameSourceIdle = DateTime.UtcNow;
+            // 新源建成了，退避计划作废。
+            _frameSourceDeadUntil = DateTime.MinValue;
+            _frameSourceNextTry = DateTime.MinValue;
+            _frameSourceReason = "";
+            // 之前重建一直失败时补一条“恢复”日志（节流器内部保证只在状态迁移时记）。
+            _frameSourceFailure.Success();
+            // 只有真的重建了才记一条；以前 5 秒一次的释放 / 重建循环会把这里刷满（G-10）。
+            Log.Info("玻璃取图改用 DXGI 桌面复制（GPU 加速，不再用 GDI 读屏）");
+        }
+        else if (!string.Equals(reason, _frameSourceReason, StringComparison.Ordinal))
+        {
+            // G-10：重建失败以前每 30 秒照样打一条 Info（副屏 / 驱动异常时刷屏）。
+            // 现在只在原因变化时记一条；持续失败由 LogThrottle 按 60 秒补一条“仍失败”。
+            _frameSourceReason = reason ?? "";
+            if (string.Equals(_source, "Cpu", StringComparison.Ordinal))
             {
-                _frameSource = source;
-                _frameSourceIdle = DateTime.UtcNow;
-                Log.Info("玻璃取图改用 DXGI 桌面复制（GPU 加速，不再用 GDI 读屏）");
+                // 用户自己选了 CPU 读屏，这不是故障，按 Info 记一次即可。
+                Log.Info($"玻璃取图用 GDI 读屏：{_frameSourceReason}");
             }
             else
             {
-                Log.Info("玻璃取图用 GDI 读屏：" + reason);
-            }
-
-            return _frameSource;
-        }
-
-        static void ReleaseFrameSource()
-        {
-            if (_frameSource == null) return;
-            try { _frameSource.Dispose(); } catch { }
-            _frameSource = null;
-            _frameSourceTried = false;
-            _frameSourceIdle = DateTime.MinValue;
-        }
-
-        static bool EnsureSharedSurface(int width, int height)
-        {
-            if (_sharedDc != IntPtr.Zero && _sharedWidth == width && _sharedHeight == height) return true;
-            ReleaseSharedSurface();
-
-            var bmi = new BitmapInfo
-            {
-                Size = Marshal.SizeOf(typeof(BitmapInfo)),
-                Width = width,
-                Height = -height,     // 负数 = 自上而下
-                Planes = 1,
-                BitCount = 32,
-                Compression = 0
-            };
-
-            IntPtr screen = GetDC(IntPtr.Zero);
-            try
-            {
-                _sharedDc = CreateCompatibleDC(screen);
-                IntPtr bits;
-                _sharedDib = CreateDIBSection(screen, ref bmi, 0, out bits, IntPtr.Zero, 0);
-                _sharedBits = bits;
-            }
-            finally
-            {
-                ReleaseDC(IntPtr.Zero, screen);
-            }
-
-            if (_sharedDc == IntPtr.Zero || _sharedDib == IntPtr.Zero)
-            {
-                ReleaseSharedSurface();
-                return false;
-            }
-
-            _sharedPrevious = SelectObject(_sharedDc, _sharedDib);
-            if (_sharedPrevious == IntPtr.Zero || _sharedPrevious == new IntPtr(-1))
-            {
-                ReleaseSharedSurface();
-                return false;
-            }
-
-            _sharedWidth = width;
-            _sharedHeight = height;
-            return true;
-        }
-
-        static void ReleaseSharedSurface()
-        {
-            if (_sharedPrevious != IntPtr.Zero && _sharedDc != IntPtr.Zero)
-            {
-                SelectObject(_sharedDc, _sharedPrevious);
-                _sharedPrevious = IntPtr.Zero;
-            }
-
-            if (_sharedDib != IntPtr.Zero) { DeleteObject(_sharedDib); _sharedDib = IntPtr.Zero; }
-            if (_sharedDc != IntPtr.Zero) { DeleteDC(_sharedDc); _sharedDc = IntPtr.Zero; }
-            _sharedBits = IntPtr.Zero;
-            _sharedWidth = 0;
-            _sharedHeight = 0;
-        }
-
-        // ==================== 保险 ====================
-
-        /// <summary>
-        /// 这一块取样是不是全黑。整轮全黑才计入保险丝（见 <see cref="CaptureAll"/>），
-        /// 单张卡后面的内容本来就是黑的不能算环境失败。
-        /// </summary>
-        static bool IsBlackFrame(byte[] buffer, int w, int h)
-        {
-            if (w * h == 0) return true;
-
-            long sum = 0;
-            for (int i = 0; i + 2 < buffer.Length; i += 4)
-                sum += (buffer[i] + 2 * buffer[i + 1] + buffer[i + 2]) / 4;
-
-            return sum / (w * h) <= 2;
-        }
-
-        // ==================== 诊断 ====================
-
-        static bool? _diagnose;
-
-        static bool Diagnose
-        {
-            get
-            {
-                if (!_diagnose.HasValue)
-                {
-                    string value = Environment.GetEnvironmentVariable("MIRRORPOND_GLASS_DEBUG");
-                    _diagnose = value == "1" || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
-                }
-                return _diagnose.Value;
+                _frameSourceFailure.Failure(_frameSourceReason);
             }
         }
 
-        static DateTime _lastReport = DateTime.MinValue;
-
-        static void LogSample(byte[] buffer, int w, int h)
-        {
-            if ((DateTime.UtcNow - _lastReport).TotalSeconds < 5) return;
-            _lastReport = DateTime.UtcNow;
-
-            long sum = 0;
-            int max = 0;
-            for (int i = 0; i + 2 < buffer.Length; i += 4)
-            {
-                int luma = (buffer[i] + 2 * buffer[i + 1] + buffer[i + 2]) / 4;
-                sum += luma;
-                if (luma > max) max = luma;
-            }
-
-            int count = w * h;
-            Log.Info("玻璃取样 " + w + "x" + h + "：平均亮度 " + (count == 0 ? 0 : sum / count)
-                     + "，最亮 " + max + "，模糊半径 " + _blurRadius + "px（半分辨率）");
-        }
-
-        // ==================== 逐帧追踪 ====================
-        // MIRRORPOND_GLASS_TRACE=1：每画一帧写一行「时间 + 尺寸 + 平均亮度」，
-        // hud-test/compare.py 靠它算「屏幕上换了窗口 → 玻璃上的画面多久跟着变」。
-
-        static bool? _trace;
-        static System.IO.StreamWriter _traceWriter;
-        static readonly object TraceLock = new object();
-
-        static bool Trace
-        {
-            get
-            {
-                if (!_trace.HasValue)
-                {
-                    string value = Environment.GetEnvironmentVariable("MIRRORPOND_GLASS_TRACE");
-                    _trace = value == "1" || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
-                }
-                return _trace.Value;
-            }
-        }
-
-        static void TraceFrame(byte[] buffer, int w, int h)
-        {
-            if (!Trace) return;
-
-            long sum = 0;
-            int count = 0;
-            for (int i = 0; i + 2 < buffer.Length; i += 16)
-            {
-                sum += (buffer[i] + 2 * buffer[i + 1] + buffer[i + 2]) / 4;
-                count++;
-            }
-
-            lock (TraceLock)
-            {
-                try
-                {
-                    if (_traceWriter == null)
-                    {
-                        string path = System.IO.Path.Combine(
-                            System.IO.Path.GetTempPath(), "mirrorpond-trace.log");
-                        _traceWriter = new System.IO.StreamWriter(path, false) { AutoFlush = true };
-                    }
-                    _traceWriter.WriteLine(DateTime.Now.ToString("HH:mm:ss.fff") + " CAP " + w + "x" + h
-                                           + " luma=" + (count == 0 ? 0 : sum / count));
-                }
-                catch (Exception ex)
-                {
-                    Log.Warn("玻璃帧追踪写入失败: " + ex.Message);
-                }
-            }
-        }
-
-        static bool? _rawTrace;
-
-        static bool DiagnoseRaw
-        {
-            get
-            {
-                if (!_rawTrace.HasValue)
-                {
-                    string value = Environment.GetEnvironmentVariable("MIRRORPOND_RAW_TRACE");
-                    _rawTrace = value == "1" || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
-                }
-                return _rawTrace.Value;
-            }
-        }
-
-        static void TraceBands(double readMs, int width, int height, bool fromDuplication)
-        {
-            if (_sharedBits == IntPtr.Zero) return;
-
-            const int Bands = 8;
-            int bandHeight = height / Bands;
-            if (bandHeight < 1) return;
-
-            var bytes = new byte[width * height * 4];
-            Marshal.Copy(_sharedBits, bytes, 0, bytes.Length);
-
-            var trace = new System.Text.StringBuilder();
-            trace.Append("RAWB ").Append(DateTime.Now.ToString("HH:mm:ss.fff"))
-                 .Append(' ').Append(fromDuplication ? "src=dup" : "src=gdi")
-                 .Append(" read=").Append(readMs.ToString("F1"));
-
-            for (int b = 0; b < Bands; b++)
-            {
-                long total = 0;
-                int count = 0;
-                for (int y = b * bandHeight; y < (b + 1) * bandHeight; y++)
-                {
-                    int row = y * width * 4;
-                    for (int x = 0; x < width; x += 4)
-                    {
-                        int p = row + x * 4;
-                        total += bytes[p] + 2 * bytes[p + 1] + bytes[p + 2];
-                        count++;
-                    }
-                }
-                trace.Append(' ').Append(count == 0 ? "0" : (total / (4 * count)).ToString());
-            }
-
-            Log.Info(trace.ToString());
-        }
-
-        // ==================== interop ====================
-
-        [StructLayout(LayoutKind.Sequential)]
-        struct BitmapInfo
-        {
-            public int Size;
-            public int Width;
-            public int Height;
-            public short Planes;
-            public short BitCount;
-            public int Compression;
-            public int SizeImage;
-            public int XPelsPerMeter;
-            public int YPelsPerMeter;
-            public int ClrUsed;
-            public int ClrImportant;
-        }
-
-        delegate bool EnumWindowsDelegate(IntPtr hwnd, IntPtr param);
-
-        [DllImport("user32.dll")]
-        static extern bool EnumWindows(EnumWindowsDelegate callback, IntPtr param);
-
-        [DllImport("user32.dll")]
-        static extern IntPtr GetWindow(IntPtr hwnd, int command);
-
-        [DllImport("user32.dll")]
-        static extern int SetWindowDisplayAffinity(IntPtr hwnd, uint affinity);
-
-        [DllImport("user32.dll")]
-        static extern int GetSystemMetrics(int index);
-
-        [DllImport("user32.dll")]
-        static extern IntPtr GetDC(IntPtr hwnd);
-
-        [DllImport("user32.dll")]
-        static extern int ReleaseDC(IntPtr hwnd, IntPtr hdc);
-
-        [DllImport("gdi32.dll")]
-        static extern IntPtr CreateCompatibleDC(IntPtr hdc);
-
-        [DllImport("gdi32.dll")]
-        static extern bool DeleteDC(IntPtr hdc);
-
-        [DllImport("gdi32.dll")]
-        static extern bool DeleteObject(IntPtr obj);
-
-        [DllImport("gdi32.dll")]
-        static extern IntPtr CreateDIBSection(IntPtr hdc, ref BitmapInfo bmi, uint usage,
-                                              out IntPtr bits, IntPtr section, uint offset);
-
-        [DllImport("gdi32.dll")]
-        static extern IntPtr SelectObject(IntPtr hdc, IntPtr obj);
-
-        [DllImport("gdi32.dll")]
-        static extern int SetStretchBltMode(IntPtr hdc, int mode);
-
-        [DllImport("gdi32.dll")]
-        static extern bool StretchBlt(IntPtr destination, int destinationX, int destinationY,
-                                      int destinationWidth, int destinationHeight,
-                                      IntPtr source, int sourceX, int sourceY, int sourceWidth,
-                                      int sourceHeight, uint operation);
-
-        [DllImport("gdi32.dll")]
-        static extern bool BitBlt(IntPtr destination, int destinationX, int destinationY,
-                                  int width, int height, IntPtr source, int sourceX, int sourceY,
-                                  uint operation);
+        return _frameSource;
     }
+
+    static void ReleaseFrameSource()
+    {
+        // 释放后下一次需要时允许立即重建（空闲释放是正常路径，不是失败）。
+        _frameSourceNextTry = DateTime.MinValue;
+        if (_frameSource is null) return;
+        // 释放路径：设备可能已随源判死释放；Dispose 失败不会留下可用状态，
+        // 引用马上被清空，下一次按需重建。交给 SafeRelease 记录（X-9）。
+        DesktopFrameSource source = _frameSource;
+        _frameSource = null;
+        SafeRelease.Run(source.Dispose, "桌面复制源");
+        _frameSourceIdle = DateTime.MinValue;
+        // P1-7：这里不清 _frameSourceDeadUntil —— 死源的释放方（CaptureAll）
+        // 会在释放后按“上一次的退避时间 × 2”续算退避，不能被这里抹掉。
+    }
+
+    static bool EnsureSharedSurface(int width, int height)
+    {
+        if (_sharedDc != IntPtr.Zero && _sharedWidth == width && _sharedHeight == height) return true;
+        ReleaseSharedSurface();
+        var bmi = new BitmapInfo
+        {
+            Size = Marshal.SizeOf(typeof(BitmapInfo)),
+            Width = width,
+            Height = -height,     // 负数 = 自上而下
+            Planes = 1,
+            BitCount = 32,
+            Compression = 0
+        };
+
+        IntPtr screen = GetDC(IntPtr.Zero);
+        try
+        {
+            _sharedDc = CreateCompatibleDC(screen);
+            _sharedDib = CreateDIBSection(screen, ref bmi, 0, out var bits, IntPtr.Zero, 0);
+            _sharedBits = bits;
+        }
+        finally
+        {
+            ReleaseDC(IntPtr.Zero, screen);
+        }
+
+        if (_sharedDc == IntPtr.Zero || _sharedDib == IntPtr.Zero)
+        {
+            ReleaseSharedSurface();
+            return false;
+        }
+
+        _sharedPrevious = SelectObject(_sharedDc, _sharedDib);
+        if (_sharedPrevious == IntPtr.Zero || _sharedPrevious == new IntPtr(-1))
+        {
+            ReleaseSharedSurface();
+            return false;
+        }
+
+        _sharedWidth = width;
+        _sharedHeight = height;
+        if (_frameSource is not null) _frameSource.InvalidateDestination();
+        return true;
+    }
+
+    static void ReleaseSharedSurface()
+    {
+        if (_sharedPrevious != IntPtr.Zero && _sharedDc != IntPtr.Zero)
+        {
+            SelectObject(_sharedDc, _sharedPrevious);
+            _sharedPrevious = IntPtr.Zero;
+        }
+
+        if (_sharedDib != IntPtr.Zero) { DeleteObject(_sharedDib); _sharedDib = IntPtr.Zero; }
+        if (_sharedDc != IntPtr.Zero) { DeleteDC(_sharedDc); _sharedDc = IntPtr.Zero; }
+        _sharedBits = IntPtr.Zero;
+        _sharedWidth = 0;
+        _sharedHeight = 0;
+        if (_frameSource is not null) _frameSource.InvalidateDestination();
+    }
+
+    // ==================== 保险 ====================
+
+    /// <summary>
+    /// 这一块取样是不是全黑。G-11 起只用于日志 / 诊断描述（画面确实全黑时附在降级原因里），
+    /// 不再单独作为「读不到屏幕」的判据——采集层是否失败见 <see cref="CaptureAll"/> 的 captureFailed。
+    /// </summary>
+    static bool IsBlackFrame(byte[] buffer, int w, int h)
+    {
+        if (w * h == 0) return true;
+
+        long sum = 0;
+        for (int i = 0; i + 2 < buffer.Length; i += 4)
+            sum += (buffer[i] + 2 * buffer[i + 1] + buffer[i + 2]) / 4;
+
+        return sum / (w * h) <= 2;
+    }
+
+    // ==================== 诊断 ====================
+
+    static bool? _diagnose;
+
+    static bool Diagnose
+    {
+        get
+        {
+            if (!_diagnose.HasValue)
+            {
+                string value = Environment.GetEnvironmentVariable("MIRRORPOND_GLASS_DEBUG");
+                _diagnose = value == "1" || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
+            }
+            return _diagnose.Value;
+        }
+    }
+
+    static DateTime _lastReport = DateTime.MinValue;
+
+    static void LogSample(byte[] buffer, int w, int h)
+    {
+        if ((DateTime.UtcNow - _lastReport).TotalSeconds < 5) return;
+        _lastReport = DateTime.UtcNow;
+
+        long sum = 0;
+        int max = 0;
+        for (int i = 0; i + 2 < buffer.Length; i += 4)
+        {
+            int luma = (buffer[i] + 2 * buffer[i + 1] + buffer[i + 2]) / 4;
+            sum += luma;
+            if (luma > max) max = luma;
+        }
+
+        int count = w * h;
+        Log.Info($"玻璃取样 {w}x{h}：平均亮度 {(count == 0 ? 0 : sum / count)}，最亮 {max}，模糊半径 {_blurRadius}px（半分辨率）");
+    }
+
+    // ==================== 逐帧追踪 ====================
+    // MIRRORPOND_GLASS_TRACE=1：每画一帧记一条「GLASS + 时间 + CAP + 尺寸 + 平均亮度」，
+    // 仓库外的对比脚本（未提交）靠它算「屏幕上换了窗口 → 玻璃上的画面多久跟着变」。
+    // 统一写到主日志（mirrorpond.log，由 Log 轮转），不再另写临时 trace 文件：
+    // 审阅 §7.2 指出两套输出互不相干，排障时很难把 CAP 与 RAWB / 其他日志对齐。
+    // 需要时从主日志筛 "GLASS " 行即可。
+
+    static bool? _trace;
+
+    static bool Trace
+    {
+        get
+        {
+            if (!_trace.HasValue)
+            {
+                string value = Environment.GetEnvironmentVariable("MIRRORPOND_GLASS_TRACE");
+                _trace = value == "1" || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
+            }
+            return _trace.Value;
+        }
+    }
+
+    static void TraceFrame(byte[] buffer, int w, int h)
+    {
+        if (!Trace || buffer is null) return;
+
+        long sum = 0;
+        int count = 0;
+        for (int i = 0; i + 2 < buffer.Length; i += 16)
+        {
+            sum += (buffer[i] + 2 * buffer[i + 1] + buffer[i + 2]) / 4;
+            count++;
+        }
+
+        Log.Info($"GLASS {DateTime.Now:HH:mm:ss.fff} CAP {w}x{h} luma={(count == 0 ? 0 : sum / count)}");
+    }
+
+    static bool? _rawTrace;
+
+    static bool DiagnoseRaw
+    {
+        get
+        {
+            if (!_rawTrace.HasValue)
+            {
+                string value = Environment.GetEnvironmentVariable("MIRRORPOND_RAW_TRACE");
+                _rawTrace = value == "1" || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
+            }
+            return _rawTrace.Value;
+        }
+    }
+
+    static void TraceBands(double readMs, int width, int height, bool fromDuplication)
+    {
+        if (_sharedBits == IntPtr.Zero) return;
+
+        const int Bands = 8;
+        int bandHeight = height / Bands;
+        if (bandHeight < 1) return;
+
+        var bytes = new byte[width * height * 4];
+        Marshal.Copy(_sharedBits, bytes, 0, bytes.Length);
+
+        var trace = new System.Text.StringBuilder();
+        trace.Append("RAWB ").Append(DateTime.Now.ToString("HH:mm:ss.fff"))
+             .Append(' ').Append(fromDuplication ? "src=dup" : "src=gdi")
+             .Append(" read=").Append(readMs.ToString("F1"));
+
+        for (int b = 0; b < Bands; b++)
+        {
+            long total = 0;
+            int count = 0;
+            for (int y = b * bandHeight; y < (b + 1) * bandHeight; y++)
+            {
+                int row = y * width * 4;
+                for (int x = 0; x < width; x += 4)
+                {
+                    int p = row + x * 4;
+                    total += bytes[p] + 2 * bytes[p + 1] + bytes[p + 2];
+                    count++;
+                }
+            }
+            trace.Append(' ').Append(count == 0 ? "0" : (total / (4 * count)).ToString());
+        }
+
+        Log.Info(trace.ToString());
+    }
+
+    // ==================== interop ====================
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct BitmapInfo
+    {
+        public int Size;
+        public int Width;
+        public int Height;
+        public short Planes;
+        public short BitCount;
+        public int Compression;
+        public int SizeImage;
+        public int XPelsPerMeter;
+        public int YPelsPerMeter;
+        public int ClrUsed;
+        public int ClrImportant;
+    }
+
+    delegate bool EnumWindowsDelegate(IntPtr hwnd, IntPtr param);
+
+    [DllImport("user32.dll")]
+    static extern bool EnumWindows(EnumWindowsDelegate callback, IntPtr param);
+
+    [DllImport("user32.dll")]
+    static extern IntPtr GetWindow(IntPtr hwnd, int command);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    static extern int SetWindowDisplayAffinity(IntPtr hwnd, uint affinity);
+
+    [DllImport("user32.dll")]
+    static extern int GetSystemMetrics(int index);
+
+    [DllImport("user32.dll")]
+    static extern IntPtr GetDC(IntPtr hwnd);
+
+    [DllImport("user32.dll")]
+    static extern int ReleaseDC(IntPtr hwnd, IntPtr hdc);
+
+    [DllImport("gdi32.dll")]
+    static extern IntPtr CreateCompatibleDC(IntPtr hdc);
+
+    [DllImport("gdi32.dll")]
+    static extern bool DeleteDC(IntPtr hdc);
+
+    [DllImport("gdi32.dll")]
+    static extern bool DeleteObject(IntPtr obj);
+
+    [DllImport("gdi32.dll")]
+    static extern IntPtr CreateDIBSection(IntPtr hdc, ref BitmapInfo bmi, uint usage,
+                                          out IntPtr bits, IntPtr section, uint offset);
+
+    [DllImport("gdi32.dll")]
+    static extern IntPtr SelectObject(IntPtr hdc, IntPtr obj);
+
+    [DllImport("gdi32.dll")]
+    static extern int SetStretchBltMode(IntPtr hdc, int mode);
+
+    [DllImport("gdi32.dll")]
+    static extern bool StretchBlt(IntPtr destination, int destinationX, int destinationY,
+                                  int destinationWidth, int destinationHeight,
+                                  IntPtr source, int sourceX, int sourceY, int sourceWidth,
+                                  int sourceHeight, uint operation);
+
+    [DllImport("gdi32.dll", SetLastError = true)]
+    static extern bool BitBlt(IntPtr destination, int destinationX, int destinationY,
+                              int width, int height, IntPtr source, int sourceX, int sourceY,
+                              uint operation);
 }

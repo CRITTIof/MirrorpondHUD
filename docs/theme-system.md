@@ -9,7 +9,7 @@
 
 | 位置 | 内容 | 问题 |
 |---|---|---|
-| `settings.json` → `Style` | 25 个字段：字体、字号、加粗、前景 / 背景色、不透明度、内边距、行高、对齐、描边、背景图、固定宽度、卡片对齐、图标倍率、毛玻璃 4 项 | 外观和材质混在一起；没法整体导出 / 分享 |
+| `settings.json` → `Style` | 字体、字号、加粗、前景 / 背景色、不透明度、内边距、行高、对齐、描边、背景图、固定宽度、卡片对齐、图标倍率、毛玻璃 5 项 | 外观和材质混在一起；没法整体导出 / 分享 |
 | `settings.json` → `Overlay` | `CornerRadius`、`Shadow` | 圆角是外观，却不在 `Style` 里 |
 | `settings.json` → `Cli` | `MaxWidth / MaxHeight / EntryMaxHeight / MaxEntries` | 面板尺寸属于主题的一部分 |
 | `src/Ui/Theme.xaml` | 设置页自己的色板（`Accent`、`WindowBg`、`CardBg`、`BorderSoft`、`TextPrimary`、`TextSecondary`、`Danger`） | 与卡片外观无关，但换肤时容易漏掉 |
@@ -48,11 +48,13 @@
   "description": "深蓝底 + 冷白字，滑块更淡，适合深色壁纸",
   "appearance": {
     "colors": {
-      "foreground": "#E6EDF3",
+      "foreground": "#FFFFFF",
       "background": "#0D1117",
       "backgroundOpacity": 0.86,
       "accent": "#4C8DFF",
       "danger": "#E57B6E",
+      "success": "#3FA34D",
+      "warning": "#D9A400",
       "muted": 0.45,
       "border": 0.12,
       "panel": 0.045,
@@ -83,6 +85,24 @@
       "maxHeight": 420,
       "entryMaxHeight": 140,
       "maxEntries": 12
+    },
+    "industrial": {
+      "monoReadouts": true,
+      "decoration": "Grid"
+    },
+    "motion": {
+      "profile": "Industrial",
+      "textEffect": "Particle",
+      "textParticleSize": 2.2,
+      "textParticleCount": 900,
+      "textParticleSpeed": 1.0,
+      "textParticleNearest": true,
+      "textParticleGeometry": false,
+      "effect": "Scanline",
+      "loop": true,
+      "durationMs": 2600,
+      "amplitude": 0.10,
+      "speed": 1.0
     }
   }
 }
@@ -94,28 +114,55 @@
 |---|---|---|
 | `colors.foreground` / `background` / `backgroundOpacity` | `Style.Foreground` / `Background` / `BackgroundOpacity` | 现有字段 |
 | `colors.accent` / `danger` | **新增** `Style.Accent` / `Style.Danger` | 现在 `#2F6FEB` 只在设置页、`#E57B6E` 硬编码在状态行 |
+| `colors.success` / `warning` | `Style.Success` / `Style.Warning` | 2.30.0 新增；空 / 不写 = 旧派生值（成功=强调色，警告=前景 0.9） |
 | `colors.muted` / `border` / `panel` / `scrollbar` / `scrollbarHot` | **新增** `Style.Muted` / `Border` / `Panel` / `Scrollbar` / `ScrollbarHot` | 把 `CliUi.cs`、`CardTextBox.cs`、`ChatCard.cs` 里的 0.45 / 0.10 / 0.045 / 0.18 / 0.40 变成可配；不填则按默认透明度推导 |
-| `typography.fontFamily` / `fontSize` / `bold` / `iconScale` / `lineHeight` / `textAlign` | `Style.*` | 现有字段；`iconScale` 的语义在 2.4.5 改为「1.0 = 图标与文字等高」 |
+| `typography.fontFamily` / `fontSize` / `bold` / `iconScale` / `lineHeight` / `textAlign` | `Style.*` | 现有字段；`iconScale` 的语义在 2.4.5 改为「1.0 = 图标与文字等高」；2.33.0 起 `textAlign` 还接受 `Card`（跟随卡片对齐方式） |
 | `typography.monoFont` | **新增** `Style.MonoFont` | 现在是 `CliPanelView` 里的常量 |
 | `shape.cornerRadius` / `shadow` | `Overlay.CornerRadius` / `Overlay.Shadow` | 现有字段，属于外观 |
 | `shape.padding` | `Style.Padding` | 现有字段 |
 | `outline.*` | `Style.TextOutline` / `OutlineColor` / `OutlineThickness` | 现有字段 |
 | `cliPanel.*` | `Cli.*` | 2.4.5 新增的四个字段 |
+| `appearance.industrial.monoReadouts` | `Style.MonoReadouts` | 2.30.0；读数数字串用 `monoFont`，默认 false |
+| `appearance.industrial.decoration` | `Style.Decoration` | 2.30.0；`None` / `Grid` / `Scanline` / `Hatch` / `Halftone` / `Contour`，默认 `None` |
+| `appearance.industrial.decorationDensity` | `Style.DecorationDensity` | 2.32.0；0–2，0.5 = 原间距；非等高线纹样 |
+| `appearance.industrial.contourLevels` | `Style.ContourLevels` | 2.32.0；3–48，默认 12 |
+| `appearance.industrial.contourEvening` | `Style.ContourEvening` | 2.32.0；0–1，默认 0.72 |
+| `appearance.industrial.contourRelief` | `Style.ContourRelief` | 2.32.0；0.2–4.0，默认 1.0 |
+| `appearance.industrial.contourSmooth` | `Style.ContourSmooth` | 2.32.0；0–6，默认 2 |
+| `appearance.industrial.contourMinLoopArea` | `Style.ContourMinLoopArea` | 2.32.0；0–5000，默认 26 |
+| `appearance.motion.profile` | `Style.MotionProfile` | 2.31.0；`Current` / `Cut` / `Industrial` / `Off`，默认 `Current` |
+| `appearance.motion.textEffect` | `Style.TextEffect` | 2.42.0；`None` / `Particle`，仅信息与文本卡；默认 `None` |
+| `appearance.motion.textParticleSize` | `Style.TextParticleSize` | 2.43.0；0.8–4.0，默认 2.2 |
+| `appearance.motion.textParticleCount` | `Style.TextParticleCount` | 2.43.0；200–3000，默认 900 |
+| `appearance.motion.textParticleSpeed` | `Style.TextParticleSpeed` | 2.43.0；0.2–4.0，默认 1.0 |
+| `appearance.motion.textParticleNearest` | `Style.TextParticleNearest` | 2.43.0；默认 true |
+| `appearance.motion.textParticleGeometry` | `Style.TextParticleGeometry` | 2.43.0；默认 false |
+| `appearance.motion.loop` | `Style.LoopMotion` | 2.31.0；旧布尔兼容字段，由 `effect` 派生 |
+| `appearance.motion.effect` | `Style.LoopEffect` | 2.31.0；`None` / `Breath` / `Scanline` / `Pulse` |
+| `appearance.motion.durationMs` | `Style.LoopDurationMs` | 2.31.0；600–20000，默认 2600 |
+| `appearance.motion.amplitude` | `Style.LoopAmplitude` | 2.31.0；0.02–0.8，默认 0.10 |
+| `appearance.motion.speed` | `Style.ContourSpeed` | 2.32.0；仅 Contour 原地形变，0.1–4.0，默认 1.0 |
 
-**故意不放进主题**：`Acrylic` / `GlassMode` / `GlassSource` / `GlassBlur` / `GlassFps`、卡片列表与内容、位置与显示器、
+**故意不放进主题**：`Acrylic` / `GlassMode` / `GlassSource` / `BlurRadius` / `BlurFps`、卡片列表与内容、位置与显示器、
 热键、`Behavior`（刷新率 / 启动动画）、`Data`、API Key。理由见开头：这些是能力与布署参数，不是外观；混进来会让
-「套用主题」意外改掉性能与取图行为。
+「套用主题」意外改掉性能与取图行为。2.24.0（Schema 7）起原来的 `AcrylicBlur` / `AcrylicFps` / `GlassBlur` /
+`GlassFps` 两套模糊字段已合并为 `BlurRadius`（0–60，默认 18）/ `BlurFps`（2–30，默认 10），兼容实现与桌面取样共用；
+`settings.json` 里形如 `"Acrylic": true, "GlassMode": "DesktopFeed", "BlurRadius": 18, "BlurFps": 10`。
 
 ## 4. 加载、生效与回滚
 
 ```
 选择 .mptheme ──► 读取 + 解析 JSON ──► schema 校验（只认 1，更高版本直接拒绝）
-                ──► 逐字段校验（颜色 #RRGGBB / #AARRGGBB，数值范围与 Settings.Normalize 一致）
+                ──► 逐字段校验（`foreground` / `background` 严格 7 位 `#RRGGBB`，
+                透明度必须用 `backgroundOpacity` 表达；`accent` / `danger` / `success` / `warning`
+                与软色仍接受 `#RRGGBB` / `#AARRGGBB`；数值范围与 Settings.Normalize 一致）
                 ──► Clone 当前 Settings → 只覆盖 appearance 映射到的字段 → Normalize()
                 ──► 应用到所有卡片窗口（与「保存并应用」同一条路径）
                 ──► 失败：不改任何内存 / 磁盘状态，弹一行原因
 ```
 
+- **毛玻璃不参与主题校验**：`BlurRadius` / `BlurFps` 不属于 `.mptheme` 字段，由 `settings.json` 直接保存；
+  `Settings.Normalize` 把它们分别夹紧到 0–60 / 2–30，主题导入只覆盖上表 appearance 映射到的字段，不会碰这两个值；
 - **导入**：菜单「外观 → 导入主题…」，文件对话框限 `*.mptheme;*.json`；
 - **导出**：把当前 `Style` / `Overlay.CornerRadius` / `Overlay.Shadow` / `Cli` 写成一个 `.mptheme`（颜色用当前值），
   这样「调好一套再另存为主题」是零学习成本的；
@@ -163,7 +210,7 @@
 
 用户明确要求「不把已有亚克力毛玻璃当作主题」，这条在技术上也是对的：
 
-- 毛玻璃是**取图 + 模糊**的实现选择（DWM 底板 / DXGI 桌面复制 / GDI 读屏 / 兼容 PrintWindow），2.4.4 实测 4 张卡在
+- 毛玻璃是**取图 + 模糊**的实现选择（`System` 系统亚克力底板 / `DesktopFeed` 桌面取样（DXGI 或 GDI）/ `Compat` PrintWindow），2.4.4 实测 4 张卡在
   10 帧/秒下约占单核 6–8%；把它塞进主题文件，等于「换个配色顺手把 CPU 开销也换了」；
 - 桌面亚克力还会把卡片**排除在截屏之外**（截图 / 录像里看不到卡片），这是隐私与录制行为，不该由外观文件决定；
 - 同一套配色在「无背景 / 纯色 / 毛玻璃 / 背景图」四种材质下都应该成立，所以主题只描述颜色与几何，材质单独在设置里选。

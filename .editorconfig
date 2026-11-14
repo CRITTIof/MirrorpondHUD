@@ -1,0 +1,51 @@
+root = true
+
+# 只锁定编码 / 行尾 / 缩进，不启用 IDE 诊断以外的分析器。
+# Nullable、ImplicitUsings、DTO 形状与 P/Invoke 布局仍由 AGENTS.md 的硬约束控制。
+[*]
+charset = utf-8
+end_of_line = crlf
+indent_style = space
+indent_size = 4
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{cs,csproj,xaml}]
+indent_size = 4
+
+[*.{json,mptheme}]
+indent_size = 2
+
+[*.md]
+end_of_line = lf
+trim_trailing_whitespace = false
+
+[src/Contracts/Core/LucideIcons.cs]
+# 6,900 行图标码位静态表：不参与格式化，避免每次工具变更产生整文件重排。
+generated_code = true
+
+[*.cs]
+# 现代化风格（B 批次的机械项）；只作为 dotnet format 的输入，不提升为构建错误。
+csharp_style_namespace_declarations = file_scoped:warning
+dotnet_diagnostic.IDE0161.severity = warning
+
+csharp_style_expression_bodied_properties = true:when_on_single_line
+dotnet_diagnostic.IDE0025.severity = warning
+
+csharp_style_expression_bodied_accessors = true:when_on_single_line
+dotnet_diagnostic.IDE0027.severity = warning
+
+csharp_style_expression_bodied_methods = true:warning
+dotnet_diagnostic.IDE0022.severity = warning
+
+csharp_style_implicit_object_creation_when_type_is_apparent = true:warning
+# X-6：启用 EnforceCodeStyleInBuild 后 IDE0090 命中 18 处既有显式 new。
+# 本仓库的 DTO / 互操作代码有意保留显式类型（可读性 + AGENTS §9 禁止顺手批量重排），
+# 所以该规则只交给 dotnet format，不进构建门禁；其余 IDE 规则仍按 warning 参与编译。
+dotnet_diagnostic.IDE0090.severity = suggestion
+
+csharp_style_inlined_variable_declaration = true:warning
+dotnet_diagnostic.IDE0018.severity = warning
+
+dotnet_style_prefer_simplified_interpolation = true:warning
+dotnet_diagnostic.IDE0071.severity = warning

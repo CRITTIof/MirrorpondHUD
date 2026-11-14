@@ -1,4 +1,4 @@
-# DLL 卡片插件开发指南（2.21.0+）
+﻿# DLL 卡片插件开发指南（2.24.0+）
 
 本文面向要在 MirrorpondHUD 里添加**运行时卡片插件**的开发者。插件是一个独立的 .NET 8 WPF 类库（DLL），
 通过 `plugins/cards/<id>/manifest.json` 被宿主加载，可以贡献文字卡或富内容卡，并复用宿主的设置页、
@@ -13,6 +13,10 @@
 >
 > **2.16.0 起，6 张内置卡片本身就是 DLL 插件**（`src/Plugins/*`，manifest id `builtin.*`），宿主不再内置任何
 > `ICardModule`；你的用户插件和内置插件走同一条加载路径、同一套契约与宿主服务。
+>
+> **示例工程**：`samples/RuntimeCardExample`（最小文字卡）与 `samples/UiKitGallery`
+> （27 个 UiKit 控件类的画廊，用来验证公共控件 API；都不并入宿主构建）。
+
 
 ---
 
@@ -144,6 +148,7 @@
   "name": "My Card",
   "version": "1.0.0",
   "apiVersion": 2,
+  "contractsVersion": "2.45.1",
   "entryType": "MyCard.MyCardModule",
   "assembly": "MyCard.dll",
   "author": "example"
@@ -157,6 +162,7 @@
 | `id` | 稳定插件 id，≤100 字符，只允许字母数字与 `.` `-` `_` |
 | `name` / `version` | 展示与排错用 |
 | `apiVersion` | 必须是 **2** |
+| `contractsVersion` | 插件编译时引用的 Contracts 版本（如 `2.45.1`）。缺失视为当前版本；高于宿主时拒绝加载并 Warn，低于宿主时允许但 Warn |
 | `entryType` | 入口类型全名，必须实现 `ICardModule`，public 无参构造 |
 | `assembly` | 裸 DLL 文件名，不能带路径 |
 | `author` | 可选展示信息 |
@@ -183,21 +189,18 @@
 using MirrorpondHUD.Cards;
 using MirrorpondHUD.Core;
 
-namespace MyCard
-{
-    public sealed class MyCardModule : CardModuleBase
-    {
-        public override string Kind { get { return "my-card"; } }
-        public override string DisplayName { get { return "我的卡片"; } }
-        public override string Icon { get { return "\uE100"; } }
-        public override string DefaultContent { get { return "CPU {cpu:0.0}%"; } }
-        public override int RefreshIntervalMs(CardSettings config) { return 1000; }
+namespace MyCard;
 
-        public override string Render(CardRenderContext context)
-        {
-            return "CPU " + context.Snapshot.CpuPercent.ToString("0.0") + "%";
-        }
-    }
+public sealed class MyCardModule : CardModuleBase
+{
+    public override string Kind => "my-card";
+    public override string DisplayName => "我的卡片";
+    public override string Icon => "\uE100";
+    public override string DefaultContent => "CPU {cpu:0.0}%";
+    public override int RefreshIntervalMs(CardSettings config) => 1000;
+
+    public override string Render(CardRenderContext context)
+        => $"CPU {context.Snapshot.CpuPercent:0.0}%";
 }
 ```
 
@@ -225,7 +228,7 @@ namespace MyCard
 
 ### 3.2 图标
 
-`Icon` 使用 ReiconFont 码位，推荐直接引用 `MirrorpondHUD.Core.Icons`：
+`Icon` 使用 Lucide 码位（2.26.0 起设置页与卡片模块图标统一 Lucide），推荐直接引用 `MirrorpondHUD.Core.Icons`。
 
 | 常量 | 用途 | 常量 | 用途 |
 |---|---|---|---|
@@ -235,7 +238,7 @@ namespace MyCard
 | `Icons.Agent` | AI / 对话 | `Icons.Volume` / `Icons.Microphone` | 音频 |
 | `Icons.Add` / `Icons.Search` / `Icons.Trash` / `Icons.Move` | 操作 | `Icons.Video` / `Icons.Clock` / `Icons.Play` / `Icons.PauseMedia` | 媒体 |
 
-也可以直接写任意 ReiconFont 码位（`""` 等）；不要用普通 Unicode emoji，宿主卡片字体里没有对应字形时会变成方框。
+也可以直接写任意 Lucide 码位（推荐用 `LucideIcons` 里的常量，或 `LucideIcons.Get("cpu")` 查询）；不要用普通 Unicode emoji，宿主卡片字体里没有对应字形时会变成方框。键帽仍由 Reicon 专门绘制，不要用 Reicon 图标码位充当卡片图标。
 
 ---
 
@@ -246,24 +249,23 @@ using System.Windows;
 using MirrorpondHUD.Cards;
 using MirrorpondHUD.Core;
 
-namespace MyCard
-{
-    public sealed class MyRichCard : RichCardModuleBase
-    {
-        public override string Kind { get { return "my-rich-card"; } }
-        public override string DisplayName { get { return "我的富卡片"; } }
-        public override string Icon { get { return "\uE106"; } }
-        public override bool NeedsMouseInput { get { return true; } }
+namespace MyCard;
 
-        public override FrameworkElement CreateContent(CardRenderContext context)
+public sealed class MyRichCard : RichCardModuleBase
+{
+    public override string Kind => "my-rich-card";
+    public override string DisplayName => "我的富卡片";
+    public override string Icon => "\uE106";
+    public override bool NeedsMouseInput => true;
+
+    public override FrameworkElement CreateContent(CardRenderContext context)
+    {
+        var panel = new System.Windows.Controls.StackPanel();
+        panel.Children.Add(new System.Windows.Controls.TextBlock
         {
-            var panel = new System.Windows.Controls.StackPanel();
-            panel.Children.Add(new System.Windows.Controls.TextBlock
-            {
-                Text = "CPU " + context.Snapshot.CpuPercent.ToString("0.0") + "%"
-            });
-            return panel;
-        }
+            Text = $"CPU {context.Snapshot.CpuPercent:0.0}%"
+        });
+        return panel;
     }
 }
 ```
@@ -885,7 +887,7 @@ var text = new TextBlock
 - `FontFamily`：宿主内嵌字体，插件无需复制 TTF。
 
 图标字体只负责“字形”；大小用 `FontSize` / `CardIcon.Size`，颜色用 `Foreground`（`CardIcon.ApplyStyle` 自动取卡片前景色）。
-ReiconFont 仍保留给键帽 / 现有设置页图标；新卡片图标优先 Lucide。
+Lucide 负责全部卡片 / 设置页图标；ReiconFont 只保留键帽字形（U+E000–U+E056），不再用于新图标。
 
 
 ![Lucide 图标示例](docs/lucide-icons.png)
@@ -901,34 +903,33 @@ ReiconFont 仍保留给键帽 / 现有设置页图标；新卡片图标优先 Lu
 | `ICardEditorCommit` | 插件 → 宿主 | 设置区块里的“失焦才提交”草稿（如 API Key 输入框）；宿主点确定前调用 `CommitPendingEdits()` |
 | `ICardScreenshotProvider` | 插件 → 宿主 | 文档截图前把富内容切到可离屏渲染的状态（如视频卡画第一帧封面） |
 | `ICardPresetSource` + `CardPreset` | 插件 → 宿主 | 通用预设下拉（信息与文本卡的四个预设）；宿主设置页不再认识具体卡片 |
+| `ICardDefaultProvider` | 插件 → 宿主 | 2.29.0：模块自报“全新配置里的默认卡片”；不实现就不进默认配置 |
 | `ICardRuntimeSettingsMerge` | 插件 → 宿主 | 卡片有绕过设置窗直接写 live settings 的运行时字段（对话模式）时，保存前做三方合并 |
 | `ICardSelfTest` | 插件 → 宿主 | 插件自带回归；`--selftest` 会逐个调用，返回 null / 空串表示通过 |
 
 ```csharp
-public sealed class MyCard : RichCardModuleBase, ICardHostAware, ICardSelfTest, ICardPresetSource
+public sealed class MyCard : RichCardModuleBase, ICardSelfTest, ICardPresetSource
 {
-    ICardHost _host;
+    public override FrameworkElement CreateContent(CardRenderContext context)
+    {
+        // 富内容控件自己保存 host；模块是单例，不能把 host 存进模块字段。
+        return new MyCardView(context.Host);
+    }
 
-    public void Attach(ICardHost host) { _host = host; }
-    public void Detach(ICardHost host) { _host = null; }
+    // 运行期改了 Extras 需要落盘时：bool saved = context.Host.SaveSettings();
+    // 宿主服务（剪贴板 / 图标 / 拖出 / 打开）：context.Host.Shell.TryGetClipboardFiles(out var paths);
 
-    // 运行期改了 Extras 需要落盘时：bool saved = _host.SaveSettings();
-    // 宿主服务（剪贴板 / 图标 / 拖出 / 打开）：_host.Shell.TryGetClipboardFiles(out var paths);
-
-    public string RunSelfTest() => null;   // 返回失败说明字符串即视为失败
+    public string RunSelfTest() { return null; }   // 返回失败说明字符串即视为失败
 }
 ```
 
-模块实现 `ICardHostAware` 可在建卡时拿到 `ICardHost`：
+新插件拿 `ICardHost` 的正确方式是 `CreateContent(CardRenderContext)` 里的 `context.Host`：它和当前这张卡
+一一对应，`UpdateContent` / `OnVisibilityChanged` 也能从内容控件拿到同一份宿主服务。
 
-```csharp
-public void Attach(ICardHost host)
-{
-    // 不要存进单例字段；存进当前内容控件或状态文件
-}
-
-public void Detach(ICardHost host) { }
-```
+**2.29.0 起 `ICardHostAware` 已删除**：模块是单例、Attach 不携带卡片标识，同种卡有多张时无法知道
+host 属于哪一张，这个扩展点只会被写错。需要宿主服务的插件一律用 `context.Host`，并把它交给当前这张卡
+的内容控件（每个内容控件一份）；不要存进模块字段。旧插件若实现了 `ICardHostAware`，升级到本版本后
+需要删掉该接口与 `Attach` / `Detach` 方法，改为从 `context.Host` 取。
 
 `ICardHost`：
 
@@ -946,9 +947,7 @@ public void Detach(ICardHost host) { }
 public sealed class MyCard : CardModuleBase, ICardHotkeySource, ICardHotkeyTarget
 {
     public IList<CardHotkeyAction> HotkeyActions
-    {
-        get { return new List<CardHotkeyAction> { new CardHotkeyAction("my.refresh", "刷新", "Ctrl+Alt+R") }; }
-    }
+        => new List<CardHotkeyAction> { new CardHotkeyAction("my.refresh", "刷新", "Ctrl+Alt+R") };
 
     public void ExecuteHotkey(string action, FrameworkElement content) { /* ... */ }
 }
@@ -982,12 +981,14 @@ CLI 面板可实现 `IClifFocusTarget`（`CliPanelView` 已实现）。
 
 - 模块实例是**单例**，一张卡的富内容控件按卡片分别创建；不要把某张卡的 `ICardHost` /
   `CardSettings` / 控件存进模块字段；
-- `ICardHostAware.Attach(host)` 在卡片创建 / 应用设置时调用，`Detach(host)` 在删卡 / 退出时调用；
+- 新插件优先在 `CreateContent` 里用 `context.Host` 拿宿主服务；2.29.0 起不再有
+  `ICardHostAware.Attach / Detach`，宿主服务只跟着内容控件走；
 - 富内容控件实现 `IDisposable` 时，卡片销毁会调用 `Dispose()`；`OnVisibilityChanged(content, false)`
   适合暂停视频 / 动图 / 轮询；
 - `ICardHost.RequestRender()` / `RequestLayout()` 通知宿主数据或尺寸变化；
 - 退出时宿主先调用 `ICardModuleLifetime.OnPluginUnloading()`，再请求卸载可收集 ALC。这里必须停掉
-  自己的线程 / 定时器、注销静态事件、释放文件句柄；否则 ALC 可能延迟回收；
+  自己的线程 / 定时器、注销静态事件、释放文件句柄；否则 ALC 可能延迟回收。内置卡没有常驻线程，
+  都不实现这个接口；它是给需要自己持有资源的第三方插件保留的稳定扩展点；
 - 插件的 `Content` / `Extras` / 状态文件在重启后继续有效；不会因为插件缺失被宿主改写。
 
 更新插件的推荐步骤：
@@ -1195,13 +1196,9 @@ public interface ICardModuleLifetime
 
 ### 12.6 宿主服务
 
-```csharp
-public interface ICardHostAware
-{
-    void Attach(ICardHost host);
-    void Detach(ICardHost host);
-}
+`ICardHostAware` 已于 2.29.0 删除；通过 `CardRenderContext.Host` 获取宿主服务，见 §7。
 
+```csharp
 public interface ICardHost
 {
     CardSettings Config { get; }
@@ -1276,6 +1273,11 @@ public interface ICardPresetSource
     IList<CardPreset> Presets { get; }
     string CurrentPreset(CardSettings config);
     void ApplyPreset(CardSettings config, string presetId);
+}
+public interface ICardDefaultProvider
+{
+    int DefaultOrder { get; }                 // 整叠里的顺序，小的在前
+    IList<CardSettings> CreateDefaults();     // 宿主补 Id / Extras / 名称兜底
 }
 
 public interface ICardScreenshotProvider
@@ -1368,6 +1370,7 @@ MyCard/
   "name": "我的卡片",
   "version": "1.0.0",
   "apiVersion": 2,
+  "contractsVersion": "2.45.1",
   "entryType": "MyCard.MyCardModule",
   "assembly": "MyCard.dll",
   "author": "example"
@@ -1380,21 +1383,18 @@ MyCard/
 using MirrorpondHUD.Cards;
 using MirrorpondHUD.Core;
 
-namespace MyCard
-{
-    public sealed class MyCardModule : CardModuleBase
-    {
-        public override string Kind { get { return "my-card"; } }
-        public override string DisplayName { get { return "我的卡片"; } }
-        public override string Icon { get { return Icons.Txt; } }
-        public override string DefaultContent { get { return "CPU {cpu:0.0}%"; } }
-        public override int Order { get { return 40; } }
+namespace MyCard;
 
-        public override string Render(CardRenderContext context)
-        {
-            return context.RenderOrDefault(DefaultContent);
-        }
-    }
+public sealed class MyCardModule : CardModuleBase
+{
+    public override string Kind => "my-card";
+    public override string DisplayName => "我的卡片";
+    public override string Icon => Icons.Txt;
+    public override string DefaultContent => "CPU {cpu:0.0}%";
+    public override int Order => 40;
+
+    public override string Render(CardRenderContext context)
+        => context.RenderOrDefault(DefaultContent);
 }
 ```
 
@@ -1417,3 +1417,15 @@ copy MyCard\manifest.json <MirrorpondHUD>\plugins\cards\com.example.my-card\
 然后在「设置 → 内容 → 添加卡片」里添加「我的卡片」。
 
 > 没有热重载：改完代码重新 build → 覆盖插件目录 → 重启宿主。
+
+---
+
+## 已知限制：Extras 与 ALC
+
+P-6（2.44.2 审阅）确认：`CardSettings.Extras` 在运行期会缓存插件的强类型设置对象，
+因此插件 `AssemblyLoadContext` 在进程退出时**不一定能回收**。这是已知取舍，不是泄漏：
+
+- 宿主退出时只报告“上下文按预期保留”；只有“上下文已回收但模块仍被引用”才视为异常。
+- 插件不要把需要确定性释放的资源放在 `Extras`；模块级资源请在 `ICardModuleLifetime.OnPluginUnloading`
+  里释放（`Discard` 路径也会调用）。
+- 未来若改为“Extras 只存 JSON 节点”，会作为 `apiVersion` 变更单独发布。

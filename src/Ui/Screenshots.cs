@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -10,553 +11,1218 @@ using MirrorpondHUD.Cards;
 using MirrorpondHUD.Core;
 using MirrorpondHUD.Ui.Controls;
 
-namespace MirrorpondHUD.Ui
+namespace MirrorpondHUD.Ui;
+
+/// <summary>离屏渲染成 PNG，用于自动化验收（--screenshot）。</summary>
+public static class Screenshots
 {
-    /// <summary>离屏渲染成 PNG，用于自动化验收（--screenshot）。</summary>
-    public static class Screenshots
+    /// <summary>
+    /// T-19：截图模式一律只改**演示副本**，绝不污染运行中的配置。
+    ///
+    /// ConfigStore.Load() 返回的对象以前被就地改成演示参数（关投影、拉开间距、关闭 Endfield
+    /// 分支、强制浅色设置页、演示循环粗细行），随后又交给真实的 SettingsWindow 与卡片模块。
+    /// 单进程跑完即退时看不到污染，但一旦截图被复用到"运行中导出预览"，或设置窗的
+    /// "改即应用"路径接上真实落盘，这些演示参数就会写进用户配置，而且没有任何提示。
+    ///
+    /// 深拷贝走 SettingsWindow.TryClone（与设置窗同一个出口：JSON 往返、失败返回 null + 原因），
+    /// 不另写一份手抄字段的 Copy——手抄会漏字段，漏掉的字段还是会被就地改。克隆失败说明
+    /// 设置树本身已不可序列化，此时宁可让截图失败（可见），也不拿原对象凑合。
+    /// </summary>
+    static Settings LoadDemoSettings(string scope)
     {
-        /// <summary>MIRRORPOND_SETTINGS_SCROLL=1：设置页每一页再拍一张「滚到底」的图。</summary>
-        static bool SettingsScrollDemo
+        Settings source = ConfigStore.Load();
+        if (SettingsWindow.TryClone(source, out Settings demo, out string error)) return demo;
+
+        Log.Error($"{scope}: 演示设置深拷贝失败，取消本次截图（不修改实时配置）: {error}");
+        return null;
+    }
+
+    /// <summary>MIRRORPOND_SETTINGS_SCROLL=1：设置页每一页再拍一张「滚到底」的图。</summary>
+    static bool SettingsScrollDemo
+    {
+        get
         {
-            get
-            {
-                string value = Environment.GetEnvironmentVariable("MIRRORPOND_SETTINGS_SCROLL");
-                return value == "1" || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
-            }
+            string value = Environment.GetEnvironmentVariable("MIRRORPOND_SETTINGS_SCROLL");
+            return value == "1" || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
         }
+    }
 
-        static ScrollViewer FindScroller(DependencyObject root)
+    static ScrollViewer FindScroller(DependencyObject root)
+    {
+        if (root is null) return null;
+        var viewer = root as ScrollViewer;
+        if (viewer is not null) return viewer;
+
+        int count = VisualTreeHelper.GetChildrenCount(root);
+        for (int i = 0; i < count; i++)
         {
-            if (root == null) return null;
-            var viewer = root as ScrollViewer;
-            if (viewer != null) return viewer;
-
-            int count = VisualTreeHelper.GetChildrenCount(root);
-            for (int i = 0; i < count; i++)
-            {
-                ScrollViewer found = FindScroller(VisualTreeHelper.GetChild(root, i));
-                if (found != null) return found;
-            }
-            return null;
+            ScrollViewer found = FindScroller(VisualTreeHelper.GetChild(root, i));
+            if (found is not null) return found;
         }
+        return null;
+    }
 
-        /// <summary>MIRRORPOND_CLI_DEMO=1：给 CLI 面板塞两条样张记录（截图验收用）。</summary>
-        static bool CliDemo
+    /// <summary>MIRRORPOND_CLI_DEMO=1：给 CLI 面板塞两条样张记录（截图验收用）。</summary>
+    static bool CliDemo
+    {
+        get
         {
-            get
-            {
-                string value = Environment.GetEnvironmentVariable("MIRRORPOND_CLI_DEMO");
-                return value == "1" || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
-            }
+            string value = Environment.GetEnvironmentVariable("MIRRORPOND_CLI_DEMO");
+            return value == "1" || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
         }
+    }
 
-        public static MetricsSnapshot DemoSnapshot()
+    public static MetricsSnapshot DemoSnapshot()
+    {
+        var snap = new MetricsSnapshot
         {
-            var snap = new MetricsSnapshot
-            {
-                CpuPercent = 23.4,
-                GpuAvailable = true,
-                GpuPercent = 47.8,
-                MemUsedGb = 12.6,
-                MemTotalGb = 31.9,
-                MemPercent = 39.5,
-                DiskPercent = 12.3,
-                DiskReadBps = 42.1 * 1024 * 1024,
-                DiskWriteBps = 3.4 * 1024 * 1024,
-                NetDownBps = 1.8 * 1024 * 1024,
-                NetUpBps = 96 * 1024,
-                NetAdapter = "Realtek Gaming GbE Family Controller"
-            };
+            CpuPercent = 23.4,
+            GpuAvailable = true,
+            GpuPercent = 47.8,
+            MemUsedGb = 12.6,
+            MemTotalGb = 31.9,
+            MemPercent = 39.5,
+            DiskPercent = 12.3,
+            DiskReadBps = 42.1 * 1024 * 1024,
+            DiskWriteBps = 3.4 * 1024 * 1024,
+            NetDownBps = 1.8 * 1024 * 1024,
+            NetUpBps = 96 * 1024,
+            NetAdapter = "Realtek Gaming GbE Family Controller"
+        };
 
-            snap.Drives.Add(new DriveSample { Name = "C:\\", FreeGb = 2725.0, TotalGb = 3815.3 });
-            snap.Drives.Add(new DriveSample { Name = "D:\\", FreeGb = 53.3, TotalGb = 931.5 });
+        snap.Drives.Add(new DriveSample { Name = "C:\\", FreeGb = 2725.0, TotalGb = 3815.3 });
+        snap.Drives.Add(new DriveSample { Name = "D:\\", FreeGb = 53.3, TotalGb = 931.5 });
 
-            snap.Nvidia = new NvidiaSample
-            {
-                Available = true,
-                Name = "NVIDIA GeForce RTX 4060",
-                Utilization = 47.8,
-                VramUsedMb = 2345,
-                VramTotalMb = 8188,
-                TempC = 52,
-                PowerW = 68.4
-            };
-
-            return snap;
-        }
-
-        public static KeyHistory DemoKeys(int visible, int threshold, int maxChars)
+        snap.Nvidia = new NvidiaSample
         {
-            var keys = new KeyHistory();
-            keys.Configure(visible, threshold, maxChars);
-            string[] seq = { "Ctrl", "C", "Ctrl", "V", "A", "A", "A", "A", "A", "A", "Enter" };
-            foreach (string k in seq) keys.Push(k);
-            return keys;
-        }
+            Available = true,
+            Name = "NVIDIA GeForce RTX 4060",
+            Utilization = 47.8,
+            VramUsedMb = 2345,
+            VramTotalMb = 8188,
+            TempC = 52,
+            PowerW = 68.4
+        };
 
-        public static void CaptureCards(string path)
+        return snap;
+    }
+
+    public static KeyHistory DemoKeys(int visible, int threshold, int maxChars)
+    {
+        var keys = new KeyHistory();
+        keys.Configure(visible, threshold, maxChars);
+        string[] seq = { "Ctrl", "C", "Ctrl", "V", "A", "A", "A", "A", "A", "A", "Enter" };
+        foreach (string k in seq) keys.Push(k);
+        return keys;
+    }
+
+    public static bool CaptureCards(string path)
+    {
+        try
         {
-            try
-            {
-                Settings settings = ConfigStore.Load();
-                // 文档截图关掉投影、拉开间距：卡片边缘干净，不会互相压到。
+            Settings settings = LoadDemoSettings("卡片组截图");
+            if (settings is null) return false;
+            // 文档截图关掉投影、拉开间距：卡片边缘干净，不会互相压到。
+            // MIRRORPOND_SHADOW_DEMO=1 时保留投影，用来验收自然投影。
+            if (Environment.GetEnvironmentVariable("MIRRORPOND_SHADOW_DEMO") != "1")
                 settings.Overlay.Shadow = false;
-                MetricsSnapshot snap = DemoSnapshot();
-                KeyHistory keys = DemoKeys(settings.Data.KeyHistoryCount, settings.Data.RepeatThreshold,
-                                           settings.Data.MaxKeyChars);
-
-                var stack = new StackPanel { Orientation = Orientation.Vertical };
-                int count = 0;
-
-                foreach (CardSettings card in settings.Cards)
+            // 验收 M2–M8 关闭分支：全部关掉时应当回到 2.34 的观感，且不留下空白页脚。
+            if (Environment.GetEnvironmentVariable("MIRRORPOND_ENDFIELD_OFF") == "1")
+            {
+                settings.Style.Endfield = new EndfieldStyleSettings
                 {
-                    if (card == null) continue;
+                    Shadow = false,
+                    SelectionBar = false,
+                    Buttons = false,
+                    SegmentProgress = false,
+                    Meta = false,
+                    CornerBrackets = false,
+                    CutCorners = false
+                };
+            }
+            MetricsSnapshot snap = DemoSnapshot();
+            KeyHistory keys = DemoKeys(settings.Data.KeyHistoryCount, settings.Data.RepeatThreshold,
+                                       settings.Data.MaxKeyChars);
 
-                    ICardModule module = CardRegistry.Get(card.Kind);
-                    var surface = new OverlaySurface();
+            var stack = new StackPanel { Orientation = Orientation.Vertical };
+            var surfaces = new List<OverlaySurface>();
+            int count = 0;
 
-                    // 每张卡片外面再包一层来留间距：OverlaySurface.Apply 会重写自己的 Margin（投影留白）。
-                    var cardHost = new Border
-                    {
-                        HorizontalAlignment = HorizontalAlignment.Left,
-                        Margin = new Thickness(0, 0, 0, Math.Max(16, card.Spacing)),
-                        Child = surface
-                    };
+            foreach (CardSettings card in settings.Cards)
+            {
+                if (card is null) continue;
 
-                    var rich = module as IRichCardModule;
-                    if (rich != null)
-                    {
-                        // 图片 / 动图：离屏渲染第一帧；视频没有真实窗口，取 ffmpeg 解出的第一帧当封面。
-                        var view = rich.CreateContent(new CardRenderContext(settings, snap, keys, card));
-                        if (view == null) continue;
+                ICardModule module = CardRegistry.Get(card.Kind);
+                var surface = new OverlaySurface();
 
-                        var screenshot = module as ICardScreenshotProvider;
-                        if (screenshot != null) screenshot.PrepareScreenshot(view);
-
-                        // CLI 面板（AI 对话 / 命令行）平时空着，只有提问 / 跑命令才有记录；
-                        // MIRRORPOND_CLI_DEMO=1 时塞两条样张，才能检查内部小面板和它们自己的滑块。
-                        var cli = view as CliPanelView;
-                        if (cli != null && CliDemo)
-                        {
-                            if (string.Equals(card.Kind, "command", StringComparison.OrdinalIgnoreCase))
-                            {
-                                cli.AddSampleRecord("[CMD] [C:\\Users\\CRITT] > dir /b", true);
-                                cli.AddSampleRecord(
-                                    "Desktop\nDocuments\nDownloads\nMirrorpondHUD\nMusic\nPictures\nVideos\n"
-                                    + "desktop.ini\n\n这条记录故意写得长一点，用来检查内部小面板超过高度上限之后自己的滑块。",
-                                    false);
-                            }
-                            else
-                            {
-                                cli.AddSampleRecord("> 什么是宾语从句？举一个例子，并说明它和定语从句的区别。", true);
-                                cli.AddSampleRecord(
-                                    "宾语从句在句子里充当宾语，用一句话来做宾语。它属于名词性从句的一种。\n\n"
-                                    + "例如：I know that he is right. 里的 that he is right 就是宾语从句。\n"
-                                    + "定语从句修饰名词，宾语从句充当宾语 —— 前者回答「哪一个」，后者回答「什么」。\n"
-                                    + "这条记录故意写得长一点，用来检查内部小面板超过高度上限之后自己的滑块。", false);
-                            }
-                        }
-
-                        surface.Apply(settings, "");
-                        surface.SetContent(view);
-                    }
-                    else
-                    {
-                        surface.Apply(settings, module.Render(
-                            new CardRenderContext(settings, snap, keys, card)));
-                    }
-
-                    stack.Children.Add(cardHost);
-                    count++;
-                }
-
-                if (count == 0)
+                // 每张卡片外面再包一层来留间距：OverlaySurface.Apply 会重写自己的 Margin（投影留白）。
+                var cardHost = new Border
                 {
-                    Log.Warn("没有可截图的卡片");
-                    return;
-                }
-
-                stack.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-                Size size = stack.DesiredSize;
-
-                var host = new Grid
-                {
-                    Width = Math.Max(420, size.Width + 160),
-                    Height = Math.Max(220, size.Height + 160),
-                    Background = new LinearGradientBrush(
-                        Color.FromRgb(0x14, 0x1B, 0x2B),
-                        Color.FromRgb(0x2A, 0x1D, 0x2A),
-                        45)
+                    HorizontalAlignment = HorizontalAlignment.Left,
+                    Margin = new Thickness(0, 0, 0, Math.Max(16, card.Spacing)),
+                    Child = surface
                 };
 
-                stack.HorizontalAlignment = HorizontalAlignment.Left;
-                stack.VerticalAlignment = VerticalAlignment.Center;
-                stack.Margin = new Thickness(80, 0, 80, 0);
-                host.Children.Add(stack);
-
-                host.Measure(new Size(host.Width, host.Height));
-                host.Arrange(new Rect(0, 0, host.Width, host.Height));
-                host.UpdateLayout();
-
-                const double scale = 2.0;
-                var rtb = new RenderTargetBitmap(
-                    (int)Math.Ceiling(host.Width * scale),
-                    (int)Math.Ceiling(host.Height * scale),
-                    96 * scale, 96 * scale, PixelFormats.Pbgra32);
-                rtb.Render(host);
-
-                SavePng(rtb, path);
-                Log.Info("已生成卡片组截图: " + path + "（" + count + " 张）");
-            }
-            catch (Exception ex)
-            {
-                Log.Error("生成卡片组截图失败", ex);
-            }
-        }
-
-        public static void CaptureOverlay(string path)
-        {
-            try
-            {
-                Settings settings = ConfigStore.Load();
-                settings.Overlay.Shadow = false;
-                MetricsSnapshot snap = DemoSnapshot();
-                KeyHistory keys = DemoKeys(settings.Data.KeyHistoryCount, settings.Data.RepeatThreshold,
-                                           settings.Data.MaxKeyChars);
-
-                CardSettings first = null;
-                foreach (CardSettings card in settings.Cards)
+                var rich = module as IRichCardModule;
+                if (rich is not null)
                 {
-                    if (card == null || string.Equals(card.Kind, "command", StringComparison.OrdinalIgnoreCase)) continue;
-                    first = card;
-                    break;
-                }
+                    // 图片 / 动图：离屏渲染第一帧；视频没有真实窗口，取 ffmpeg 解出的第一帧当封面。
+                    var view = rich.CreateContent(new CardRenderContext(settings, snap, keys, card));
+                    if (view is null) continue;
 
-                string text;
-                if (first != null)
-                {
-                    text = CardRegistry.Get(first.Kind).Render(
-                        new CardRenderContext(settings, snap, keys, first));
+                    var screenshot = module as ICardScreenshotProvider;
+                    if (screenshot is not null) screenshot.PrepareScreenshot(view);
+
+                    // CLI 面板（AI 对话 / 命令行）平时空着，只有提问 / 跑命令才有记录；
+                    // MIRRORPOND_CLI_DEMO=1 时塞两条样张，才能检查内部小面板和它们自己的滑块。
+                    var cli = view as CliPanelView;
+                    if (cli is not null && CliDemo)
+                    {
+                        if (string.Equals(card.Kind, "command", StringComparison.OrdinalIgnoreCase))
+                        {
+                            cli.AddSampleRecord("[CMD] [C:\\Users\\CRITT] > dir /b", true);
+                            cli.AddSampleRecord(
+                                "Desktop\nDocuments\nDownloads\nMirrorpondHUD\nMusic\nPictures\nVideos\n"
+                                + "desktop.ini\n\n这条记录故意写得长一点，用来检查内部小面板超过高度上限之后自己的滑块。",
+                                false);
+                        }
+                        else
+                        {
+                            cli.AddSampleRecord("> 什么是宾语从句？举一个例子，并说明它和定语从句的区别。", true);
+                            cli.AddSampleRecord(
+                                "宾语从句在句子里充当宾语，用一句话来做宾语。它属于名词性从句的一种。\n\n"
+                                + "例如：I know that he is right. 里的 that he is right 就是宾语从句。\n"
+                                + "定语从句修饰名词，宾语从句充当宾语 —— 前者回答「哪一个」，后者回答「什么」。\n"
+                                + "这条记录故意写得长一点，用来检查内部小面板超过高度上限之后自己的滑块。", false);
+                        }
+                    }
+
+                    surface.Apply(settings, "");
+                    surface.SetContent(view);
                 }
                 else
                 {
-                    text = TemplateEngine.Render(CardDefaults.MetricsContent,
-                                                 Variables.Build(snap, settings, keys));
+                    surface.SetCardMeta(card);
+                    surface.Apply(settings, module.Render(
+                        new CardRenderContext(settings, snap, keys, card)));
                 }
 
-                var surface = new OverlaySurface();
-                surface.Apply(settings, text);
+                stack.Children.Add(cardHost);
+                surfaces.Add(surface);
+                count++;
+            }
 
-                double width = SurfaceSizeWidth(surface) + 120;
-                double height = SurfaceSizeHeight(surface) + 120;
+            if (count == 0)
+            {
+                Log.Warn("没有可截图的卡片");
+                return false;
+            }
 
-                var host = new Grid
+            stack.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            Size size = stack.DesiredSize;
+
+            var host = new Grid
+            {
+                Width = Math.Max(420, size.Width + 160),
+                Height = Math.Max(220, size.Height + 160),
+                Background = new LinearGradientBrush(
+                    Color.FromRgb(0x14, 0x1B, 0x2B),
+                    Color.FromRgb(0x2A, 0x1D, 0x2A),
+                    45)
+            };
+
+            stack.HorizontalAlignment = HorizontalAlignment.Left;
+            stack.VerticalAlignment = VerticalAlignment.Center;
+            stack.Margin = new Thickness(80, 0, 80, 0);
+            host.Children.Add(stack);
+
+            // T-11：先注入真实 DPI 再量尺寸，排版宽度 / 换行才与屏上一致。
+            ApplyScreenshotDpi(host, settings);
+
+            host.Measure(new Size(host.Width, host.Height));
+            host.Arrange(new Rect(0, 0, host.Width, host.Height));
+            host.UpdateLayout();
+
+            // 等高线在后台生成；RenderTargetBitmap 不会替我们等首帧。
+            foreach (OverlaySurface surface in surfaces) surface.PrimeContour();
+            WaitForContours(surfaces, 2500);
+
+            const double scale = 2.0;
+            var rtb = new RenderTargetBitmap(
+                (int)Math.Ceiling(host.Width * scale),
+                (int)Math.Ceiling(host.Height * scale),
+                96 * scale, 96 * scale, PixelFormats.Pbgra32);
+            rtb.Render(host);
+
+            if (!SavePng(rtb, path)) return false;
+            Log.Info($"已生成卡片组截图: {path}（{count} 张）");
+            return count > 0;
+        }
+        catch (Exception ex)
+        {
+            Log.Error("生成卡片组截图失败", ex);
+            return false;
+        }
+    }
+
+    public static bool CaptureOverlay(string path)
+    {
+        try
+        {
+            Settings settings = LoadDemoSettings("叠层截图");
+            if (settings is null) return false;
+            settings.Overlay.Shadow = false;
+            MetricsSnapshot snap = DemoSnapshot();
+            KeyHistory keys = DemoKeys(settings.Data.KeyHistoryCount, settings.Data.RepeatThreshold,
+                                       settings.Data.MaxKeyChars);
+
+            CardSettings first = null;
+            foreach (CardSettings card in settings.Cards)
+            {
+                if (card is null || string.Equals(card.Kind, "command", StringComparison.OrdinalIgnoreCase)) continue;
+                first = card;
+                break;
+            }
+
+            string text;
+            if (first is not null)
+            {
+                text = CardRegistry.Get(first.Kind).Render(
+                    new CardRenderContext(settings, snap, keys, first));
+            }
+            else
+            {
+                // 没有真实卡片时用信息卡模块自己的默认模板，避免再维护一份宿主常量。
+                string fallback = CardRegistry.Get("infotext").DefaultContent;
+                if (string.IsNullOrWhiteSpace(fallback)) fallback = "{cpu:0.0}%";
+                text = TemplateEngine.Render(fallback,
+                                             Variables.Build(snap, settings, keys));
+            }
+
+            var surface = new OverlaySurface();
+            surface.Apply(settings, text);
+
+            double width = SurfaceSizeWidth(surface) + 120;
+            double height = SurfaceSizeHeight(surface) + 120;
+
+            var host = new Grid
+            {
+                Width = width,
+                Height = height,
+                Background = new LinearGradientBrush(
+                    Color.FromRgb(0x1B, 0x2A, 0x3D),
+                    Color.FromRgb(0x33, 0x22, 0x2E),
+                    45)
+            };
+
+            surface.HorizontalAlignment = HorizontalAlignment.Center;
+            surface.VerticalAlignment = VerticalAlignment.Center;
+            host.Children.Add(surface);
+
+            // T-11：截图不是真实窗口，必须显式告诉自绘文本"屏上是多少 DPI"。
+            ApplyScreenshotDpi(host, settings);
+
+            host.Measure(new Size(width, height));
+            host.Arrange(new Rect(0, 0, width, height));
+            host.UpdateLayout();
+
+            surface.PrimeContour();
+            WaitForContours(new[] { surface }, 2500);
+
+            const double scale = 2.0;
+            var rtb = new RenderTargetBitmap(
+                (int)Math.Ceiling(width * scale),
+                (int)Math.Ceiling(height * scale),
+                96 * scale, 96 * scale, PixelFormats.Pbgra32);
+            rtb.Render(host);
+
+            if (!SavePng(rtb, path)) return false;
+            Log.Info($"已生成叠层截图: {path}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log.Error("生成截图失败", ex);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// 等待等高线首帧：后台任务完成后会以 DispatcherPriority.Background 回投 UI，
+    /// 所以这里用嵌套 DispatcherFrame 继续跑消息循环，而不是 Thread.Sleep 把 UI 卡死。
+    /// 超时只记一条 WARN，截图继续（最多是等高线空白，不阻塞验收）。
+    /// </summary>
+    static void WaitForContours(IList<OverlaySurface> surfaces, int timeoutMs)
+    {
+        if (surfaces is null || surfaces.Count == 0) return;
+
+        bool allReady = true;
+        foreach (OverlaySurface surface in surfaces)
+        {
+            if (!surface.ContourReady) { allReady = false; break; }
+        }
+        if (allReady) return;
+
+        var frame = new DispatcherFrame();
+        var timer = new DispatcherTimer(DispatcherPriority.Background)
+        {
+            Interval = TimeSpan.FromMilliseconds(20)
+        };
+        Stopwatch watch = Stopwatch.StartNew();
+        timer.Tick += (s, e) =>
+        {
+            bool ready = true;
+            foreach (OverlaySurface surface in surfaces)
+            {
+                if (surface.ContourReady) continue;
+                ready = false;
+                break;
+            }
+            if (ready || watch.ElapsedMilliseconds >= timeoutMs)
+            {
+                timer.Stop();
+                frame.Continue = false;
+            }
+        };
+        timer.Start();
+        try { Dispatcher.PushFrame(frame); }
+        finally { timer.Stop(); watch.Stop(); }
+
+        foreach (OverlaySurface surface in surfaces)
+        {
+            if (surface.ContourReady) continue;
+            Log.Warn($"等高线首帧等待超时（{timeoutMs}ms），截图保留空白装饰层");
+            break;
+        }
+    }
+
+    static double SurfaceSizeWidth(OverlaySurface surface)
+    {
+        surface.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        return Math.Max(60, surface.DesiredSize.Width);
+    }
+
+    static double SurfaceSizeHeight(OverlaySurface surface) => Math.Max(40, surface.DesiredSize.Height);
+
+    public static bool CaptureWidgets(string path)
+    {
+        try
+        {
+            Settings settings = LoadDemoSettings("共享控件截图");
+            if (settings is null) return false;
+            settings.Overlay.Shadow = false;
+            StyleSettings style = settings.Style;
+            Color foreground = OverlaySurface.ParseColor(style.Foreground, Color.FromRgb(0xE6, 0xED, 0xF3));
+
+            var stack = new StackPanel { Width = 520 };
+
+            var header = new CardHeader("文件中转站") { Badge = "12 个文件", Margin = new Thickness(0, 0, 0, 10) };
+
+            header.Actions.Add("打开目录", null, CardButtonTone.Normal, "在资源管理器中打开接收目录");
+            header.Actions.Add("粘贴", null, CardButtonTone.Normal, "从剪贴板添加文件");
+            header.Actions.Add("清空", null, CardButtonTone.Normal, "清空列表（不删除文件）");
+            header.ApplyStyle(style, settings.Overlay.CornerRadius);
+            stack.Children.Add(header);
+
+            var status = new CardStatus { Margin = new Thickness(0, 0, 0, 10) };
+            status.ApplyStyle(style, settings.Overlay.CornerRadius);
+            status.SetText("正在收纳 2/5 · a.zip 42% · 18.4 MB/s", CardStatusKind.Busy);
+            status.SetProgress(0.42);
+            stack.Children.Add(status);
+
+            var list = new CardList { Height = 160, Margin = new Thickness(0, 0, 0, 10) };
+            list.ApplyStyle(style);
+            list.SetEmptyText("把文件拖进来");
+            list.Items.Add(WidgetRow("a.zip", "12.4 MB", foreground, ShellIcons.GetIcon("a.zip", 16)));
+            list.Items.Add(WidgetRow("screenshot.png", "2.1 MB", foreground, ShellIcons.GetIcon("x.png", 16)));
+            list.Items.Add(WidgetRow("notes.txt", "8 KB", foreground, ShellIcons.GetIcon("x.txt", 16)));
+            list.Items.Add(WidgetRow("video.mp4", "248 MB", foreground, ShellIcons.GetIcon("x.mp4", 16)));
+            list.SelectedIndex = 1;
+            stack.Children.Add(list);
+
+            var input = new CardInput(false) { Margin = new Thickness(0, 0, 0, 10) };
+            input.Placeholder = "输入备注，回车提交…";
+            input.ApplyStyle(style, settings.Overlay.CornerRadius);
+            stack.Children.Add(input);
+
+            var dropHost = new Grid { Height = 100, Margin = new Thickness(0, 0, 0, 10) };
+            var dropList = new CardList();
+            dropList.ApplyStyle(style);
+            dropList.SetEmptyText("把文件拖进来（空状态）");
+            dropHost.Children.Add(dropList);
+
+            var dropOverlay = new CardDropOverlay { Margin = new Thickness(2) };
+            dropOverlay.ApplyStyle(style, settings.Overlay.CornerRadius);
+            dropOverlay.Show(3);
+            dropHost.Children.Add(dropOverlay);
+            stack.Children.Add(dropHost);
+
+            var error = new CardStatus { Margin = new Thickness(0, 0, 0, 6) };
+            error.ApplyStyle(style, settings.Overlay.CornerRadius);
+            error.SetText("复制失败：磁盘空间不足", CardStatusKind.Error);
+            error.SetProgress(null);
+            stack.Children.Add(error);
+
+            // M4/M8 回归样张：三种语气并排，主行动应有实心切角，另两种是深色块。
+            var buttons = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0) };
+            foreach (var item in new[]
+                     {
+                         new { Text = "确认出发", Tone = CardButtonTone.Primary },
+                         new { Text = "稍后", Tone = CardButtonTone.Normal },
+                         new { Text = "移除", Tone = CardButtonTone.Danger }
+                     })
+            {
+                var button = new CardButton(item.Text, item.Tone) { Margin = new Thickness(0, 0, 8, 0) };
+                button.ApplyStyle(style, settings.Overlay.CornerRadius);
+                buttons.Children.Add(button);
+            }
+            stack.Children.Add(buttons);
+
+            var card = new Border
+            {
+                Width = 560,
+                Background = CardPalette.Brush(
+                    OverlaySurface.ParseColor(style.Background, Color.FromRgb(0x0D, 0x11, 0x17)),
+                    style.BackgroundOpacity),
+                CornerRadius = new CornerRadius(settings.Overlay.CornerRadius),
+                Padding = new Thickness(20),
+                Child = stack
+            };
+
+            var stationConfig = new CardSettings
+            {
+                Id = "screenshot-station",
+                Kind = "dropstation",
+                Name = "文件中转站",
+                Extras = new Dictionary<string, object>()
+            };
+            FrameworkElement stationView = null;
+            var stationModule = CardRegistry.Get("dropstation") as IRichCardModule;
+            if (stationModule is not null)
+            {
+                try
                 {
-                    Width = width,
-                    Height = height,
-                    Background = new LinearGradientBrush(
-                        Color.FromRgb(0x1B, 0x2A, 0x3D),
-                        Color.FromRgb(0x33, 0x22, 0x2E),
-                        45)
+                    stationView = stationModule.CreateContent(
+                        new CardRenderContext(settings, null, null, stationConfig, null));
+                }
+                catch (Exception ex) { Log.Warn($"截图创建中转站内容失败: {ex.Message}"); }
+            }
+            if (stationView is null)
+                stationView = new TextBlock { Text = "（文件中转站插件不可用）", Foreground = Brushes.Gray };
+
+            var stationCard = new Border
+            {
+                Width = 560,
+                Background = CardPalette.Brush(
+                    OverlaySurface.ParseColor(style.Background, Color.FromRgb(0x0D, 0x11, 0x17)),
+                    style.BackgroundOpacity),
+                CornerRadius = new CornerRadius(settings.Overlay.CornerRadius),
+                Padding = new Thickness(20),
+                Child = stationView
+            };
+
+            var column = new StackPanel { Width = 560 };
+            column.Children.Add(card);
+            column.Children.Add(new Border { Height = 14 });
+            column.Children.Add(stationCard);
+
+            var host = new Grid
+            {
+                Width = 640,
+                Height = 960,
+                Background = new LinearGradientBrush(
+                    Color.FromRgb(0x14, 0x1B, 0x2B),
+                    Color.FromRgb(0x2A, 0x1D, 0x2A),
+                    45)
+            };
+            column.HorizontalAlignment = HorizontalAlignment.Center;
+            column.VerticalAlignment = VerticalAlignment.Center;
+            host.Children.Add(column);
+
+            // T-11：共享控件截图同样按真实 DPI 排版。
+            ApplyScreenshotDpi(host, settings);
+
+            host.Measure(new Size(host.Width, host.Height));
+            host.Arrange(new Rect(0, 0, host.Width, host.Height));
+            host.UpdateLayout();
+
+            const double scale = 2.0;
+            var rtb = new RenderTargetBitmap(
+                (int)Math.Ceiling(host.Width * scale),
+                (int)Math.Ceiling(host.Height * scale),
+                96 * scale, 96 * scale, PixelFormats.Pbgra32);
+            rtb.Render(host);
+
+            if (!SavePng(rtb, path)) return false;
+            Log.Info($"已生成共享控件截图: {path}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log.Error("生成共享控件截图失败", ex);
+            return false;
+        }
+    }
+
+    static FrameworkElement WidgetRow(string name, string meta, Color foreground, ImageSource icon)
+    {
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var image = new Image
+        {
+            Source = icon,
+            Width = 16,
+            Height = 16,
+            Margin = new Thickness(0, 0, 8, 0),
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        grid.Children.Add(image);
+
+        var left = new TextBlock
+        {
+            Text = name,
+            Foreground = CardPalette.Brush(foreground, 0.92),
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        Grid.SetColumn(left, 1);
+
+        var right = new TextBlock
+        {
+            Text = meta,
+            Foreground = CardPalette.Brush(foreground, 0.45),
+            Margin = new Thickness(12, 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        Grid.SetColumn(right, 2);
+
+        grid.Children.Add(left);
+        grid.Children.Add(right);
+        return grid;
+    }
+
+    /// <summary>
+    /// 对话框验收样张：2×2 四格 —— 三个「设置窗之外」的弹窗（明亮、不画状态图标）
+    /// 加一个「设置窗内」的变体（跟随明暗、保留方形状态标记），一张图同时验收两条宿主路径。
+    ///
+    /// 直接用 <see cref="HudDialogPanel"/> 离屏渲染，而不是真的弹四个窗口：
+    /// 截图模式必须能在没有用户交互的 CI / 远程桌面上跑完，且渲染结果与窗口内面板是同一份布局。
+    /// </summary>
+    public static bool CaptureDialogs(string path, bool light)
+    {
+        try
+        {
+            // 明暗走 dark 参数：默认暗色（--dialog-light 切纸白），不再从样式背景亮度推断；
+            // 对话框底色固定取设置窗令牌，样式只剩字体有用，所以这里传 null。
+            bool dark = !light;
+            StyleSettings style = null;
+
+            var column = new StackPanel { Width = HudDialog.DefaultWidth };
+            AddDialogSample(column, style, "文件中转站 · 收纳完成",
+                "12 个文件已收纳到接收目录。\n文件保留 24 小时后自动清理。",
+                HudDialogButtons.Ok, HudDialogIcon.Info, dark);
+            AddDialogSample(column, style, "镜潭一览 · 托盘不可用",
+                "托盘图标添加失败，程序仍在运行，但托盘入口没有出现。\n" +
+                "可以按 Ctrl+Alt+S 打开设置，或重新登录 Windows 后重试。",
+                HudDialogButtons.Ok, HudDialogIcon.Warning, dark);
+            AddDialogSample(column, style, "镜潭一览 · 启动失败",
+                "启动失败：无法读取配置文件 settings.json。\n" +
+                "详细信息已写入日志：bin\\Release\\mirrorpond.log",
+                HudDialogButtons.Ok, HudDialogIcon.Error, dark);
+            AddDialogSample(column, style, "镜潭一览 · 未保存的修改",
+                "设置还有未保存的修改。\n保存并应用后关闭，放弃修改，或继续编辑。",
+                HudDialogButtons.YesNoCancel, HudDialogIcon.Question, dark, showIcon: true);
+
+            // 2×2：四个变体从单列搬进两列网格（面板与文案不变，只换排列）。
+            var grid = new Grid { Width = HudDialog.DefaultWidth * 2 + 16 };
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(16) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(16) });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            var cells = new List<FrameworkElement>();
+            foreach (UIElement child in column.Children) cells.Add((FrameworkElement)child);
+            column.Children.Clear();
+            for (int i = 0; i < cells.Count; i++)
+            {
+                FrameworkElement cell = cells[i];
+                cell.Margin = new Thickness(0, 0, 0, i < 2 ? 16 : 0);
+                Grid.SetColumn(cell, i % 2 == 0 ? 0 : 2);
+                Grid.SetRow(cell, i < 2 ? 0 : 2);
+                grid.Children.Add(cell);
+            }
+
+            var stage = new Grid
+            {
+                Width = grid.Width + 48,
+                // 亮色舞台取中性灰：纸白面板 #F2F2EC 若直接铺在同色底上，圆角与 1px 线就看不出来。
+                Background = new SolidColorBrush(light
+                    ? Color.FromRgb(0xD9, 0xD9, 0xD2)
+                    : Color.FromRgb(0x0B, 0x0B, 0x0B))
+            };
+            grid.HorizontalAlignment = HorizontalAlignment.Center;
+            grid.VerticalAlignment = VerticalAlignment.Center;
+            stage.Children.Add(grid);
+
+            // 先量内容再定高：四格行数不同，固定高度会把最后一行裁掉。
+            stage.Measure(new Size(stage.Width, double.PositiveInfinity));
+            stage.Height = Math.Max(600, Math.Ceiling(grid.DesiredSize.Height) + 48);
+            stage.Measure(new Size(stage.Width, stage.Height));
+            stage.Arrange(new Rect(0, 0, stage.Width, stage.Height));
+            stage.UpdateLayout();
+
+            const double scale = 2.0;
+            var rtb = new RenderTargetBitmap(
+                (int)Math.Ceiling(stage.Width * scale),
+                (int)Math.Ceiling(stage.Height * scale),
+                96 * scale, 96 * scale, PixelFormats.Pbgra32);
+            rtb.Render(stage);
+
+            if (!SavePng(rtb, path)) return false;
+            Log.Info($"已生成对话框截图（{(light ? "亮色" : "暗色")}）: {path}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log.Error("生成对话框截图失败", ex);
+            return false;
+        }
+    }
+
+    static void AddDialogSample(StackPanel column, StyleSettings style, string title, string message,
+                                HudDialogButtons buttons, HudDialogIcon icon,
+                                bool dark = false, bool showIcon = false)
+    {
+        var panel = new HudDialogPanel(title, message, buttons, icon, style, null, null, false, dark, showIcon)
+        {
+            Margin = new Thickness(0, 0, 0, 16)
+        };
+        column.Children.Add(panel);
+    }
+
+    /// <summary>
+    /// 取色器验收样张：一张图并排暗色 / 明亮两套面板，用于目检 22px 圆角、HSV 色板、
+    /// Hex / RGB 输入、当前 / 新色预览与黄底墨字主按钮；两格给不同初始色，顺带验证回退与色相游标。
+    /// </summary>
+    public static bool CaptureColorPicker(string path)
+    {
+        try
+        {
+            var row = new StackPanel { Orientation = Orientation.Horizontal };
+            row.Children.Add(PickerSample("暗色 · 设置窗内", true, "#2F6FEB"));
+            row.Children.Add(PickerSample("明亮 · 设置窗外", false, "#B7A400"));
+
+            var stage = new Grid
+            {
+                // 两格各 480 面板 + 40 底板内边距 + 24 外边距 = 544；再加 48 舞台留白。
+                Width = (HudDialog.DefaultWidth + 40 + 24) * 2 + 48,
+                // 深色舞台同时框住两块样张：亮色那一格自己带一块灰底，边界仍然清楚。
+                Background = new SolidColorBrush(Color.FromRgb(0x0B, 0x0B, 0x0B))
+            };
+            row.HorizontalAlignment = HorizontalAlignment.Center;
+            row.VerticalAlignment = VerticalAlignment.Center;
+            stage.Children.Add(row);
+
+            stage.Measure(new Size(stage.Width, double.PositiveInfinity));
+            stage.Height = Math.Max(560, Math.Ceiling(row.DesiredSize.Height) + 48);
+            stage.Measure(new Size(stage.Width, stage.Height));
+            stage.Arrange(new Rect(0, 0, stage.Width, stage.Height));
+            stage.UpdateLayout();
+
+            const double scale = 2.0;
+            var rtb = new RenderTargetBitmap(
+                (int)Math.Ceiling(stage.Width * scale),
+                (int)Math.Ceiling(stage.Height * scale),
+                96 * scale, 96 * scale, PixelFormats.Pbgra32);
+            rtb.Render(stage);
+
+            if (!SavePng(rtb, path)) return false;
+            Log.Info($"已生成取色器截图: {path}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log.Error("生成取色器截图失败", ex);
+            return false;
+        }
+    }
+
+    /// <summary>一格取色器样张：说明 + 中性底板 + 面板本身（面板自己画 22px 圆角与 1px 线）。</summary>
+    static FrameworkElement PickerSample(string caption, bool dark, string color)
+    {
+        var stack = new StackPanel { Width = HudDialog.DefaultWidth + 40, Margin = new Thickness(12) };
+        stack.Children.Add(new TextBlock
+        {
+            Text = caption,
+            FontFamily = CardPalette.ResolveFont("Microsoft YaHei UI"),
+            FontSize = 11,
+            Foreground = CardPalette.Brush(dark ? Color.FromRgb(0x9A, 0x9A, 0x94) : Color.FromRgb(0x4A, 0x4A, 0x44)),
+            Margin = new Thickness(0, 0, 0, 6)
+        });
+        stack.Children.Add(new Border
+        {
+            Padding = new Thickness(20),
+            CornerRadius = new CornerRadius(8),
+            Background = new SolidColorBrush(dark ? Color.FromRgb(0x0B, 0x0B, 0x0B) : Color.FromRgb(0xD9, 0xD9, 0xD2)),
+            Child = HudColorPicker.CreatePanel(color, dark)
+        });
+        return stack;
+    }
+
+    /// <summary>四种中转站显示方式的验收样张：每个视图一份，共用同一批假文件。</summary>
+    public static bool CaptureStationViews(string path)
+    {
+        try
+        {
+            Settings settings = ConfigStore.Load();
+            var module = CardRegistry.Get("dropstation") as IRichCardModule;
+            if (module is null)
+            {
+                Log.Warn("中转站插件不可用，跳过显示方式截图");
+                return false;
+            }
+
+            var host = new ScreenshotCardHost();
+            var panel = new WrapPanel
+            {
+                Width = 1040,
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Top
+            };
+
+            string[] views =
+            {
+                "LargeIcon", "MediumIcon", "SmallIcon", "List"
+            };
+
+            foreach (string view in views)
+            {
+                var extras = new Dictionary<string, object>
+                {
+                    ["dropstation"] = new Dictionary<string, object>
+                    {
+                        ["View"] = view,
+                        ["ShowIcons"] = true
+                    }
                 };
 
-                surface.HorizontalAlignment = HorizontalAlignment.Center;
-                surface.VerticalAlignment = VerticalAlignment.Center;
-                host.Children.Add(surface);
+                var config = new CardSettings
+                {
+                    Id = "screenshot-station-" + view,
+                    Kind = "dropstation",
+                    Name = "文件中转站",
+                    Extras = extras
+                };
+                host.Config = config;
 
-                host.Measure(new Size(width, height));
-                host.Arrange(new Rect(0, 0, width, height));
-                host.UpdateLayout();
+                FrameworkElement content = module.CreateContent(
+                    new CardRenderContext(settings, null, null, config, null, host));
+                var screenshot = module as ICardScreenshotProvider;
+                if (screenshot is not null) screenshot.PrepareScreenshot(content);
 
-                const double scale = 2.0;
-                var rtb = new RenderTargetBitmap(
-                    (int)Math.Ceiling(width * scale),
-                    (int)Math.Ceiling(height * scale),
-                    96 * scale, 96 * scale, PixelFormats.Pbgra32);
-                rtb.Render(host);
-
-                SavePng(rtb, path);
-                Log.Info("已生成叠层截图: " + path);
-            }
-            catch (Exception ex)
-            {
-                Log.Error("生成截图失败", ex);
-            }
-        }
-
-        static double SurfaceSizeWidth(OverlaySurface surface)
-        {
-            surface.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-            return Math.Max(60, surface.DesiredSize.Width);
-        }
-
-        static double SurfaceSizeHeight(OverlaySurface surface)
-        {
-            return Math.Max(40, surface.DesiredSize.Height);
-        }
-
-        public static void CaptureWidgets(string path)
-        {
-            try
-            {
-                Settings settings = ConfigStore.Load();
-                settings.Overlay.Shadow = false;
-                StyleSettings style = settings.Style;
-                Color foreground = OverlaySurface.ParseColor(style.Foreground, Color.FromRgb(0xE6, 0xED, 0xF3));
-
-                var stack = new StackPanel { Width = 520 };
-
-                var header = new CardHeader("文件中转站") { Badge = "12 个文件", Margin = new Thickness(0, 0, 0, 10) };
-                header.Actions.Add("打开目录", null, CardButtonTone.Normal, "在资源管理器中打开接收目录");
-                header.Actions.Add("粘贴", null, CardButtonTone.Normal, "从剪贴板添加文件");
-                header.Actions.Add("清空", null, CardButtonTone.Normal, "清空列表（不删除文件）");
-                header.ApplyStyle(style, settings.Overlay.CornerRadius);
-                stack.Children.Add(header);
-
-                var status = new CardStatus { Margin = new Thickness(0, 0, 0, 10) };
-                status.ApplyStyle(style);
-                status.SetText("正在收纳 2/5 · a.zip 42% · 18.4 MB/s", CardStatusKind.Busy);
-                status.SetProgress(0.42);
-                stack.Children.Add(status);
-
-                var list = new CardList { Height = 160, Margin = new Thickness(0, 0, 0, 10) };
-                list.ApplyStyle(style, settings.Cli);
-                list.SetEmptyText("把文件拖进来");
-                list.Items.Add(WidgetRow("a.zip", "12.4 MB", foreground, ShellIcons.GetIcon("a.zip", 16)));
-                list.Items.Add(WidgetRow("screenshot.png", "2.1 MB", foreground, ShellIcons.GetIcon("x.png", 16)));
-                list.Items.Add(WidgetRow("notes.txt", "8 KB", foreground, ShellIcons.GetIcon("x.txt", 16)));
-                list.Items.Add(WidgetRow("video.mp4", "248 MB", foreground, ShellIcons.GetIcon("x.mp4", 16)));
-                list.SelectedIndex = 1;
-                stack.Children.Add(list);
-
-                var input = new CardInput(false) { Margin = new Thickness(0, 0, 0, 10) };
-                input.Placeholder = "输入备注，回车提交…";
-                input.ApplyStyle(style, settings.Overlay.CornerRadius);
-                stack.Children.Add(input);
-
-                var dropHost = new Grid { Height = 100, Margin = new Thickness(0, 0, 0, 10) };
-                var dropList = new CardList();
-                dropList.ApplyStyle(style, settings.Cli);
-                dropList.SetEmptyText("把文件拖进来（空状态）");
-                dropHost.Children.Add(dropList);
-
-                var dropOverlay = new CardDropOverlay { Margin = new Thickness(2) };
-                dropOverlay.ApplyStyle(style, settings.Overlay.CornerRadius);
-                dropOverlay.Show(3);
-                dropHost.Children.Add(dropOverlay);
-                stack.Children.Add(dropHost);
-
-                var error = new CardStatus { Margin = new Thickness(0, 0, 0, 6) };
-                error.ApplyStyle(style);
-                error.SetText("复制失败：磁盘空间不足", CardStatusKind.Error);
-                error.SetProgress(null);
-                stack.Children.Add(error);
+                var label = new TextBlock
+                {
+                    Text = StationLabel(view),
+                    Foreground = new SolidColorBrush(Color.FromRgb(0xD8, 0xD8, 0xCE)),
+                    FontFamily = new FontFamily("Microsoft YaHei UI"),
+                    FontSize = 14,
+                    Margin = new Thickness(4, 0, 0, 6)
+                };
 
                 var card = new Border
                 {
-                    Width = 560,
                     Background = CardPalette.Brush(
-                        OverlaySurface.ParseColor(style.Background, Color.FromRgb(0x0D, 0x11, 0x17)),
-                        style.BackgroundOpacity),
+                        OverlaySurface.ParseColor(settings.Style.Background, Color.FromRgb(0x0D, 0x11, 0x17)),
+                        settings.Style.BackgroundOpacity),
                     CornerRadius = new CornerRadius(settings.Overlay.CornerRadius),
-                    Padding = new Thickness(20),
-                    Child = stack
+                    Padding = new Thickness(16),
+                    Margin = new Thickness(4, 4, 12, 16),
+                    Child = content
                 };
 
-                var stationConfig = new CardSettings
-                {
-                    Id = "screenshot-station",
-                    Kind = "dropstation",
-                    Name = "文件中转站",
-                    Extras = new Dictionary<string, object>()
-                };
-                FrameworkElement stationView = null;
-                var stationModule = CardRegistry.Get("dropstation") as IRichCardModule;
-                if (stationModule != null)
-                {
-                    try
-                    {
-                        stationView = stationModule.CreateContent(
-                            new CardRenderContext(settings, null, null, stationConfig, null));
-                    }
-                    catch (Exception ex) { Log.Warn("截图创建中转站内容失败: " + ex.Message); }
-                }
-                if (stationView == null)
-                    stationView = new TextBlock { Text = "（文件中转站插件不可用）", Foreground = Brushes.Gray };
-
-                var stationCard = new Border
-                {
-                    Width = 560,
-                    Background = CardPalette.Brush(
-                        OverlaySurface.ParseColor(style.Background, Color.FromRgb(0x0D, 0x11, 0x17)),
-                        style.BackgroundOpacity),
-                    CornerRadius = new CornerRadius(settings.Overlay.CornerRadius),
-                    Padding = new Thickness(20),
-                    Child = stationView
-                };
-
-                var column = new StackPanel { Width = 560 };
-                column.Children.Add(card);
-                column.Children.Add(new Border { Height = 14 });
-                column.Children.Add(stationCard);
-
-                var host = new Grid
-                {
-                    Width = 640,
-                    Height = 960,
-                    Background = new LinearGradientBrush(
-                        Color.FromRgb(0x14, 0x1B, 0x2B),
-                        Color.FromRgb(0x2A, 0x1D, 0x2A),
-                        45)
-                };
-                column.HorizontalAlignment = HorizontalAlignment.Center;
-                column.VerticalAlignment = VerticalAlignment.Center;
-                host.Children.Add(column);
-
-                host.Measure(new Size(host.Width, host.Height));
-                host.Arrange(new Rect(0, 0, host.Width, host.Height));
-                host.UpdateLayout();
-
-                const double scale = 2.0;
-                var rtb = new RenderTargetBitmap(
-                    (int)Math.Ceiling(host.Width * scale),
-                    (int)Math.Ceiling(host.Height * scale),
-                    96 * scale, 96 * scale, PixelFormats.Pbgra32);
-                rtb.Render(host);
-
-                SavePng(rtb, path);
-                Log.Info("已生成共享控件截图: " + path);
+                var cell = new StackPanel { Width = 500, Margin = new Thickness(0, 0, 0, 8) };
+                cell.Children.Add(label);
+                cell.Children.Add(card);
+                panel.Children.Add(cell);
             }
-            catch (Exception ex)
+
+            var root = new Grid
             {
-                Log.Error("生成共享控件截图失败", ex);
+                Width = 1080,
+                Background = new LinearGradientBrush(
+                    Color.FromRgb(0x14, 0x1B, 0x2B),
+                    Color.FromRgb(0x2A, 0x1D, 0x2A),
+                    45)
+            };
+            root.Children.Add(panel);
+            // T-11：模板卡片里的自绘文本也按真实 DPI 排版（面板量尺寸之前）。
+            ApplyScreenshotDpi(root, settings);
+
+            panel.Measure(new Size(1040, double.PositiveInfinity));
+            panel.Arrange(new Rect(0, 0, 1040, panel.DesiredSize.Height));
+            panel.UpdateLayout();
+            root.Height = Math.Max(500, panel.DesiredSize.Height + 32);
+
+            root.Measure(new Size(root.Width, root.Height));
+            root.Arrange(new Rect(0, 0, root.Width, root.Height));
+            root.UpdateLayout();
+
+            const double scale = 2.0;
+            var rtb = new RenderTargetBitmap(
+                (int)Math.Ceiling(root.Width * scale),
+                (int)Math.Ceiling(root.Height * scale),
+                96 * scale, 96 * scale, PixelFormats.Pbgra32);
+            rtb.Render(root);
+
+            if (!SavePng(rtb, path)) return false;
+            Log.Info($"已生成中转站视图截图: {path}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log.Error("生成中转站视图截图失败", ex);
+            return false;
+        }
+    }
+
+    static void CollapseSettingsSections(DependencyObject root)
+    {
+        if (root is null) return;
+        int count = VisualTreeHelper.GetChildrenCount(root);
+        for (int i = 0; i < count; i++)
+        {
+            DependencyObject child = VisualTreeHelper.GetChild(root, i);
+            if (child is Expander expander)
+            {
+                expander.IsExpanded = false;
+                continue;
             }
+            CollapseSettingsSections(child);
+        }
+    }
+
+    static string StationLabel(string view) => view switch
+    {
+        "LargeIcon" => "大图标",
+        "MediumIcon" => "中图标",
+        "SmallIcon" => "小图标",
+        _ => "列表"
+    };
+
+    /// <summary>截图用的最小宿主：只提供 Shell 图标，其余状态读写都不落盘。</summary>
+    sealed class ScreenshotCardHost : ICardHost
+    {
+        public CardSettings Config { get; set; }
+        public string StateDirectory => "";
+        public string ReadState(string fileName) => null;
+        public bool WriteState(string fileName, string text) => false;
+        public bool DeleteState(string fileName) => true;
+        public void RequestRender() { }
+        public void RequestLayout() { }
+        public bool SaveSettings() => false;
+        public void RefreshContentSignature() { }
+        public ICardShellService Shell { get; } = new ScreenshotShell();
+    }
+
+    sealed class ScreenshotShell : ICardShellService
+    {
+        public bool TryGetClipboardFiles(out string[] paths)
+        {
+            paths = Array.Empty<string>();
+            return false;
         }
 
-        static FrameworkElement WidgetRow(string name, string meta, Color foreground, ImageSource icon)
+        public bool TrySetClipboardText(string text) => false;
+
+        public ImageSource GetFileIcon(string path, int size, bool extensionOnly) =>
+            ShellIcons.GetIcon(path, size, extensionOnly);
+
+        public DragDropEffects BeginDragFiles(FrameworkElement source, IList<string> paths,
+                                              DragDropEffects allowed) => DragDropEffects.None;
+
+        public void OpenPath(string path) { }
+        public void RevealPath(string path) { }
+    }
+
+    public static bool CaptureSettings(string path)
+    {
+        try
         {
-            var grid = new Grid();
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-            var image = new Image
+            Settings settings = LoadDemoSettings("设置界面截图");
+            if (settings is null) return false;
+            // 截图验收可强制浅色设置页；MIRRORPOND_SETTINGS_LIGHT=1。
+            if (Environment.GetEnvironmentVariable("MIRRORPOND_SETTINGS_LIGHT") == "1")
+                settings.Behavior.SettingsTheme = "Light";
+            // 截图验收循环粗细行；MIRRORPOND_LOOP_DEMO=Scanline / Pulse。
+            string loopDemo = Environment.GetEnvironmentVariable("MIRRORPOND_LOOP_DEMO");
+            if (!string.IsNullOrWhiteSpace(loopDemo))
             {
-                Source = icon,
-                Width = 16,
-                Height = 16,
-                Margin = new Thickness(0, 0, 8, 0),
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            grid.Children.Add(image);
+                settings.Style.LoopEffect = Settings.NormalizeLoopEffect(loopDemo, true);
+                settings.Style.LoopMotion = settings.Style.LoopEffect != "None";
+            }
+            // ApplySettings 现在返回 bool（P0-2）：截图模式下用恒真 stub。
+            var window = new SettingsWindow(settings, s => true, (x, y, m) => { }, () => { });
+            window.WindowStartupLocation = WindowStartupLocation.Manual;
+            window.ShowInTaskbar = false;
+            window.Left = -20000;
+            window.Top = -20000;
+            // 外观页很长，一张图看全：窗口拉到 1560 高再渲染（窗口在屏外，不影响桌面）。
+            window.Height = Math.Max(window.Height, 1560);
+            window.Show();
+            window.UpdateLayout();
 
-            var left = new TextBlock
+            Dispatcher.CurrentDispatcher.Invoke(new Action(() => { }), DispatcherPriority.Loaded);
+
+            var root = window.Content as FrameworkElement;
+            if (root is null)
             {
-                Text = name,
-                Foreground = CardPalette.Brush(foreground, 0.92),
-                TextTrimming = TextTrimming.CharacterEllipsis,
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            Grid.SetColumn(left, 1);
+                Log.Warn("设置窗口没有内容");
+                window.CloseForReal();
+                return false;
+            }
 
-            var right = new TextBlock
+            if (Environment.GetEnvironmentVariable("MIRRORPOND_SETTINGS_COLLAPSE") == "1")
+                CollapseSettingsSections(root);
+
+            double width = Math.Max(1, window.ActualWidth);
+            double height = Math.Max(1, window.ActualHeight);
+            // T-18：位图像素尺寸向上取整，Arrange/Measure 仍用同一个 double。
+            // 原来 (int) 截断会丢掉右/下边缘不足 1px 的部分（ActualWidth 很少是整数），
+            // 贴边 / 描边类验收会因此误判成"少了 1px"。
+            int pixelWidth = Math.Max(1, (int)Math.Ceiling(width));
+            int pixelHeight = Math.Max(1, (int)Math.Ceiling(height));
+
+            string basePath = Path.GetFullPath(path);
+            string dir = Path.GetDirectoryName(basePath);
+            string stem = Path.GetFileNameWithoutExtension(basePath);
+
+            bool wrote = false;
+            for (int tab = 0; tab < window.Tabs.Items.Count; tab++)
             {
-                Text = meta,
-                Foreground = CardPalette.Brush(foreground, 0.45),
-                Margin = new Thickness(12, 0, 0, 0),
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            Grid.SetColumn(right, 2);
+                window.Tabs.SelectedIndex = tab;
+                root.Measure(new Size(width, height));
+                root.Arrange(new Rect(0, 0, width, height));
+                root.UpdateLayout();
+                Dispatcher.CurrentDispatcher.Invoke(new Action(() => { }), DispatcherPriority.Background);
 
-            grid.Children.Add(left);
-            grid.Children.Add(right);
-            return grid;
-        }
+                var rtb = new RenderTargetBitmap(pixelWidth, pixelHeight, 96, 96, PixelFormats.Pbgra32);
+                rtb.Render(root);
 
-        public static void CaptureSettings(string path)
-        {
-            try
-            {
-                Settings settings = ConfigStore.Load();
-                var window = new SettingsWindow(settings, s => { }, (x, y, m) => { }, () => { });
-                window.WindowStartupLocation = WindowStartupLocation.Manual;
-                window.ShowInTaskbar = false;
-                window.Left = -20000;
-                window.Top = -20000;
-                // 外观页很长，一张图看全：窗口拉到 1560 高再渲染（窗口在屏外，不影响桌面）。
-                window.Height = Math.Max(window.Height, 1560);
-                window.Show();
-                window.UpdateLayout();
-
-                Dispatcher.CurrentDispatcher.Invoke(new Action(() => { }), DispatcherPriority.Loaded);
-
-                var root = window.Content as FrameworkElement;
-                if (root == null)
+                string target = tab == 0
+                    ? basePath
+                    : Path.Combine(dir, $"{stem}-tab{tab}.png");
+                // T-18：单页失败只记 WARN（见 SavePng），继续拍其余页；
+                // 整批结果按"是否至少写出一张"汇报，不中断整本相册。
+                if (SavePng(rtb, target))
                 {
-                    Log.Warn("设置窗口没有内容");
-                    window.CloseForReal();
-                    return;
+                    wrote = true;
+                    Log.Info($"已生成设置界面截图: {target}");
                 }
 
-                double width = Math.Max(1, window.ActualWidth);
-                double height = Math.Max(1, window.ActualHeight);
-
-                string basePath = Path.GetFullPath(path);
-                string dir = Path.GetDirectoryName(basePath);
-                string stem = Path.GetFileNameWithoutExtension(basePath);
-
-                for (int tab = 0; tab < window.Tabs.Items.Count; tab++)
+                // MIRRORPOND_SETTINGS_SCROLL=1：把这一页滚到底再拍一张，长页面（外观页）的下半部分才看得到。
+                if (SettingsScrollDemo)
                 {
-                    window.Tabs.SelectedIndex = tab;
-                    root.Measure(new Size(width, height));
-                    root.Arrange(new Rect(0, 0, width, height));
-                    root.UpdateLayout();
-                    Dispatcher.CurrentDispatcher.Invoke(new Action(() => { }), DispatcherPriority.Background);
-
-                    var rtb = new RenderTargetBitmap((int)width, (int)height, 96, 96, PixelFormats.Pbgra32);
-                    rtb.Render(root);
-
-                    string target = tab == 0
-                        ? basePath
-                        : Path.Combine(dir, stem + "-tab" + tab + ".png");
-                    SavePng(rtb, target);
-                    Log.Info("已生成设置界面截图: " + target);
-
-                    // MIRRORPOND_SETTINGS_SCROLL=1：把这一页滚到底再拍一张，长页面（外观页）的下半部分才看得到。
-                    if (SettingsScrollDemo)
+                    ScrollViewer scroller = FindScroller(root);
+                    if (scroller is not null)
                     {
-                        ScrollViewer scroller = FindScroller(root);
-                        if (scroller != null)
+                        scroller.ScrollToEnd();
+                        root.UpdateLayout();
+                        Dispatcher.CurrentDispatcher.Invoke(new Action(() => { }), DispatcherPriority.Background);
+
+                        var bottom = new RenderTargetBitmap(pixelWidth, pixelHeight, 96, 96, PixelFormats.Pbgra32);
+                        bottom.Render(root);
+                        string bottomPath = Path.Combine(dir, $"{stem}-tab{tab}-bottom.png");
+                        if (SavePng(bottom, bottomPath))
                         {
-                            scroller.ScrollToEnd();
-                            root.UpdateLayout();
-                            Dispatcher.CurrentDispatcher.Invoke(new Action(() => { }), DispatcherPriority.Background);
-
-                            var bottom = new RenderTargetBitmap((int)width, (int)height, 96, 96, PixelFormats.Pbgra32);
-                            bottom.Render(root);
-                            SavePng(bottom, Path.Combine(dir, stem + "-tab" + tab + "-bottom.png"));
-                            Log.Info("已生成设置界面截图（滚到底）: " + stem + "-tab" + tab + "-bottom.png");
+                            wrote = true;
+                            Log.Info($"已生成设置界面截图（滚到底）: {stem}-tab{tab}-bottom.png");
                         }
                     }
                 }
+            }
 
-                window.CloseForReal();
-            }
-            catch (Exception ex)
-            {
-                Log.Error("生成设置界面截图失败", ex);
-            }
+            window.CloseForReal();
+            return wrote;
         }
-
-        static void SavePng(BitmapSource source, string path)
+        catch (Exception ex)
         {
-            string dir = Path.GetDirectoryName(Path.GetFullPath(path));
-            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-
-            var encoder = new PngBitmapEncoder();
-            encoder.Frames.Add(BitmapFrame.Create(source));
-            using (var stream = File.Create(path))
-                encoder.Save(stream);
+            Log.Error("生成设置界面截图失败", ex);
+            return false;
         }
+    }
+
+    /// <summary>
+    /// T-11：截图前把目标屏的真实缩放注入每个 <see cref="TextCanvas"/>。
+    ///
+    /// 离屏合成树（Grid + OverlaySurface）没有 PresentationSource，
+    /// <see cref="VisualTreeHelper.GetDpi"/> 一律返回 96：自绘文本会按 1.0 px/DIP 做
+    /// Display hinting，再被 2× RenderTargetBitmap 放大，与屏上 150% / 175% 的字形宽度、
+    /// 笔画粗细对不上，验收"像素对齐 / 描边"类问题时会产生假差异。
+    ///
+    /// 需真机验证：在 150% 缩放机器上对比系统截屏与 `--screenshot-cards` 的字形。
+    /// </summary>
+    static void ApplyScreenshotDpi(DependencyObject root, Settings settings)
+    {
+        double scale = 1.0;
+        try
+        {
+            ScreenInfo screen = ScreenGeometry.Get(settings is null ? 0 : settings.Overlay.Monitor);
+            if (screen is not null && screen.ScaleX > 0.1) scale = screen.ScaleX;
+        }
+        catch (Exception ex)
+        {
+            // 读不到缩放时按 100% 继续：截图仍然可出，只是与屏上可能有 1px 级字形差。
+            Log.Warn($"读取截图 DPI 失败，按 100% 排版: {ex.Message}");
+        }
+
+        ApplyPixelsPerDip(root, scale);
+    }
+
+    static void ApplyPixelsPerDip(DependencyObject root, double scale)
+    {
+        if (root is null) return;
+
+        if (root is TextCanvas canvas) canvas.PixelsPerDipOverride = scale;
+
+        int count = VisualTreeHelper.GetChildrenCount(root);
+        for (int i = 0; i < count; i++)
+        {
+            ApplyPixelsPerDip(VisualTreeHelper.GetChild(root, i), scale);
+        }
+    }
+
+    /// <summary>
+    /// S-20：截图参数其实是「输出文件路径」，不是 AGENTS 里写的“标题”。六种截图模式共用这条校验：
+    /// · 解析成绝对路径（相对路径按进程 cwd 展开，并在日志里回显最终落点）；
+    /// · 没扩展名补 <c>.png</c>，扩展名必须是 <c>.png</c> —— 否则误传 settings.json 会把配置写成 PNG 字节；
+    /// · 目录不存在则创建，创建失败 / 目录不可写 / 目标是目录 / 目标是只读文件都算失败。
+    /// 同名 .png 允许覆盖：截图验收通常反复跑同一路径，禁止覆盖会把最常用的用法堵死。
+    /// </summary>
+    internal static bool TryResolveOutputPath(string raw, out string path, out string error)
+    {
+        path = null;
+        error = null;
+
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            error = "缺少输出路径";
+            return false;
+        }
+
+        string text = raw.Trim();
+        if (text.StartsWith("--", StringComparison.Ordinal))
+        {
+            // 典型误用：--screenshot --minimized 会把下一个选项当成文件名。
+            error = $"缺少输出路径（读到的是另一个选项 {text}）";
+            return false;
+        }
+
+        string full;
+        try
+        {
+            full = Path.GetFullPath(text);
+        }
+        catch (Exception ex)
+        {
+            error = $"无法解析为绝对路径：{ex.Message}";
+            return false;
+        }
+
+        if (string.IsNullOrEmpty(Path.GetExtension(full))) full += ".png";
+
+        string ext = Path.GetExtension(full);
+        if (!string.Equals(ext, ".png", StringComparison.OrdinalIgnoreCase))
+        {
+            error = $"输出文件必须是 .png（当前扩展名 {ext}）";
+            return false;
+        }
+
+        string dir;
+        try
+        {
+            dir = Path.GetDirectoryName(full);
+        }
+        catch (Exception ex)
+        {
+            error = $"无法确定输出目录：{ex.Message}";
+            return false;
+        }
+        if (string.IsNullOrEmpty(dir))
+        {
+            error = "无法确定输出目录";
+            return false;
+        }
+
+        try
+        {
+            if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+        }
+        catch (Exception ex)
+        {
+            error = $"输出目录不可用（{dir}）：{ex.Message}";
+            return false;
+        }
+
+        // 可写性探测：先建一个临时文件再删掉。若等渲染完才在 File.Create 处失败，
+        // 用户已经等了一整轮截图却什么都拿不到，而且原因只剩一条异常。
+        try
+        {
+            string probe = Path.Combine(dir, $".mhud-write-{Guid.NewGuid():N}.tmp");
+            using (File.Create(probe)) { }
+            File.Delete(probe);
+        }
+        catch (Exception ex)
+        {
+            error = $"输出目录不可写（{dir}）：{ex.Message}";
+            return false;
+        }
+
+        if (Directory.Exists(full))
+        {
+            error = $"输出路径是一个目录（{full}）";
+            return false;
+        }
+
+        if (File.Exists(full) && (File.GetAttributes(full) & FileAttributes.ReadOnly) != 0)
+        {
+            error = $"目标文件是只读的（{full}）";
+            return false;
+        }
+
+        path = full;
+        return true;
+    }
+
+    /// <summary>
+    /// T-18：PNG 走 <see cref="AtomicFile"/> 原子写（临时文件 → Move 覆盖），失败只记 WARN 并返回 false。
+    /// 原来 File.Create 直写目标：编码中途失败（磁盘满 / 编码器异常）会留下一张半截图，
+    /// 而且已经把上一张验收图覆盖掉，肉眼只能看到"打不开的 png"。
+    /// 相册批量写（设置页每一页 / 每一页滚到底）靠返回值继续拍其余图片，不中断整批。
+    /// 临时文件是「目标 + .tmp」，目标仍是 .png——编码器只认流，不认扩展名。
+    /// </summary>
+
+    static bool SavePng(BitmapSource source, string path)
+    {
+        string fullPath = Path.GetFullPath(path);
+
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(source));
+
+        AtomicFile.WriteResult result = AtomicFile.WriteBinary(fullPath, stream => encoder.Save(stream),
+                                                              createBackup: false);
+        if (result.Success) return true;
+
+        string reason = result.Error is not null ? result.Error.Message
+                      : result.BackupError is not null ? result.BackupError.Message
+                      : result.ReplaceError is not null ? result.ReplaceError.Message
+                      : "未知原因";
+        Log.Warn($"截图写盘失败({fullPath}): {reason}，继续其余图片");
+        return false;
     }
 }

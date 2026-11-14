@@ -1,0 +1,43 @@
+name: build
+
+# X-6：把“0 警告 0 错误”变成门禁，而不是只靠人工纪律。
+# 只做构建 + 门禁验证；--selftest 需要交互式桌面会话，留在本地/真机跑。
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Report SDK
+        run: dotnet --version
+
+      - name: Build (warnings are errors)
+        run: dotnet build MirrorpondHUD.csproj -c Release -nologo
+
+      - name: Empty-catch ratchet (X-9)
+        shell: pwsh
+        run: ./tools/check-empty-catches.ps1
+
+      - name: Verify plugin manifests were generated
+        shell: pwsh
+        run: |
+          $expected = @("builtin.infotext", "builtin.buttons", "builtin.command", "builtin.chat", "builtin.dropstation", "builtin.media")
+          foreach ($id in $expected) {
+            $path = "bin/Release/plugins/cards/$id/manifest.json"
+            if (-not (Test-Path $path)) { throw "missing manifest: $path" }
+            $m = Get-Content $path -Raw | ConvertFrom-Json
+            if ($m.version -ne (Get-Content Directory.Build.props -Raw).Split("<Version>")[1].Split("</Version>")[0]) {
+              throw "manifest version mismatch: $path = $($m.version)"
+            }
+          }

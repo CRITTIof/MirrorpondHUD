@@ -1,0 +1,55 @@
+{
+  "schema": 1,
+  "name": "终末地 · 墨",
+  "author": "MirrorpondHUD",
+  "description": "近黑底 + 纸白字 + 信号黄；直角、无阴影，信号色只留一处",
+  "appearance": {
+    "colors": {
+      "foreground": "#F5F5F0",
+      "background": "#101110",
+      "backgroundOpacity": 0.92,
+      "accent": "#FFFA00",
+      "danger": "#FF6B61",
+      "success": "#4FBF5C",
+      "warning": "#FFB020",
+      "muted": 0.55,
+      "border": 0.14,
+      "panel": 0.05,
+      "scrollbar": 0.22,
+      "scrollbarHot": 0.45
+    },
+    "typography": {
+      "fontFamily": "Microsoft YaHei UI",
+      "monoFont": "Cascadia Mono, Consolas, Microsoft YaHei UI",
+      "fontSize": 15,
+      "bold": false,
+      "iconScale": 1.1,
+      "lineHeight": 0,
+      "textAlign": "Left"
+    },
+    "shape": {
+      "cornerRadius": 0,
+      "padding": 12,
+      "shadow": false
+    },
+    "outline": {
+      "enabled": false,
+      "color": "#000000",
+      "thickness": 1.2
+    },
+    "cliPanel": {
+      "maxWidth": 460,
+      "maxHeight": 420,
+      "entryMaxHeight": 140,
+      "maxEntries": 12
+    },
+    "industrial": {
+      "monoReadouts": true,
+      "decoration": "Grid"
+    },
+    "motion": {
+      "profile": "Industrial",
+      "loop": false
+    }
+  }
+}

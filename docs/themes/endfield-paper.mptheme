@@ -1,0 +1,55 @@
+{
+  "schema": 1,
+  "name": "终末地 · 纸",
+  "author": "MirrorpondHUD",
+  "description": "奶油纸底 + 墨黑字；强调色下沉成暗金，否则黄字在纸上看不见",
+  "appearance": {
+    "colors": {
+      "foreground": "#101110",
+      "background": "#E8E8E2",
+      "backgroundOpacity": 0.94,
+      "accent": "#6B5D00",
+      "danger": "#B4231B",
+      "success": "#1F6B2E",
+      "warning": "#8A5A00",
+      "muted": 0.66,
+      "border": 0.16,
+      "panel": 0.06,
+      "scrollbar": 0.30,
+      "scrollbarHot": 0.50
+    },
+    "typography": {
+      "fontFamily": "Microsoft YaHei UI",
+      "monoFont": "Consolas, Cascadia Mono, Microsoft YaHei UI",
+      "fontSize": 15,
+      "bold": false,
+      "iconScale": 1.1,
+      "lineHeight": 0,
+      "textAlign": "Left"
+    },
+    "shape": {
+      "cornerRadius": 0,
+      "padding": 12,
+      "shadow": false
+    },
+    "outline": {
+      "enabled": false,
+      "color": "#FFFFFF",
+      "thickness": 1.2
+    },
+    "cliPanel": {
+      "maxWidth": 460,
+      "maxHeight": 420,
+      "entryMaxHeight": 140,
+      "maxEntries": 12
+    },
+    "industrial": {
+      "monoReadouts": true,
+      "decoration": "Scanline"
+    },
+    "motion": {
+      "profile": "Industrial",
+      "loop": false
+    }
+  }
+}

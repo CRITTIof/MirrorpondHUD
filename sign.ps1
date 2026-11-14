@@ -1,7 +1,10 @@
-param(
+﻿param(
     [string]$Exe,
     [switch]$TrustOnly,
-    [string]$Subject = 'CN=CRITTIof'
+    [string]$Subject = 'CN=CRITTIof',
+    # X-14：口令不再硬编码。优先读环境变量，显式 -Password 会覆盖它。
+    # 注意：命令行参数会出现在进程列表里，自动化场景优先用环境变量。
+    [string]$Password = $env:MIRRORPOND_PFX_PASSWORD
 )
 
 # Self-signed code-signing certificate for MirrorpondHUD.
@@ -17,7 +20,15 @@ $certDir = Join-Path $root 'certs'
 New-Item -ItemType Directory -Force -Path $certDir | Out-Null
 $pfx = Join-Path $certDir 'mirrorpondhud.pfx'
 $cer = Join-Path $certDir 'mirrorpondhud.cer'
-$password = 'MirrorpondHUDDev!2026'
+if ([string]::IsNullOrWhiteSpace($Password)) {
+    if ($TrustOnly -and (Test-Path $cer)) {
+        Write-Host '[INFO] -TrustOnly with existing .cer: continuing without PFX password.'
+    }
+    else {
+        Write-Warning 'PFX password not provided (env MIRRORPOND_PFX_PASSWORD or -Password). Skipping certificate creation and signing.'
+        exit 0
+    }
+}
 $oldSubject = 'CN=MirrorpondHUD Dev'
 
 function New-SigningCertificate([string]$name) {
