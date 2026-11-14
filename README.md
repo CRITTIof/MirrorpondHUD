@@ -46,20 +46,20 @@
 - **启动动画** — 打字 / 退格动画 + 模拟光标（方块 / 竖线 / 下划线 / 空心框 / 关闭）
 - **卡片动效** — 拖动时整叠卡片同位移跟随；呼出 / 消失 160ms 淡入淡出 + 8px 滑动（命令卡 / 媒体卡同样）；松手或显隐后 180ms ease-out 补位；自动对齐拖到屏幕另一侧松手时动画翻边
 - **托盘常驻** — 单实例唤醒、开机自启、可自定义的全局热键、鼠标穿透锁定
-- **无依赖** — 单文件 exe，目标机器不需要安装 .NET
+- **单文件** — 一个 exe 即可运行；目标机器需安装 .NET 8 桌面运行时（发布页提供依赖运行时的包）
 
 ## 🚀 快速开始
 
 **下载即用**：到 [Releases](https://github.com/CRITTIof/MirrorpondHUD/releases) 下载最新版 `v2.48.0`。
-提供「自带运行时」与「依赖运行时」两种包：前者体积大但双击即用，后者需先装
-[.NET 8 桌面运行时](https://dotnet.microsoft.com/download/dotnet/8.0)。
+发布页只提供**依赖运行时**的包，先装 [.NET 8 桌面运行时](https://dotnet.microsoft.com/download/dotnet/8.0)，
+再解压运行：
 
 | 文件 | 适用 | 说明 |
 | --- | --- | --- |
-| `MirrorpondHUD-x64.zip` | 普通电脑（x64） | 自带 .NET 8 运行时，解压即用 |
-| `MirrorpondHUD-arm64.zip` | Windows on ARM | 自带 .NET 8 运行时，解压即用 |
-| `MirrorpondHUD-x64-requires-dotnet.zip` | 普通电脑（x64） | 体积小，需要 .NET 8 桌面运行时 |
-| `MirrorpondHUD-arm64-requires-dotnet.zip` | Windows on ARM | 体积小，需要 .NET 8 桌面运行时 |
+| `MirrorpondHUD-x64-requires-dotnet.zip` | 普通电脑（x64） | 需要 .NET 8 桌面运行时 |
+| `MirrorpondHUD-arm64-requires-dotnet.zip` | Windows on ARM | 需要 .NET 8 桌面运行时 |
+
+需要完全自包含的版本可本地运行 `publish.bat` 自行生成。
 
 **从源码运行**：
 
@@ -251,7 +251,7 @@ dotnet build MirrorpondHUD.csproj -c Release
 ```
 
 输出在 `bin\Release\MirrorpondHUD.exe`。`build.bat` 会编译并调用 `sign.ps1` 做本地签名；
-`publish.bat` 生成四个单文件 exe（x64 / ARM64 × 自带运行时 / 依赖运行时）。
+`publish.bat` 生成四个单文件 exe（x64 / ARM64 × 自带运行时 / 依赖运行时）；发布页只上传依赖运行时的两个。
 
 签名口令不再写在仓库里：设置环境变量 `MIRRORPOND_PFX_PASSWORD`，或给 `sign.ps1` 传 `-Password`。
 未提供口令时脚本会跳过证书创建与签名并给出警告，构建本身不受影响。
