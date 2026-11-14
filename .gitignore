@@ -56,6 +56,3 @@ samples/EndfieldCardStackWeb.zip
 /scroll-fix.png
 # 第三方克隆（本地核对，不入库；W1-02）
 /samples/arknights-ui/
-
-# 测试文件
-tests/
