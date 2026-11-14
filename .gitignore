@@ -1,4 +1,4 @@
-﻿bin/
+bin/
 obj/
 publish/
 certs/
@@ -37,10 +37,25 @@ docs/review/.work/
 samples/ParticleToText/
 samples/EndfieldDesign/
 samples/ContourLine/
+# 歌词调研用的第三方仓库克隆（本地核对，不入库）
+samples/netease-lyrics-research/
 
 # Affinity Logo资源文件
 assets/*.af
 assets/*.af~lock~
+
+
+# 终末地风格卡片出场动画（Remotion 独立示例）
+samples/EndfieldCardReveal/
+# 卡片出场动效的纯前端版本（独立示例，含 68 个衍生图层）
+samples/EndfieldCardStackWeb/
+samples/EndfieldCardStackWeb.zip
+
+# 并行审阅临时产物与调试截图（W1-01 / W1-03）
+/.tmp/
+/scroll-fix.png
+# 第三方克隆（本地核对，不入库；W1-02）
+/samples/arknights-ui/
 
 # 测试文件
 tests/
