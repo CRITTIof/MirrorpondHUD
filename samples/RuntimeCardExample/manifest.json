@@ -1,9 +1,0 @@
-{
-  "id": "com.example.example-clock",
-  "name": "Example Clock",
-  "version": "0.2.0",
-  "apiVersion": 2,
-  "entryType": "RuntimeCardExample.ExampleClockCard",
-  "assembly": "RuntimeCardExample.dll",
-  "author": "example"
-}

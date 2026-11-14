@@ -32,7 +32,7 @@ jobs:
       - name: Verify plugin manifests were generated
         shell: pwsh
         run: |
-          $expected = @("builtin.infotext", "builtin.buttons", "builtin.command", "builtin.chat", "builtin.dropstation", "builtin.media")
+          $expected = @("builtin.infotext", "builtin.buttons", "builtin.command", "builtin.chat", "builtin.dropstation", "builtin.media", "builtin.lyrics", "builtin.account")
           foreach ($id in $expected) {
             $path = "bin/Release/plugins/cards/$id/manifest.json"
             if (-not (Test-Path $path)) { throw "missing manifest: $path" }
